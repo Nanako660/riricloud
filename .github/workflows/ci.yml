@@ -1,0 +1,88 @@
+# CI 质量门禁：PR 与 main 推送时运行三端门禁 + 安全审计（见 docs/CODE_REVIEW.md §2/§5）
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server 门禁（tsc / lint / test / build）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 类型检查
+        run: pnpm --filter @riricloud/server exec tsc --noEmit
+      - name: Lint
+        run: pnpm --filter @riricloud/server lint
+      - name: 单元测试
+        run: pnpm --filter @riricloud/server test
+      - name: 构建
+        run: pnpm --filter @riricloud/server build
+
+  web:
+    name: Web 门禁（tsc / lint / build）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 类型检查
+        run: pnpm --filter @riricloud/web exec tsc --noEmit
+      - name: Lint
+        run: pnpm --filter @riricloud/web lint
+      - name: 构建
+        run: pnpm --filter @riricloud/web build
+
+  agent:
+    name: Agent 门禁（vet / gofmt / test / build）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.sum
+      - name: 质量门禁
+        run: bash scripts/gate-agent.sh
+
+  security:
+    name: 安全审计（pnpm audit / govulncheck）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      # 已知且已评估的 advisory 在根 package.json pnpm.auditConfig.ignoreGhsas 登记
+      - name: npm 依赖审计（high 及以上阻断）
+        run: pnpm audit --audit-level high
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Go 漏洞扫描（仅可达漏洞计入）
+        run: |
+          cd apps/agent
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...

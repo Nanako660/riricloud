@@ -1,0 +1,79 @@
+// RiriCloud 数据模型（设计见 docs/DATA_MODELS.md）
+// SQLite 不支持 Prisma enum，角色/状态/协议均落地为 String + 应用层 class-validator 校验
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(uuid())
+  email             String   @unique
+  passwordHash      String
+  role              String   @default("USER") // Role 枚举：ADMIN | USER
+  trafficLimitBytes BigInt   @default(107374182400) // 100 GiB
+  trafficUsedBytes  BigInt   @default(0)
+  expireAt          DateTime?
+  subscriptionToken String   @unique @default(uuid())
+  uuid              String   @unique @default(uuid()) // VLESS/Sing-box 用户识别
+  password          String? // SS/Hysteria2 连接密码（预留）
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  trafficLogs TrafficLog[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model Node {
+  id            String    @id @default(uuid())
+  name          String
+  serverHost    String
+  serverPort    Int
+  protocol      String    @default("VLESS_REALITY") // ProtocolType 枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
+  configPayload String? // JSON 字符串，结构随 protocol 变化
+  agentToken    String    @unique
+  status        String    @default("OFFLINE") // NodeStatus 枚举：ONLINE | OFFLINE | DISABLED
+  lastSeenAt    DateTime?
+  cpuUsage      Float?
+  memoryUsage   Float?
+  bandwidthRate Float?
+  sortOrder     Int       @default(0)
+  isPublic      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  trafficLogs TrafficLog[]
+
+  @@index([status])
+  @@index([isPublic])
+}
+
+model TrafficLog {
+  id         String   @id @default(uuid())
+  nodeId     String
+  userId     String
+  upload     BigInt   @default(0) // 增量字节
+  download   BigInt   @default(0)
+  recordedAt DateTime @default(now())
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId])
+  @@index([userId])
+  @@index([recordedAt])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String // 站点名/默认配额/注册开关等 JSON 或文本
+  description String?
+  updatedAt   DateTime @updatedAt
+}

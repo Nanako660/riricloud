@@ -1,0 +1,14 @@
+# 统一行尾：仓库与工作区均为 LF（与 .editorconfig 保持一致；shell 脚本与 Go 源码依赖 LF）
+* text=auto eol=lf
+
+# Windows 批处理例外
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制文件
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.exe binary

@@ -101,3 +101,4 @@ flowchart LR
 - **触发时机**：积累了足够的用户可感知变更，或存在需要尽快送达的修复（含安全修复）。没有固定周期，避免为凑版本而发布。
 - **发布提交**：`chore(repo): 发布 vX.Y.Z`，内容为 CHANGELOG 版本小节整理。
 - **回滚**：优先前滚（`fix` + PATCH）；确需回退时删除 Tag 重新发布，并在 CHANGELOG 中记录 `Removed`/`Fixed` 说明。
+- **自动化（已落地）**：推送 Tag 后由 `.github/workflows/release.yml` 自动完成——校验 Tag 与根 `package.json` 版本一致、复跑三端门禁、交叉编译 Agent 多平台产物（附 SHA-256 校验和）、提取 CHANGELOG 版本小节为 Release Notes 并创建 GitHub Release（详见 [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) §3）。打 Tag 前必须已完成「CHANGELOG 定稿 + 发布提交」，否则流水线在对应校验步骤直接失败。

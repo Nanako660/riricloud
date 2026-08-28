@@ -8,7 +8,6 @@
 - Node.js >= 20.0.0
 - pnpm >= 9.0.0
 - Linux / macOS / Windows Server
-
 ### 1.2 源码构建与运行
 ```bash
 # 1. 克隆代码并安装依赖
@@ -79,9 +78,32 @@ docker run -d \
 
 ---
 
-## 3. 运维排错与常用指令
+## 3. 版本发布与产物分发
 
-### 3.1 查看 Agent 运行状态与日志
+### 3.1 CI 质量门禁（自动）
+PR 与 main 推送自动触发 `.github/workflows/ci.yml`：三端门禁（server tsc/lint/test/build、web tsc/lint/build、agent vet/gofmt/test/build）+ 安全审计（`pnpm audit --audit-level high`、`govulncheck`）。CI 未全绿禁止合并（见 [CODE_REVIEW.md](./CODE_REVIEW.md) §2）。
+
+已评估豁免的 npm advisory 在根 `package.json` 的 `pnpm.auditConfig.ignoreGhsas` 登记（附 GHSA 编号与理由）。
+
+### 3.2 发布流程（Tag 触发自动化）
+在 main 上打附注 Tag `vX.Y.Z` 并推送后，`.github/workflows/release.yml` 自动完成（流程约定见 [VERSIONING.md](./VERSIONING.md) §6）：
+
+1. 校验 Tag 与根 `package.json` 统一版本号一致（不一致直接失败）；
+2. 复跑三端质量门禁（与 CI 同一套命令）；
+3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0`，`-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`，打包 tar.gz / zip 并生成 `checksums.txt`（SHA-256）；
+4. 从 `CHANGELOG.md` 提取对应版本小节作为 Release Notes（找不到小节即失败，保证 Tag 与 CHANGELOG 一一对应）；
+5. 创建 GitHub Release 并附上全部产物与校验和。
+
+`workflow_dispatch` 手动触发为演练模式：只构建产物并上传 artifact，不创建 Release。
+
+### 3.3 节点 Agent 升级
+从 GitHub Release 下载对应架构的压缩包，校验 SHA-256 后替换二进制并 `systemctl restart riri-agent`。后续版本将提供 `install-agent.sh` 一键脚本（见 [ROADMAP.md](./ROADMAP.md) Phase 5）。
+
+---
+
+## 4. 运维排错与常用指令
+
+### 4.1 查看 Agent 运行状态与日志
 ```bash
 # 查看 systemd 服务状态
 systemctl status riri-agent
@@ -93,7 +115,7 @@ journalctl -u riri-agent -f -n 50
 systemctl restart riri-agent
 ```
 
-### 3.2 节点网络与端口检测
+### 4.2 节点网络与端口检测
 - 检查 Sing-box 监听端口是否正常：
   ```bash
   ss -tulpn | grep 443

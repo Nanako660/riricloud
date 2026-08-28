@@ -1,0 +1,52 @@
+{
+  "name": "riricloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RiriCloud — 多节点 VPN/代理管理系统（NestJS 主控 + React 面板 + Go 边缘 Agent）",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-ggr8-5vv4-36mx"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "setup": "pnpm install && pnpm --filter @riricloud/server exec prisma migrate dev && pnpm --filter @riricloud/server exec prisma db seed",
+    "dev:server": "pnpm --filter @riricloud/server start:dev",
+    "dev:web": "pnpm --filter @riricloud/web dev",
+    "gate:server": "pnpm --filter @riricloud/server exec tsc --noEmit && pnpm --filter @riricloud/server lint && pnpm --filter @riricloud/server test",
+    "gate:web": "pnpm --filter @riricloud/web exec tsc --noEmit && pnpm --filter @riricloud/web build",
+    "gate:agent": "bash scripts/gate-agent.sh",
+    "gate": "pnpm gate:server && pnpm gate:web && pnpm gate:agent"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@eslint/js": "^9.30.0",
+    "eslint": "^9.30.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "typescript-eslint": "^8.35.0"
+  },
+  "lint-staged": {
+    "apps/server/**/*.ts": [
+      "eslint --fix"
+    ],
+    "apps/web/**/*.{ts,tsx}": [
+      "eslint --fix"
+    ],
+    "apps/agent/**/*.go": [
+      "gofmt -w"
+    ]
+  }
+}

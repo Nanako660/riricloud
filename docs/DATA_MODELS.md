@@ -4,6 +4,18 @@
 
 RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中，SQLite 开启 **WAL (Write-Ahead Logging)** 模式，读写并发能力大幅提升。
 
+> **落地说明（v0.1.0）**：Prisma 对 SQLite 不支持 `enum` 类型，四个枚举（`Role` / `NodeStatus` / `ProtocolType` 及后续新增）在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（`apps/server/src/common/constants.ts` 常量枚举 + class-validator 校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。
+
+---
+
+## 2. 种子数据（首次启动引导）
+
+首个管理员账号通过 **Prisma seed 脚本**（`apps/server/prisma/seed.js`）幂等创建，机制如下：
+
+- 执行 `pnpm --filter @riricloud/server exec prisma db seed`（已并入根 `pnpm setup`）。
+- 默认播种两个演示账号：`admin@riricloud.local`（ADMIN）与 `demo@riricloud.local`（USER）；邮箱与密码可通过环境变量 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` 覆盖（默认值仅用于本地演示，生产环境务必修改）。
+- 幂等性：按 email upsert，重复执行不产生重复数据；已存在账号仅补齐角色与激活状态。
+
 ---
 
 ## 2. Prisma Schema 完整定义
@@ -20,7 +32,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// 用户角色
+// 用户角色（SQLite 落地为 String，逻辑枚举）
 enum Role {
   ADMIN   // 系统超级管理员
   USER    // 普通终端用户
