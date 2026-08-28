@@ -25,9 +25,14 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - **TanStack Query (React Query)**：处理服务端状态缓存、自动重新请求与加载状态管理。
 - **Zustand**：极简轻量的前端全局状态管理（存储当前登录用户信息、Token 及全局 UI 配置）。
 - **Tailwind CSS & shadcn/ui**：
-  - 基于 Radix UI 原语的优质无障碍组件。
-  - 直接复制代码进项目源码，杜绝第三方重型 UI 库的样式锁定与难以覆盖的问题。
-- **Recharts**：用于呈现用户流量消耗趋势与节点负载（CPU/内存/带宽）可视化图表。
+  - 基于 Radix UI 原语的优质无障碍组件，采用 New York 风格预设与 Zinc 灰色系。
+  - 直接复制代码进项目源码，杜绝第三方重型 UI 库的样式锁定与难以覆盖的问题。详细规范见 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md)。
+- **Lucide React**：全站统一图标库。
+- **React Hook Form + Zod**：强类型端到端表单状态管理与 Schema 校验。
+- **Sonner**：现代化轻量全局 Toast 提示。
+- **TanStack Table (React Table v8)**：复杂数据表格（节点列表、用户列表、审计日志）的核心驱动。
+- **Recharts (via shadcn/ui Chart)**：用于呈现用户流量消耗趋势与节点负载（CPU/内存/带宽）可视化图表。
+- **next-themes**：暗黑/明亮主题平滑切换与系统偏好监听。
 
 ---
 

@@ -1,0 +1,332 @@
+# 前端 UI 与设计规范 (Frontend UI & Design Guidelines)
+
+本文档定义 **RiriCloud** 前端（`apps/web`）的 UI 设计规范、组件体系、分层架构与交互标准。
+本规范以 **shadcn/ui 官方生态标准** 为基准，旨在保持面板现代化、无边框极简质感（Modern Minimalist Dashboard）的同时，确保代码的高度可维护性与一致性。
+
+---
+
+## 1. 设计哲学与核心原则
+
+1. **拥抱官方标准生态**：以 shadcn/ui 官方推荐的实现范式为唯一基准，杜绝“造轮子”与随意引入非标准三方库。
+2. **强制使用原子组件**：严禁在业务页面中随意使用原生 HTML 交互标签（如 `<button>`、`<input>`、`<select>`），必须统一使用 `@/components/ui/` 导出的原子组件。
+3. **数据驱动与类型安全**：表单强制通过 Zod Schema 进行端到端运行时类型校验；表格与图表遵循强类型定义。
+4. **极简精致与无障碍优先**：遵循 Radix UI 无障碍规范（WAI-ARIA），采用 New York 紧凑精致风格，微交互清晰流畅。
+
+---
+
+## 2. 视觉体系与主题配置 (Theme & Tokens)
+
+### 2.1 风格与基础预设
+
+RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边距、更清晰的边框与更细腻的微排版适配管理后台场景：
+
+| 维度 | 规范选型 | 说明 |
+| :--- | :--- | :--- |
+| **风格预设 (Style)** | `New York` | 紧凑、细腻边框、适合数据密集型 Dashboard |
+| **基础色系 (Base Color)** | `Zinc` (中性冷灰) | 纯净、克制，突出核心业务状态数据 |
+| **圆角弧度 (Radius)** | `0.5rem` (`8px` / `rounded-lg`) | 保持现代感与干练感 |
+| **主题切换** | 浅色 (Light) / 暗黑 (Dark) | 基于 `next-themes` 驱动，默认跟随操作系统偏好 |
+
+### 2.2 语义色彩与状态色阶规范
+
+全站颜色必须通过 Tailwind 语义变量（如 `bg-background`、`text-foreground`、`border-border`）使用，严禁在业务代码中硬编码 HEX 颜色值（如 `#10b981`）。
+
+业务状态语义对应如下：
+
+| 业务状态 | 语义 Token | 视觉效果（Light / Dark） | 典型应用场景 |
+| :--- | :--- | :--- | :--- |
+| **正常 / 在线 / 成功** | `success` | `text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20` | 节点在线、同步成功、服务正常、已激活 |
+| **警告 / 负载过高 / 临界** | `warning` | `text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20` | 流量达 80%、CPU 负载高、证书即将过期 |
+| **危险 / 离线 / 错误 / 封禁** | `destructive` | `text-destructive bg-destructive/10 border-destructive/20` | 节点离线、用户被封禁、鉴权失败、删除操作 |
+| **未启用 / 闲置 / 次要** | `secondary` / `muted` | `text-muted-foreground bg-muted border-border` | 未配置节点、未激活用户、无日志 |
+
+---
+
+## 3. 组件分层与目录组织架构
+
+`apps/web/src/components` 目录按严格分层管理：
+
+```
+apps/web/src/
+├── components/
+│   ├── ui/                 # 【底层原子组件】shadcn CLI 生成并维护，严禁侵入业务逻辑
+│   │   ├── button.tsx
+│   │   ├── input.tsx
+│   │   ├── dialog.tsx
+│   │   ├── form.tsx
+│   │   ├── sidebar.tsx
+│   │   └── ...
+│   ├── shared/             # 【业务通用复合组件】全站多模块复用的高阶组件
+│   │   ├── page-container.tsx   # 统一页面容器与页头插槽
+│   │   ├── data-table.tsx       # TanStack Table 统一封装组件
+│   │   ├── stat-card.tsx        # 统计指标卡片
+│   │   ├── empty-state.tsx      # 空状态插槽组件
+│   │   ├── copy-button.tsx      # 订阅链接一键复制按钮
+│   │   └── traffic-badge.tsx    # 流量单位格式化与状态胶囊
+│   └── layout/             # 【全局框架布局】
+│       ├── app-layout.tsx       # 主控端侧边栏 + 顶部导航总布局
+│       ├── app-sidebar.tsx      # 左侧菜单导航
+│       ├── app-header.tsx       # 顶部面包屑与快捷操作栏
+│       └── theme-toggle.tsx     # 明暗主题切换开关
+├── pages/                  # 【页面级视图组件】仅负责数据获取、状态编排与子组件组装
+│   ├── dashboard/
+│   ├── nodes/
+│   ├── users/
+│   └── settings/
+```
+
+---
+
+## 4. 强制使用规范与禁止清单 (Hard Constraints & Banned Practices)
+
+### 4.1 强制规范 (Do's)
+
+1. **通过 CLI 安装原子组件**：基础组件一律通过 `pnpm dlx shadcn@latest add <component>` 生成至 `src/components/ui/`，保持标准实现。
+2. **统一使用 `cn()` 合并样式**：使用 `clsx` + `tailwind-merge` 导出的 `cn(...)` 工具函数处理条件样式，避免类名冲突。
+3. **复合组件采用 CVA 模式**：所有具有变体（variant / size）属性的自定义组件，必须基于 `class-variance-authority` (cva) 编写。
+4. **唯一图标库使用**：全站仅允许引入 `lucide-react`，图标统一使用以下尺寸阶梯：
+   - **Micro (14px / `size-3.5`)**：徽标内小图标、表格行内辅助说明。
+   - **Regular (16px / `size-4`)**：按钮内部图标、表单输入框前后缀、常规文本行。
+   - **Medium (20px / `size-5`)**：卡片标题图标、导航菜单项图标。
+   - **Large (24px / `size-6`)**：统计面板大卡片图标、状态占位图。
+
+### 4.2 严格禁止清单 (Don'ts)
+
+| # | 禁止行为 | 正确做法 | 违规判定 |
+| :-: | :--- | :--- | :--- |
+| **B1** | 业务代码中直接手写 `<button>` 标签 | 必须 `import { Button } from "@/components/ui/button"` | ❌ 立即打回 |
+| **B2** | 业务代码中手写 `<input>`、`<select>`、`<textarea>` | 必须使用 `@/components/ui/input` 等对应 shadcn 组件 | ❌ 立即打回 |
+| **B3** | 引入 Ant Design / Element / MUI / Mantine 等外部重型 UI 库 | 统一使用 shadcn/ui 原生体系 | ❌ 立即打回 |
+| **B4** | 在 Tailwind 类名中手写硬编码 HEX 色值（如 `bg-[#1a1a1a]`） | 必须使用语义变量（如 `bg-background`、`text-card-foreground`） | ❌ 立即打回 |
+| **B5** | 高危破坏性操作仅用简单 `window.confirm` 或直接执行 | 必须使用 `@/components/ui/alert-dialog` 提供二次拦截弹窗 | ❌ 立即打回 |
+| **B6** | 表单通过裸 `useState` 分散管理字段与手动判断报错 | 必须使用 `react-hook-form` + `zod` + shadcn `<Form>` | ❌ 立即打回 |
+
+---
+
+## 5. 表单与数据校验标准 (Form & Validation System)
+
+所有录入、编辑与配置表单均须遵守：
+
+```tsx
+// 标准表单结构范式示例
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+const nodeFormSchema = z.object({
+  name: z.string().min(2, "节点名称至少2个字符").max(32, "节点名称最多32个字符"),
+  serverHost: z.string().min(1, "请输入节点主机域名或IP"),
+  serverPort: z.coerce.number().int().min(1).max(65535, "端口范围为 1-65535"),
+});
+
+type NodeFormValues = z.infer<typeof nodeFormSchema>;
+
+export function NodeCreateForm({ onSubmit }: { onSubmit: (data: NodeFormValues) => void }) {
+  const form = useForm<NodeFormValues>({
+    resolver: zodResolver(nodeFormSchema),
+    defaultValues: { name: "", serverHost: "", serverPort: 443 },
+  });
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>节点名称</FormLabel>
+              <FormControl>
+                <Input placeholder="例如：HK-Premium-01" {...field} />
+              </FormControl>
+              <FormDescription>用于客户端订阅展示的易读名称</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {/* 更多字段... */}
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "正在保存..." : "创建节点"}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+```
+
+---
+
+## 6. 全局交互反馈体系 (Feedback & Notifications)
+
+### 6.1 Toast 通知标准 (`sonner`)
+
+全站操作结果提示唯一使用 `sonner`，严禁使用原生 `alert()` 或自写悬浮条：
+
+```tsx
+import { toast } from "sonner";
+
+// 成功反馈
+toast.success("节点配置下发成功", { description: "Agent 已在 1.2s 内完成热重载" });
+
+// 错误反馈
+toast.error("操作失败", { description: error.message });
+
+// 异步加载状态绑定
+toast.promise(reloadAgentPromise, {
+  loading: "正在向边缘节点发送指令...",
+  success: "节点已重载",
+  error: "节点重载失败，请检查 Agent 连接状态",
+});
+```
+
+### 6.2 弹窗边界与选用矩阵
+
+| 场景需求 | 采用组件 | 规范要求 |
+| :--- | :--- | :--- |
+| **常规数据录入 / 快速编辑** | `Dialog` 或 `Sheet` (抽屉) | 宽表单优先使用右侧 `Sheet` 抽屉，简短录入用居中 `Dialog` |
+| **危险/破坏性操作拦截** | `AlertDialog` | 删除节点、清空日志、重置 Token、删除用户等必须使用，确认按钮标红（`variant="destructive"`） |
+| **轻量级气泡说明 / 快捷提示** | `Tooltip` / `Popover` | 图标按钮悬浮说明必须加 `Tooltip`；复杂筛选器用 `Popover` |
+
+### 6.3 加载占位 (Skeleton)
+
+页面加载与卡片数据请求中，禁止使用全屏巨型 Spinner 打断用户体验，必须使用 `Skeleton` 还原真实 UI 的骨架结构：
+```tsx
+import { Skeleton } from "@/components/ui/skeleton";
+
+export function NodeCardSkeleton() {
+  return (
+    <div className="flex items-center space-x-4 p-4 border rounded-lg">
+      <Skeleton className="size-10 rounded-full" />
+      <div className="space-y-2 flex-1">
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-3 w-1/2" />
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## 7. 布局结构与页面容器标准 (Layout & Container)
+
+### 7.1 全局架构
+
+1. **左侧导航栏**：采用 shadcn/ui 官方 `Sidebar` (v4)，支持折叠至窄条图标栏模式（Rail），移动端自动转换为遮罩式 `Sheet` 抽屉。
+2. **顶部 Header**：包含折叠开关（`SidebarTrigger`）、动态面包屑（`Breadcrumb`）、快捷搜索（Command Menu）与个人中心/主题切换。
+3. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
+
+```tsx
+interface PageContainerProps {
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export function PageContainer({ title, description, actions, children }: PageContainerProps) {
+  return (
+    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+      <div className="flex items-center justify-between space-y-2">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">{title}</h2>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </div>
+        {actions && <div className="flex items-center space-x-2">{actions}</div>}
+      </div>
+      <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+```
+
+---
+
+## 8. 数据展示：表格与图表规范
+
+### 8.1 数据表格 (Data Table)
+- 底层技术：`@tanstack/react-table` + `@/components/ui/table`。
+- 必须具备：列排序（Sorting）、关键词搜索过滤（Filtering）、分页控件（Pagination）、行选择（Row Selection）与列显示切换（Column Visibility）。
+- 空数据展示：使用 `@/components/shared/empty-state.tsx` 统一插画与引导按钮。
+
+### 8.2 数据图表 (Data Charts)
+- 底层技术：采用 shadcn/ui 官方 `Chart`（封装自 `Recharts`）。
+- 色彩绑定：使用预设 CSS 变量 `--chart-1` ~ `--chart-5`，严禁在图表配置中写死十六进制色值，确保暗黑模式完美自适应。
+- 交互提示：统一使用 `ChartTooltip` 与 `ChartTooltipContent` 保证悬浮卡片视觉风格与面板整体一致。
+
+---
+
+## 9. 扩展与自定义组件准则
+
+如遇 shadcn/ui 官方未收录的特殊场景（例如：流量波形动效、节点拓扑连线图）：
+1. **优先查找 Radix UI 原语**：在 Radix UI Primitive 之上使用 Tailwind CSS 进行包装。
+2. **严格遵循规范**：组件接口需支持 `className`、`ref` 转发，样式使用 `cva` 维护。
+3. **目录归属**：通用组件放入 `@/components/shared/`，页面专用组件就近放在 `pages/<module>/components/` 下。
+
+---
+
+## 10. 官方 CLI 与工程配置规范 (Official CLI & Setup)
+
+依据 [shadcn/ui 官方在线文档](https://ui.shadcn.com/docs)，`apps/web` 采用标准的 `components.json` 配置与 CLI 工作流：
+
+### 10.1 官方 `components.json` 标准配置
+
+```json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.js",
+    "css": "src/index.css",
+    "baseColor": "zinc",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+```
+
+### 10.2 常用 CLI 工作流指令
+
+```bash
+# 初始化配置（若全新初始化）
+pnpm dlx shadcn@latest init
+
+# 批量安装 RiriCloud 核心原子组件
+pnpm dlx shadcn@latest add button card dialog alert-dialog dropdown-menu form input select table badge tabs tooltip sheet skeleton progress chart sidebar sonner
+
+# 检查本地组件与官方最新 Registry 的差异与更新
+pnpm dlx shadcn@latest diff
+```
+
+### 10.3 统一类名工具函数 (`src/lib/utils.ts`)
+
+```ts
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+```
+

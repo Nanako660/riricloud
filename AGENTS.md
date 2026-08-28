@@ -36,7 +36,7 @@ riricloud/
 | :--- | :--- | :--- |
 | 任何任务（首次进入仓库） | `README.md`、`ARCHITECTURE.md`、`PROJECT_CONSTRAINTS.md` | — |
 | 写 `apps/server` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`DATA_MODELS.md`、`CODE_REVIEW.md` | `DEPLOYMENT_GUIDE.md` |
-| 写 `apps/web` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`CODE_REVIEW.md` | `ARCHITECTURE.md` |
+| 写 `apps/web` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`FRONTEND_UI_GUIDELINES.md`、`CODE_REVIEW.md` | `ARCHITECTURE.md` |
 | 写 `apps/agent` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`CODE_REVIEW.md` | `DEPLOYMENT_GUIDE.md` |
 | 改 WS 协议 / API / 订阅格式 | `API_AND_PROTOCOLS.md`、`VERSIONING.md`（判断破坏性变更） | `ARCHITECTURE.md` |
 | 改数据模型 | `DATA_MODELS.md`、`PROJECT_CONSTRAINTS.md` §5 | — |
@@ -51,7 +51,7 @@ riricloud/
 2. **版本最小递增**：能 PATCH 不 MINOR，能 MINOR 不 MAJOR；三应用共用根 `package.json` 的统一版本号，不私设版本（[docs/VERSIONING.md](docs/VERSIONING.md)）。
 3. **提交规范**：Conventional Commits，英文 type + 中文描述（`feat(server): 实现用户登录`）；原子提交；破坏性变更标 `!` + `BREAKING CHANGE`（[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)）。
 4. **分支模型**：GitHub Flow；main 受保护，一切变更走 PR；squash merge，PR 标题即提交信息。
-5. **分层约束**：Controller 不碰 Prisma；WS Gateway 复用 Service；前端请求只走统一 API 客户端；Go 禁 CGO、goroutine 必须可退出（[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) §3）。
+5. **分层约束**：Controller 不碰 Prisma；WS Gateway 复用 Service；前端请求只走统一 API 客户端；前端 UI 强制遵循 [docs/FRONTEND_UI_GUIDELINES.md](docs/FRONTEND_UI_GUIDELINES.md) 与 shadcn/ui 规范（禁裸 HTML 交互标签）；Go 禁 CGO、goroutine 必须可退出（[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) §3）。
 6. **文档同步**：改了什么就必须同一 PR 更新对应文档（映射表见下）；代码与文档不一致视为 bug。
 7. **安全红线**：密钥不入 git/日志；生产强制 HTTPS/WSS；密码 bcrypt；服务端默认拒绝鉴权（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §4）。
 8. **语言约定**：标识符与日志英文，注释/commit/文档中文（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §6）。
@@ -67,6 +67,7 @@ riricloud/
 | REST / WS / 订阅格式 | `docs/API_AND_PROTOCOLS.md` |
 | Prisma 模型或迁移 | `docs/DATA_MODELS.md` |
 | 组件、通信链路、时序 | `docs/ARCHITECTURE.md` |
+| 前端 UI 规范、主题、组件层级 | `docs/FRONTEND_UI_GUIDELINES.md` |
 | 选型或依赖库增删 | `docs/TECH_STACK.md` |
 | 部署方式或脚本行为 | `docs/DEPLOYMENT_GUIDE.md` |
 | 规范与红线本身 | `docs/VERSIONING.md` / `GIT_WORKFLOW.md` / `CODE_REVIEW.md` / `PROJECT_CONSTRAINTS.md` |
