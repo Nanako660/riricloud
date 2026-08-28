@@ -19,8 +19,8 @@ graph TB
         SubscriptionEngine["通用多格式订阅生成引擎<br/>(YAML / JSON / Base64)"]
         SQLiteDB[("SQLite 数据库 (WAL 模式)<br/>Prisma ORM")]
         
-        FrontendUI -->|HTTP(S)| APIServer
-        APIServer <-->|CRUD| SQLiteDB
+        FrontendUI -->|"HTTP(S)"| APIServer
+        APIServer <-->|"CRUD"| SQLiteDB
         APIServer <--> WSGateway
         APIServer <--> SubscriptionEngine
     end
@@ -31,8 +31,8 @@ graph TB
         SingboxA["Sing-box 代理内核进程<br/>(Inbounds: VLESS-Reality / Hysteria2)"]
         SystemMonitorA["系统资源与网络监测器<br/>(gopsutil)"]
 
-        AgentA <-->|本地进程 & JSON 配置管理| SingboxA
-        SystemMonitorA -->|收集 CPU/内存/IO| AgentA
+        AgentA <-->|"本地进程 & JSON 配置管理"| SingboxA
+        SystemMonitorA -->|"收集 CPU/内存/IO"| AgentA
     end
 
     subgraph "边缘节点 B (Edge Node 2 - Data Plane)"
@@ -41,17 +41,17 @@ graph TB
         SingboxB["Sing-box 代理内核进程<br/>(Inbounds: Shadowsocks / TUIC)"]
         SystemMonitorB["系统资源与网络监测器<br/>(gopsutil)"]
 
-        AgentB <-->|本地进程 & JSON 配置管理| SingboxB
-        SystemMonitorB -->|收集 CPU/内存/IO| AgentB
+        AgentB <-->|"本地进程 & JSON 配置管理"| SingboxB
+        SystemMonitorB -->|"收集 CPU/内存/IO"| AgentB
     end
 
-    UserBrowser -->|HTTPS 管理与访问| FrontendUI
-    VpnClients -->|HTTP(S) 拉取订阅| SubscriptionEngine
-    VpnClients -->|加密代理流量| SingboxA
-    VpnClients -->|加密代理流量| SingboxB
+    UserBrowser -->|"HTTPS 管理与访问"| FrontendUI
+    VpnClients -->|"HTTP(S) 拉取订阅"| SubscriptionEngine
+    VpnClients -->|"加密代理流量"| SingboxA
+    VpnClients -->|"加密代理流量"| SingboxB
 
-    AgentA <-->|WSS 安全长连接 (心跳 / 配置下发 / 流量上报)| WSGateway
-    AgentB <-->|WSS 安全长连接 (心跳 / 配置下发 / 流量上报)| WSGateway
+    AgentA <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
+    AgentB <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
 ```
 
 ---
