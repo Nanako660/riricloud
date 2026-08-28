@@ -1,0 +1,2 @@
+# commit-msg：提交信息格式校验（规则见 commitlint.config.cjs）
+pnpm exec commitlint --edit "$1"
