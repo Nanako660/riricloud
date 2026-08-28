@@ -12,6 +12,7 @@
 | [技术选型全景 (TECH_STACK.md)](./TECH_STACK.md) | 前端 (React)、主控后端 (NestJS)、边缘守护程序 (Go Agent)、代理内核 (Sing-box) 技术选型细节与对比 |
 | [数据模型设计 (DATA_MODELS.md)](./DATA_MODELS.md) | SQLite + Prisma ORM 实体关系、数据字典与索引设计 |
 | [接口与通信协议 (API_AND_PROTOCOLS.md)](./API_AND_PROTOCOLS.md) | RESTful API 规范、WebSocket 主从双向通信协议、多客户端通用订阅引擎标准 |
+| [前端 UI 设计规范 (FRONTEND_UI_GUIDELINES.md)](./FRONTEND_UI_GUIDELINES.md) | shadcn/ui 组件分层、暗黑模式预设与表格/表单规范 |
 | [部署与运维指南 (DEPLOYMENT_GUIDE.md)](./DEPLOYMENT_GUIDE.md) | 主控面板部署、Go Agent 守护进程一键安装 (systemd / Docker) 与运维排错 |
 | [阶段实施路线图 (ROADMAP.md)](./ROADMAP.md) | 迭代里程碑、模块开发步骤与质量验收清单 |
 | [版本管理规范 (VERSIONING.md)](./VERSIONING.md) | SemVer 最小递增原则、Monorepo 统一版本号、Tag 与发布流程 |
@@ -19,7 +20,7 @@
 | [代码审查与架构约束 (CODE_REVIEW.md)](./CODE_REVIEW.md) | 质量门禁、NestJS / React / Go 分层硬约束与审查清单 |
 | [项目全局硬约束 (PROJECT_CONSTRAINTS.md)](./PROJECT_CONSTRAINTS.md) | 技术栈锁定、零外部依赖、资源与安全红线、文档同步约束 |
 
-仓库根目录另有 [AGENTS.md](../AGENTS.md)（AI 代理与协作者的入口规范）与 [CHANGELOG.md](../CHANGELOG.md)（变更日志）。
+仓库根目录另有 [README.md](../README.md)（项目主文档）、[AGENTS.md](../AGENTS.md)（AI 代理与协作者的入口规范）与 [CHANGELOG.md](../CHANGELOG.md)（变更日志）。
 
 ---
 
