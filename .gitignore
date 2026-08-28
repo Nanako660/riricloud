@@ -6,6 +6,7 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+.vite/
 
 # 环境变量（.env.example 除外）
 .env
