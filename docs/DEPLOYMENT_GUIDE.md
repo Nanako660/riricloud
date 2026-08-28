@@ -85,16 +85,24 @@ PR 与 main 推送自动触发 `.github/workflows/ci.yml`：三端门禁（serve
 
 已评估豁免的 npm advisory 在根 `package.json` 的 `pnpm.auditConfig.ignoreGhsas` 登记（附 GHSA 编号与理由）。
 
-### 3.2 发布流程（Tag 触发自动化）
-在 main 上打附注 Tag `vX.Y.Z` 并推送后，`.github/workflows/release.yml` 自动完成（流程约定见 [VERSIONING.md](./VERSIONING.md) §6）：
+### 3.2 发布流程（本地脚本）
+发布不依赖 GitHub Actions，在本地执行（Git Bash，需已登录 `gh` CLI）：
 
-1. 校验 Tag 与根 `package.json` 统一版本号一致（不一致直接失败）；
-2. 复跑三端质量门禁（与 CI 同一套命令）；
-3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0`，`-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`，打包 tar.gz / zip 并生成 `checksums.txt`（SHA-256）；
-4. 从 `CHANGELOG.md` 提取对应版本小节作为 Release Notes（找不到小节即失败，保证 Tag 与 CHANGELOG 一一对应）；
-5. 创建 GitHub Release 并附上全部产物与校验和。
+```bash
+bash scripts/release.sh          # 缺省发布根 package.json 当前版本
+bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
+```
 
-`workflow_dispatch` 手动触发为演练模式：只构建产物并上传 artifact，不创建 Release。
+脚本自动完成（流程约定见 [VERSIONING.md](./VERSIONING.md) §6）：
+
+1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
+2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
+3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`；
+4. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256）；
+5. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
+6. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和。
+
+Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存在则在当前 main HEAD 创建附注 Tag，发布成功后推送。
 
 ### 3.3 节点 Agent 升级
 从 GitHub Release 下载对应架构的压缩包，校验 SHA-256 后替换二进制并 `systemctl restart riri-agent`。后续版本将提供 `install-agent.sh` 一键脚本（见 [ROADMAP.md](./ROADMAP.md) Phase 5）。
