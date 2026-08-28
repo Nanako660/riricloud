@@ -1,12 +1,14 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { NestFactory } from '@nestjs/core';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { JwtAuthGuard } from './common/jwt-auth.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.setGlobalPrefix('api/v1');
   // 默认所有端点需要 JWT，@Public() 显式放行（安全红线：服务端默认拒绝）
   app.useGlobalGuards(new JwtAuthGuard(app.get(Reflector)));

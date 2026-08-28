@@ -1,12 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { generateKeyPairSync } from 'node:crypto';
+import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateAgentToken } from '../common/utils';
 import { CreateNodeDto } from './dto/create-node.dto';
 
 @Injectable()
 export class NodesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private agentGateway: AgentGatewayService
+  ) {}
 
   // 管理端列表（含 agentToken 与遥测）
   list() {
@@ -44,8 +48,8 @@ export class NodesService {
     if (!node) {
       throw new NotFoundException('节点不存在');
     }
-    // 触发配置重推由 AgentGateway 模块监听完成（本方法返回待推送标记）
-    return { requested: true, nodeId: id };
+    const pushed = await this.agentGateway.pushConfig(id);
+    return { requested: pushed, nodeId: id };
   }
 
   // X25519 Reality 密钥对（短 ID 与 SNI 采用演示默认值，生产可由 UI 配置）
