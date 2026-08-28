@@ -6,7 +6,7 @@ import { UsersService } from './users.service';
 describe('UsersService', () => {
   let service: UsersService;
   const prisma = {
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn() },
     node: { count: jest.fn(), findMany: jest.fn() }
   };
 
@@ -42,6 +42,23 @@ describe('UsersService', () => {
     it('用户不存在时抛出 UnauthorizedException', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       await expect(service.getDashboard('nope')).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('resetSubscriptionToken', () => {
+    it('返回与旧值不同的新 token 并写库', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...seededUser, subscriptionToken: 'old-token' });
+      const token = await service.resetSubscriptionToken('u1');
+      expect(token).not.toBe('old-token');
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { subscriptionToken: token }
+      });
+    });
+
+    it('用户不存在时抛出 UnauthorizedException', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.resetSubscriptionToken('nope')).rejects.toThrow(UnauthorizedException);
     });
   });
 });

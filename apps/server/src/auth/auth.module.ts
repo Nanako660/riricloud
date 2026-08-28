@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { AgentGatewayModule } from '../agent-gateway/agent-gateway.module';
+import { SystemModule } from '../system/system.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
@@ -8,6 +10,8 @@ import { JwtStrategy } from './jwt.strategy';
 @Module({
   imports: [
     PassportModule,
+    AgentGatewayModule,
+    SystemModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'dev-insecure-secret',
       signOptions: { expiresIn: '12h' }

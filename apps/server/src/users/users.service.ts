@@ -6,6 +6,17 @@ import { isUserEntitled } from '../common/utils';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
+  // 重置订阅令牌：旧链接立即失效，返回新 token
+  async resetSubscriptionToken(userId: string): Promise<string> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    const subscriptionToken = crypto.randomUUID();
+    await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    return subscriptionToken;
+  }
+
   async getDashboard(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
