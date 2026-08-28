@@ -95,13 +95,13 @@ echo "[5/6] 提取 CHANGELOG 版本小节为 Release Notes"
 node -e '
   const fs = require("fs");
   const version = process.argv[1];
-  const md = fs.readFileSync("CHANGELOG.md", "utf8");
+  const md = fs.readFileSync(process.argv[3], "utf8");
   const start = md.indexOf(`## [${version}]`);
   if (start < 0) { console.error(`CHANGELOG.md 未找到 [${version}] 小节`); process.exit(1); }
   let end = md.indexOf("\n## [", start + 1);
   if (end < 0) end = md.length;
   fs.writeFileSync(process.argv[2], md.slice(start, end).trim() + "\n");
-' "$VERSION" "$DIST/release-notes.md"
+' "$VERSION" "$DIST/release-notes.md" "$WORKTREE/CHANGELOG.md"
 
 echo "[6/6] 创建 GitHub Release（本地构建产物）"
 cd "$RIRI_ROOT"
