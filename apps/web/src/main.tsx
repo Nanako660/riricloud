@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes';
 import { RouterProvider } from 'react-router-dom';
 import { router } from '@/router';
 import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -20,8 +21,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
+        <TooltipProvider delayDuration={200}>
+          <RouterProvider router={router} />
+          <Toaster />
+        </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>
