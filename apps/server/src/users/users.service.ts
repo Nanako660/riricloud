@@ -13,8 +13,9 @@ export class UsersService {
     }
     const onlineCount = await this.prisma.node.count({ where: { status: 'ONLINE', isPublic: true } });
     return {
-      trafficLimitBytes: user.trafficLimitBytes,
-      trafficUsedBytes: user.trafficUsedBytes,
+      // BigInt 无法 JSON 序列化，在服务边界转 Number（流量值 < 2^53，无精度损失）
+      trafficLimitBytes: Number(user.trafficLimitBytes),
+      trafficUsedBytes: Number(user.trafficUsedBytes),
       expireAt: user.expireAt,
       subscriptionToken: user.subscriptionToken,
       onlineNodeCount: onlineCount

@@ -56,4 +56,25 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
   });
+
+  describe('getMe', () => {
+    it('流量字段序列化为 Number，响应可被 JSON.stringify（BigInt 修复回归）', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        email: 'admin@riricloud.local',
+        role: 'ADMIN',
+        trafficLimitBytes: BigInt(107374182400),
+        trafficUsedBytes: BigInt(2147483648),
+        expireAt: null,
+        subscriptionToken: 'tok',
+        isActive: true,
+        createdAt: new Date('2026-01-01T00:00:00Z')
+      });
+      const me = await service.getMe('u1');
+      // Express res.json 内部调用 JSON.stringify，BigInt 会直接抛错
+      expect(() => JSON.stringify(me)).not.toThrow();
+      expect(me.trafficLimitBytes).toBe(107374182400);
+      expect(me.trafficUsedBytes).toBe(2147483648);
+    });
+  });
 });

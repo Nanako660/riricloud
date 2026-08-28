@@ -41,6 +41,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    return user;
+    // BigInt 无法 JSON 序列化，在服务边界转 Number（流量值 < 2^53，无精度损失）
+    return {
+      ...user,
+      trafficLimitBytes: Number(user.trafficLimitBytes),
+      trafficUsedBytes: Number(user.trafficUsedBytes)
+    };
   }
 }
