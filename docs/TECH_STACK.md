@@ -1,0 +1,73 @@
+# 技术选型全景 (Technology Stack)
+
+## 1. 技术全景概览
+
+RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维依赖、边缘资源极简”** 的原则，选型矩阵如下：
+
+| 分层 / 领域 | 选用技术 / 框架 | 核心定位与价值 |
+| :--- | :--- | :--- |
+| **工程架构** | **pnpm Workspace (Monorepo)** | 统一包管理，前后端代码同仓维护，统一构建脚本与类型定义 |
+| **前端框架** | **React 18/19 + TypeScript + Vite** | 快速热更新开发体验，强类型保障，现代 Web 生态 |
+| **前端样式与组件库** | **Tailwind CSS + shadcn/ui + Lucide Icons** | 极简现代化无边框风格设计，高可定制性，开箱即用高质量组件 |
+| **主控后端框架** | **NestJS + TypeScript** | 企业级 IoC/DI 依赖注入架构，模块化清晰，代码组织规范 |
+| **持久化与 ORM** | **SQLite + Prisma ORM (WAL 模式)** | 单文件数据库零外部依赖，Prisma 提供端到端类型安全与自动迁移 |
+| **主从通信网关** | **`@nestjs/websockets` + `ws`** | 高性能双向长连接，低延迟全双工推送心跳与配置 |
+| **边缘节点 Agent** | **Go (Golang 1.22+)** | 单一静态无依赖二进制，内存占用低（约 10~20MB），启动飞快 |
+| **代理协议内核** | **Sing-box** | 新一代全协议通用核心（VLESS-Reality / Hysteria2 / Shadowsocks / TUIC） |
+
+---
+
+## 2. 前端技术栈详解 (`apps/web`)
+
+### 2.1 核心选型与工具链
+- **Vite**：下一代前端构建工具，极速冷启动与秒级 HMR 热更新。
+- **React Router v6**：声明式路由管理，支持路由守卫（AuthGuard、AdminGuard）与懒加载。
+- **TanStack Query (React Query)**：处理服务端状态缓存、自动重新请求与加载状态管理。
+- **Zustand**：极简轻量的前端全局状态管理（存储当前登录用户信息、Token 及全局 UI 配置）。
+- **Tailwind CSS & shadcn/ui**：
+  - 基于 Radix UI 原语的优质无障碍组件。
+  - 直接复制代码进项目源码，杜绝第三方重型 UI 库的样式锁定与难以覆盖的问题。
+- **Recharts**：用于呈现用户流量消耗趋势与节点负载（CPU/内存/带宽）可视化图表。
+
+---
+
+## 3. 主控后端技术栈详解 (`apps/server`)
+
+### 3.1 核心选型与架构分层
+- **NestJS**：
+  - 标准 Controller -> Service -> Repository 分层架构。
+  - 内置基于 Decorator 的 `class-validator` 与 `class-transformer`，对入参进行强校验。
+  - 内置 Swagger (`@nestjs/swagger`)，自动生成 OpenAPI 交互式在线接口文档。
+- **Prisma ORM**：
+  - 通过清晰的 `schema.prisma` 建模，生成强类型 TypeScript 客户端。
+  - 支持声明式 Database Migrations。
+- **SQLite (WAL 模式)**：
+  - 零配置安装，避免额外维护 MySQL / PostgreSQL 服务。
+  - 开启 WAL 模式后读写互不阻塞，单机轻松承受数万 QPS 的查询压力。
+- **JWT & Passport**：
+  - 标准无状态 Bearer Token 认证。
+
+---
+
+## 4. 边缘节点技术栈详解 (`apps/agent`)
+
+### 4.1 为什么节点端选择 Go 语言？
+1. **单静态二进制分发**：编译后为一个独立的可执行文件（`riri-agent`），不依赖目标服务器的 glibc 版本，无需安装 Node.js、Python 或任何运行环境。
+2. **极低资源开销**：常驻内存占用仅需 10MB~20MB，即使在 256MB / 512MB 的低配 VPS 上也能丝滑运行。
+3. **原生网络与并发模型**：Goroutine 与 Channel 天然适合处理网络长连接心跳与子进程管理。
+
+### 4.2 核心第三方库
+- `github.com/gorilla/websocket`：工业级成熟稳定的 WebSocket 客户端实现。
+- `github.com/shirou/gopsutil/v3`：跨平台采集 Linux / Darwin / Windows 的 CPU、Memory、Disk、Net IO 指标。
+- `github.com/sirupsen/logrus` 或 `go.uber.org/zap`：结构化日志输出。
+
+---
+
+## 5. 代理核心对比 (Sing-box vs Xray-core)
+
+| 特性维度 | Sing-box (本项目采用) | Xray-core |
+| :--- | :--- | :--- |
+| **现代协议支持** | 原生支持 VLESS-Reality、Hysteria2、TUIC、Shadowsocks、WireGuard 等 | 强力支持 VLESS-Reality、Trojan、VMess、XTLS |
+| **内存与 CPU 开销** | 极低（Golang 原生精简架构） | 较低 |
+| **配置文件格式** | 结构规范、层级极简清晰的 JSON | 历史包袱略多，配置项较繁琐 |
+| **通用客户端生态** | Sing-box iOS/Android/Desktop 官方客户端、Clash Meta | v2rayN、v2rayNG、Shadowrocket |
