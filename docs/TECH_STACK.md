@@ -12,6 +12,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 | **主控后端框架** | **NestJS + TypeScript** | 企业级 IoC/DI 依赖注入架构，模块化清晰，代码组织规范 |
 | **持久化与 ORM** | **SQLite + Prisma ORM (WAL 模式)** | 单文件数据库零外部依赖，Prisma 提供端到端类型安全与自动迁移 |
 | **主从通信网关** | **`@nestjs/websockets` + `ws`** | 高性能双向长连接，低延迟全双工推送心跳与配置 |
+| **认证与密码** | **JWT (Passport) + bcryptjs** | 无状态 Bearer Token 鉴权；bcryptjs 为 bcrypt 算法的纯 JS 实现（成本因子 ≥ 10），哈希产物与原生 bcrypt 兼容，免去 Windows/交叉编译环境的原生依赖问题 |
 | **边缘节点 Agent** | **Go (Golang 1.22+)** | 单一静态无依赖二进制，内存占用低（约 10~20MB），启动飞快 |
 | **代理协议内核** | **Sing-box** | 新一代全协议通用核心（VLESS-Reality / Hysteria2 / Shadowsocks / TUIC） |
 

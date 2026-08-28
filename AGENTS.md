@@ -8,18 +8,22 @@
 
 **RiriCloud** 是一个多节点 VPN/代理管理系统：NestJS + React + SQLite 的主控面板（Master），通过 WSS 长连接纳管运行在多台 VPS 上的 Go Agent（托管 Sing-box 内核），统一输出多格式订阅。
 
-**当前进度：设计阶段。** 文档库已完成，代码尚未开始。里程碑见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+**当前进度：最小 demo（v0.1.0 基线）已跑通全链路。** 三端脚手架与核心闭环（登录 → 建节点 → Agent 上线心跳 → 仪表盘遥测 → 订阅输出）已落地，本地验收与质量门禁全绿；完整功能（Sing-box 内核管理、多格式订阅、用户管理等）按里程碑推进，详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+
+> **开发环境**：所有依赖缓存与便携工具链收进项目目录（`.cache/`、`.tools/`，已 gitignore）。开发前先在 Git Bash 中 `source scripts/dev-env.sh`——它会设置 pnpm store、Prisma 缓存、Go 工具链（`.tools/go`）与 Go module cache 的项目内路径。首次搭建：pnpm 环境下执行 `pnpm setup`（install + 迁移 + 种子数据）。
 
 ### 目录结构
 
 ```
 riricloud/
-├── docs/              # 设计与规范文档库（本仓库当前全部内容）
-├── apps/              # 【规划中，Phase 1 起】
-│   ├── web/           # React + Vite 前端
-│   ├── server/        # NestJS 主控后端（含 Prisma schema）
+├── docs/              # 设计与规范文档库
+├── apps/              # 三端应用（已落地）
+│   ├── web/           # React + Vite 前端（@riricloud/web）
+│   ├── server/        # NestJS 主控后端（@riricloud/server，含 Prisma schema）
 │   └── agent/         # Go 边缘节点守护程序
-├── scripts/           # 【规划中】install-agent.sh 等部署脚本
+├── scripts/           # dev-env.sh（缓存环境）、gate-agent.sh（Go 门禁）
+├── .cache/            # 【gitignore】依赖缓存（pnpm/npm/corepack/go）
+├── .tools/            # 【gitignore】便携工具链（如本地 Go）
 ├── AGENTS.md          # 本文件
 └── CHANGELOG.md       # 变更日志
 ```
@@ -78,19 +82,30 @@ riricloud/
 
 ## 常用命令
 
-> Phase 1 脚手架落地前本节为规划值，落地后按实际更新此表。
+> 所有命令在 Git Bash 中执行；Go 相关命令需先 `source scripts/dev-env.sh`（未装系统 Go 时自动使用 `.tools/go`）。
 
 ```bash
+# 首次搭建（安装依赖 + 数据库迁移 + 种子数据，含演示管理员）
+pnpm setup
+
 # 安装依赖（根目录执行）
 pnpm install
 
-# 质量门禁（提交前本地自查）
-pnpm --filter @riricloud/server exec tsc --noEmit && pnpm --filter @riricloud/server lint && pnpm --filter @riricloud/server test
-pnpm --filter @riricloud/web exec tsc --noEmit && pnpm --filter @riricloud/web build
-cd apps/agent && go vet ./... && gofmt -l . && go test ./... && go build ./...
+# 开发模式
+pnpm dev:server    # NestJS 主控（http://localhost:3000，API 文档 /api/docs）
+pnpm dev:web       # Vite 前端（http://localhost:5173，代理 /api → 3000）
 
-# 数据库迁移（server）
-pnpm --filter @riricloud/server prisma migrate dev
+# 质量门禁（提交前本地自查，三端一次全跑用 pnpm gate）
+pnpm gate:server   # tsc --noEmit + eslint + jest
+pnpm gate:web      # tsc --noEmit + eslint + vite build
+pnpm gate:agent    # go vet + gofmt + go test + go build（经 scripts/gate-agent.sh）
+
+# 数据库迁移与种子（server）
+pnpm --filter @riricloud/server exec prisma migrate dev
+pnpm --filter @riricloud/server exec prisma db seed
+
+# 本地运行 Agent（演示联调；token 来自管理员节点页）
+cd apps/agent && AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent ./riri-agent.exe
 ```
 
 Git 操作约定：从 main 切出 `feat|fix|docs|chore/<scope>-<desc>` 分支 → 提交（husky + commitlint 校验信息格式）→ push → PR → 门禁全绿 → squash merge。
