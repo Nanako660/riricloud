@@ -149,6 +149,16 @@ model SystemSetting {
 }
 ```
 
+**已启用键定义（v0.2.0）**：
+
+| 键 | value 格式 | 缺省默认 | 用途 |
+| :--- | :--- | :--- | :--- |
+| `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
+| `registrationEnabled` | `"true"` / `"false"` | `"false"` | 注册开关，控制 `POST /auth/register` 与前端注册入口 |
+| `defaultTrafficLimitBytes` | 十进制字符串（字节，>0） | `"107374182400"`（100 GiB） | 新建/注册用户的初始流量配额 |
+
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走 upsert（`PUT /admin/settings`，接受任意子集，见 `docs/API_AND_PROTOCOLS.md` §1.3）。
+
 ---
 
 ## 3. 核心字段与业务说明

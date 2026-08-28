@@ -145,6 +145,20 @@ export class AgentGatewayService implements OnModuleDestroy {
     return true;
   }
 
+  // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）
+  async pushConfigToAll(): Promise<number> {
+    let pushed = 0;
+    for (const nodeId of this.sockets.keys()) {
+      if (await this.pushConfig(nodeId)) {
+        pushed += 1;
+      }
+    }
+    if (pushed > 0) {
+      this.logger.log(`config_sync pushed to ${pushed} online node(s)`);
+    }
+    return pushed;
+  }
+
   // 断开：置离线并移除注册
   async unregister(nodeId: string): Promise<void> {
     this.sockets.delete(nodeId);

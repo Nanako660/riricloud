@@ -1,13 +1,26 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, Cloud, Gauge, HardDrive } from 'lucide-react';
-import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { api, extractErrorMessage } from '@/lib/api';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { StatCard } from '@/components/shared/stat-card';
 import { CopyButton } from '@/components/shared/copy-button';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import {
   Table,
   TableBody,
@@ -46,9 +59,21 @@ interface NodesData {
 }
 
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
   const dashboard = useQuery({
     queryKey: ['user', 'dashboard'],
     queryFn: async () => (await api.get<DashboardData>('/user/dashboard')).data
+  });
+
+  // 重置订阅令牌（破坏性操作，AlertDialog 二次确认）
+  const resetSub = useMutation({
+    mutationFn: async () =>
+      (await api.post<{ subscriptionToken: string }>('/user/reset-sub')).data,
+    onSuccess: () => {
+      toast.success('订阅链接已重置，请重新导入客户端');
+      void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
+    },
+    onError: (e) => toast.error(extractErrorMessage(e, '重置失败'))
   });
 
   const nodes = useQuery({
@@ -128,6 +153,32 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{subUrl}</code>
             <CopyButton value={subUrl} />
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={resetSub.isPending}>
+                  {resetSub.isPending ? '重置中…' : '重置链接'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>重置订阅链接？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    重置后旧链接立即失效，所有已导入该链接的客户端都需要重新导入新链接。建议仅在怀疑链接泄漏时使用。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      resetSub.mutate();
+                    }}
+                  >
+                    确认重置
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
           <p className="text-muted-foreground text-xs">
             将该链接导入 Clash Meta / Sing-box / Shadowrocket 等客户端即可自动同步节点。

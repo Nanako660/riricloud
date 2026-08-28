@@ -2,33 +2,50 @@
 
 所有 HTTP 接口基于 `http(s)://<master-host>/api/v1` 前缀。
 
-> **实现状态（v0.1.0）**：标注 ⭐ 的端点已在最小 demo 中实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、订阅、版本、安装脚本）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.2.0）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、安装脚本）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
+>
+> **统一分页结构**：列表端点返回 `{ data: T[], total: number, page: number, pageSize: number }`；查询参数 `page`（默认 1）、`pageSize`（默认 20，上限 100）。
+>
+> **管理操作保护规则**：管理员不能删除自己、不能修改自己的角色（防锁死）；批量封禁/解封/删除操作在服务端逐条执行且自动跳过操作者自身。
 
 ### 1.1 认证模块 (`/auth`)
-- `POST /auth/register`：用户注册（若系统开启注册开关）。（待实现）
+- `POST /auth/register`：用户注册。⭐
+  - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409。
+  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始配额取系统设置 `defaultTrafficLimitBytes`，永久有效。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色。⭐
 
 ### 1.2 用户面板 (`/user`)
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、在线节点数）。⭐
 - `GET /user/nodes`：获取当前用户有权访问的公开节点列表及状态。⭐
-- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。（待实现）
+- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）。
 
 ### 1.3 管理员模块 (`/admin`)
-- `GET /admin/users`：分页查询用户列表，支持搜索。（待实现）
-- `POST /admin/users`：创建新用户。（待实现）
-- `PATCH /admin/users/:id`：修改用户配额、到期时间、角色与激活状态。（待实现）
-- `DELETE /admin/users/:id`：删除用户。（待实现）
+
+#### 用户管理
+- `GET /admin/users?page&pageSize&search&role&isActive`：分页查询。⭐ `search` 为邮箱模糊匹配；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, trafficLimitBytes?, expireAt?(ISO) }`；配额缺省取系统设置默认值，`expireAt` 缺省永久；邮箱冲突 409。
+- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
+- `DELETE /admin/users/:id`：删除用户（级联删除流量记录）。⭐
+
+用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
+
+#### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken 与遥测状态）。⭐
 - `POST /admin/nodes`：创建新节点（生成 AgentToken、Reality 密钥对与一键安装命令；当前版本仅支持 VLESS_REALITY）。⭐
 - `PATCH /admin/nodes/:id`：修改节点参数（名称、IP、端口、协议参数）。（待实现）
 - `DELETE /admin/nodes/:id`：删除节点。（待实现）
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
 
+#### 系统设置
+- `GET /admin/settings`：读取全量设置。⭐ 响应 `{ siteName, registrationEnabled, defaultTrafficLimitBytes }`。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，键约束见 `docs/DATA_MODELS.md` §SystemSetting；响应返回更新后全量。
+
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, registrationEnabled }`（登录/注册页展示，不含敏感设置）。
 
 ---
 
