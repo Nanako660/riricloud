@@ -106,6 +106,9 @@ pnpm --filter @riricloud/server exec prisma db seed
 
 # 本地运行 Agent（演示联调；token 来自管理员节点页）
 cd apps/agent && AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent ./riri-agent.exe
+
+# 发布版本（本地脚本：门禁复跑 → 三平台构建 → 打包校验 → gh CLI 创建 Release）
+bash scripts/release.sh
 ```
 
 Git 操作约定：从 main 切出 `feat|fix|docs|chore/<scope>-<desc>` 分支 → 提交（husky + commitlint 校验信息格式）→ push → PR → 门禁全绿 → squash merge。

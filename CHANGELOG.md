@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 发布自动化从 GitHub Actions 迁移为本地脚本 `scripts/release.sh`：在 Tag 提交上复跑三端门禁、交叉编译 Agent 三平台产物、打包生成 SHA-256 校验和、提取 CHANGELOG 版本小节为 Release Notes，并经 `gh` CLI 创建 GitHub Release；`release.yml` 工作流移除（规避 Actions artifact 存储配额限制），PR 质量门禁流水线 `ci.yml` 保持不变。
+
 ## [0.1.0] - 2026-08-29
 
 ### Added
