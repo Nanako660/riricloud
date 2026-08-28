@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { Cloud, Gauge, Server, Users } from 'lucide-react';
+import { Cloud, Gauge, Server, Settings, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 
-// 侧边导航：管理员追加节点/用户管理入口
+// 侧边导航：管理员追加节点/用户/设置入口
 export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'ADMIN';
@@ -13,7 +13,8 @@ export function AppSidebar() {
     ...(isAdmin
       ? [
           { to: '/admin/nodes', label: '节点管理', icon: Server },
-          { to: '/admin/users', label: '用户管理', icon: Users }
+          { to: '/admin/users', label: '用户管理', icon: Users },
+          { to: '/admin/settings', label: '系统设置', icon: Settings }
         ]
       : [])
   ];

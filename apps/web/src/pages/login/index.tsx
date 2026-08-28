@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { z } from 'zod';
 import { Cloud, Loader2 } from 'lucide-react';
@@ -12,6 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+
+interface PublicInfo {
+  siteName: string;
+  registrationEnabled: boolean;
+}
 
 const loginSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
@@ -29,6 +34,12 @@ interface MeResponse {
 export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
+  const infoQuery = useQuery({
+    queryKey: ['system', 'public-info'],
+    queryFn: async () => (await api.get<PublicInfo>('/system/public-info')).data
+  });
+  const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
+
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' }
@@ -58,7 +69,7 @@ export default function LoginPage() {
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
             <Cloud className="h-6 w-6" />
-            <span className="text-lg font-semibold">RiriCloud</span>
+            <span className="text-lg font-semibold">{siteName}</span>
           </div>
           <CardTitle>登录</CardTitle>
           <CardDescription>输入账号信息进入控制面板</CardDescription>
@@ -96,6 +107,14 @@ export default function LoginPage() {
                 {loginMutation.isPending ? <Loader2 className="animate-spin" /> : null}
                 登录
               </Button>
+              {infoQuery.data?.registrationEnabled ? (
+                <p className="text-muted-foreground text-center text-sm">
+                  还没有账号？
+                  <a className="text-primary underline-offset-4 hover:underline" href="/register">
+                    注册
+                  </a>
+                </p>
+              ) : null}
             </form>
           </Form>
         </CardContent>

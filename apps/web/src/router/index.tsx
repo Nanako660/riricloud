@@ -11,6 +11,12 @@ export const router = createBrowserRouter([
     })
   },
   {
+    path: '/register',
+    lazy: async () => ({
+      Component: (await import('@/pages/register')).default
+    })
+  },
+  {
     element: <AuthGuard />,
     children: [
       {
@@ -35,6 +41,12 @@ export const router = createBrowserRouter([
                 path: '/admin/users',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/users')).default
+                })
+              },
+              {
+                path: '/admin/settings',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/settings')).default
                 })
               }
             ]
