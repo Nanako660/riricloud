@@ -19,6 +19,12 @@ module.exports = tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    rules: {
+      // 下划线前缀参数为接口预留（如 UA 类型嗅探），允许未使用
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+    }
+  },
+  {
     files: ['apps/server/**/*.ts'],
     languageOptions: { globals: { ...globals.node, ...globals.jest } }
   },
