@@ -51,6 +51,10 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
    - 全局隐藏 `<input type="number">` 的浏览器原生微调上下箭头（Spinners），由 `index.css` 全局重置（WebKit `-webkit-appearance: none` + Firefox `-moz-appearance: textfield`）。
    - 保持数字输入框（端口、速率、权重等）与普通文本输入框完全一致的对齐排版与间距。
 
+3. **页面与卡片进场动效规范 (Page & Card Transition)**
+   - 全站子页面容器（`PageContainer`）与独立全屏卡片（`LoginPage` / `RegisterPage`）统一配置 `300ms ease-out` 的微景深淡入动效（`animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out`）。
+   - 严禁生硬无动效的瞬切，同时杜绝产生 `translateY` 纵向位移以防止触发浏览器滚动条瞬时闪烁与页面抖动。
+
 ---
 
 ## 3. 组件分层与目录组织架构
@@ -111,6 +115,7 @@ apps/web/src/
 | **B4** | 在 Tailwind 类名中手写硬编码 HEX 色值（如 `bg-[#1a1a1a]`） | 必须使用语义变量（如 `bg-background`、`text-card-foreground`） | ❌ 立即打回 |
 | **B5** | 高危破坏性操作仅用简单 `window.confirm` 或直接执行 | 必须使用 `@/components/ui/alert-dialog` 提供二次拦截弹窗 | ❌ 立即打回 |
 | **B6** | 表单通过裸 `useState` 分散管理字段与手动判断报错 | 必须使用 `react-hook-form` + `zod` + shadcn `<Form>` | ❌ 立即打回 |
+| **B7** | 内部页面跳转手写原生 HTML `<a>` 标签 | 站内导航必须使用 `react-router-dom` 的 `<Link>` 或 `<NavLink>`，严禁原生 `<a>` 引发整页刷新与白屏闪烁 | ❌ 立即打回 |
 
 ---
 
