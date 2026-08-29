@@ -13,6 +13,10 @@
 
 ### Added
 
+- 节点详情页（`/admin/nodes/:id`）：基础信息编辑（名称/地址/订阅公开）、入站列表与 CRUD 弹窗（协议切换参数表单、Reality 一键生成密钥对、TLS 证书路径/ALPN/限速/加密方法等协议专属字段）、高级模式 Tabs（生成配置只读预览 / `configOverride` CodeMirror JSON 编辑）、内核状态与配置错误告警条、AgentToken 与遥测卡片。
+- 节点列表页增强：入站协议 badges（悬停显示 tag 与监听地址）、内核运行状态列、节点名点击进入详情；创建弹窗轻量化（只收名称/地址/订阅公开，成功后可一键「前往配置入站」）。
+- 前端基础设施：新增 `@uiw/react-codemirror` + `@codemirror/lang-json`（TECH_STACK 登记，详情页懒加载分包）与 shadcn 组件 textarea/tabs/separator/accordion；用户仪表盘节点列表适配入站结构（协议 badges 来自公开入站）。
+
 - Sing-box 配置预检与回滚（Agent）：`config_sync` 落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、磁盘回滚 lastGood、在跑内核不受影响；内核 stderr 环形采样尾部 8KB，异常退出原因随心跳上报。
 - 内核状态回报（Agent → Master，向后兼容）：心跳新增可选字段 `kernelRunning`/`appliedConfigVersion`/`lastError`；新增 `config_apply_result{version,success,message}` 回执。Master 新增 `Node.kernelRunning`/`Node.configError` 列（旧版 Agent 不上报时保持原值），配置应用失败原因在管理端可见。
 
