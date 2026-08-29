@@ -168,6 +168,18 @@ export class AgentGatewayService implements OnModuleDestroy {
     this.logger.log(`agent offline: nodeId=${nodeId}`);
   }
 
+  // 节点删除前断开其在线 Agent：只移除注册与关闭连接，不写库（节点即将删除）
+  disconnectNode(nodeId: string): boolean {
+    const socket = this.sockets.get(nodeId);
+    if (!socket) {
+      return false;
+    }
+    this.sockets.delete(nodeId);
+    socket.close(4001, 'node deleted');
+    this.logger.log(`agent disconnected: node=${nodeId} (deleted)`);
+    return true;
+  }
+
   // 心跳超时扫描：超过阈值未心跳的在线节点置离线
   async sweepStaleNodes(): Promise<void> {
     const threshold = new Date(Date.now() - 30_000);
