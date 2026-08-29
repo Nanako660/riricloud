@@ -8,8 +8,7 @@ describe('NodesService', () => {
   let service: NodesService;
   const prisma = {
     node: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() }
-  };
-  const agentGateway = { pushConfig: jest.fn(), disconnectNode: jest.fn() };
+  };  const agentGateway = { pushConfig: jest.fn(), disconnectNode: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -35,6 +34,19 @@ describe('NodesService', () => {
     status: 'ONLINE',
     isPublic: true
   };
+
+  describe('create', () => {
+    it('Reality 密钥为 32 字节裸密钥的 base64（非 PEM，sing-box 内核可解析）', async () => {
+      prisma.node.create.mockImplementation(({ data }) => Promise.resolve({ id: 'n9', ...data }));
+      await service.create({ serverHost: '203.0.113.10', serverPort: 443 }, 'admin-1');
+      const payload = JSON.parse(prisma.node.create.mock.calls[0][0].data.configPayload as string);
+      for (const key of ['publicKey', 'privateKey']) {
+        expect(payload[key]).toMatch(/^[A-Za-z0-9_-]{43}$/); // base64url：无填充、URL 安全字母表
+        expect(Buffer.from(payload[key], 'base64url').length).toBe(32);
+      }
+      expect(payload.shortIds[0]).toMatch(/^[0-9a-f]{16}$/);
+    });
+  });
 
   describe('update', () => {
     it('更新地址与端口后向该节点推送配置，响应剥离私钥', async () => {
