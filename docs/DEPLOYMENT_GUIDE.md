@@ -8,24 +8,43 @@
 - Node.js >= 20.0.0
 - pnpm >= 9.0.0
 - Linux / macOS / Windows Server
-### 1.2 源码构建与运行
+### 1.2 方式一：自包含发行包部署（推荐，v0.2.0 起）
+
+从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源与全部生产依赖，目标机只需 Node.js >= 20）：
+
+```bash
+tar -xzf riri-master_<version>_linux_amd64.tar.gz && cd riri-master_<version>_linux_amd64
+cp .env.example .env   # 编辑：JWT_SECRET 必填（openssl rand -hex 32）
+./start.sh             # 首启自动：生成 Prisma client（Linux 引擎）→ migrate deploy → 启动
+```
+
+- 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
+- 首次登录账号：执行 `node node_modules/prisma/build/index.js db seed` 播种（凭据经 `SEED_ADMIN_EMAIL/PASSWORD` 覆盖，默认密码见包内 README），**登录后立即修改**。
+- 主控端静态托管由 `apps/server/src/static/web-static.ts` 实现（探测顺序：`WEB_DIST_PATH` 环境变量 → monorepo 开发布局 → 发行包 `web-dist/`）。
+
+### 1.3 方式二：源码构建与运行
+
 ```bash
 # 1. 克隆代码并安装依赖
 pnpm install
 
-# 2. 生成 Prisma 数据库迁移与客户端
-pnpm --filter @riricloud/server prisma migrate dev
+# 2. 生成 Prisma 数据库迁移与客户端（开发态）
+pnpm --filter @riricloud/server exec prisma migrate dev
 
 # 3. 构建前端与后端
 pnpm --filter @riricloud/web build
 pnpm --filter @riricloud/server build
 
-# 4. 启动服务 (生产模式)
+# 4. 生产迁移后启动（web 构建产物由 server 托管）
+pnpm --filter @riricloud/server exec prisma migrate deploy
 pnpm --filter @riricloud/server start:prod
 ```
 
-### 1.3 推荐 Docker Compose 一键部署
-在生产服务器上，推荐使用 `docker-compose.yml` 运行主控端：
+> 源码方式下 `start:prod` 同样会探测并托管 `apps/web/dist`（monorepo 布局自动命中）；`prisma migrate deploy` 不可省略（生产建表），与开发态 `migrate dev` 的区别见 Prisma 文档。
+
+### 1.4 方式三：Docker Compose（规划中，Phase 5）
+
+在生产服务器上使用 Docker Compose 运行主控端（镜像构建待 Phase 5 落地）：
 ```yaml
 version: '3.8'
 
@@ -98,14 +117,18 @@ bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
 1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
 2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
 3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`；
-4. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256）；
-5. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
-6. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和。
+4. 装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；
+5. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256，含主控端包）；
+6. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
+7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖三端：主控端发行包 + Agent 三平台二进制**。
 
 Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存在则在当前 main HEAD 创建附注 Tag，发布成功后推送。
 
 ### 3.3 节点 Agent 升级
 从 GitHub Release 下载对应架构的压缩包，校验 SHA-256 后替换二进制并 `systemctl restart riri-agent`。后续版本将提供 `install-agent.sh` 一键脚本（见 [ROADMAP.md](./ROADMAP.md) Phase 5）。
+
+### 3.4 主控端升级
+下载新版本 `riri-master_*.tar.gz` → 停服 → 解压新包替换目录 → 拷回旧目录的 `.env` 与数据库文件（`prisma/data/`）→ `./start.sh`（数据库迁移自动执行，`data/` 与 `.env` 独立于程序目录，升级不丢数据）。
 
 ---
 
