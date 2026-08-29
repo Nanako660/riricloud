@@ -30,7 +30,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	singboxMgr := singbox.NewManager(cfg.SingboxConfPath)
+	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, logrus.NewEntry(log))
 	client := ws.NewClient(
 		cfg.MasterWsURL,
 		cfg.AgentToken,
@@ -40,6 +40,8 @@ func main() {
 	)
 
 	client.Run(ctx)
+	// WS 已断开：终止内核子进程并等待 supervisor 退出，避免孤儿进程（G6）
+	singboxMgr.Shutdown(5 * time.Second)
 	log.Info("riri-agent stopped")
 	os.Exit(0)
 }

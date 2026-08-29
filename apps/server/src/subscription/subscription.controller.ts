@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Headers, Param, Res } from '@nestjs/common';
+import { Controller, Get, Header, Headers, Param, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
@@ -10,16 +10,17 @@ import { SubscriptionService } from './subscription.service';
 export class SubscriptionController {
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
-  // 订阅端点：默认输出 Base64 URI 列表；Clash/Sing-box 格式待后续版本（见 ROADMAP）
+  // 订阅端点：格式协商规则见 docs/API_AND_PROTOCOLS.md §3.1；UserInfo/更新间隔头全格式返回
   @Get(':token')
-  @Header('Content-Type', 'text/plain; charset=utf-8')
   @Header('Profile-Update-Interval', '24')
   async getSubscription(
     @Param('token') token: string,
-    @Headers() headers: Record<string, string>,
+    @Query('type') type: string | undefined,
+    @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) res: Response
   ) {
-    const result = await this.subscriptionService.getSubscription(token, headers['user-agent']);
+    const result = await this.subscriptionService.getSubscription(token, { type, userAgent });
+    res.setHeader('Content-Type', result.contentType);
     res.setHeader('Subscription-Userinfo', result.userInfoHeader);
     return result.body;
   }

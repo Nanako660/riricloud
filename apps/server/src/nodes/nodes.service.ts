@@ -102,11 +102,17 @@ export class NodesService {
   // X25519 Reality 密钥对（短 ID 与 SNI 采用演示默认值，生产可由 UI 配置）
   private generateRealityConfig() {
     const { publicKey, privateKey } = generateKeyPairSync('x25519');
+    // sing-box 内核与客户端均要求 32 字节裸密钥的 base64url（无填充、URL 安全字母表，
+    // 等价 sing-box generate reality-keypair 输出）；PEM、标准 base64（含 "+"/"/" 与填充）
+    // 都会导致内核 inbound 解析失败
+    const pubDer = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+    const privDer = privateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer;
+    const b64 = (der: Buffer) => der.subarray(der.length - 32).toString('base64url');
     return {
       serverNames: ['www.apple.com'],
       dest: 'www.apple.com:443',
-      privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }),
-      publicKey: publicKey.export({ type: 'spki', format: 'pem' }),
+      privateKey: b64(privDer),
+      publicKey: b64(pubDer),
       shortIds: ['0123456789abcdef']
     };
   }

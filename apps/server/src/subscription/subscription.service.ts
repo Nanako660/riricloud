@@ -1,18 +1,40 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUserEntitled } from '../common/utils';
+import { buildClashYaml, buildSingboxJson, buildVlessUri, type SubNode } from './builders';
 
-// Reality 客户端参数须与节点 configPayload 一致（当前为演示默认值）
-const REALITY_CLIENT_DEFAULTS = {
-  sni: 'www.apple.com',
-  fp: 'chrome'
+export type SubscriptionFormat = 'base64' | 'clash' | 'singbox';
+
+export const SUBSCRIPTION_CONTENT_TYPES: Record<SubscriptionFormat, string> = {
+  base64: 'text/plain; charset=utf-8',
+  clash: 'text/yaml; charset=utf-8',
+  singbox: 'application/json; charset=utf-8'
 };
+
+// 格式协商：显式 ?type= 优先，其次 User-Agent 嗅探，默认 Base64（docs/API_AND_PROTOCOLS.md §3.1）
+export function resolveFormat(type?: string, userAgent?: string): SubscriptionFormat {
+  const t = (type ?? '').trim().toLowerCase();
+  if (t === 'clash') {
+    return 'clash';
+  }
+  if (t === 'sing-box' || t === 'singbox') {
+    return 'singbox';
+  }
+  const ua = userAgent ?? '';
+  if (/clash|meta|mihomo/i.test(ua)) {
+    return 'clash';
+  }
+  if (/sing-?box/i.test(ua)) {
+    return 'singbox';
+  }
+  return 'base64';
+}
 
 @Injectable()
 export class SubscriptionService {
   constructor(private prisma: PrismaService) {}
 
-  async getSubscription(token: string, _userAgent?: string) {
+  async getSubscription(token: string, opts: { type?: string; userAgent?: string } = {}) {
     const user = await this.prisma.user.findUnique({ where: { subscriptionToken: token } });
     if (!user) {
       throw new NotFoundException('订阅不存在');
@@ -21,54 +43,29 @@ export class SubscriptionService {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
-    const nodes = await this.prisma.node.findMany({
+    const nodes: SubNode[] = await this.prisma.node.findMany({
       where: { isPublic: true, status: { not: 'DISABLED' } },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
     });
+    const supported = nodes.filter((n) => n.protocol === 'VLESS_REALITY');
 
-    const uris: string[] = [];
-    for (const node of nodes) {
-      if (node.protocol === 'VLESS_REALITY') {
-        uris.push(this.buildVlessUri(user.uuid, node));
-      }
-    }
-
-    const body = Buffer.from(uris.join('\n'), 'utf8').toString('base64');
+    const format = resolveFormat(opts.type, opts.userAgent);
     return {
-      body,
+      body: this.render(format, user.uuid, supported),
+      contentType: SUBSCRIPTION_CONTENT_TYPES[format],
       userInfoHeader: this.buildUserInfoHeader(user)
     };
   }
 
-  // vless://<uuid>@<host>:<port>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=..&fp=chrome&pbk=..&sid=..&type=tcp#<name>
-  private buildVlessUri(
-    userUuid: string,
-    node: {
-      name: string;
-      serverHost: string;
-      serverPort: number;
-      configPayload: string | null;
+  private render(format: SubscriptionFormat, userUuid: string, nodes: SubNode[]): string {
+    switch (format) {
+      case 'clash':
+        return buildClashYaml(userUuid, nodes);
+      case 'singbox':
+        return buildSingboxJson(userUuid, nodes);
+      default:
+        return Buffer.from(nodes.map((n) => buildVlessUri(userUuid, n)).join('\n'), 'utf8').toString('base64');
     }
-  ): string {
-    const config = node.configPayload ? (JSON.parse(node.configPayload) as {
-      publicKey?: string;
-      serverNames?: string[];
-      shortIds?: string[];
-    }) : {};
-    const sni = config.serverNames?.[0] ?? REALITY_CLIENT_DEFAULTS.sni;
-    const pbk = config.publicKey ?? '';
-    const sid = config.shortIds?.[0] ?? '';
-    const params = new URLSearchParams({
-      encryption: 'none',
-      flow: 'xtls-rprx-vision',
-      security: 'reality',
-      sni,
-      fp: REALITY_CLIENT_DEFAULTS.fp,
-      pbk,
-      sid,
-      type: 'tcp'
-    });
-    return `vless://${userUuid}@${node.serverHost}:${node.serverPort}?${params.toString()}#${encodeURIComponent(node.name)}`;
   }
 
   // Subscription-Userinfo: upload=..; download=..; total=..; expire=..

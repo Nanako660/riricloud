@@ -6,7 +6,7 @@
 
 ## 📅 阶段任务拆解
 
-> **当前进度**：Phase 1 已完成，并以「最小 demo」提前打通了 Phase 2/3/4 的核心闭环（登录鉴权、节点管理、订阅生成、WS Agent Gateway、Agent 长连接与心跳上报、用户仪表盘与管理员节点页）。下方标注 ⭐ 的条目为最小 demo 已实现部分；Sing-box 内核生命周期、多格式订阅、用户管理等完整能力仍在各自 Phase 推进。
+> **当前进度**：Phase 1 已完成，并以「最小 demo」提前打通了 Phase 2/3/4 的核心闭环（登录鉴权、节点管理、订阅生成、WS Agent Gateway、Agent 长连接与心跳上报、用户仪表盘与管理员节点页）。下方标注 ⭐ 的条目为已实现部分；多格式订阅生成器与 Sing-box 内核生命周期管理已落地；按用户流量统计受 sing-box 上游能力限制暂缓（见 Phase 3 遥测条目）。
 
 ### Phase 1: 基础设施与 Monorepo 脚手架搭建
 - [x] 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
@@ -23,14 +23,14 @@
 - [x] ⭐ 实现用户管理与配额控制模块。（分页搜索、创建、配额/到期/角色/激活更新、删除、订阅令牌重置）
 - [x] ⭐ 实现节点管理模块（节点创建/列表、AgentToken 派发、Reality 参数生成、热重载指令）。（编辑/删除已补齐：名称/地址/端口/是否公开可改，保存后在线节点热推送）
 - [x] ⭐ 实现 WebSocket Agent Gateway（握手鉴权、心跳解析、流量入库、配置实时推送）。
-- [ ] 实现通用多协议订阅生成器（Clash Meta / Sing-box / Base64）。（⭐ 已实现 Base64 URI 输出与 Subscription-Userinfo 头，Clash/Sing-box 格式待补）
+- [x] ⭐ 实现通用多格式订阅生成器（Clash Meta / Sing-box / Base64）：`?type=` 参数优先、User-Agent 嗅探其次、默认 Base64 URI；三种格式均返回 `Subscription-Userinfo` 与更新间隔头。
 
 ### Phase 3: 边缘节点守护程序开发 (`apps/agent`)
 - [x] ⭐ 初始化 Go 模块与依赖 (`gorilla/websocket`, `gopsutil`)。
 - [x] ⭐ 实现 WebSocket 客户端（指数退避断线重连、心跳定时器）。
-- [ ] 实现 Sing-box 内核管理（进程拉起、PID 监控、优雅停止与热重载）。（⭐ 当前仅配置落盘，内核生命周期待实现）
+- [x] ⭐ 实现 Sing-box 内核管理（进程拉起、PID 监控、异常退出自动拉起、优雅停止与配置热应用）：supervisor 单协程托管，配置变化优雅重启、崩溃按指数退避重拉；二进制路径 `SINGBOX_BINARY_PATH`（默认走 PATH）。
 - [x] ⭐ 实现动态 JSON 配置文件组装与持久化。（临时文件 + rename 原子写入）
-- [x] ⭐ 实现系统性能指标（CPU/内存/网络IO）采集与流量定时上报。（流量记录上报待内核接入后启用）
+- [x] ⭐ 实现系统性能指标（CPU/内存/网络IO）采集与流量定时上报。（按用户流量统计受 sing-box 上游统计接口能力限制暂缓，`trafficRecords` 恒为空，待上游提供连接-用户归属后启用）
 
 ### Phase 4: 前端 Web 控制面板开发 (`apps/web`)
 - [x] ⭐ 初始化 Vite + React + TypeScript + Tailwind CSS + shadcn/ui。

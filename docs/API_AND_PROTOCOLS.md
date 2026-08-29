@@ -80,11 +80,12 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
 当节点首次连接成功、或主控端发生用户增删变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
+Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {
   "type": "config_sync",
   "data": {
-    "version": "1.0.0",
+    "version": 1,
     "singboxConfig": {
       "log": { "level": "info" },
       "inbounds": [
@@ -131,6 +132,8 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 }
 ```
 
+> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` 已实现 ⭐；`trafficRecords` 为**增量**字节数（本心跳周期内），因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户流量采集暂缓、当前恒为空数组，待上游能力就绪后启用。
+
 ---
 
 ## 3. 通用多格式订阅协议 (`/sub/:token`)
@@ -140,11 +143,12 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 http(s)://<master-host>/api/v1/sub/:token
 ```
 
-> **实现状态（v0.1.0）**：默认 Base64 URI 列表输出与 `Subscription-Userinfo` 响应头已实现 ⭐；`?type` / User-Agent 自动识别与 Clash Meta YAML、Sing-box Client JSON 格式待后续 MINOR 版本落地。
+> **实现状态（v0.2.0）**：三种格式与自动协商均已实现 ⭐。
 
 ### 3.1 客户端请求头自动识别与参数适配
-- 若请求参数包含 `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`，输出 **Clash Meta YAML**。（待实现）
-- 若请求参数包含 `?type=sing-box` 或 User-Agent 包含 `sing-box`，输出 **Sing-box Client JSON**。（待实现）
+- 格式协商优先级：显式 `?type=` 参数 > User-Agent 嗅探 > 默认 Base64。
+- `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`：输出 **Clash Meta YAML**（`Content-Type: text/yaml`）。⭐ 完整最小可用配置：`mixed-port`/`mode`/`log-level` 基础段 + `proxies[]`（vless：`server`/`port`/`uuid`/`flow=xtls-rprx-vision`/`tls`/`servername`/`client-fingerprint=chrome`/`reality-opts.{public-key,short-id}`/`udp`）+ `节点选择` select 策略组 + `MATCH` 兜底规则；重名节点自动追加序号保证 proxy 名唯一。
+- `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（vless：`tag`/`server`/`server_port`/`uuid`/`flow=xtls-rprx-vision`/`tls.utls`/`tls.reality.{public_key,short_id}`，tag 同样去重）+ `direct` 兜底出站。
 - 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG 等）：⭐
   ```
   vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#🇯🇵东京01

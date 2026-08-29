@@ -52,6 +52,8 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
   - 开启 WAL 模式后读写互不阻塞，单机轻松承受数万 QPS 的查询压力。
 - **JWT & Passport**：
   - 标准无状态 Bearer Token 认证。
+- **YAML 序列化（`yaml`）**：
+  - Clash Meta 订阅输出需要将配置对象序列化为 YAML；选用纯 JS、零传递依赖且活跃维护的 [`yaml`](https://github.com/eemeli/yaml) 包，不引入原生编译依赖。
 
 ---
 

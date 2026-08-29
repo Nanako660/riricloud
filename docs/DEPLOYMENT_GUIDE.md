@@ -82,6 +82,8 @@ curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
 3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址。
 4. 注册并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启。
 
+> **Agent 环境变量**：`AGENT_TOKEN`（必填）、`MASTER_WS_URL`（默认 `ws://localhost:3000/ws/agent`）、`SINGBOX_CONFIG_PATH`（默认 `./config.json`）、`SINGBOX_BINARY_PATH`（sing-box 内核二进制路径，默认 `sing-box` 走 PATH）。内核缺失或启动失败时 Agent 按指数退避持续重试，不影响长连接与遥测。
+
 ### 2.2 方式二：Docker 容器化部署
 如果节点偏好容器化环境，可直接通过 Docker 启动：
 
@@ -94,6 +96,20 @@ docker run -d \
   -e MASTER_WS_URL="wss://<master-domain>/ws/agent" \
   riricloud/agent:latest
 ```
+
+### 2.3 本地一键联调（开发）
+
+`scripts/dev-e2e.sh` 一键拉起全套本地联调环境（主控 + Web 面板 + Agent + 真实 sing-box 内核）：
+
+```bash
+bash scripts/dev-e2e.sh                  # 全套启动并跟踪 Agent 日志，Ctrl+C 退出
+SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
+NODE_PORT=9443 bash scripts/dev-e2e.sh   # 自定义内核监听端口（默认 127.0.0.1:8443）
+```
+
+- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、创建/复用联调节点（按 `127.0.0.1:<NODE_PORT>` 匹配，已存在则对齐端口）、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。
+- 已在运行的 3000/5173 服务会被复用而非重启；脚本退出只回收其自身启动的进程。
+- 可验证的内核行为：配置下发拉起、面板编辑节点后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
 
 ---
 

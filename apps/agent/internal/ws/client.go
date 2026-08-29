@@ -160,12 +160,11 @@ func (c *Client) readLoop(conn *websocket.Conn) error {
 				c.log.WithError(err).Warn("invalid config_sync payload")
 				continue
 			}
-			if err := c.singboxMgr.WriteConfig(sync.SingboxConfig); err != nil {
-				c.log.WithError(err).Error("write singbox config failed")
+			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig); err != nil {
+				c.log.WithError(err).Error("apply singbox config failed")
 				continue
 			}
-			c.log.WithField("version", sync.Version).Info("singbox config persisted")
-			// TODO(Phase 3): 热重载 sing-box 内核
+			c.log.WithField("version", sync.Version).Info("singbox config applied")
 		default:
 			c.log.WithField("type", msg.Type).Debug("unknown message")
 		}
@@ -187,7 +186,7 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				CPUUsage:       sample.CPUUsage,
 				MemoryUsage:    sample.MemoryUsage,
 				BandwidthRate:  sample.BandwidthRate,
-				TrafficRecords: []heartbeatTraffic{}, // 流量记录待 sing-box 内核接入后上报
+				TrafficRecords: []heartbeatTraffic{}, // 按用户流量统计受 sing-box 上游能力限制暂未采集（docs/ROADMAP.md）
 			}
 			data, err := json.Marshal(payload)
 			if err != nil {
