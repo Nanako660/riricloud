@@ -177,20 +177,15 @@ export function NodeFormDialog({ open, onOpenChange, node }: NodeFormDialogProps
               </DialogTitle>
               <DialogDescription>在 VPS 上执行以下命令完成 Agent 接入</DialogDescription>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium">AgentToken</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{created.agentToken}</code>
-                  <CopyButton value={created.agentToken} />
-                </div>
+            {/* min-w-0：Dialog 为 grid 布局，截断长文本固有宽度向上传递，避免内容撑出面板 */}
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{created.agentToken}</code>
+                <CopyButton value={created.agentToken} />
               </div>
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium">一键安装命令</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{created.installCommand}</code>
-                  <CopyButton value={created.installCommand} />
-                </div>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{created.installCommand}</code>
+                <CopyButton value={created.installCommand} />
               </div>
             </div>
             <DialogFooter>
