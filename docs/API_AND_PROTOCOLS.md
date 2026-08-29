@@ -35,8 +35,8 @@
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken 与遥测状态）。⭐
 - `POST /admin/nodes`：创建新节点（生成 AgentToken、Reality 密钥对与一键安装命令；当前版本仅支持 VLESS_REALITY）。⭐
-- `PATCH /admin/nodes/:id`：修改节点参数（名称、IP、端口、协议参数）。（待实现）
-- `DELETE /admin/nodes/:id`：删除节点。（待实现）
+- `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, serverPort?(1~65535), isPublic?(是否对订阅公开) }`；协议与 Reality 密钥本版本锁定不可改；保存成功后若节点在线即向其推送 `config_sync`（`serverPort` 影响 Agent 入站监听，主机/端口影响订阅输出）。
+- `DELETE /admin/nodes/:id`：删除节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；`TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
 
 #### 系统设置
