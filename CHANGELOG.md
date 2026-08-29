@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复内核主动重启被误报为配置应用失败：配置变更触发的重启在 Windows 下经 Kill 退出码非 0，旧逻辑把被杀内核的最后 8KB 正常运行日志记为 `configError` 随心跳上报。主动停止（重启/Shutdown）现标记为预期退出——不记错误、不计退避；内核拉起成功即清除历史失败原因（崩溃自愈后面板不再显示陈旧错误）。
+
 ### Added
 
 - 节点详情页（`/admin/nodes/:id`）：基础信息编辑（名称/地址/订阅公开）、入站列表与 CRUD 弹窗（协议切换参数表单、Reality 一键生成密钥对、TLS 证书路径/ALPN/限速/加密方法等协议专属字段）、高级模式 Tabs（生成配置只读预览 / `configOverride` CodeMirror JSON 编辑）、内核状态与配置错误告警条、AgentToken 与遥测卡片。

@@ -76,6 +76,7 @@ func main() {
 			if _, err := os.Stat(marker); err != nil {
 				_ = os.WriteFile(marker, []byte("1"), 0o600)
 				time.Sleep(time.Duration(cfg.CrashAfterMs) * time.Millisecond)
+				fmt.Fprintln(os.Stderr, "ERROR: stub kernel crashed by config")
 				os.Exit(1)
 			}
 		}
@@ -231,6 +232,60 @@ func TestApplyChangedConfigRestartsKernel(t *testing.T) {
 		t.Fatalf("ApplyConfig changed: %v", err)
 	}
 	waitFor(t, 8*time.Second, func() bool { return m.Running() && m.Pid() != oldPid })
+}
+
+// 配置变更引发的主动重启：旧内核被杀退出码非 0（Windows Kill 路径），
+// 但属预期停止——不得写 lastError、不得计入崩溃退避
+func TestPlannedRestartNotRecordedAsError(t *testing.T) {
+	m := newStubManager(t)
+	if err := m.ApplyConfig(json.RawMessage(`{"log":{"level":"info"}}`), 1); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	waitFor(t, 15*time.Second, m.Running)
+
+	// 连续两次配置变更：第一次重启后 5 秒内再变（uptime < stableUptime，旧逻辑必计退避）
+	time.Sleep(2 * time.Second)
+	if err := m.ApplyConfig(json.RawMessage(`{"log":{"level":"warn"}}`), 2); err != nil {
+		t.Fatalf("ApplyConfig changed: %v", err)
+	}
+	waitFor(t, 8*time.Second, func() bool {
+		st := m.Status()
+		return st.Running && st.LastError == ""
+	})
+	st := m.Status()
+	if st.LastError != "" {
+		t.Fatalf("planned restart must not set lastError, got %q", st.LastError)
+	}
+	// 主动重启不退避：新内核应立即拉起而非等 backoff
+	if delay := m.pendingBackoff(); delay > 0 {
+		t.Fatalf("planned restart must not schedule backoff, got %v", delay)
+	}
+
+	// 5 秒内再次变更：确认重启路径持续干净（覆盖 backoff 已清零的分支）
+	time.Sleep(2 * time.Second)
+	if err := m.ApplyConfig(json.RawMessage(`{"log":{"level":"error"}}`), 3); err != nil {
+		t.Fatalf("ApplyConfig changed again: %v", err)
+	}
+	waitFor(t, 8*time.Second, func() bool {
+		st := m.Status()
+		return st.Running && st.LastError == "" && st.AppliedConfigVersion == 3
+	})
+}
+
+// 非预期崩溃仍要记录 lastError（回归保护）；退避重拉成功后错误清除，
+// 避免内核已恢复正常时面板显示陈旧失败原因
+func TestCrashRecordsErrorThenClearsOnRecovery(t *testing.T) {
+	m := newStubManager(t)
+	if err := m.ApplyConfig(json.RawMessage(`{"crashAfterMs":150}`), 1); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	// 等崩溃已被记录（不能以 !Running 判定：拉起前的间隙也满足，且重拉是立即的）
+	waitFor(t, 8*time.Second, func() bool { return m.Status().LastError != "" })
+	// 退避（1s）后重拉成功：marker 已存在，stub 常驻；lastError 被清除
+	waitFor(t, 8*time.Second, func() bool {
+		st := m.Status()
+		return st.Running && st.LastError == ""
+	})
 }
 
 func TestKernelCrashAutoRestart(t *testing.T) {

@@ -47,18 +47,19 @@ type Manager struct {
 	binPath  string
 	log      *logrus.Entry
 
-	mu          sync.Mutex
-	wantRun     bool
-	stopping    bool          // Shutdown 已调用（终态）：收敛完成后 supervisor 退出
-	desiredConf []byte        // ApplyConfig 提交的目标配置
-	desiredVer  int64         // ApplyConfig 提交的目标配置版本（来自 config_sync.version）
-	appliedConf []byte        // 当前子进程使用的配置（字节比对避免无谓重启）
-	appliedVer  int64         // 当前子进程使用的配置版本（Status 上报）
-	lastError   string        // 最近一次失败原因（check/启动/运行期）
-	child       *exec.Cmd     // 当前子进程；退出后由 waiter 置 nil
-	childExit   chan struct{} // 当前子进程退出通知，每次拉起重建
-	nextStartAt time.Time     // 退避期内不允许拉起；零值表示立即可拉起
-	backoff     time.Duration
+	mu            sync.Mutex
+	wantRun       bool
+	stopping      bool          // Shutdown 已调用（终态）：收敛完成后 supervisor 退出
+	desiredConf   []byte        // ApplyConfig 提交的目标配置
+	desiredVer    int64         // ApplyConfig 提交的目标配置版本（来自 config_sync.version）
+	appliedConf   []byte        // 当前子进程使用的配置（字节比对避免无谓重启）
+	appliedVer    int64         // 当前子进程使用的配置版本（Status 上报）
+	lastError     string        // 最近一次失败原因（check/启动/运行期）
+	child         *exec.Cmd     // 当前子进程；退出后由 waiter 置 nil
+	childExit     chan struct{} // 当前子进程退出通知，每次拉起重建
+	stoppingChild *exec.Cmd     // 被主动停止（重启/Shutdown）的子进程：退出属预期，不算失败
+	nextStartAt   time.Time     // 退避期内不允许拉起；零值表示立即可拉起
+	backoff       time.Duration
 
 	kick chan struct{} // 唤醒 supervisor（容量 1，合并重复信号）
 	done chan struct{} // supervisor 退出后关闭
@@ -316,28 +317,37 @@ func (m *Manager) spawn(conf []byte, version int64) error {
 	m.mu.Lock()
 	m.child = cmd
 	m.childExit = exitC
+	m.stoppingChild = nil // 新进程不在预期停止集合中
 	m.appliedConf = append([]byte(nil), conf...)
 	m.appliedVer = version
+	// 拉起成功即代表当前无故障（崩溃退避循环恢复、主动重启均走这里）：
+	// 清掉历史失败原因，避免内核已正常运行时面板仍显示陈旧错误；随后若再崩溃由 awaitChild 重新记录
+	m.lastError = ""
 	m.mu.Unlock()
 	m.log.WithField("pid", cmd.Process.Pid).Info("sing-box started")
 	go m.awaitChild(cmd, exitC, time.Now(), stdout, stderr)
 	return nil
 }
 
-// awaitChild 等待子进程退出并回收资源：按存活时长决定是否进入退避（G6 异常自动拉起）。
+// awaitChild 等待子进程退出并回收资源。主动停止（配置变更重启/Shutdown）的退出属预期：
+// 不写 lastError、不计退避；仅非预期退出（崩溃）按存活时长进入退避（G6）并采样 stderr 尾部。
 func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.Time, stdout io.Closer, stderr *tailWriter) {
 	err := cmd.Wait()
 	uptime := time.Since(startedAt)
 	m.mu.Lock()
-	if uptime < stableUptime {
+	expected := m.stoppingChild == cmd
+	if expected {
+		m.stoppingChild = nil
+	} else if uptime < stableUptime {
 		m.backoff = nextBackoff(m.backoff)
 		m.nextStartAt = time.Now().Add(m.backoff)
 	} else {
 		m.backoff = 0
 		m.nextStartAt = time.Time{}
 	}
-	// 异常退出（非 nil Wait 错误）记录 stderr 尾部作为 lastError，供心跳上报
-	if err != nil {
+	// 异常退出（非 nil Wait 错误）记录 stderr 尾部作为 lastError，供心跳上报；
+	// 预期停止（Windows 下 Kill 兜底退出码非 0）不视为失败
+	if err != nil && !expected {
 		m.lastError = tailString(stderr.String(), stderrTailLimit)
 	}
 	if m.child == cmd {
@@ -351,10 +361,14 @@ func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.
 	m.log.WithError(err).WithField("uptime", uptime.String()).Warn("sing-box exited")
 }
 
-// gracefulStopCurrent 优雅停止当前子进程：SIGTERM → 宽限等待 → Kill；无子进程时为 no-op。
+// gracefulStopCurrent 主动停止当前子进程：SIGTERM → 宽限等待 → Kill；无子进程时为 no-op。
+// 停止是主控/管理员意图（配置变更重启或 Shutdown），该进程的退出不视为内核故障。
 func (m *Manager) gracefulStopCurrent() {
 	m.mu.Lock()
 	cmd, exitC := m.child, m.childExit
+	if cmd != nil {
+		m.stoppingChild = cmd
+	}
 	m.mu.Unlock()
 	if cmd == nil || cmd.Process == nil {
 		return
@@ -367,6 +381,12 @@ func (m *Manager) gracefulStopCurrent() {
 	case <-exitC:
 	case <-time.After(stopGrace):
 		_ = cmd.Process.Kill()
+		// Kill 后补等回收：确保 awaitChild（预期退出判定）先于后续 spawn 执行，
+		// 避免新 spawn 清掉 stoppingChild 后旧退出被误记为故障；仍不退出则放弃等待
+		select {
+		case <-exitC:
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
