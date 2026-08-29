@@ -4,6 +4,7 @@ import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateAgentToken } from '../common/utils';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { UpdateNodeDto } from './dto/update-node.dto';
 
 @Injectable()
 export class NodesService {
@@ -50,6 +51,52 @@ export class NodesService {
     }
     const pushed = await this.agentGateway.pushConfig(id);
     return { requested: pushed, nodeId: id };
+  }
+
+  async update(id: string, dto: UpdateNodeDto) {
+    const node = await this.prisma.node.findUnique({ where: { id } });
+    if (!node) {
+      throw new NotFoundException('节点不存在');
+    }
+    const data: { name?: string; serverHost?: string; serverPort?: number; isPublic?: boolean } = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name) {
+        throw new BadRequestException('节点名称不能为空');
+      }
+      data.name = name;
+    }
+    if (dto.serverHost !== undefined) {
+      const serverHost = dto.serverHost.trim();
+      if (!serverHost) {
+        throw new BadRequestException('服务器地址不能为空');
+      }
+      data.serverHost = serverHost;
+    }
+    if (dto.serverPort !== undefined) {
+      data.serverPort = dto.serverPort;
+    }
+    if (dto.isPublic !== undefined) {
+      data.isPublic = dto.isPublic;
+    }
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException('未提供任何更新字段');
+    }
+    const updated = await this.prisma.node.update({ where: { id }, data });
+    // 端口变更影响 Agent 入站监听，主机/端口变更影响订阅输出：在线时热推送最新配置
+    void this.agentGateway.pushConfig(id);
+    return { node: this.sanitize(updated) };
+  }
+
+  async remove(id: string) {
+    const node = await this.prisma.node.findUnique({ where: { id } });
+    if (!node) {
+      throw new NotFoundException('节点不存在');
+    }
+    // 先断开在线 Agent 再删库；TrafficLog 由外键 onDelete: Cascade 一并删除
+    this.agentGateway.disconnectNode(id);
+    await this.prisma.node.delete({ where: { id } });
+    return { deleted: true, id };
   }
 
   // X25519 Reality 密钥对（短 ID 与 SNI 采用演示默认值，生产可由 UI 配置）
