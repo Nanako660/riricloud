@@ -67,9 +67,9 @@ graph TB
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
 - **长连接与自愈**：Agent 启动后主动与 Master 建立 WSS 连接，内置重试与断线重连机制。
-- **内核生命周期管理**：自动检测、下载与校验对应架构的 Sing-box 官方二进制，托管 Sing-box 的启动、停止与配置热重载。
+- **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
 - **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。
-- **流量统计与上报**：定时对接 Sing-box 的内部统计接口（Clash API / Traffic Stats），按用户 UUID 采集上行与下行流量并上报给 Master。
+- **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。
 
 ---
 
@@ -113,14 +113,14 @@ sequenceDiagram
 
     loop 每 5~10 秒
         Agent->>Agent: 采集系统 CPU / 内存 / 网速
-        Agent->>Singbox: 查询各用户已消耗流量 (Upload/Download)
+        Agent->>Singbox: 查询各用户已消耗流量 (Upload/Download)（暂缓：上游统计接口无用户归属）
         Agent->>Master: 发送 Heartbeat WSS 消息 (系统指标 + 增量流量数据)
         Master->>DB: 更新节点状态、记录 TrafficLog、扣减用户剩余配额
         
         alt 发现某用户已过期或配额耗尽
             Master->>Master: 从该节点白名单中剔除该用户 UUID
-            Master-->>Agent: 下发 UpdateConfig 指令 (更新后的配置 JSON)
-            Agent->>Singbox: 执行热重载 (Reload Config)
+            Master-->>Agent: 下发 config_sync (更新后的配置 JSON)
+            Agent->>Singbox: 持久化并优雅重启内核 (配置热应用)
         end
     end
 ```

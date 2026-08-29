@@ -82,6 +82,8 @@ curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
 3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址。
 4. 注册并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启。
 
+> **Agent 环境变量**：`AGENT_TOKEN`（必填）、`MASTER_WS_URL`（默认 `ws://localhost:3000/ws/agent`）、`SINGBOX_CONFIG_PATH`（默认 `./config.json`）、`SINGBOX_BINARY_PATH`（sing-box 内核二进制路径，默认 `sing-box` 走 PATH）。内核缺失或启动失败时 Agent 按指数退避持续重试，不影响长连接与遥测。
+
 ### 2.2 方式二：Docker 容器化部署
 如果节点偏好容器化环境，可直接通过 Docker 启动：
 
