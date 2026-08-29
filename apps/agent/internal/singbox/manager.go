@@ -234,6 +234,7 @@ func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.
 	m.mu.Unlock()
 	stdout.Close()
 	stderr.Close()
+	close(exitC) // 通知 supervisor：当前子进程已退出，可重新收敛
 	m.log.WithError(err).WithField("uptime", uptime.String()).Warn("sing-box exited")
 }
 

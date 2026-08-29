@@ -207,7 +207,9 @@ func TestKernelCrashAutoRestart(t *testing.T) {
 		_, err := os.Stat(marker)
 		return err == nil
 	})
-	waitFor(t, 8*time.Second, m.Running)
+	// 必须先观察到内核真的退出（排除原进程尚未崩溃的空洞通过），再等 supervisor 重拉
+	waitFor(t, 8*time.Second, func() bool { return !m.Running() })
+	waitFor(t, 15*time.Second, m.Running)
 	if m.Pid() <= 0 {
 		t.Fatalf("expected kernel respawned, pid=%d", m.Pid())
 	}
