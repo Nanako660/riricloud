@@ -2,7 +2,9 @@
 // SQLite 不支持 Prisma enum，角色/状态/协议均落地为 String + 应用层 class-validator 校验
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // native=发布/开发机（Windows），debian-openssl-3.0.x=主控端发行包目标机（Linux x64）
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
