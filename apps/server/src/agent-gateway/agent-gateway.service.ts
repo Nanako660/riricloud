@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
 import { buildServerInbound, type InboundUserCredential } from '../common/inbound';
 import type { ProtocolType } from '../common/constants';
-import type { AuthResultData, ConfigSyncData, HeartbeatData } from './agent-message';
+import type { AuthResultData, ConfigApplyResultData, ConfigSyncData, HeartbeatData } from './agent-message';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -50,7 +50,7 @@ export class AgentGatewayService implements OnModuleDestroy {
     return { success: true, message: '鉴权成功', nodeId };
   }
 
-  // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）
+  // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.node.update({
@@ -60,7 +60,13 @@ export class AgentGatewayService implements OnModuleDestroy {
           memoryUsage: data.memoryUsage,
           bandwidthRate: data.bandwidthRate,
           lastSeenAt: new Date(),
-          status: 'ONLINE'
+          status: 'ONLINE',
+          // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
+          ...(data.kernelRunning !== undefined ? { kernelRunning: data.kernelRunning } : {}),
+          ...(data.lastError !== undefined && data.lastError !== ''
+            ? { configError: data.lastError }
+            : {}),
+          ...(data.lastError === '' ? { configError: null } : {})
         }
       });
       for (const record of data.trafficRecords ?? []) {
@@ -83,6 +89,19 @@ export class AgentGatewayService implements OnModuleDestroy {
         });
       }
     });
+  }
+
+  // config_apply_result 回执处理：失败原因落 configError（成功清空），供管理端展示
+  async handleConfigApplyResult(nodeId: string, data: ConfigApplyResultData): Promise<void> {
+    const message = data.success ? null : (data.message?.slice(0, 8192) ?? 'unknown error');
+    await this.prisma.node
+      .update({ where: { id: nodeId }, data: { configError: message } })
+      .catch((err) => this.logger.warn(`config_apply_result: ${err}`));
+    if (data.success) {
+      this.logger.log(`config applied: node=${nodeId} version=${data.version}`);
+    } else {
+      this.logger.warn(`config apply failed: node=${nodeId} version=${data.version} error=${data.message}`);
+    }
   }
 
   // 组装完整 Sing-box 服务端配置：入站数组逐条按协议生成（users 为有资格用户注入），

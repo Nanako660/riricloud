@@ -104,6 +104,10 @@ model Node {
   memoryUsage     Float         @default(0)             // 内存使用率 (0~100)
   bandwidthRate   Float         @default(0)             // 实时网络速率 (bytes/s)
 
+  // 内核状态（v0.3.0，Agent 心跳上报；旧版 Agent 不上报时保持 null）
+  kernelRunning   Boolean?                               // sing-box 内核进程存活
+  configError     String?                                // 最近一次配置应用失败原因（成功后清空）
+
   // 展示与权限
   sortOrder       Int           @default(0)             // 排序权重
   isPublic        Boolean       @default(true)          // 是否对所有普通用户公开

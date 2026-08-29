@@ -163,6 +163,9 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "cpuUsage": 12.5,
     "memoryUsage": 38.2,
     "bandwidthRate": 1048576,
+    "kernelRunning": true,
+    "appliedConfigVersion": 3,
+    "lastError": "",
     "trafficRecords": [
       { "userUuid": "user-uuid-1", "upload": 52428800, "download": 104857600 },
       { "userUuid": "user-uuid-2", "upload": 1024000, "download": 2048000 }
@@ -172,6 +175,18 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 ```
 
 > **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` 已实现 ⭐；`trafficRecords` 为**增量**字节数（本心跳周期内），因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户流量采集暂缓、当前恒为空数组，待上游能力就绪后启用。
+>
+> **内核状态字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）。Master 落 `Node.kernelRunning` / `Node.configError`（`lastError` 为空串时清空 configError）；旧版 Agent 不携带这些字段，对应列保持原值。
+
+#### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
+Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：
+```json
+{ "type": "config_apply_result", "data": { "version": 3, "success": true, "message": "ok" } }
+```
+失败示例（预检拒绝，Agent 侧已回滚 lastGood 配置、内核继续使用旧配置）：
+```json
+{ "type": "config_apply_result", "data": { "version": 4, "success": false, "message": "sing-box check: ERROR: decode inbound ..." } }
+```
 
 ---
 

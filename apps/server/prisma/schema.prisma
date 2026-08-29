@@ -44,6 +44,8 @@ model Node {
   cpuUsage       Float?
   memoryUsage    Float?
   bandwidthRate  Float?
+  kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
+  configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
   sortOrder      Int       @default(0)
   isPublic       Boolean   @default(true)
   createdAt      DateTime  @default(now())

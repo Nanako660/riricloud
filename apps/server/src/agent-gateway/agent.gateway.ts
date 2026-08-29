@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { Server, WebSocket } from 'ws';
 import { AgentGatewayService } from './agent-gateway.service';
-import type { AgentMessage, HeartbeatData } from './agent-message';
+import type { AgentMessage, ConfigApplyResultData, HeartbeatData } from './agent-message';
 
 // Agent 长连接网关：只做连接管理与消息编解码，业务逻辑全部在 AgentGatewayService
 // （分层约束见 docs/CODE_REVIEW.md §3.1 S3）
@@ -59,6 +59,10 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     switch (message.type) {
       case 'heartbeat': {
         await this.gatewayService.handleHeartbeat(nodeId, message.data as HeartbeatData);
+        break;
+      }
+      case 'config_apply_result': {
+        await this.gatewayService.handleConfigApplyResult(nodeId, message.data as ConfigApplyResultData);
         break;
       }
       default:

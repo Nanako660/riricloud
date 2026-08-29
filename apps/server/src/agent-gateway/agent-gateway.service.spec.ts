@@ -16,14 +16,17 @@ describe('AgentGatewayService', () => {
     node: { findUnique: jest.fn(), update: jest.fn() },
     user: { findMany: jest.fn() },
   };
-
   // 事务句柄 mock：记录调用序列
   const txCalls: string[] = [];
+  const txNodeUpdate = jest.fn(
+    async (args: { data: Record<string, unknown> }) => {
+      txCalls.push('node.update');
+      return args;
+    }
+  );
   const txMock = {
     node: {
-      update: jest.fn(async () => {
-        txCalls.push('node.update');
-      })
+      update: txNodeUpdate
     },
     user: {
       findUnique: jest.fn(),
@@ -85,6 +88,66 @@ describe('AgentGatewayService', () => {
     txMock.user.findUnique.mockResolvedValue(null);
     await expect(service.handleHeartbeat('n1', heartbeat)).resolves.toBeUndefined();
     expect(txMock.trafficLog.create).not.toHaveBeenCalled();
+  });
+
+  it('旧版心跳（无内核状态字段）不写 kernelRunning/configError', async () => {
+    txMock.user.findUnique.mockResolvedValue(null);
+    await service.handleHeartbeat('n1', heartbeat);
+    const data = txNodeUpdate.mock.calls[0]![0].data;
+    expect(data).not.toHaveProperty('kernelRunning');
+    expect(data).not.toHaveProperty('configError');
+  });
+
+  it('新版心跳的内核状态与失败原因落列', async () => {
+    txMock.user.findUnique.mockResolvedValue(null);
+    await service.handleHeartbeat('n1', {
+      ...heartbeat,
+      kernelRunning: false,
+      appliedConfigVersion: 7,
+      lastError: 'config check failed: bad inbound'
+    });
+    const data = txNodeUpdate.mock.calls[0]![0].data;
+    expect(data.kernelRunning).toBe(false);
+    expect(data.configError).toBe('config check failed: bad inbound');
+  });
+
+  it('心跳 lastError 为空串时清空 configError', async () => {
+    txMock.user.findUnique.mockResolvedValue(null);
+    await service.handleHeartbeat('n1', {
+      ...heartbeat,
+      kernelRunning: true,
+      lastError: ''
+    });
+    const data = txNodeUpdate.mock.calls[0]![0].data;
+    expect(data.kernelRunning).toBe(true);
+    expect(data.configError).toBeNull();
+  });
+
+  it('config_apply_result 成功清空 configError，失败落原因（截断 8KB）', async () => {
+    prisma.node.update.mockResolvedValue({});
+    await service.handleConfigApplyResult('n1', { version: 3, success: true, message: 'ok' });
+    expect(prisma.node.update).toHaveBeenCalledWith({
+      where: { id: 'n1' },
+      data: { configError: null }
+    });
+
+    const long = 'x'.repeat(9000);
+    await service.handleConfigApplyResult('n1', {
+      version: 4,
+      success: false,
+      message: long
+    });
+    expect(prisma.node.update).toHaveBeenLastCalledWith({
+      where: { id: 'n1' },
+      data: { configError: long.slice(0, 8192) }
+    });
+  });
+
+  it('config_apply_result 落库失败不抛错（连接已断开场景）', async () => {
+    prisma.node.update.mockRejectedValueOnce(new Error('node deleted'));
+    await expect(
+      service.handleConfigApplyResult('n1', { version: 3, success: true, message: 'ok' })
+    ).resolves.toBeUndefined();
   });
 
   it('authenticate 对缺失 token 返回失败', async () => {
