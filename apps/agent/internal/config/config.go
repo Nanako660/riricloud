@@ -10,6 +10,7 @@ type Config struct {
 	MasterWsURL     string // Master WS 网关地址
 	AgentToken      string // 节点凭证（由主控派发）
 	SingboxConfPath string // config_sync 落盘路径
+	SingboxBinPath  string // sing-box 内核二进制路径（默认走 PATH）
 	HeartbeatSecs   int    // 心跳周期（秒），协议约定 5~10
 }
 
@@ -18,6 +19,7 @@ func Load() (*Config, error) {
 		MasterWsURL:     getenv("MASTER_WS_URL", "ws://localhost:3000/ws/agent"),
 		AgentToken:      os.Getenv("AGENT_TOKEN"),
 		SingboxConfPath: getenv("SINGBOX_CONFIG_PATH", "./config.json"),
+		SingboxBinPath:  getenv("SINGBOX_BINARY_PATH", "sing-box"),
 		HeartbeatSecs:   5,
 	}
 	if c.AgentToken == "" {

@@ -21,4 +21,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HeartbeatSecs != 5 {
 		t.Fatalf("unexpected default heartbeat: %d", cfg.HeartbeatSecs)
 	}
+	if cfg.SingboxBinPath != "sing-box" {
+		t.Fatalf("unexpected default sing-box path: %s", cfg.SingboxBinPath)
+	}
 }
