@@ -93,7 +93,8 @@ chmod +x "$MASTER_DIR/start.sh"
 mkdir -p "$MASTER_DIR/web-dist"
 cp -r "$WORKTREE/apps/web/dist/." "$MASTER_DIR/web-dist/"
 # 版本号唯一源：system.service 读取 cwd/package.json；prisma.seed 供 db seed 命令使用
-node -e "require('fs').writeFileSync('$MASTER_DIR/package.json', JSON.stringify({ name: 'riricloud-master', version: '$VERSION', private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))"
+# 路径经 argv 传入（MSYS 对参数做自动路径转换；内嵌 -e 脚本字符串则不会，Windows 下会得到 D:\d\... 坏路径）
+node -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$MASTER_DIR/package.json" "$VERSION"
 # 产物内生成 Prisma client（native 引擎供发布机冒烟；目标机 start.sh 首启重新 generate 生成 Linux 引擎）
 (cd "$MASTER_DIR" && node node_modules/prisma/build/index.js generate >/dev/null)
 
