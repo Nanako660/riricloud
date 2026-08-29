@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentGatewayService } from './agent-gateway.service';
 import type { HeartbeatData } from './agent-message';
@@ -13,6 +14,7 @@ describe('AgentGatewayService', () => {
       return fn(txMock);
     }),
     node: { findUnique: jest.fn(), update: jest.fn() },
+    user: { findMany: jest.fn() },
   };
 
   // 事务句柄 mock：记录调用序列
@@ -88,5 +90,126 @@ describe('AgentGatewayService', () => {
   it('authenticate 对缺失 token 返回失败', async () => {
     const result = await service.authenticate(undefined);
     expect(result.ok).toBe(false);
+  });
+
+  describe('buildConfigSync', () => {
+    const entitledUser = {
+      uuid: 'uuid-1',
+      email: 'a@x.com',
+      password: 'user-pass',
+      isActive: true,
+      expireAt: null,
+      trafficLimitBytes: BigInt(107374182400),
+      trafficUsedBytes: BigInt(0)
+    };
+
+    const nodeWithInbounds = (inbounds: unknown[], configOverride: string | null = null) => ({
+      id: 'n1',
+      name: '东京节点 01',
+      serverHost: '203.0.113.10',
+      configOverride,
+      inbounds
+    });
+
+    const inboundRows = [
+      {
+        type: 'VLESS_REALITY',
+        tag: 'vless-in',
+        listen: '::',
+        port: 443,
+        sortOrder: 0,
+        paramsJson: JSON.stringify({
+          serverNames: ['www.apple.com'],
+          dest: 'www.apple.com:443',
+          privateKey: 'priv',
+          publicKey: 'pub',
+          shortIds: ['sid-1'],
+          flow: 'xtls-rprx-vision'
+        })
+      },
+      {
+        type: 'HYSTERIA2',
+        tag: 'hy2-in',
+        listen: '::',
+        port: 8443,
+        sortOrder: 1,
+        paramsJson: JSON.stringify({
+          upMbps: 0,
+          downMbps: 0,
+          tls: { serverName: 'hy.example.com', certificatePath: '/c.pem', keyPath: '/k.pem', alpn: ['h3'], insecure: false }
+        })
+      },
+      {
+        type: 'SHADOWSOCKS',
+        tag: 'ss-in',
+        listen: '::',
+        port: 8388,
+        sortOrder: 2,
+        paramsJson: JSON.stringify({ method: 'aes-256-gcm', password: 'ss-shared' })
+      }
+    ];
+
+    it('按入站数组逐协议组装，有资格用户注入 vless uuid 与 hy2 密码', async () => {
+      prisma.node.findUnique.mockResolvedValue(nodeWithInbounds(inboundRows));
+      prisma.user.findMany.mockResolvedValue([entitledUser]);
+      const { singboxConfig } = await service.buildConfigSync('n1');
+      const inbounds = singboxConfig.inbounds as Array<Record<string, unknown>>;
+      expect(inbounds).toHaveLength(3);
+
+      const vless = inbounds[0] as { users: unknown[] };
+      expect(vless).toMatchObject({ type: 'vless', listen_port: 443 });
+      expect(vless.users).toEqual([{ uuid: 'uuid-1', name: 'a@x.com', flow: 'xtls-rprx-vision' }]);
+
+      const hy2 = inbounds[1] as { users: unknown[] };
+      expect(hy2).toMatchObject({ type: 'hysteria2', listen_port: 8443 });
+      expect(hy2.users).toEqual([{ name: 'a@x.com', password: 'user-pass' }]);
+
+      const ss = inbounds[2];
+      expect(ss).toMatchObject({ type: 'shadowsocks', password: 'ss-shared' });
+      expect(ss).not.toHaveProperty('users');
+      expect(singboxConfig.outbounds).toEqual([{ type: 'direct', tag: 'direct' }]);
+    });
+
+    it('用户未设置密码时凭证回退 uuid；无资格用户被排除', async () => {
+      prisma.node.findUnique.mockResolvedValue(nodeWithInbounds([inboundRows[1]]));
+      prisma.user.findMany.mockResolvedValue([
+        { ...entitledUser, password: null },
+        { ...entitledUser, uuid: 'uuid-2', email: 'b@x.com', password: null, isActive: false }
+      ]);
+      const { singboxConfig } = await service.buildConfigSync('n1');
+      const [hy2] = singboxConfig.inbounds as Array<{ users: Array<{ password: string }> }>;
+      expect(hy2.users).toEqual([{ name: 'a@x.com', password: 'uuid-1' }]);
+    });
+
+    it('configOverride 顶层深合并，inbounds 数组整组替换', async () => {
+      prisma.node.findUnique.mockResolvedValue(
+        nodeWithInbounds(
+          inboundRows,
+          JSON.stringify({
+            log: { level: 'debug' },
+            inbounds: [{ type: 'direct', tag: 'override-in' }],
+            route: { final: 'direct' }
+          })
+        )
+      );
+      prisma.user.findMany.mockResolvedValue([]);
+      const { singboxConfig } = await service.buildConfigSync('n1');
+      expect(singboxConfig.log).toEqual({ level: 'debug', timestamp: true }); // 嵌套对象按键合并
+      expect(singboxConfig.inbounds).toEqual([{ type: 'direct', tag: 'override-in' }]); // 数组整体替换
+      expect(singboxConfig.route).toEqual({ final: 'direct' }); // 新增顶层键透传
+    });
+
+    it('版本号单调递增', async () => {
+      prisma.node.findUnique.mockResolvedValue(nodeWithInbounds([]));
+      prisma.user.findMany.mockResolvedValue([]);
+      const a = await service.buildConfigSync('n1');
+      const b = await service.buildConfigSync('n1');
+      expect(b.version).toBeGreaterThan(a.version);
+    });
+
+    it('节点不存在抛出 NotFoundException', async () => {
+      prisma.node.findUnique.mockResolvedValue(null);
+      await expect(service.buildConfigSync('nope')).rejects.toThrow(NotFoundException);
+    });
   });
 });

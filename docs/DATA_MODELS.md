@@ -90,22 +90,20 @@ model Node {
   id              String        @id @default(uuid())
   name            String                                // 节点显示名称 (如 "🇯🇵 东京 01 - 专线")
   serverHost      String                                // 节点公网 IP 或解析域名
-  serverPort      Int                                   // 节点对外监听端口 (如 443 / 8443)
-  protocol        ProtocolType  @default(VLESS_REALITY) // 核心代理协议
-  
-  // 协议专用高级参数 (JSON 格式存储 Reality 私钥/公钥/SNI/ShortId 或 Hysteria2 证书配置)
-  configPayload   String?                               
-  
+
+  // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并；含 inbounds 则整组替换）
+  configOverride String?
+
   // 主从长连接通信凭证
   agentToken      String        @unique @default(uuid()) // Agent 接入认证密钥
   status          NodeStatus    @default(OFFLINE)        // 实时状态
   lastSeenAt      DateTime?                              // 最近心跳时间
-  
+
   // 实时遥测指标
-  cpuUsage        Float         @default(0)             // CPU 使用率 (0~100%)
-  memoryUsage     Float         @default(0)             // 内存使用率 (0~100%)
+  cpuUsage        Float         @default(0)             // CPU 使用率 (0~100)
+  memoryUsage     Float         @default(0)             // 内存使用率 (0~100)
   bandwidthRate   Float         @default(0)             // 实时网络速率 (bytes/s)
-  
+
   // 展示与权限
   sortOrder       Int           @default(0)             // 排序权重
   isPublic        Boolean       @default(true)          // 是否对所有普通用户公开
@@ -113,10 +111,34 @@ model Node {
   updatedAt       DateTime      @updatedAt
 
   // 关联
+  inbounds        NodeInbound[]
   trafficLogs     TrafficLog[]
 
   @@index([status])
   @@index([isPublic])
+}
+
+// ==============================
+// 2.1 节点入站实体 (NodeInbound，v0.3.0)
+// 一个节点可挂多条入站（多协议并存）；端口/tag 节点内唯一性约束见 §3.1
+// ==============================
+model NodeInbound {
+  id         String   @id @default(uuid())
+  nodeId     String
+  type       String   // ProtocolType 逻辑枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
+  tag        String   // sing-box 入站 tag，节点内唯一
+  listen     String   @default("::")
+  port       Int
+  paramsJson String   @default("{}") // 协议专属参数 JSON（结构见 §3.1）
+  sortOrder  Int      @default(0)
+  isPublic   Boolean  @default(true) // 是否进入订阅输出
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, tag])
+  @@index([nodeId])
 }
 
 // ==============================
@@ -163,23 +185,63 @@ model SystemSetting {
 
 ## 3. 核心字段与业务说明
 
-### 3.1 `Node.configPayload` 结构示例 (JSON)
-对于 `VLESS_REALITY` 节点，`configPayload` 存储 Reality 握手参数：
+### 3.1 `NodeInbound.paramsJson` 协议结构（v0.3.0）
+
+入站协议专属参数按 `type` 区分，创建/更新时由服务端归一化（`apps/server/src/common/inbound.ts`）：填充默认值、自动生成缺失密钥（Reality 密钥对 / SS 密码）、校验必填项。**API 输出脱敏**：管理端响应剥离 `privateKey`（更新时浅合并保留原值，不会因脱敏丢失）。
+
+**VLESS_REALITY**（`serverNames/dest/shortIds/flow` 缺省回退演示默认值，密钥对缺省自动生成；`dest` 须为 `host:port`）：
 ```json
 {
-  "serverNames": ["www.apple.com", "gateway.icloud.com"],
+  "serverNames": ["www.apple.com"],
   "dest": "www.apple.com:443",
-  "privateKey": "...",
-  "publicKey": "...",
-  "shortIds": ["0123456789abcdef", ""]
+  "privateKey": "<32 字节裸密钥 base64url>",
+  "publicKey": "<32 字节裸密钥 base64url>",
+  "shortIds": ["0123456789abcdef"],
+  "flow": "xtls-rprx-vision"
 }
 ```
 
-对于 `HYSTERIA2` 节点：
+**HYSTERIA2**（`upMbps/downMbps` 为 0 表示不限速；TLS 证书为 **Agent 机本地路径**，主控不托管证书文件）：
 ```json
 {
   "upMbps": 100,
   "downMbps": 500,
-  "ignoreClientBandwidth": false
+  "tls": {
+    "serverName": "hy.example.com",
+    "certificatePath": "/etc/riricloud/cert.pem",
+    "keyPath": "/etc/riricloud/key.pem",
+    "alpn": ["h3"],
+    "insecure": false
+  }
 }
 ```
+
+**TUIC**（`congestionControl` 缺省 `bbr`；TLS 结构同 HYSTERIA2）：
+```json
+{
+  "congestionControl": "bbr",
+  "tls": { "serverName": "…", "certificatePath": "…", "keyPath": "…", "alpn": ["h3"], "insecure": false }
+}
+```
+
+**SHADOWSOCKS**（`method` 缺省 `2022-blake3-aes-128-gcm`；`password` 缺省按方法所需长度自动生成 base64 密钥。**共享密码模式**：所有用户共用入站密码，按用户流量归属在 SS 协议下不可用——按用户配额粒度本就暂缓，可接受）：
+```json
+{ "method": "2022-blake3-aes-128-gcm", "password": "<base64>" }
+```
+
+**用户凭证注入**（config_sync 用户列表与订阅输出保持一致）：
+
+| 协议 | 用户标识 | 密码/凭证 |
+| :--- | :--- | :--- |
+| VLESS_REALITY | `User.uuid` | —（UUID 即凭证） |
+| TUIC | `User.uuid` | `User.password ?? User.uuid` |
+| HYSTERIA2 | `User.email`（name） | `User.password ?? User.uuid` |
+| SHADOWSOCKS | —（不注入用户） | 入站共享密码 |
+
+**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；QUIC 系协议（HYSTERIA2/TUIC）可与 TCP 协议（VLESS_REALITY/SHADOWSOCKS）共存于同一端口。**tag 规则**：节点内唯一；缺省按协议前缀生成（`vless-in`/`hy2-in`/`ss-in`/`tuic-in`），缺省生成冲突时自动追加序号，显式指定冲突时报 409。
+
+### 3.2 `Node.configOverride` 高级模式（v0.3.0）
+
+完整 sing-box 配置的**顶层覆盖 JSON**（字符串落库，服务端校验必须为 JSON 对象）。`config_sync` 组装时与生成配置做**顶层深合并**：嵌套 plain object 按键递归合并，数组与标量整体替换（`inbounds`/`outbounds` 提供即整组替换，`log`/`route` 等按键合并）。出站与路由配置不建关系表，全部走该覆盖层。
+
+> **迁移说明（v0.2.0 → v0.3.0，BREAKING）**：`Node` 删除 `serverPort`/`protocol`/`configPayload` 三列，新增 `configOverride`；新建 `NodeInbound` 表。迁移脚本把存量节点自动转为一条 `VLESS_REALITY` 入站（tag 统一 `vless-in`，端口/Reality 参数原样迁入）。旧版主控升级后需同步升级 Agent。

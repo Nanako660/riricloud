@@ -27,3 +27,24 @@ export function isUserEntitled(user: {
   if (user.expireAt && user.expireAt.getTime() < Date.now()) return false;
   return user.trafficUsedBytes < user.trafficLimitBytes;
 }
+
+// 纯对象深合并：数组与标量整体替换，嵌套 plain object 递归合并（用于 configOverride 覆盖生成配置）
+export function deepMerge(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    const existing = result[key];
+    if (isPlainObject(existing) && isPlainObject(value)) {
+      result[key] = deepMerge(existing, value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

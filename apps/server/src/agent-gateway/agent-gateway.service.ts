@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { isUserEntitled } from '../common/utils';
+import { deepMerge, isUserEntitled } from '../common/utils';
+import { buildServerInbound, type InboundUserCredential } from '../common/inbound';
+import type { ProtocolType } from '../common/constants';
 import type { AuthResultData, ConfigSyncData, HeartbeatData } from './agent-message';
 
 // 活跃连接注册表：nodeId → WebSocket
@@ -83,54 +85,45 @@ export class AgentGatewayService implements OnModuleDestroy {
     });
   }
 
-  // 组装完整 Sing-box 服务端配置（活跃用户注入 vless users 列表）
+  // 组装完整 Sing-box 服务端配置：入站数组逐条按协议生成（users 为有资格用户注入），
+  // configOverride 顶层深合并（数组整体替换，含 inbounds 则覆盖整组入站）
   async buildConfigSync(nodeId: string): Promise<ConfigSyncData> {
-    const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      include: { inbounds: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
+    });
     if (!node) {
       throw new NotFoundException('节点不存在');
     }
-    const reality = node.configPayload
-      ? (JSON.parse(node.configPayload) as {
-          serverNames: string[];
-          dest: string;
-          privateKey: string;
-          shortIds: string[];
-        })
-      : null;
 
+    // vless/tuic 用 uuid 登录；hy2 的 password 回退 uuid（与订阅输出一致，见 docs/DATA_MODELS.md §3.1）
     const entitledUsers = await this.prisma.user.findMany({
       where: { isActive: true },
-      select: { uuid: true, email: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
+      select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
     });
-    const users = entitledUsers
+    const users: InboundUserCredential[] = entitledUsers
       .filter(isUserEntitled)
-      .map((u) => ({ uuid: u.uuid, name: u.email, flow: 'xtls-rprx-vision' }));
+      .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
 
-    const singboxConfig: Record<string, unknown> = {
+    const inbounds = node.inbounds.map((inbound) =>
+      buildServerInbound({
+        type: inbound.type as ProtocolType,
+        tag: inbound.tag,
+        listen: inbound.listen,
+        port: inbound.port,
+        params: JSON.parse(inbound.paramsJson) as Record<string, unknown>,
+        users
+      })
+    );
+
+    let singboxConfig: Record<string, unknown> = {
       log: { level: 'info', timestamp: true },
-      inbounds: reality
-        ? [
-            {
-              type: 'vless',
-              tag: 'vless-in',
-              listen: '::',
-              listen_port: node.serverPort,
-              users,
-              tls: {
-                enabled: true,
-                server_name: reality.serverNames[0],
-                reality: {
-                  enabled: true,
-                  handshake: { server: reality.dest, server_port: 443 },
-                  private_key: reality.privateKey,
-                  short_id: reality.shortIds
-                }
-              }
-            }
-          ]
-        : [],
+      inbounds,
       outbounds: [{ type: 'direct', tag: 'direct' }]
     };
+    if (node.configOverride) {
+      singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
+    }
     return { version: ++this.configVersion, singboxConfig };
   }
 

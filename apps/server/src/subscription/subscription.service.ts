@@ -1,7 +1,14 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUserEntitled } from '../common/utils';
-import { buildClashYaml, buildSingboxJson, buildVlessUri, type SubNode } from './builders';
+import type { ProtocolType } from '../common/constants';
+import {
+  buildClashYaml,
+  buildSingboxJson,
+  buildUriList,
+  type SubNode,
+  type SubUser
+} from './builders';
 
 export type SubscriptionFormat = 'base64' | 'clash' | 'singbox';
 
@@ -43,28 +50,46 @@ export class SubscriptionService {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
-    const nodes: SubNode[] = await this.prisma.node.findMany({
+    // 逐入站生成订阅条目：仅公开节点的公开入站（isPublic 语义见 docs/DATA_MODELS.md §NodeInbound）
+    const nodes = await this.prisma.node.findMany({
       where: { isPublic: true, status: { not: 'DISABLED' } },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        inbounds: {
+          where: { isPublic: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
     });
-    const supported = nodes.filter((n) => n.protocol === 'VLESS_REALITY');
+    const subNodes: SubNode[] = nodes.map((node) => ({
+      name: node.name,
+      serverHost: node.serverHost,
+      inbounds: node.inbounds.map((inbound) => ({
+        type: inbound.type as ProtocolType,
+        tag: inbound.tag,
+        port: inbound.port,
+        params: JSON.parse(inbound.paramsJson) as Record<string, unknown>
+      }))
+    }));
 
+    // vless/tuic 用 uuid 登录；hy2/tuic 密码回退 uuid（与 config_sync 用户注入一致）
+    const subUser: SubUser = { uuid: user.uuid, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
     return {
-      body: this.render(format, user.uuid, supported),
+      body: this.render(format, subUser, subNodes),
       contentType: SUBSCRIPTION_CONTENT_TYPES[format],
       userInfoHeader: this.buildUserInfoHeader(user)
     };
   }
 
-  private render(format: SubscriptionFormat, userUuid: string, nodes: SubNode[]): string {
+  private render(format: SubscriptionFormat, user: SubUser, nodes: SubNode[]): string {
     switch (format) {
       case 'clash':
-        return buildClashYaml(userUuid, nodes);
+        return buildClashYaml(user, nodes);
       case 'singbox':
-        return buildSingboxJson(userUuid, nodes);
+        return buildSingboxJson(user, nodes);
       default:
-        return Buffer.from(nodes.map((n) => buildVlessUri(userUuid, n)).join('\n'), 'utf8').toString('base64');
+        return Buffer.from(buildUriList(user, nodes).join('\n'), 'utf-8').toString('base64');
     }
   }
 
