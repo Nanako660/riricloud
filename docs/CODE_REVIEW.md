@@ -64,6 +64,7 @@ PrismaService（数据访问，全局唯一 PrismaClient 实例）
 | W6 | **shadcn/ui 组件按需复制进源码后允许本地化修改** | 但不得引入第二套重型 UI 库（见 [PROJECT_CONSTRAINTS.md](./PROJECT_CONSTRAINTS.md) 与 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md)） |
 | W7 | **禁止业务组件直接使用原生 HTML 交互标签** | 严禁在业务页面裸写 `<button>`、`<input>`、`<select>` 等，必须统一从 `@/components/ui/` 引用原子组件 |
 | W8 | **表单强制 React Hook Form + Zod，破坏性操作强制 AlertDialog** | 禁止散落裸 `useState` 管理表单；删除/重置/重启等高危操作必须有二次确认弹窗 |
+| W9 | **滚动条与输入控件遵循全局微交互规范** | 遵循 `index.css` 统一细窄主题滚动条与隐藏 `type="number"` 原生微调箭头规范（见 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md) §2.3） |
 
 ### 3.3 边缘节点 `apps/agent`（Go）
 

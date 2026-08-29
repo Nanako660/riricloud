@@ -176,18 +176,26 @@ describe('AgentGatewayService', () => {
 
     const inboundRows = [
       {
-        type: 'VLESS_REALITY',
+        type: 'VLESS',
         tag: 'vless-in',
         listen: '::',
         port: 443,
         sortOrder: 0,
         paramsJson: JSON.stringify({
-          serverNames: ['www.apple.com'],
-          dest: 'www.apple.com:443',
-          privateKey: 'priv',
-          publicKey: 'pub',
-          shortIds: ['sid-1'],
-          flow: 'xtls-rprx-vision'
+          flow: 'xtls-rprx-vision',
+          transport: { type: 'tcp' },
+          tls: {
+            enabled: true,
+            mode: 'reality',
+            serverName: 'www.apple.com',
+            reality: {
+              dest: 'www.apple.com:443',
+              serverNames: ['www.apple.com'],
+              privateKey: 'priv',
+              publicKey: 'pub',
+              shortIds: ['sid-1']
+            }
+          }
         })
       },
       {
@@ -199,7 +207,15 @@ describe('AgentGatewayService', () => {
         paramsJson: JSON.stringify({
           upMbps: 0,
           downMbps: 0,
-          tls: { serverName: 'hy.example.com', certificatePath: '/c.pem', keyPath: '/k.pem', alpn: ['h3'], insecure: false }
+          tls: {
+            enabled: true,
+            mode: 'tls',
+            serverName: 'hy.example.com',
+            certificatePath: '/c.pem',
+            keyPath: '/k.pem',
+            alpn: ['h3'],
+            insecure: false
+          }
         })
       },
       {

@@ -225,8 +225,9 @@ export class NodesService {
       data.port = dto.port;
     }
     if (dto.params !== undefined) {
-      // 浅合并保留未提供键（私钥等脱敏字段不会随回传丢失），再按协议归一化
-      const merged = { ...(JSON.parse(inbound.paramsJson) as Record<string, unknown>), ...dto.params };
+      // 深度合并保留未提供键（私钥等脱敏字段不会随回传丢失），再按协议归一化
+      const existingParams = JSON.parse(inbound.paramsJson) as Record<string, unknown>;
+      const merged = this.deepMerge(existingParams, dto.params);
       data.paramsJson = JSON.stringify(normalizeInboundParams(inbound.type as ProtocolType, merged));
     }
     if (dto.sortOrder !== undefined) {
@@ -322,6 +323,33 @@ export class NodesService {
   }): Record<string, unknown> {
     const params = JSON.parse(inbound.paramsJson) as Record<string, unknown>;
     return { ...inbound, params: sanitizeInboundParams(params) };
+  }
+
+  private deepMerge(
+    target: Record<string, unknown>,
+    source: Record<string, unknown>
+  ): Record<string, unknown> {
+    const output: Record<string, unknown> = { ...target };
+    for (const key of Object.keys(source)) {
+      const sVal = source[key];
+      const tVal = target[key];
+      if (
+        sVal &&
+        typeof sVal === 'object' &&
+        !Array.isArray(sVal) &&
+        tVal &&
+        typeof tVal === 'object' &&
+        !Array.isArray(tVal)
+      ) {
+        output[key] = this.deepMerge(
+          tVal as Record<string, unknown>,
+          sVal as Record<string, unknown>
+        );
+      } else if (sVal !== undefined) {
+        output[key] = sVal;
+      }
+    }
+    return output;
   }
 
   // 节点输出：入站脱敏；agentToken 保留（管理端安装指引需要，接口本身要求 ADMIN）

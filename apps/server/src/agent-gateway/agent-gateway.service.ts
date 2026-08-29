@@ -152,9 +152,14 @@ export class AgentGatewayService implements OnModuleDestroy {
     if (!socket) {
       return false;
     }
-    const payload = await this.buildConfigSync(nodeId);
-    socket.send(JSON.stringify({ type: 'config_sync', data: payload }));
-    return true;
+    try {
+      const payload = await this.buildConfigSync(nodeId);
+      socket.send(JSON.stringify({ type: 'config_sync', data: payload }));
+      return true;
+    } catch (err) {
+      this.logger.error(`pushConfig failed for node=${nodeId}: ${err}`);
+      return false;
+    }
   }
 
   // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）

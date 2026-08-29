@@ -42,10 +42,10 @@
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供入站表单「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 节点入站管理（v0.3.0，多协议多入站）⭐
-入站挂在节点下独立 CRUD；每次变更后若节点在线即推送 `config_sync`。入站响应中的 `params` 已剥离 `privateKey`（更新时浅合并保留原值）。
+入站挂在节点下独立 CRUD；每次变更后若节点在线即推送 `config_sync`。入站响应中的 `params` 已剥离 `privateKey`（深度合并更新确保脱敏回传不丢失私钥）。
 
-- `POST /admin/nodes/:id/inbounds`：创建入站。请求 `{ type(VLESS_REALITY|HYSTERIA2|SHADOWSOCKS|TUIC), tag?, listen?(缺省 ::), port(1~65535), params?(结构见 docs/DATA_MODELS.md §3.1), sortOrder?, isPublic? }`。`tag` 缺省按协议前缀生成（冲突自动追加序号，显式冲突 409）；`params` 缺省值/自动生成由服务端归一化（Reality 密钥对、SS 密码自动生成）；同传输层端口冲突 409（QUIC 系 UDP 协议可与 TCP 协议同端口共存）。
-- `PATCH /admin/nodes/:id/inbounds/:inboundId`：部分更新 `{ tag?, listen?, port?, params?, sortOrder?, isPublic? }`；`params` 与现有值**浅合并**后重新归一化（未提供的键保持原值）。
+- `POST /admin/nodes/:id/inbounds`：创建入站。请求 `{ type(VLESS|VMESS|TROJAN|HYSTERIA2|TUIC|SHADOWSOCKS|NAIVE|SHADOWTLS|MIXED|SOCKS|HTTP|DIRECT), tag?, listen?(缺省 ::), port(1~65535), params?(结构见 docs/DATA_MODELS.md §3.1), sortOrder?, isPublic? }`。`tag` 缺省按协议前缀生成（冲突自动追加序号，显式冲突 409）；`params` 缺省值/自动生成由服务端归一化（Reality 密钥对、SS 密码自动生成）；同传输层端口冲突 409（QUIC 系 UDP 协议可与 TCP 协议同端口共存）。
+- `PATCH /admin/nodes/:id/inbounds/:inboundId`：部分更新 `{ tag?, listen?, port?, params?, sortOrder?, isPublic? }`；`params` 与现有值**深度合并**后重新归一化（未提供的嵌套键如私钥保持原值）。
 - `DELETE /admin/nodes/:id/inbounds/:inboundId`：删除入站。
 
 #### 系统设置
@@ -197,20 +197,23 @@ Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`
 http(s)://<master-host>/api/v1/sub/:token
 ```
 
-> **实现状态（v0.3.0）**：三种格式、自动协商与四协议多入站输出均已实现 ⭐。订阅按**入站**逐条生成：仅含公开节点的公开入站（`isPublic`）；单入站节点输出名为节点名，多入站节点为「节点名·tag」，重名全局去重。
+> **实现状态（v0.3.0）**：三种格式、自动协商与全协议多入站输出均已实现 ⭐。订阅按**入站**逐条生成：仅含公开节点的公开入站（`isPublic`）；单入站节点输出名为节点名，多入站节点为「节点名·tag」，重名全局去重。
 
 ### 3.1 客户端请求头自动识别与参数适配
 - 格式协商优先级：显式 `?type=` 参数 > User-Agent 嗅探 > 默认 Base64。
-- `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`：输出 **Clash Meta YAML**（`Content-Type: text/yaml`）。⭐ 完整最小可用配置：`mixed-port`/`mode`/`log-level` 基础段 + `proxies[]` + `节点选择` select 策略组 + `MATCH` 兜底规则。四协议 proxy：vless（`uuid`/`flow`/`servername`/`client-fingerprint=chrome`/`reality-opts.{public-key,short-id}`）、hysteria2（`password`/`sni`/`alpn`/`skip-cert-verify`/`up`/`down`）、ss（`cipher`/`password`/`udp`）、tuic（`uuid`/`password`/`sni`/`alpn`/`skip-cert-verify`/`congestion-controller`）。
-- `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（四协议出站 + utls/reality TLS 段）+ `direct` 兜底出站，tag 同样去重。
-- 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG 等）：⭐
+- `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`：输出 **Clash Meta YAML**（`Content-Type: text/yaml`）。⭐ 完整最小可用配置：`mixed-port`/`mode`/`log-level` 基础段 + `proxies[]` + `节点选择` select 策略组 + `MATCH` 兜底规则。支持 VLESS、VMess、Trojan、Hysteria 2、TUIC、Shadowsocks 等主流协议代理（含 `ws-opts`、`grpc-opts`、`httpupgrade-opts`、`reality-opts`）。
+- `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（全协议出站，解耦 `transport` 与 `tls` 配置）+ `direct` 兜底出站，tag 同样去重。
+- 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG、NekoBox 等）：⭐
   ```
   vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#🇯🇵东京01·vless-in
+  vmess://<BASE64_JSON>#🇯🇵东京01·vmess-in
+  trojan://<PASSWORD>@<IP>:<PORT>?sni=trojan.example.com&type=ws&path=/ws#🇯🇵东京01·trojan-in
   hy2://<PASSWORD>@<IP>:<PORT>?sni=hy.example.com&alpn=h3&insecure=1&upmbps=100&downmbps=500#🇯🇵东京01·hy2-in
-  ss://<BASE64URL(method:password)>@<IP>:<PORT>#🇯🇵东京01·ss-in   (SIP002)
   tuic://<UUID>:<PASSWORD>@<IP>:<PORT>?congestion_control=bbr&alpn=h3&sni=…&udp_relay_mode=native#🇯🇵东京01·tuic-in
+  ss://<BASE64URL(method:password)>@<IP>:<PORT>#🇯🇵东京01·ss-in   (SIP002)
+  naive+https://<USERNAME>:<PASSWORD>@<IP>:<PORT>#🇯🇵东京01·naive-in
   ```
-  凭证：hy2/tuic 密码取 `User.password ?? User.uuid`；ss 为入站共享密码；vless/tuic 用户名为 `User.uuid`。
+  凭证：hy2/trojan/tuic/naive 密码取 `User.password ?? User.uuid`；ss 为共享密码或多用户密码；vless/vmess/tuic 用户名为 `User.uuid`。
 
 ### 3.2 流量与有效期标准响应头 (UserInfo Header)
 订阅接口返回标准响应头，主流客户端会自动在首页显示流量条与过期日：

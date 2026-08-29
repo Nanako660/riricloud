@@ -36,32 +36,43 @@ describe('parseDest', () => {
 });
 
 describe('normalizeInboundParams', () => {
-  it('VLESS_REALITY 缺省密钥时自动生成密钥对并填充默认值', () => {
-    const params = normalizeInboundParams('VLESS_REALITY', {}) as {
-      privateKey: string;
-      publicKey: string;
-      serverNames: string[];
-      dest: string;
-      shortIds: string[];
+  it('VLESS 缺省密钥时自动生成 Reality 密钥对并填充默认值', () => {
+    const params = normalizeInboundParams('VLESS', {}) as {
       flow: string;
+      transport: { type: string };
+      tls: {
+        mode: string;
+        reality: {
+          privateKey: string;
+          publicKey: string;
+          serverNames: string[];
+          dest: string;
+          shortIds: string[];
+        };
+      };
     };
-    expect(params.privateKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(params.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(params.serverNames).toEqual(REALITY_DEFAULTS.serverNames);
-    expect(params.dest).toBe(REALITY_DEFAULTS.dest);
-    expect(params.shortIds).toEqual(REALITY_DEFAULTS.shortIds);
+    expect(params.tls.mode).toBe('reality');
+    expect(params.tls.reality.privateKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(params.tls.reality.publicKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(params.tls.reality.serverNames).toEqual(REALITY_DEFAULTS.serverNames);
+    expect(params.tls.reality.dest).toBe(REALITY_DEFAULTS.dest);
+    expect(params.tls.reality.shortIds).toEqual(REALITY_DEFAULTS.shortIds);
     expect(params.flow).toBe(REALITY_DEFAULTS.flow);
   });
 
-  it('VLESS_REALITY 密钥只提供一半时抛出 BadRequest', () => {
+  it('VLESS Reality 密钥只提供一半时抛出 BadRequest', () => {
     expect(() =>
-      normalizeInboundParams('VLESS_REALITY', { privateKey: 'only-priv' })
+      normalizeInboundParams('VLESS', {
+        tls: { mode: 'reality', reality: { privateKey: 'only-priv' } }
+      })
     ).toThrow(BadRequestException);
   });
 
-  it('VLESS_REALITY 非法 dest 提前抛出 BadRequest', () => {
+  it('VLESS 非法 dest 提前抛出 BadRequest', () => {
     expect(() =>
-      normalizeInboundParams('VLESS_REALITY', { dest: 'no-port' })
+      normalizeInboundParams('VLESS', {
+        tls: { mode: 'reality', reality: { dest: 'no-port' } }
+      })
     ).toThrow(BadRequestException);
   });
 
@@ -74,7 +85,7 @@ describe('normalizeInboundParams', () => {
     };
     expect(params.upMbps).toBe(100);
     expect(params.downMbps).toBe(0);
-    expect(params.tls.alpn).toEqual(['h3']);
+    expect(params.tls.alpn).toEqual(['h3', 'h2', 'http/1.1']);
     expect(params.tls.insecure).toBe(false);
   });
 
@@ -88,30 +99,42 @@ describe('normalizeInboundParams', () => {
     const params = normalizeInboundParams('SHADOWSOCKS', {}) as {
       method: string;
       password: string;
+      mode: string;
     };
     expect(params.method).toBe(SS_DEFAULT_METHOD);
-    // 2022-blake3-aes-128-gcm 要求 16 字节密钥
     expect(Buffer.from(params.password, 'base64').length).toBe(16);
+    expect(params.mode).toBe('shared');
+  });
+
+  it('TROJAN 协议必须配置 TLS', () => {
+    expect(() => normalizeInboundParams('TROJAN', { tls: { enabled: false } })).toThrow(
+      BadRequestException
+    );
   });
 
   it('不支持的协议抛出 BadRequest', () => {
-    expect(() => normalizeInboundParams('TROJAN' as never, {})).toThrow(BadRequestException);
+    expect(() => normalizeInboundParams('UNKNOWN_PROTO' as never, {})).toThrow(BadRequestException);
   });
 });
 
 describe('buildServerInbound', () => {
   const base = { tag: 'in-1', listen: '::', port: 443 };
 
-  it('VLESS_REALITY：解析 dest 为 handshake，注入 uuid/flow 用户', () => {
-    const params = normalizeInboundParams('VLESS_REALITY', {
-      dest: 'www.apple.com:8443',
-      privateKey: 'priv',
-      publicKey: 'pub',
-      serverNames: ['sni.example.com'],
-      shortIds: ['sid-1'],
+  it('VLESS (Reality)：解析 dest 为 handshake，注入 uuid/flow 用户', () => {
+    const params = normalizeInboundParams('VLESS', {
+      tls: {
+        mode: 'reality',
+        reality: {
+          dest: 'www.apple.com:8443',
+          privateKey: 'priv',
+          publicKey: 'pub',
+          serverNames: ['sni.example.com'],
+          shortIds: ['sid-1']
+        }
+      },
       flow: 'xtls-rprx-vision'
     });
-    const inbound = buildServerInbound({ type: 'VLESS_REALITY', ...base, params, users });
+    const inbound = buildServerInbound({ type: 'VLESS', ...base, params, users });
     expect(inbound).toMatchObject({
       type: 'vless',
       tag: 'in-1',
@@ -134,6 +157,68 @@ describe('buildServerInbound', () => {
     });
   });
 
+  it('VLESS (WebSocket + TLS)：注入 transport 与 tls 配置', () => {
+    const params = normalizeInboundParams('VLESS', {
+      transport: { type: 'ws', path: '/ws-path', headers: { Host: 'ws.example.com' } },
+      tls: {
+        mode: 'tls',
+        serverName: 'ws.example.com',
+        certificatePath: '/cert.pem',
+        keyPath: '/key.pem'
+      }
+    });
+    const inbound = buildServerInbound({ type: 'VLESS', ...base, params, users });
+    expect(inbound).toMatchObject({
+      type: 'vless',
+      transport: {
+        type: 'ws',
+        path: '/ws-path',
+        headers: { Host: 'ws.example.com' }
+      },
+      tls: {
+        enabled: true,
+        server_name: 'ws.example.com',
+        certificate_path: '/cert.pem',
+        key_path: '/key.pem'
+      }
+    });
+  });
+
+  it('VMESS (gRPC)：注入 transport 与 alter_id', () => {
+    const params = normalizeInboundParams('VMESS', {
+      alterId: 0,
+      transport: { type: 'grpc', serviceName: 'my-grpc' }
+    });
+    const inbound = buildServerInbound({ type: 'VMESS', ...base, params, users });
+    expect(inbound).toMatchObject({
+      type: 'vmess',
+      transport: { type: 'grpc', service_name: 'my-grpc' },
+      users: [
+        { uuid: 'uuid-1', name: 'a@x.com', alter_id: 0 },
+        { uuid: 'uuid-2', name: 'b@x.com', alter_id: 0 }
+      ]
+    });
+  });
+
+  it('TROJAN：注入 password 用户凭证', () => {
+    const params = normalizeInboundParams('TROJAN', {
+      tls: {
+        mode: 'tls',
+        serverName: 'tr.example.com',
+        certificatePath: '/cert.pem',
+        keyPath: '/key.pem'
+      }
+    });
+    const inbound = buildServerInbound({ type: 'TROJAN', ...base, params, users });
+    expect(inbound).toMatchObject({
+      type: 'trojan',
+      users: [
+        { password: 'pwd-1', name: 'a@x.com' },
+        { password: 'pwd-2', name: 'b@x.com' }
+      ]
+    });
+  });
+
   it('HYSTERIA2：证书路径与限速注入，用户密码取 credential', () => {
     const params = normalizeInboundParams('HYSTERIA2', {
       upMbps: 100,
@@ -149,7 +234,7 @@ describe('buildServerInbound', () => {
         { name: 'a@x.com', password: 'pwd-1' },
         { name: 'b@x.com', password: 'pwd-2' }
       ],
-      tls: { certificate_path: '/c.pem', key_path: '/k.pem', alpn: ['h3'] }
+      tls: { certificate_path: '/c.pem', key_path: '/k.pem' }
     });
   });
 
@@ -176,12 +261,22 @@ describe('buildServerInbound', () => {
     });
     const inbound = buildServerInbound({ type: 'SHADOWSOCKS', ...base, params, users });
     expect(inbound).toMatchObject({ type: 'shadowsocks', method: 'aes-256-gcm', password: 'shared' });
-    expect(inbound.users).toBeUndefined();
+    expect((inbound as Record<string, unknown>).users).toBeUndefined();
   });
 
-  it('不支持的协议抛出 BadRequest', () => {
-    expect(() =>
-      buildServerInbound({ type: 'TROJAN' as never, ...base, params: {}, users })
-    ).toThrow(BadRequestException);
+  it('SHADOWTLS：解析 dest 与 version', () => {
+    const params = normalizeInboundParams('SHADOWTLS', {
+      version: 3,
+      handshakeDest: 'gateway.icloud.com:443',
+      password: 'st-password'
+    });
+    const inbound = buildServerInbound({ type: 'SHADOWTLS', ...base, params, users });
+    expect(inbound).toMatchObject({
+      type: 'shadowtls',
+      version: 3,
+      handshake: { server: 'gateway.icloud.com', server_port: 443 },
+      password: 'st-password'
+    });
   });
 });
+

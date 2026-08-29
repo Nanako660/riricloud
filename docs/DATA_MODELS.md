@@ -129,7 +129,7 @@ model Node {
 model NodeInbound {
   id         String   @id @default(uuid())
   nodeId     String
-  type       String   // ProtocolType 逻辑枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
+  type       String   // ProtocolType: VLESS | VMESS | TROJAN | HYSTERIA2 | TUIC | SHADOWSOCKS | NAIVE | SHADOWTLS | MIXED | SOCKS | HTTP | DIRECT
   tag        String   // sing-box 入站 tag，节点内唯一
   listen     String   @default("::")
   port       Int
@@ -191,61 +191,49 @@ model SystemSetting {
 
 ### 3.1 `NodeInbound.paramsJson` 协议结构（v0.3.0）
 
-入站协议专属参数按 `type` 区分，创建/更新时由服务端归一化（`apps/server/src/common/inbound.ts`）：填充默认值、自动生成缺失密钥（Reality 密钥对 / SS 密码）、校验必填项。**API 输出脱敏**：管理端响应剥离 `privateKey`（更新时浅合并保留原值，不会因脱敏丢失）。
+系统支持 Sing-box 官方全套入站协议，采用**协议 + 传输层 (Transport) + 安全层 (TLS)** 模块化解耦设计。创建/更新时由服务端统一归一化与参数校验（`apps/server/src/common/inbound.ts`）：自动填充默认值、补全缺失密钥（Reality 密钥对 / SS 密码）。**API 输出脱敏**：管理端响应自动剥离 `privateKey`（深度合并更新确保脱敏回传不丢失私钥）。
 
-**VLESS_REALITY**（`serverNames/dest/shortIds/flow` 缺省回退演示默认值，密钥对缺省自动生成；`dest` 须为 `host:port`）：
-```json
-{
-  "serverNames": ["www.apple.com"],
-  "dest": "www.apple.com:443",
-  "privateKey": "<32 字节裸密钥 base64url>",
-  "publicKey": "<32 字节裸密钥 base64url>",
-  "shortIds": ["0123456789abcdef"],
-  "flow": "xtls-rprx-vision"
-}
-```
+#### 传输层 (Transport)
+适用于 VLESS、VMESS、TROJAN 等支持多传输层的协议：
+- `tcp`：原生流传输（默认）
+- `ws`：WebSocket（`path`、`host`、`headers`、`maxEarlyData`、`earlyDataHeaderName`）
+- `grpc`：gRPC（`serviceName`）
+- `httpupgrade`：HTTPUpgrade（`path`、`host`、`headers`）
 
-**HYSTERIA2**（`upMbps/downMbps` 为 0 表示不限速；TLS 证书为 **Agent 机本地路径**，主控不托管证书文件）：
-```json
-{
-  "upMbps": 100,
-  "downMbps": 500,
-  "tls": {
-    "serverName": "hy.example.com",
-    "certificatePath": "/etc/riricloud/cert.pem",
-    "keyPath": "/etc/riricloud/key.pem",
-    "alpn": ["h3"],
-    "insecure": false
-  }
-}
-```
+#### 安全层 (TLS / Reality / ACME)
+- `none`：无加密明文直连
+- `tls`：标准 TLS（`serverName`、`certificatePath`、`keyPath`、`alpn`、`insecure`；证书为 Agent 机本地路径）
+- `reality`：VLESS Reality 伪装（`dest`、`serverNames`、`privateKey`、`publicKey`、`shortIds`）
+- `acme`：Sing-box 内置 ACME 自动申请证书（`domain`、`email`、`provider`）
 
-**TUIC**（`congestionControl` 缺省 `bbr`；TLS 结构同 HYSTERIA2）：
-```json
-{
-  "congestionControl": "bbr",
-  "tls": { "serverName": "…", "certificatePath": "…", "keyPath": "…", "alpn": ["h3"], "insecure": false }
-}
-```
+#### 协议专属参数结构
+- **VLESS**：`flow`（如 `xtls-rprx-vision`）、`transport`、`tls`
+- **VMESS**：`alterId`（默认 0）、`transport`、`tls`
+- **TROJAN**：`transport`、`tls`
+- **HYSTERIA2**：`upMbps`、`downMbps`、`ignoreClientBandwidth`、`obfs: { type: "salamander", password }`、`tls`
+- **TUIC**：`congestionControl`（`bbr`/`cubic`/`new_reno`）、`zeroRttHandshake`、`heartbeat`、`tls`
+- **SHADOWSOCKS**：`method`、`password`、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）
+- **NAIVE**：`network`、`tls`
+- **SHADOWTLS**：`version`（v2/v3）、`handshakeDest`、`password`、`strictMode`
+- **MIXED / SOCKS / HTTP**：`allowLan`、`usersEnabled`
+- **DIRECT**：`overrideAddress`、`overridePort`
 
-**SHADOWSOCKS**（`method` 缺省 `2022-blake3-aes-128-gcm`；`password` 缺省按方法所需长度自动生成 base64 密钥。**共享密码模式**：所有用户共用入站密码，按用户流量归属在 SS 协议下不可用——按用户配额粒度本就暂缓，可接受）：
-```json
-{ "method": "2022-blake3-aes-128-gcm", "password": "<base64>" }
-```
+#### 用户凭证与订阅注入规则
 
-**用户凭证注入**（config_sync 用户列表与订阅输出保持一致）：
+| 协议 | 用户标识 (User Identifier) | 密码/凭证 (Password/Credential) | 多用户模式支持 |
+| :--- | :--- | :--- | :--- |
+| **VLESS** | `User.uuid` | —（UUID 即凭证，支持 flow） | 是（逐用户注入） |
+| **VMESS** | `User.uuid` | —（UUID + alterId 0） | 是（逐用户注入） |
+| **TROJAN** | `User.email`（name） | `User.password ?? User.uuid` | 是（逐用户注入） |
+| **HYSTERIA2** | `User.email`（name） | `User.password ?? User.uuid` | 是（逐用户注入） |
+| **TUIC** | `User.uuid` | `User.password ?? User.uuid` | 是（逐用户注入） |
+| **NAIVE** | `User.email`（username） | `User.password ?? User.uuid` | 是（逐用户注入） |
+| **SHADOWSOCKS** | `User.email`（name） | 共享模式用入站密码；多用户模式用 `User.password ?? User.uuid` | 共享/多用户可选 |
+| **SHADOWTLS** | — | 入站密码 | — |
+| **MIXED/SOCKS/HTTP**| `User.email`（username） | `User.password ?? User.uuid`（若启用认证） | 是 |
 
-| 协议 | 用户标识 | 密码/凭证 |
-| :--- | :--- | :--- |
-| VLESS_REALITY | `User.uuid` | —（UUID 即凭证） |
-| TUIC | `User.uuid` | `User.password ?? User.uuid` |
-| HYSTERIA2 | `User.email`（name） | `User.password ?? User.uuid` |
-| SHADOWSOCKS | —（不注入用户） | 入站共享密码 |
-
-**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；QUIC 系协议（HYSTERIA2/TUIC）可与 TCP 协议（VLESS_REALITY/SHADOWSOCKS）共存于同一端口。**tag 规则**：节点内唯一；缺省按协议前缀生成（`vless-in`/`hy2-in`/`ss-in`/`tuic-in`），缺省生成冲突时自动追加序号，显式指定冲突时报 409。
+**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；QUIC 系协议（HYSTERIA2/TUIC）可与 TCP 协议共存于同一端口。**tag 规则**：节点内唯一；缺省按协议前缀自动生成，冲突时自动追加递增序号。
 
 ### 3.2 `Node.configOverride` 高级模式（v0.3.0）
 
 完整 sing-box 配置的**顶层覆盖 JSON**（字符串落库，服务端校验必须为 JSON 对象）。`config_sync` 组装时与生成配置做**顶层深合并**：嵌套 plain object 按键递归合并，数组与标量整体替换（`inbounds`/`outbounds` 提供即整组替换，`log`/`route` 等按键合并）。出站与路由配置不建关系表，全部走该覆盖层。
-
-> **迁移说明（v0.2.0 → v0.3.0，BREAKING）**：`Node` 删除 `serverPort`/`protocol`/`configPayload` 三列，新增 `configOverride`；新建 `NodeInbound` 表。迁移脚本把存量节点自动转为一条 `VLESS_REALITY` 入站（tag 统一 `vless-in`，端口/Reality 参数原样迁入）。旧版主控升级后需同步升级 Agent。

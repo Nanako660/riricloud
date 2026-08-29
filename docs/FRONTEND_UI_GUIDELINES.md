@@ -40,6 +40,17 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
 | **危险 / 离线 / 错误 / 封禁** | `destructive` | `text-destructive bg-destructive/10 border-destructive/20` | 节点离线、用户被封禁、鉴权失败、删除操作 |
 | **未启用 / 闲置 / 次要** | `secondary` / `muted` | `text-muted-foreground bg-muted border-border` | 未配置节点、未激活用户、无日志 |
 
+### 2.3 全局基础控件与微交互规范 (Scrollbar & Input Controls)
+
+1. **滚动条美化规范 (Scrollbar Standard)**
+   - 全站所有发生溢出滚动的容器（弹窗、侧边栏、表格、代码预览区等）统一采用极简细窄圆角设计，严禁出现 Windows 浏览器原生粗灰色轨道与上下箭头按钮。
+   - 滚动条颜色基于当前主题变量 `--muted-foreground` 自适应计算（透明背景轨道 + `muted-foreground/0.25` 半透明圆角滑块，悬停提亮至 `0.45`），在明暗主题下无缝融入。
+   - 规范样式统一定义于 `apps/web/src/index.css`（WebKit `width: 6px` + 标准 `scrollbar-width: thin`）。
+
+2. **数字输入框规范 (Number Input Spinners)**
+   - 全局隐藏 `<input type="number">` 的浏览器原生微调上下箭头（Spinners），由 `index.css` 全局重置（WebKit `-webkit-appearance: none` + Firefox `-moz-appearance: textfield`）。
+   - 保持数字输入框（端口、速率、权重等）与普通文本输入框完全一致的对齐排版与间距。
+
 ---
 
 ## 3. 组件分层与目录组织架构

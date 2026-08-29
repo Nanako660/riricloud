@@ -3,42 +3,104 @@ import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
 // 支持的入站协议（与 server common/constants.ts 对齐）
-export const PROTOCOL_TYPES = ['VLESS_REALITY', 'HYSTERIA2', 'SHADOWSOCKS', 'TUIC'] as const;
+export const PROTOCOL_TYPES = [
+  'VLESS',
+  'VMESS',
+  'TROJAN',
+  'HYSTERIA2',
+  'TUIC',
+  'SHADOWSOCKS',
+  'NAIVE',
+  'SHADOWTLS',
+  'MIXED',
+  'SOCKS',
+  'HTTP',
+  'DIRECT'
+] as const;
 export type ProtocolType = (typeof PROTOCOL_TYPES)[number];
 
 export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
-  VLESS_REALITY: 'VLESS Reality',
-  HYSTERIA2: 'Hysteria2',
+  VLESS: 'VLESS',
+  VMESS: 'VMess',
+  TROJAN: 'Trojan',
+  HYSTERIA2: 'Hysteria 2',
+  TUIC: 'TUIC v5',
   SHADOWSOCKS: 'Shadowsocks',
-  TUIC: 'TUIC'
+  NAIVE: 'NaiveProxy',
+  SHADOWTLS: 'ShadowTLS',
+  MIXED: 'Mixed (SOCKS5/HTTP)',
+  SOCKS: 'SOCKS5',
+  HTTP: 'HTTP',
+  DIRECT: 'Direct'
 };
 
-// 入站协议专属参数（结构见 docs/DATA_MODELS.md §3.1；响应已剥离 privateKey）
-export interface InboundTlsParams {
-  serverName: string;
-  certificatePath: string;
-  keyPath: string;
-  alpn: string[];
-  insecure: boolean;
+export type TransportType = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
+
+export interface InboundTransport {
+  type: TransportType;
+  path?: string;
+  host?: string;
+  serviceName?: string;
+  headers?: Record<string, string>;
+  maxEarlyData?: number;
+  earlyDataHeaderName?: string;
 }
 
-export interface InboundParams {
-  // VLESS_REALITY
-  serverNames?: string[];
-  dest?: string;
+export type TlsMode = 'none' | 'tls' | 'reality' | 'acme';
+
+export interface InboundRealityConfig {
+  dest: string;
+  serverNames: string[];
   privateKey?: string;
-  publicKey?: string;
-  shortIds?: string[];
+  publicKey: string;
+  shortIds: string[];
+}
+
+export interface InboundAcmeConfig {
+  domain: string;
+  email: string;
+  provider?: string;
+}
+
+export interface InboundTlsConfig {
+  enabled: boolean;
+  mode: TlsMode;
+  serverName?: string;
+  certificatePath?: string;
+  keyPath?: string;
+  acme?: InboundAcmeConfig;
+  reality?: InboundRealityConfig;
+  alpn?: string[];
+  insecure?: boolean;
+}
+
+// 入站协议专属参数（响应已剥离 privateKey）
+export interface InboundParams {
   flow?: string;
-  // HYSTERIA2
+  transport?: InboundTransport;
+  tls?: InboundTlsConfig;
+  alterId?: number;
   upMbps?: number;
   downMbps?: number;
-  tls?: InboundTlsParams;
-  // TUIC
+  ignoreClientBandwidth?: boolean;
+  obfs?: {
+    type: string;
+    password?: string;
+  };
   congestionControl?: string;
-  // SHADOWSOCKS
+  zeroRttHandshake?: boolean;
+  heartbeat?: string;
   method?: string;
   password?: string;
+  mode?: 'shared' | 'multi-user';
+  network?: string;
+  version?: number;
+  handshakeDest?: string;
+  strictMode?: boolean;
+  allowLan?: boolean;
+  usersEnabled?: boolean;
+  overrideAddress?: string;
+  overridePort?: number;
 }
 
 export interface NodeInbound {

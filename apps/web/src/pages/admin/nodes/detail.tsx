@@ -60,7 +60,7 @@ export default function NodeDetailPage() {
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editingInbound, setEditingInbound] = React.useState<NodeInbound | null>(null);
-  const [initialType, setInitialType] = React.useState<ProtocolType>('VLESS_REALITY');
+  const [initialType, setInitialType] = React.useState<ProtocolType>('VLESS');
 
   // 基础信息编辑（本地态，保存后失效刷新）
   const [name, setName] = React.useState('');
@@ -80,14 +80,17 @@ export default function NodeDetailPage() {
   const generatedJson = React.useMemo(() => {
     if (!node) return '';
     const inbounds = node.inbounds.map((inbound) => ({
-      type: inbound.type === 'VLESS_REALITY' ? 'vless' : inbound.type === 'HYSTERIA2' ? 'hysteria2' : inbound.type === 'SHADOWSOCKS' ? 'shadowsocks' : 'tuic',
+      type: inbound.type.toLowerCase(),
       tag: inbound.tag,
       listen: inbound.listen,
       listen_port: inbound.port,
-      // 完整参数（含用户注入）由服务端组装，预览展示协议参数骨架
-      params: { ...inbound.params, privateKey: inbound.params.privateKey ? '<已隐藏>' : undefined }
+      params: inbound.params
     }));
-    return JSON.stringify({ log: { level: 'info', timestamp: true }, inbounds, outbounds: [{ type: 'direct', tag: 'direct' }] }, null, 2);
+    return JSON.stringify(
+      { log: { level: 'info', timestamp: true }, inbounds, outbounds: [{ type: 'direct', tag: 'direct' }] },
+      null,
+      2
+    );
   }, [node]);
 
   const onSaveBasic = () => {
@@ -205,7 +208,7 @@ export default function NodeDetailPage() {
                 className="gap-1.5"
                 onClick={() => {
                   setEditingInbound(null);
-                  setInitialType('VLESS_REALITY');
+                  setInitialType('VLESS');
                   setFormOpen(true);
                 }}
               >

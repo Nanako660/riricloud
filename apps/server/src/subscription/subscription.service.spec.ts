@@ -35,16 +35,24 @@ describe('SubscriptionService', () => {
   };
 
   const inbound = (overrides: Record<string, unknown>) => ({
-    type: 'VLESS_REALITY',
+    type: 'VLESS',
     tag: 'in',
     port: 443,
     paramsJson: JSON.stringify({
-      serverNames: ['www.apple.com'],
-      dest: 'www.apple.com:443',
-      privateKey: 'priv',
-      publicKey: 'pbk-test',
-      shortIds: ['0123456789abcdef'],
-      flow: 'xtls-rprx-vision'
+      flow: 'xtls-rprx-vision',
+      transport: { type: 'tcp' },
+      tls: {
+        enabled: true,
+        mode: 'reality',
+        serverName: 'www.apple.com',
+        reality: {
+          dest: 'www.apple.com:443',
+          serverNames: ['www.apple.com'],
+          privateKey: 'priv',
+          publicKey: 'pbk-test',
+          shortIds: ['0123456789abcdef']
+        }
+      }
     }),
     sortOrder: 0,
     isPublic: true,
@@ -65,15 +73,23 @@ describe('SubscriptionService', () => {
   const multiNode = node({
     inbounds: [
       inbound({
-        type: 'VLESS_REALITY',
+        type: 'VLESS',
         tag: 'vless-in',
         paramsJson: JSON.stringify({
-          serverNames: ['www.apple.com'],
-          dest: 'www.apple.com:443',
-          privateKey: 'priv',
-          publicKey: 'pbk-test',
-          shortIds: ['0123456789abcdef'],
-          flow: 'xtls-rprx-vision'
+          flow: 'xtls-rprx-vision',
+          transport: { type: 'tcp' },
+          tls: {
+            enabled: true,
+            mode: 'reality',
+            serverName: 'www.apple.com',
+            reality: {
+              dest: 'www.apple.com:443',
+              serverNames: ['www.apple.com'],
+              privateKey: 'priv',
+              publicKey: 'pbk-test',
+              shortIds: ['0123456789abcdef']
+            }
+          }
         })
       }),
       inbound({
@@ -83,7 +99,15 @@ describe('SubscriptionService', () => {
         paramsJson: JSON.stringify({
           upMbps: 100,
           downMbps: 200,
-          tls: { serverName: 'hy.example.com', certificatePath: '/c', keyPath: '/k', alpn: ['h3'], insecure: false }
+          tls: {
+            enabled: true,
+            mode: 'tls',
+            serverName: 'hy.example.com',
+            certificatePath: '/c',
+            keyPath: '/k',
+            alpn: ['h3'],
+            insecure: false
+          }
         })
       }),
       inbound({
@@ -98,7 +122,15 @@ describe('SubscriptionService', () => {
         port: 8443,
         paramsJson: JSON.stringify({
           congestionControl: 'bbr',
-          tls: { serverName: 'tuic.example.com', certificatePath: '/c', keyPath: '/k', alpn: ['h3'], insecure: true }
+          tls: {
+            enabled: true,
+            mode: 'tls',
+            serverName: 'tuic.example.com',
+            certificatePath: '/c',
+            keyPath: '/k',
+            alpn: ['h3'],
+            insecure: true
+          }
         })
       })
     ]
@@ -152,7 +184,15 @@ describe('SubscriptionService', () => {
               paramsJson: JSON.stringify({
                 upMbps: 0,
                 downMbps: 0,
-                tls: { serverName: 'hy.example.com', certificatePath: '/c', keyPath: '/k', alpn: ['h3'], insecure: false }
+                tls: {
+                  enabled: true,
+                  mode: 'tls',
+                  serverName: 'hy.example.com',
+                  certificatePath: '/c',
+                  keyPath: '/k',
+                  alpn: ['h3'],
+                  insecure: false
+                }
               })
             })
           ]

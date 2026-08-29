@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PROTOCOL_TYPES, ProtocolType } from '../../common/constants';
 
 export class CreateInboundDto {
-  @ApiProperty({ enum: PROTOCOL_TYPES, example: 'VLESS_REALITY' })
+  @ApiProperty({ enum: PROTOCOL_TYPES, example: 'VLESS' })
   @IsIn(PROTOCOL_TYPES)
   type!: ProtocolType;
 

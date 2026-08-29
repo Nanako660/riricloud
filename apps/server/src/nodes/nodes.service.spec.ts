@@ -38,17 +38,25 @@ describe('NodesService', () => {
   const realityInbound = {
     id: 'in-1',
     nodeId: 'n1',
-    type: 'VLESS_REALITY',
+    type: 'VLESS',
     tag: 'vless-in',
     listen: '::',
     port: 443,
     paramsJson: JSON.stringify({
-      serverNames: ['www.apple.com'],
-      dest: 'www.apple.com:443',
-      privateKey: 'priv-secret',
-      publicKey: 'pub',
-      shortIds: ['0123456789abcdef'],
-      flow: 'xtls-rprx-vision'
+      flow: 'xtls-rprx-vision',
+      transport: { type: 'tcp' },
+      tls: {
+        enabled: true,
+        mode: 'reality',
+        serverName: 'www.apple.com',
+        reality: {
+          dest: 'www.apple.com:443',
+          serverNames: ['www.apple.com'],
+          privateKey: 'priv-secret',
+          publicKey: 'pub',
+          shortIds: ['0123456789abcdef']
+        }
+      }
     }),
     sortOrder: 0,
     isPublic: true
@@ -152,16 +160,18 @@ describe('NodesService', () => {
         Promise.resolve({ id: 'in-9', ...data })
       );
       const result = await service.createInbound('n1', {
-        type: 'VLESS_REALITY',
+        type: 'VLESS',
         port: 8443,
-        params: { privateKey: 'priv-1', publicKey: 'pub-1' }
+        params: { tls: { mode: 'reality', reality: { privateKey: 'priv-1', publicKey: 'pub-1' } } }
       });
       const created = prisma.nodeInbound.create.mock.calls[0][0].data;
       expect(created.tag).toBe('vless-in');
-      expect(JSON.parse(created.paramsJson).privateKey).toBe('priv-1');
-      const params = (result.inbound as { params: Record<string, unknown> }).params;
-      expect(params.privateKey).toBeUndefined();
-      expect(params.publicKey).toBe('pub-1');
+      expect(JSON.parse(created.paramsJson).tls.reality.privateKey).toBe('priv-1');
+      const params = (result.inbound as { params: Record<string, unknown> }).params as {
+        tls?: { reality?: { privateKey?: string; publicKey?: string } };
+      };
+      expect(params.tls?.reality?.privateKey).toBeUndefined();
+      expect(params.tls?.reality?.publicKey).toBe('pub-1');
       expect(agentGateway.pushConfig).toHaveBeenCalledWith('n1');
     });
 
@@ -173,14 +183,14 @@ describe('NodesService', () => {
       prisma.nodeInbound.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
         Promise.resolve({ id: 'in-9', ...data })
       );
-      await service.createInbound('n1', { type: 'VLESS_REALITY', port: 9000 });
+      await service.createInbound('n1', { type: 'VLESS', port: 9000 });
       expect(prisma.nodeInbound.create.mock.calls[0][0].data.tag).toBe('vless-in-3');
     });
 
     it('显式 tag 冲突抛出 ConflictException', async () => {
       prisma.node.findUnique.mockResolvedValue({ ...seededNode, inbounds: [{ tag: 'vless-in' }] });
       await expect(
-        service.createInbound('n1', { type: 'VLESS_REALITY', port: 9000, tag: 'vless-in' })
+        service.createInbound('n1', { type: 'VLESS', port: 9000, tag: 'vless-in' })
       ).rejects.toThrow(ConflictException);
       expect(prisma.nodeInbound.create).not.toHaveBeenCalled();
     });
@@ -188,7 +198,7 @@ describe('NodesService', () => {
     it('同传输层端口冲突抛出 ConflictException', async () => {
       prisma.node.findUnique.mockResolvedValue({ ...seededNode, inbounds: [realityInbound] });
       await expect(
-        service.createInbound('n1', { type: 'VLESS_REALITY', port: 443 })
+        service.createInbound('n1', { type: 'VLESS', port: 443 })
       ).rejects.toThrow(ConflictException);
     });
 
@@ -223,7 +233,7 @@ describe('NodesService', () => {
     it('节点不存在抛出 NotFoundException', async () => {
       prisma.node.findUnique.mockResolvedValue(null);
       await expect(
-        service.createInbound('nope', { type: 'VLESS_REALITY', port: 443 })
+        service.createInbound('nope', { type: 'VLESS', port: 443 })
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -235,13 +245,15 @@ describe('NodesService', () => {
         Promise.resolve({ ...realityInbound, ...data })
       );
       const result = await service.updateInbound('n1', 'in-1', {
-        params: { dest: 'www.microsoft.com:443' }
+        params: { tls: { mode: 'reality', reality: { dest: 'www.microsoft.com:443' } } }
       });
       const updated = JSON.parse(prisma.nodeInbound.update.mock.calls[0][0].data.paramsJson);
-      expect(updated.privateKey).toBe('priv-secret'); // 脱敏响应不含私钥，合并不得丢失
-      expect(updated.dest).toBe('www.microsoft.com:443');
-      const params = (result.inbound as { params: Record<string, unknown> }).params;
-      expect(params.privateKey).toBeUndefined();
+      expect(updated.tls.reality.privateKey).toBe('priv-secret'); // 脱敏响应不含私钥，合并不得丢失
+      expect(updated.tls.reality.dest).toBe('www.microsoft.com:443');
+      const params = (result.inbound as { params: Record<string, unknown> }).params as {
+        tls?: { reality?: { privateKey?: string } };
+      };
+      expect(params.tls?.reality?.privateKey).toBeUndefined();
       expect(agentGateway.pushConfig).toHaveBeenCalledWith('n1');
     });
 

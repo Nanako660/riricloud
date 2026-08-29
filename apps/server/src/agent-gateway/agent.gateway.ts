@@ -30,7 +30,11 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.on('close', () => void this.handleDisconnect(client));
     client.send(JSON.stringify({ type: 'auth_result', data: authResult }));
     // 鉴权成功即推送全量配置（协议时序见 docs/ARCHITECTURE.md §3.1）
-    await this.gatewayService.pushConfig(auth.nodeId);
+    try {
+      await this.gatewayService.pushConfig(auth.nodeId);
+    } catch (err) {
+      this.logger.error(`failed to push initial config to node=${auth.nodeId}: ${err}`);
+    }
   }
 
   async handleDisconnect(client: WebSocket) {
