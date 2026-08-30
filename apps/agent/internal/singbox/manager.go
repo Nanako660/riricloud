@@ -563,7 +563,7 @@ func (m *Manager) WriteConfig(singboxConfig json.RawMessage) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file: %w", err)
 	}
-	if err := os.Rename(tmpName, m.confPath); err != nil {
+	if err := upgrade.AtomicReplace(tmpName, m.confPath); err != nil {
 		return fmt.Errorf("rename config: %w", err)
 	}
 	return nil
