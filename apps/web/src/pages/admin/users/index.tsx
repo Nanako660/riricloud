@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Pencil, Plus, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { toast } from 'sonner';
@@ -22,7 +22,9 @@ import {
   AlertDialogTitle
 } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAdminUsers, useUserMutations, type AdminUser } from './use-users';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAdminPlans } from '../plans/use-plans';
+import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
 
 function formatGB(bytes: number): string {
@@ -38,6 +40,19 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
+const subscriptionStatusLabels: Record<AdminUserSubscription['status'], string> = {
+  ACTIVE: 'ACTIVE',
+  CANCELED: 'CANCELED',
+  EXPIRED: 'EXPIRED',
+  REVOKED: 'REVOKED'
+};
+
+function SubscriptionStatusBadge({ status }: { status: AdminUserSubscription['status'] | null }) {
+  if (!status) return <Badge variant="outline">未绑定</Badge>;
+  const variant = status === 'ACTIVE' ? 'default' : status === 'REVOKED' ? 'destructive' : 'secondary';
+  return <Badge variant={variant}>{subscriptionStatusLabels[status]}</Badge>;
+}
+
 export default function AdminUsersPage() {
   const selfId = useAuthStore((s) => s.user?.id);
   const [search, setSearch] = React.useState('');
@@ -45,16 +60,28 @@ export default function AdminUsersPage() {
   const [editing, setEditing] = React.useState<AdminUser | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState<AdminUser | null>(null);
+  const [resetting, setResetting] = React.useState<AdminUser | null>(null);
   const [bulkDeleting, setBulkDeleting] = React.useState(false);
   const [selected, setSelected] = React.useState<AdminUser[]>([]);
+  const [roleFilter, setRoleFilter] = React.useState<'ALL' | 'USER' | 'ADMIN'>('ALL');
+  const [activeFilter, setActiveFilter] = React.useState<'ALL' | 'true' | 'false'>('ALL');
+  const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status']>('ALL');
+  const [planFilter, setPlanFilter] = React.useState('ALL');
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data, isPending } = useAdminUsers({ search: debouncedSearch });
-  const { deleteUser, bulkActive } = useUserMutations();
+  const { data, isPending } = useAdminUsers({
+    search: debouncedSearch,
+    role: roleFilter === 'ALL' ? undefined : roleFilter,
+    isActive: activeFilter === 'ALL' ? undefined : activeFilter === 'true',
+    subscriptionStatus: subscriptionFilter === 'ALL' ? undefined : subscriptionFilter,
+    planId: planFilter === 'ALL' ? undefined : planFilter
+  });
+  const { data: plans } = useAdminPlans();
+  const { deleteUser, bulkActive, resetSubscriptionToken } = useUserMutations();
   const users = data?.data ?? [];
 
   const columns = React.useMemo<ColumnDef<AdminUser>[]>(
@@ -63,6 +90,18 @@ export default function AdminUsersPage() {
         accessorKey: 'email',
         header: '邮箱',
         cell: ({ row }) => <span className="font-medium">{row.original.email}</span>
+      },
+      {
+        id: 'plan',
+        header: '当前套餐',
+        cell: ({ row }) => row.original.subscription?.plan ? (
+          <Badge variant="outline">{row.original.subscription.plan.name}</Badge>
+        ) : <span className="text-muted-foreground">未绑定</span>
+      },
+      {
+        id: 'subscriptionStatus',
+        header: '订阅状态',
+        cell: ({ row }) => <SubscriptionStatusBadge status={row.original.subscription?.status ?? null} />
       },
       {
         accessorKey: 'role',
@@ -130,6 +169,14 @@ export default function AdminUsersPage() {
                 </TooltipTrigger>
                 <TooltipContent>编辑</TooltipContent>
               </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="重置订阅链接" disabled={resetSubscriptionToken.isPending} onClick={() => setResetting(u)}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>重置订阅链接</TooltipContent>
+              </Tooltip>
               {!isSelf ? (
                 <>
                   <Tooltip>
@@ -163,7 +210,7 @@ export default function AdminUsersPage() {
         }
       }
     ],
-    [selfId, bulkActive]
+    [bulkActive, resetSubscriptionToken, selfId]
   );
 
   const onBulkBan = async (isActive: boolean) => {
@@ -203,10 +250,26 @@ export default function AdminUsersPage() {
           emptyDescription="点击右上角「创建用户」添加"
           toolbar={
             <>
-              <div className="relative w-64">
+              <div className="relative w-full sm:w-64">
                 <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" />
                 <Input className="pl-8" placeholder="搜索邮箱…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
+              <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as typeof roleFilter)}>
+                <SelectTrigger className="w-[120px]"><SelectValue placeholder="角色" /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">全部角色</SelectItem><SelectItem value="USER">用户</SelectItem><SelectItem value="ADMIN">管理员</SelectItem></SelectContent>
+              </Select>
+              <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as typeof activeFilter)}>
+                <SelectTrigger className="w-[120px]"><SelectValue placeholder="账号状态" /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">全部账号</SelectItem><SelectItem value="true">已激活</SelectItem><SelectItem value="false">已封禁</SelectItem></SelectContent>
+              </Select>
+              <Select value={subscriptionFilter} onValueChange={(value) => setSubscriptionFilter(value as typeof subscriptionFilter)}>
+                <SelectTrigger className="w-[130px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">全部订阅</SelectItem>{Object.keys(subscriptionStatusLabels).map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={planFilter} onValueChange={setPlanFilter}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="套餐" /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">全部套餐</SelectItem>{(plans ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent>
+              </Select>
               <Button size="sm" className="gap-1.5" onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" />
                 创建用户
@@ -232,7 +295,7 @@ export default function AdminUsersPage() {
         />
       )}
 
-      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} />
+      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} />
 
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
@@ -246,6 +309,21 @@ export default function AdminUsersPage() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void onConfirmDelete()}>
               删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!resetting} onOpenChange={(open) => !open && setResetting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>重置用户订阅链接？</AlertDialogTitle>
+            <AlertDialogDescription>{resetting?.email} 的旧链接会立即失效，需要重新导入订阅。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (resetting) resetSubscriptionToken.mutate(resetting.id, { onSuccess: () => setResetting(null) }); }}>
+              确认重置
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

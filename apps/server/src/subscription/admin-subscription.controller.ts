@@ -22,6 +22,11 @@ export class AdminSubscriptionController {
     return this.subscriptionService.get(id);
   }
 
+  @Post('users/:userId')
+  assign(@Param('userId', ParseUUIDPipe) userId: string, @Body() dto: AdminUpdateSubDto) {
+    return this.subscriptionService.adminAssign(userId, dto);
+  }
+
   @Patch(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminUpdateSubDto) {
     return this.subscriptionService.adminUpdate(id, dto);

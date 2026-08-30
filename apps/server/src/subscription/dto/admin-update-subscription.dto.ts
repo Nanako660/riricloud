@@ -5,10 +5,10 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED'] as const;
 
 export class AdminUpdateSubDto {
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '传 null 删除订阅并回到无套餐状态' })
   @IsUUID()
   @IsOptional()
-  planId?: string;
+  planId?: string | null;
 
   @ApiPropertyOptional({ enum: SUBSCRIPTION_STATUSES })
   @IsIn(SUBSCRIPTION_STATUSES)

@@ -13,11 +13,17 @@ type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
 };
 
+type UserPlanDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<UserPlanSnapshot | null>;
+  findFirst: (args: Record<string, unknown>) => Promise<UserPlanSnapshot | null>;
+};
+
 type UserSubscriptionSnapshot = {
   id: string;
   status: string;
   trafficLimitBytes: bigint;
   trafficUsedBytes: bigint;
+  startedAt: Date;
   expireAt: Date | null;
   subscriptionToken: string;
   plan?: {
@@ -29,6 +35,14 @@ type UserSubscriptionSnapshot = {
   } | null;
 };
 
+type UserPlanSnapshot = {
+  id: string;
+  name: string;
+  durationDays: number;
+  trafficLimitBytes: bigint;
+  isPublic: boolean;
+};
+
 // 管理端用户视图字段（不含 passwordHash / uuid 等敏感字段）
 const ADMIN_USER_SELECT = {
   id: true,
@@ -38,7 +52,18 @@ const ADMIN_USER_SELECT = {
   trafficUsedBytes: true,
   expireAt: true,
   isActive: true,
-  createdAt: true
+  createdAt: true,
+  subscription: {
+    select: {
+      id: true,
+      status: true,
+      trafficLimitBytes: true,
+      trafficUsedBytes: true,
+      startedAt: true,
+      expireAt: true,
+      plan: { select: { id: true, name: true } }
+    }
+  }
 } as const;
 
 @Injectable()
@@ -73,14 +98,23 @@ export class UsersService {
 
   // ---------- 管理员接口 ----------
 
-  // 分页列表：search 邮箱模糊、role/isActive 过滤
+  // 分页列表：邮箱、角色、账号状态、订阅状态与套餐均由数据库过滤
   async listUsers(query: ListUsersQueryDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
+    const subscriptionWhere = query.subscriptionStatus || query.planId
+      ? {
+          is: {
+            ...(query.subscriptionStatus ? { status: query.subscriptionStatus } : {}),
+            ...(query.planId ? { planId: query.planId } : {})
+          }
+        }
+      : undefined;
     const where = {
       ...(query.search ? { email: { contains: query.search } } : {}),
       ...(query.role ? { role: query.role } : {}),
-      ...(query.isActive !== undefined ? { isActive: query.isActive } : {})
+      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(subscriptionWhere ? { subscription: subscriptionWhere } : {})
     };
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
@@ -96,7 +130,15 @@ export class UsersService {
     const data = users.map((u) => ({
       ...u,
       trafficLimitBytes: Number(u.trafficLimitBytes),
-      trafficUsedBytes: Number(u.trafficUsedBytes)
+      trafficUsedBytes: Number(u.trafficUsedBytes),
+      subscription: u.subscription
+        ? {
+            ...u.subscription,
+            trafficLimitBytes: Number(u.subscription.trafficLimitBytes),
+            trafficUsedBytes: Number(u.subscription.trafficUsedBytes),
+            plan: u.subscription.plan
+          }
+        : null
     }));
     return { data, total, page, pageSize };
   }
@@ -106,17 +148,44 @@ export class UsersService {
     if (existing) {
       throw new ConflictException('邮箱已存在');
     }
+    const plan = await this.resolveInitialPlan(dto.planId);
     const defaultQuota = await this.settingsService.getDefaultQuota();
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash: await bcrypt.hash(dto.password, 10),
-        role: dto.role ?? 'USER',
-        trafficLimitBytes: BigInt(dto.trafficLimitBytes ?? defaultQuota),
-        expireAt: dto.expireAt ? new Date(dto.expireAt) : null
-      },
-      select: ADMIN_USER_SELECT
-    });
+    const now = new Date();
+    const trafficLimitBytes = BigInt(dto.trafficLimitBytes ?? plan?.trafficLimitBytes ?? defaultQuota);
+    const expireAt = dto.expireAt !== undefined
+      ? dto.expireAt
+        ? new Date(dto.expireAt)
+        : null
+      : plan
+        ? new Date(now.getTime() + plan.durationDays * 86400000)
+        : null;
+    const subscriptionToken = randomUUID();
+    const data = {
+      email: dto.email,
+      passwordHash: await bcrypt.hash(dto.password, 10),
+      role: dto.role ?? 'USER',
+      trafficLimitBytes,
+      expireAt,
+      subscriptionToken
+    };
+    const user = plan
+      ? await this.prisma.$transaction(async (tx) => {
+          const created = await tx.user.create({ data, select: ADMIN_USER_SELECT });
+          await tx.subscription.create({
+            data: {
+              userId: created.id,
+              planId: plan.id,
+              status: 'ACTIVE',
+              trafficLimitBytes,
+              trafficUsedBytes: BigInt(0),
+              startedAt: now,
+              expireAt,
+              subscriptionToken
+            }
+          });
+          return created;
+        })
+      : await this.prisma.user.create({ data, select: ADMIN_USER_SELECT });
     void this.agentGateway.pushConfigToAll();
     return { ...user, trafficLimitBytes: Number(user.trafficLimitBytes), trafficUsedBytes: Number(user.trafficUsedBytes) };
   }
@@ -264,5 +333,20 @@ export class UsersService {
     } catch {
       return [];
     }
+  }
+
+  private async resolveInitialPlan(planId?: string | null) {
+    const planDelegate = (this.prisma as unknown as { plan?: UserPlanDelegate }).plan;
+    if (!planDelegate) return null;
+    if (planId === null) return null;
+    if (planId) {
+      const plan = await planDelegate.findUnique({ where: { id: planId } });
+      if (!plan) throw new NotFoundException('套餐不存在');
+      return plan;
+    }
+    return (
+      (await planDelegate.findFirst({ where: { name: '体验套餐' } })) ??
+      (await planDelegate.findFirst({ where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }))
+    );
   }
 }

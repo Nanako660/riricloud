@@ -31,9 +31,10 @@
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive`：分页查询。⭐ `search` 为邮箱模糊匹配；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, trafficLimitBytes?, expireAt?(ISO) }`；配额缺省取系统设置默认值，`expireAt` 缺省永久；邮箱冲突 409。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态与套餐筛选；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, plan{id,name} }`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额/期限作为初始值且可由 `trafficLimitBytes`/`expireAt` 覆盖；明确传 `planId: null` 时创建无套餐用户；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
+- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录）。⭐
 
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
@@ -77,9 +78,10 @@
 - `DELETE /admin/subscription-templates/:id`：删除非默认且未被套餐使用的模板。⭐
 
 #### 订阅管控
-- `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐
+- `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐ 保留为兼容接口；管理端主入口已融合至 `/admin/users`。
 - `GET /admin/subscriptions/:id`：查询订阅详情。⭐
-- `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`。
+- `POST /admin/subscriptions/users/:userId`：为尚无订阅的用户绑定套餐。⭐ 请求字段同管理员订阅调整接口，必须提供 `planId`；已有订阅时按更新语义处理。
+- `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`；传 `planId: null` 会删除订阅实例，用户回到无套餐状态并使旧订阅 Token 失效。
 - `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
 
 ### 1.4 系统模块 (`/system`)

@@ -27,7 +27,6 @@ export function AppSidebar() {
               { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
               { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
               { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
-              { to: '/admin/subscriptions', label: '订阅管控', icon: WalletCards, end: false }
             ]
           }
         ]

@@ -67,12 +67,7 @@ export const router = createBrowserRouter([
                   Component: (await import('@/pages/admin/templates')).default
                 })
               },
-              {
-                path: '/admin/subscriptions',
-                lazy: async () => ({
-                  Component: (await import('@/pages/admin/subscriptions')).default
-                })
-              }
+              { path: '/admin/subscriptions', element: <Navigate to="/admin/users" replace /> }
             ]
           },
           {

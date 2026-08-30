@@ -100,3 +100,8 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 3. **迁移安全**：Prisma 迁移一旦合入 main 不得修改历史迁移文件，只能追加新迁移。
 4. **配置管理**：所有可配置项集中一处定义（server：`@nestjs/config` + `.env`；agent：`/etc/riri-agent/config.yaml` + 环境变量），禁止散落的魔法常量。
 5. **禁止"临时"绕行**：禁用门禁、跳过校验、`// TODO 稍后处理` 式的安全空缺，一律不允许进 main。
+
+## 8. 前端操作卡片视觉一致性
+
+1. **统一基础控件层级**：表单中承载 `Switch`、`Checkbox` 或操作按钮的边框卡片，必须直接复用 shadcn/ui 的 `FormItem` / `Card` 结构；与同层 `Input`、`SelectTrigger` 等基础控件并列时，外层卡片统一使用 `shadow-sm`、语义边框和一致的高度与间距。
+2. **禁止自定义视觉分叉**：不得仅用裸 `div` 替代既有 shadcn/ui 卡片结构，也不得为相似操作卡片单独引入不一致的阴影、圆角或内边距；新增相似样式必须同步更新 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md) 并纳入对应 UI 走查。

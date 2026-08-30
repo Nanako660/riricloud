@@ -117,9 +117,11 @@
   - [x] 策略组与分流规则 JSON 编辑器：支持 Select / URL-Test 等策略组、节点过滤规则、规则目标与开关。
   - [x] DNS & 客户端通用设置面板（FakeIP、上游 DNS、Clash 运行模式字段）。
   - [x] YAML/JSON 高级覆写注入编辑区（Textarea + 前后端语法校验）。
-- [x] **4.4 用户与订阅管控面板 (`src/pages/admin/subscriptions/`)**
-  - [x] 订阅列表视图（展示用户、当前套餐、流量进度条、到期时间、状态）。
-  - [x] 管理员操作弹窗：强制换套餐、重置已用流量、手动增加天数、立即吊销/解冻订阅。
+- [x] **4.4 用户与订阅一体化管理面板 (`src/pages/admin/users/`)**
+  - [x] 用户列表聚合当前套餐、订阅状态、流量进度条与到期时间，并支持邮箱、角色、账号状态、订阅状态和套餐筛选。
+  - [x] 创建用户支持可选初始套餐；选择套餐自动回填配额与有效期，也可先创建无套餐账号。
+  - [x] 综合编辑弹窗拆分为「账号安全」和「订阅管理」双 Tab，支持换套餐、选择无套餐彻底取消订阅、调整流量/状态、增加天数、密码重置与订阅 Token 重置。
+  - [x] 移除独立订阅管控页面；保留 `/admin/subscriptions` API 与前端兼容重定向。
 
 ---
 
@@ -148,7 +150,7 @@
   - [x] `docs/FRONTEND_UI_GUIDELINES.md` 与 `docs/VISUAL_VERIFICATION.md`：更新前台与后台新增页面的 UI 设计规范与视觉验证台账。
   - [x] `CHANGELOG.md`：在 `[Unreleased]` 记录新架构功能特性。
 - [x] **6.2 质量门禁全绿自查**
-  - [x] 后端门禁：TypeScript、ESLint、Jest（12 suites / 108 tests）通过。
+  - [x] 后端门禁：TypeScript、ESLint、Jest（12 suites / 114 tests）通过。
   - [x] 前端门禁：TypeScript、ESLint、Vite Build 打包通过。
   - [x] Agent 门禁：`go vet`、`gofmt`、`go test`、`go build` 通过；PowerShell 下使用项目内 Go 工具链执行等价命令。
 - [x] **6.3 端到端联调与视觉验收准备**

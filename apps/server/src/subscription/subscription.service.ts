@@ -292,6 +292,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   async adminUpdate(id: string, dto: AdminUpdateSubDto) {
     const current = await this.getRaw(id);
+    if (dto.planId === null) return this.adminRemove(id, current.userId);
     const plan = dto.planId ? await this.prisma.plan.findUnique({ where: { id: dto.planId } }) : null;
     if (dto.planId && !plan) throw new NotFoundException('套餐不存在');
     const limit = dto.trafficLimitBytes !== undefined ? BigInt(dto.trafficLimitBytes) : plan?.trafficLimitBytes ?? current.trafficLimitBytes;
@@ -317,6 +318,58 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       });
       await this.syncUserMirror(tx, current.userId, updated);
       return updated;
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(subscription.id);
+  }
+
+  private async adminRemove(id: string, userId: string) {
+    const subscriptionToken = randomUUID();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subscription.delete({ where: { id } });
+      await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return { removed: true, id, userId };
+  }
+
+  async adminAssign(userId: string, dto: AdminUpdateSubDto) {
+    if (!dto.planId) throw new BadRequestException('绑定订阅必须指定套餐');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) throw new NotFoundException('用户不存在');
+    const delegate = this.requireSubscriptionDelegate();
+    const current = await delegate.findUnique({ where: { userId } });
+    if (current) return this.adminUpdate(current.id, dto);
+
+    const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
+    if (!plan) throw new NotFoundException('套餐不存在');
+    const now = new Date();
+    const limit = dto.trafficLimitBytes !== undefined ? BigInt(dto.trafficLimitBytes) : plan.trafficLimitBytes;
+    const used = dto.trafficUsedBytes !== undefined ? BigInt(dto.trafficUsedBytes) : BigInt(0);
+    if (used > limit) throw new BadRequestException('已用流量不能大于流量配额');
+    const expireAt = dto.expireAt !== undefined
+      ? dto.expireAt
+        ? new Date(dto.expireAt)
+        : null
+      : dto.addDays
+        ? addDays(now, dto.addDays)
+        : addDays(now, plan.durationDays);
+    const subscriptionToken = randomUUID();
+    const subscription = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.subscription.create({
+        data: {
+          userId,
+          planId: plan.id,
+          status: dto.status ?? 'ACTIVE',
+          trafficLimitBytes: limit,
+          trafficUsedBytes: used,
+          startedAt: now,
+          expireAt,
+          subscriptionToken
+        }
+      });
+      await this.syncUserMirror(tx, userId, created);
+      return created;
     });
     void this.agentGateway?.pushConfigToAll();
     return this.get(subscription.id);

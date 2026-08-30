@@ -11,21 +11,43 @@ export interface AdminUser {
   expireAt: string | null;
   isActive: boolean;
   createdAt: string;
+  subscription: AdminUserSubscription | null;
+}
+
+export interface AdminUserSubscription {
+  id: string;
+  status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED';
+  trafficLimitBytes: number;
+  trafficUsedBytes: number;
+  startedAt: string;
+  expireAt: string | null;
+  plan: { id: string; name: string } | null;
 }
 
 interface ListUsersParams {
   search?: string;
   pageSize?: number;
+  role?: 'ADMIN' | 'USER';
+  isActive?: boolean;
+  subscriptionStatus?: AdminUserSubscription['status'];
+  planId?: string;
 }
 
 // 用户列表：搜索走服务端 contains(email)，pageSize=100 客户端分页
 export function useAdminUsers(params: ListUsersParams) {
   return useQuery({
-    queryKey: ['admin', 'users', params.search ?? ''],
+    queryKey: ['admin', 'users', params],
     queryFn: async () =>
       (
         await api.get<{ data: AdminUser[]; total: number }>('/admin/users', {
-          params: { pageSize: params.pageSize ?? 100, ...(params.search ? { search: params.search } : {}) }
+          params: {
+            pageSize: params.pageSize ?? 100,
+            ...(params.search ? { search: params.search } : {}),
+            ...(params.role ? { role: params.role } : {}),
+            ...(params.isActive !== undefined ? { isActive: params.isActive } : {}),
+            ...(params.subscriptionStatus ? { subscriptionStatus: params.subscriptionStatus } : {}),
+            ...(params.planId ? { planId: params.planId } : {})
+          }
         })
       ).data
   });
@@ -49,7 +71,8 @@ export function useUserMutations() {
       password: string;
       role?: string;
       trafficLimitBytes?: number;
-      expireAt?: string;
+      expireAt?: string | null;
+      planId?: string | null;
     }) => (await api.post('/admin/users', payload)).data,
     ...invalidateSub
   });
@@ -67,6 +90,56 @@ export function useUserMutations() {
       password?: string;
     }) => (await api.patch(`/admin/users/${id}`, payload)).data,
     ...invalidateSub
+  });
+
+  const updateSubscription = useMutation({
+    mutationFn: async ({ id, ...payload }: {
+      id: string;
+      planId?: string | null;
+      status?: AdminUserSubscription['status'];
+      trafficLimitBytes?: number;
+      trafficUsedBytes?: number;
+      expireAt?: string | null;
+      addDays?: number;
+    }) => (await api.patch(`/admin/subscriptions/${id}`, payload)).data,
+    onSuccess: () => {
+      toast.success('订阅已更新');
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+      void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
+      void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
+    },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '订阅更新失败'))
+  });
+
+  const assignSubscription = useMutation({
+    mutationFn: async ({ userId, ...payload }: {
+      userId: string;
+      planId: string;
+      status?: AdminUserSubscription['status'];
+      trafficLimitBytes?: number;
+      trafficUsedBytes?: number;
+      expireAt?: string | null;
+      addDays?: number;
+    }) => (await api.post(`/admin/subscriptions/users/${userId}`, payload)).data,
+    onSuccess: () => {
+      toast.success('已绑定订阅');
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
+    },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '绑定订阅失败'))
+  });
+
+  const resetSubscriptionToken = useMutation({
+    mutationFn: async (userId: string) =>
+      (await api.post<{ subscriptionToken: string }>(`/admin/users/${userId}/reset-subscription-token`)).data,
+    onSuccess: () => {
+      toast.success('订阅链接已重置');
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
+      void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
+    },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置订阅链接失败'))
   });
 
   const deleteUser = useMutation({
@@ -93,5 +166,13 @@ export function useUserMutations() {
     }
   });
 
-  return { createUser, updateUser, deleteUser, bulkActive };
+  return {
+    createUser,
+    updateUser,
+    updateSubscription,
+    assignSubscription,
+    resetSubscriptionToken,
+    deleteUser,
+    bulkActive
+  };
 }
