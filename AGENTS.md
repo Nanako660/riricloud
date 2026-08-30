@@ -40,7 +40,7 @@ riricloud/
 | :--- | :--- | :--- |
 | 任何任务（首次进入仓库） | `README.md`、`ARCHITECTURE.md`、`PROJECT_CONSTRAINTS.md` | — |
 | 写 `apps/server` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`DATA_MODELS.md`、`CODE_REVIEW.md` | `DEPLOYMENT_GUIDE.md` |
-| 写 `apps/web` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`FRONTEND_UI_GUIDELINES.md`、`CODE_REVIEW.md` | `ARCHITECTURE.md` |
+| 写 `apps/web` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`FRONTEND_UI_GUIDELINES.md`、`VISUAL_VERIFICATION.md`、`CODE_REVIEW.md` | `ARCHITECTURE.md` |
 | 写 `apps/agent` 代码 | `TECH_STACK.md`、`API_AND_PROTOCOLS.md`、`CODE_REVIEW.md` | `DEPLOYMENT_GUIDE.md` |
 | 改 WS 协议 / API / 订阅格式 | `API_AND_PROTOCOLS.md`、`VERSIONING.md`（判断破坏性变更） | `ARCHITECTURE.md` |
 | 改数据模型 | `DATA_MODELS.md`、`PROJECT_CONSTRAINTS.md` §5 | — |
@@ -61,6 +61,7 @@ riricloud/
 8. **语言约定**：标识符与日志英文，注释/commit/文档中文（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §6）。
 9. **质量门禁**：合入 main 前本 §常用命令 全绿；修 bug 先写复现测试。
 10. **不越权**：架构级决策（换框架、加外部服务、突破资源上限）不得自行实施——先提 RFC 改文档，获批准后再动代码。
+11. **视觉验证约束**：前端 UI 视觉验证为**按需执行**且**仅在 Antigravity 代理环境下执行**；严禁在自动化 CI / Git hook 中挂接视觉测试，严禁私自引入重型测试框架。UI 改动需核对并维护 [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md) 索引台账。
 
 ---
 
@@ -72,6 +73,7 @@ riricloud/
 | Prisma 模型或迁移 | `docs/DATA_MODELS.md` |
 | 组件、通信链路、时序 | `docs/ARCHITECTURE.md` |
 | 前端 UI 规范、主题、组件层级 | `docs/FRONTEND_UI_GUIDELINES.md` |
+| 前端 UI 页面 / 模态框 / 样式 | `docs/FRONTEND_UI_GUIDELINES.md`、`docs/VISUAL_VERIFICATION.md` |
 | 选型或依赖库增删 | `docs/TECH_STACK.md` |
 | 部署方式或脚本行为 | `docs/DEPLOYMENT_GUIDE.md` |
 | 规范与红线本身 | `docs/VERSIONING.md` / `GIT_WORKFLOW.md` / `CODE_REVIEW.md` / `PROJECT_CONSTRAINTS.md` |

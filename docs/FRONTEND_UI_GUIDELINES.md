@@ -346,3 +346,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 ```
 
+---
+
+## 11. UI 视觉走查与验证规范 (Visual Verification & Index)
+
+为了确保 UI 规范在后续功能演进中的一致性与无回归，系统建立了全量 UI 验证索引台账与变更感知机制：
+- **全量 UI 索引台账**：覆盖全站 7 大主页面、5 类模态交互弹窗及双主题状态；
+- **变更感知映射**：根据前端源码文件路径变更自动判定受影响的 UI 范围；
+- **按需触发与环境限定**：不作为 CI / 自动化门禁项，仅在用户要求时由 Antigravity Agent 执行走查。
+
+完整规范、索引矩阵与执行 SOP 详见 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md)。
+
+
