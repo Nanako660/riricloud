@@ -25,7 +25,7 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
 | **风格预设 (Style)** | `New York` | 紧凑、细腻边框、适合数据密集型 Dashboard |
 | **基础色系 (Base Color)** | `Zinc` (中性冷灰) | 纯净、克制，突出核心业务状态数据 |
 | **圆角弧度 (Radius)** | `0.5rem` (`8px` / `rounded-lg`) | 保持现代感与干练感 |
-| **主题切换** | 浅色 (Light) / 暗黑 (Dark) | 基于 `next-themes` 驱动，默认跟随操作系统偏好 |
+| **主题切换** | 浅色 (Light) / 暗黑 (Dark) / 跟随系统 (System) | 基于 `next-themes` 驱动，默认跟随操作系统偏好；顶栏按钮弹出三态下拉菜单（shadcn 官方主题切换范式），触发按钮图标跟随所选模式（Sun / Moon / Monitor）而非最终生效外观，菜单内当前态以 `Check` 图标标识，勾选「跟随系统」可恢复系统偏好 |
 
 ### 2.2 语义色彩与状态色阶规范
 
@@ -82,7 +82,7 @@ apps/web/src/
 │       ├── app-layout.tsx       # 主控端侧边栏 + 顶部导航总布局
 │       ├── app-sidebar.tsx      # 左侧菜单导航
 │       ├── app-header.tsx       # 顶部面包屑与快捷操作栏
-│       └── theme-toggle.tsx     # 明暗主题切换开关
+│       └── theme-toggle.tsx     # 明暗主题三态切换（浅色/深色/跟随系统）
 ├── pages/                  # 【页面级视图组件】仅负责数据获取、状态编排与子组件组装
 │   ├── dashboard/
 │   ├── nodes/
