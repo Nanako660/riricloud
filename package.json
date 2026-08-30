@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "RiriCloud — 多节点 VPN/代理管理系统（NestJS 主控 + React 面板 + Go 边缘 Agent）",
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-only",
   "packageManager": "pnpm@9.15.9",
   "pnpm": {
     "auditConfig": {

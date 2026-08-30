@@ -12,7 +12,7 @@
 [![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E.svg?logo=nestjs)](https://nestjs.com)
 [![React](https://img.shields.io/badge/React-19.x-61DAFB.svg?logo=react)](https://react.dev)
 [![Prisma](https://img.shields.io/badge/Prisma-6.x-2D3748.svg?logo=prisma)](https://prisma.io)
-[![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey.svg)](#)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
 
 [✨ 核心特性](#-核心特性) • [📐 系统架构](#-系统架构) • [🛠️ 技术栈](#️-技术栈) • [🚀 快速开始](#-快速开始) • [📦 生产部署](#-生产部署) • [📂 目录结构](#-目录结构) • [📚 官方文档库](#-官方设计与技术文档)
 
@@ -331,4 +331,5 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 
 ## 📄 开源协议
 
-本项目源码遵循私有/专有许可（UNLICENSED），保留所有权利。
+本项目源码遵循 [GNU General Public License v3.0 (GPL-3.0)](./LICENSE) 协议开源。
+
