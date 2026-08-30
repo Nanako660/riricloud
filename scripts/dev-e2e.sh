@@ -111,7 +111,7 @@ else
     AGENT_TOKEN="$(printf '%s' "$CREATE_RESULT" | jsonget agentToken)"
     [ -n "$AGENT_TOKEN" ] && [ -n "$NODE_ID" ] || die "创建节点失败"
     say "添加 VLESS Reality 入站（端口 $NODE_PORT）…"
-    INBOUND_BODY=$(printf '{"type":"VLESS_REALITY","port":%s}' "$NODE_PORT")
+    INBOUND_BODY=$(printf '{"type":"VLESS","port":%s}' "$NODE_PORT")
     curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$INBOUND_BODY" "$SERVER_URL/api/v1/admin/nodes/$NODE_ID/inbounds" >/dev/null || die "创建入站失败"
   fi
 fi

@@ -3,18 +3,26 @@ import { Cloud, Gauge, Server, Settings, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 
-// 侧边导航：管理员追加节点/用户/设置入口
+// 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'ADMIN';
 
-  const items = [
-    { to: '/', label: '仪表盘', icon: Gauge },
+  const groups = [
+    {
+      label: '控制台',
+      items: [{ to: '/', label: '仪表盘', icon: Gauge, end: true }]
+    },
     ...(isAdmin
       ? [
-          { to: '/admin/nodes', label: '节点管理', icon: Server },
-          { to: '/admin/users', label: '用户管理', icon: Users },
-          { to: '/admin/settings', label: '系统设置', icon: Settings }
+          {
+            label: '管理后台',
+            items: [
+              { to: '/admin/users', label: '用户管理', icon: Users, end: false },
+              { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
+              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false }
+            ]
+          }
         ]
       : [])
   ];
@@ -25,22 +33,33 @@ export function AppSidebar() {
         <Cloud className="h-5 w-5" />
         <span className="font-semibold">RiriCloud</span>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 p-3">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              )
-            }
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </NavLink>
+      <nav className="flex flex-1 flex-col gap-4 p-3 overflow-y-auto">
+        {groups.map((group) => (
+          <div key={group.label} className="space-y-1">
+            <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.label}
+            </div>
+            <div className="space-y-1">
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-secondary text-secondary-foreground'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
       <div className="border-t p-3">

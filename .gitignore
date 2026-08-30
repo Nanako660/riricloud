@@ -23,6 +23,7 @@ data/
 # Go 构建产物
 riri-agent
 riri-agent.exe
+*.exe~
 
 # 本地开发缓存与便携工具链（缓存策略见 scripts/dev-env.sh）
 .cache/
