@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
+import { CreateInboundDto, UpdateInboundDto } from './dto/inbound.dto';
 import { NodesService } from './nodes.service';
 
 @ApiTags('admin')
@@ -16,6 +17,17 @@ export class NodesController {
   @Get()
   list() {
     return this.nodesService.list();
+  }
+
+  // 注意：/:id 之前注册，避免 reality-keypair 被当作节点 id
+  @Post('reality-keypair')
+  generateRealityKeypair() {
+    return this.nodesService.realityKeypair();
+  }
+
+  @Get(':id')
+  detail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.nodesService.detail(id);
   }
 
   @Post()
@@ -36,5 +48,24 @@ export class NodesController {
   @Post(':id/reload')
   reload(@Param('id') id: string) {
     return this.nodesService.requestReload(id);
+  }
+
+  @Post(':id/inbounds')
+  createInbound(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateInboundDto) {
+    return this.nodesService.createInbound(id, dto);
+  }
+
+  @Patch(':id/inbounds/:inboundId')
+  updateInbound(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('inboundId', ParseUUIDPipe) inboundId: string,
+    @Body() dto: UpdateInboundDto
+  ) {
+    return this.nodesService.updateInbound(id, inboundId, dto);
+  }
+
+  @Delete(':id/inbounds/:inboundId')
+  removeInbound(@Param('id', ParseUUIDPipe) id: string, @Param('inboundId', ParseUUIDPipe) inboundId: string) {
+    return this.nodesService.removeInbound(id, inboundId);
   }
 }

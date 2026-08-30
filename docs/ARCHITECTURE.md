@@ -62,14 +62,17 @@ graph TB
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、节点列表、通用订阅导出，以及管理员的用户管理、节点纳管、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
-- **订阅引擎 (`apps/server/subscription`)**：根据用户的有效权限与节点分配，实时动态组装并输出 Clash Meta (Mihomo)、Sing-box Client JSON 以及通用 Base64 订阅。
+- **订阅引擎 (`apps/server/subscription`)**：根据用户的有效权限与节点公开入站（`NodeInbound.isPublic`），实时动态组装多协议（VLESS Reality / Hysteria2 / Shadowsocks / TUIC）三格式订阅：Clash Meta (Mihomo) YAML、Sing-box Client JSON 以及通用 Base64 URI 列表。输出名规则：单入站节点用节点名，多入站节点为「节点名·tag」，重名全局去重。
+- **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）与 sing-box 服务端入站 JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
 - **长连接与自愈**：Agent 启动后主动与 Master 建立 WSS 连接，内置重试与断线重连机制。
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
-- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。
-- **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。
+- **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
+- **多入站监听**：节点可挂多条不同协议入站（`NodeInbound`，结构见 `docs/DATA_MODELS.md` §2.1）；hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。
+- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报（含内核状态 `kernelRunning`/`appliedConfigVersion`/`lastError`，落 `Node.kernelRunning`/`Node.configError`）。
+- **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。SS 入站为共享密码模式，按用户流量归属在该协议下不可用（按用户配额粒度本就暂缓，可接受）。
 
 ---
 
@@ -86,8 +89,8 @@ sequenceDiagram
     participant Agent as VPS Node Agent
     participant Singbox as Sing-box 内核
 
-    Admin->>Web: 1. 在面板创建节点 (配置协议、端口、域名等)
-    Web->>Master: POST /api/v1/nodes
+    Admin->>Web: 1. 在面板创建节点（基础信息）并按需添加多条入站（协议/端口/参数）
+    Web->>Master: POST /api/v1/admin/nodes 与 /admin/nodes/:id/inbounds
     Master-->>Web: 返回 Node ID 及生成的专属 AgentToken
     Web-->>Admin: 展示一键安装命令 (curl ... | bash -s -- --token=xxx)
     

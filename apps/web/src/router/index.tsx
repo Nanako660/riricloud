@@ -38,6 +38,12 @@ export const router = createBrowserRouter([
                 })
               },
               {
+                path: '/admin/nodes/:id',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/nodes/detail')).default
+                })
+              },
+              {
                 path: '/admin/users',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/users')).default

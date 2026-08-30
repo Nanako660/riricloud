@@ -1,7 +1,6 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-// 协议与 Reality 密钥本版本锁定不可改（改协议需重新生成密钥对并重装 Agent）
 export class UpdateNodeDto {
   @ApiPropertyOptional({ example: '东京节点 01' })
   @IsString()
@@ -13,15 +12,21 @@ export class UpdateNodeDto {
   @IsOptional()
   serverHost?: string;
 
-  @ApiPropertyOptional({ example: 443, minimum: 1, maximum: 65535 })
-  @IsInt()
-  @Min(1)
-  @Max(65535)
-  @IsOptional()
-  serverPort?: number;
-
   @ApiPropertyOptional({ example: true })
   @IsBoolean()
   @IsOptional()
   isPublic?: boolean;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  sortOrder?: number;
+
+  // 高级模式：完整 singboxConfig 顶层覆盖 JSON 字符串；传 null 清除覆盖
+  @ApiPropertyOptional({ example: '{"log":{"level":"debug"}}', nullable: true })
+  @ValidateIf((o: UpdateNodeDto) => o.configOverride !== null)
+  @IsString()
+  @IsOptional()
+  configOverride?: string | null;
 }

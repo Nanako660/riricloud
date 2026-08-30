@@ -157,14 +157,18 @@ export class UsersService {
         id: true,
         name: true,
         serverHost: true,
-        serverPort: true,
-        protocol: true,
         status: true,
         cpuUsage: true,
         memoryUsage: true,
         bandwidthRate: true,
         lastSeenAt: true,
-        sortOrder: true
+        sortOrder: true,
+        // 协议/端口视图改由公开入站提供（入站模型见 docs/DATA_MODELS.md §NodeInbound）
+        inbounds: {
+          where: { isPublic: true },
+          select: { type: true, tag: true, port: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+        }
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
     });

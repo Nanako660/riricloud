@@ -34,27 +34,47 @@ model User {
 }
 
 model Node {
-  id            String    @id @default(uuid())
-  name          String
-  serverHost    String
-  serverPort    Int
-  protocol      String    @default("VLESS_REALITY") // ProtocolType 枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
-  configPayload String? // JSON 字符串，结构随 protocol 变化
-  agentToken    String    @unique
-  status        String    @default("OFFLINE") // NodeStatus 枚举：ONLINE | OFFLINE | DISABLED
-  lastSeenAt    DateTime?
-  cpuUsage      Float?
-  memoryUsage   Float?
-  bandwidthRate Float?
-  sortOrder     Int       @default(0)
-  isPublic      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  name           String
+  serverHost     String
+  configOverride String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
+  agentToken     String    @unique
+  status         String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED
+  lastSeenAt     DateTime?
+  cpuUsage       Float?
+  memoryUsage    Float?
+  bandwidthRate  Float?
+  kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
+  configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
+  sortOrder      Int       @default(0)
+  isPublic       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
+  inbounds    NodeInbound[]
   trafficLogs TrafficLog[]
 
   @@index([status])
   @@index([isPublic])
+}
+
+model NodeInbound {
+  id         String   @id @default(uuid())
+  nodeId     String
+  type       String // ProtocolType 枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
+  tag        String // sing-box 入站 tag，节点内唯一
+  listen     String   @default("::")
+  port       Int
+  paramsJson String   @default("{}") // 协议专属参数 JSON（结构见 docs/DATA_MODELS.md §3.1）
+  sortOrder  Int      @default(0)
+  isPublic   Boolean  @default(true) // 是否进入订阅输出
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, tag])
+  @@index([nodeId])
 }
 
 model TrafficLog {

@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { isUserEntitled } from '../common/utils';
-import type { AuthResultData, ConfigSyncData, HeartbeatData } from './agent-message';
+import { deepMerge, isUserEntitled } from '../common/utils';
+import { buildServerInbound, type InboundUserCredential } from '../common/inbound';
+import type { ProtocolType } from '../common/constants';
+import type { AuthResultData, ConfigApplyResultData, ConfigSyncData, HeartbeatData } from './agent-message';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -48,7 +50,7 @@ export class AgentGatewayService implements OnModuleDestroy {
     return { success: true, message: '鉴权成功', nodeId };
   }
 
-  // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）
+  // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.node.update({
@@ -58,7 +60,13 @@ export class AgentGatewayService implements OnModuleDestroy {
           memoryUsage: data.memoryUsage,
           bandwidthRate: data.bandwidthRate,
           lastSeenAt: new Date(),
-          status: 'ONLINE'
+          status: 'ONLINE',
+          // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
+          ...(data.kernelRunning !== undefined ? { kernelRunning: data.kernelRunning } : {}),
+          ...(data.lastError !== undefined && data.lastError !== ''
+            ? { configError: data.lastError }
+            : {}),
+          ...(data.lastError === '' ? { configError: null } : {})
         }
       });
       for (const record of data.trafficRecords ?? []) {
@@ -83,54 +91,58 @@ export class AgentGatewayService implements OnModuleDestroy {
     });
   }
 
-  // 组装完整 Sing-box 服务端配置（活跃用户注入 vless users 列表）
+  // config_apply_result 回执处理：失败原因落 configError（成功清空），供管理端展示
+  async handleConfigApplyResult(nodeId: string, data: ConfigApplyResultData): Promise<void> {
+    const message = data.success ? null : (data.message?.slice(0, 8192) ?? 'unknown error');
+    await this.prisma.node
+      .update({ where: { id: nodeId }, data: { configError: message } })
+      .catch((err) => this.logger.warn(`config_apply_result: ${err}`));
+    if (data.success) {
+      this.logger.log(`config applied: node=${nodeId} version=${data.version}`);
+    } else {
+      this.logger.warn(`config apply failed: node=${nodeId} version=${data.version} error=${data.message}`);
+    }
+  }
+
+  // 组装完整 Sing-box 服务端配置：入站数组逐条按协议生成（users 为有资格用户注入），
+  // configOverride 顶层深合并（数组整体替换，含 inbounds 则覆盖整组入站）
   async buildConfigSync(nodeId: string): Promise<ConfigSyncData> {
-    const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      include: { inbounds: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
+    });
     if (!node) {
       throw new NotFoundException('节点不存在');
     }
-    const reality = node.configPayload
-      ? (JSON.parse(node.configPayload) as {
-          serverNames: string[];
-          dest: string;
-          privateKey: string;
-          shortIds: string[];
-        })
-      : null;
 
+    // vless/tuic 用 uuid 登录；hy2 的 password 回退 uuid（与订阅输出一致，见 docs/DATA_MODELS.md §3.1）
     const entitledUsers = await this.prisma.user.findMany({
       where: { isActive: true },
-      select: { uuid: true, email: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
+      select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
     });
-    const users = entitledUsers
+    const users: InboundUserCredential[] = entitledUsers
       .filter(isUserEntitled)
-      .map((u) => ({ uuid: u.uuid, name: u.email, flow: 'xtls-rprx-vision' }));
+      .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
 
-    const singboxConfig: Record<string, unknown> = {
+    const inbounds = node.inbounds.map((inbound) =>
+      buildServerInbound({
+        type: inbound.type as ProtocolType,
+        tag: inbound.tag,
+        listen: inbound.listen,
+        port: inbound.port,
+        params: JSON.parse(inbound.paramsJson) as Record<string, unknown>,
+        users
+      })
+    );
+
+    let singboxConfig: Record<string, unknown> = {
       log: { level: 'info', timestamp: true },
-      inbounds: reality
-        ? [
-            {
-              type: 'vless',
-              tag: 'vless-in',
-              listen: '::',
-              listen_port: node.serverPort,
-              users,
-              tls: {
-                enabled: true,
-                server_name: reality.serverNames[0],
-                reality: {
-                  enabled: true,
-                  handshake: { server: reality.dest, server_port: 443 },
-                  private_key: reality.privateKey,
-                  short_id: reality.shortIds
-                }
-              }
-            }
-          ]
-        : [],
+      inbounds,
       outbounds: [{ type: 'direct', tag: 'direct' }]
     };
+    if (node.configOverride) {
+      singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
+    }
     return { version: ++this.configVersion, singboxConfig };
   }
 
@@ -140,9 +152,14 @@ export class AgentGatewayService implements OnModuleDestroy {
     if (!socket) {
       return false;
     }
-    const payload = await this.buildConfigSync(nodeId);
-    socket.send(JSON.stringify({ type: 'config_sync', data: payload }));
-    return true;
+    try {
+      const payload = await this.buildConfigSync(nodeId);
+      socket.send(JSON.stringify({ type: 'config_sync', data: payload }));
+      return true;
+    } catch (err) {
+      this.logger.error(`pushConfig failed for node=${nodeId}: ${err}`);
+      return false;
+    }
   }
 
   // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）

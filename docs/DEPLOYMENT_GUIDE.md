@@ -107,9 +107,9 @@ SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
 NODE_PORT=9443 bash scripts/dev-e2e.sh   # 自定义内核监听端口（默认 127.0.0.1:8443）
 ```
 
-- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、创建/复用联调节点（按 `127.0.0.1:<NODE_PORT>` 匹配，已存在则对齐端口）、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。
+- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、创建/复用联调节点（按 `127.0.0.1:<NODE_PORT>` 与公开入站端口匹配；不存在则创建节点并添加一条 VLESS Reality 入站）、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。
 - 已在运行的 3000/5173 服务会被复用而非重启；脚本退出只回收其自身启动的进程。
-- 可验证的内核行为：配置下发拉起、面板编辑节点后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
+- 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、面板编辑入站后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
 
 ---
 

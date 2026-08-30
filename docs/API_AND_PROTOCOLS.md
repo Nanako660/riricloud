@@ -2,7 +2,7 @@
 
 所有 HTTP 接口基于 `http(s)://<master-host>/api/v1` 前缀。
 
-> **实现状态（v0.2.0）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、安装脚本）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.3.0）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、安装脚本）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
 >
@@ -33,11 +33,20 @@
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
 #### 节点管理
-- `GET /admin/nodes`：获取所有节点详情（包含 AgentToken 与遥测状态）。⭐
-- `POST /admin/nodes`：创建新节点（生成 AgentToken、Reality 密钥对与一键安装命令；当前版本仅支持 VLESS_REALITY）。⭐
-- `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, serverPort?(1~65535), isPublic?(是否对订阅公开) }`；协议与 Reality 密钥本版本锁定不可改；保存成功后若节点在线即向其推送 `config_sync`（`serverPort` 影响 Agent 入站监听，主机/端口影响订阅输出）。
-- `DELETE /admin/nodes/:id`：删除节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；`TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。
+- `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态与入站列表摘要）。⭐
+- `GET /admin/nodes/:id`：获取单个节点详情（含完整入站列表）。⭐
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与一键安装命令）。⭐ 请求 `{ name?, serverHost, isPublic? }`；入站在详情页单独管理，创建后响应 `{ node, agentToken, installCommand }`。
+- `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, isPublic?, sortOrder?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
+- `DELETE /admin/nodes/:id`：删除节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；入站与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
+- `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供入站表单「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
+
+#### 节点入站管理（v0.3.0，多协议多入站）⭐
+入站挂在节点下独立 CRUD；每次变更后若节点在线即推送 `config_sync`。入站响应中的 `params` 已剥离 `privateKey`（深度合并更新确保脱敏回传不丢失私钥）。
+
+- `POST /admin/nodes/:id/inbounds`：创建入站。请求 `{ type(VLESS|VMESS|TROJAN|HYSTERIA2|TUIC|SHADOWSOCKS|NAIVE|SHADOWTLS|MIXED|SOCKS|HTTP|DIRECT), tag?, listen?(缺省 ::), port(1~65535), params?(结构见 docs/DATA_MODELS.md §3.1), sortOrder?, isPublic? }`。`tag` 缺省按协议前缀生成（冲突自动追加序号，显式冲突 409）；`params` 缺省值/自动生成由服务端归一化（Reality 密钥对、SS 密码自动生成）；同传输层端口冲突 409（QUIC 系 UDP 协议可与 TCP 协议同端口共存）。
+- `PATCH /admin/nodes/:id/inbounds/:inboundId`：部分更新 `{ tag?, listen?, port?, params?, sortOrder?, isPublic? }`；`params` 与现有值**深度合并**后重新归一化（未提供的嵌套键如私钥保持原值）。
+- `DELETE /admin/nodes/:id/inbounds/:inboundId`：删除入站。
 
 #### 系统设置
 - `GET /admin/settings`：读取全量设置。⭐ 响应 `{ siteName, registrationEnabled, defaultTrafficLimitBytes }`。
@@ -79,7 +88,8 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 ```
 
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
-当节点首次连接成功、或主控端发生用户增删变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
+当节点首次连接成功、或主控端发生用户/入站变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
+`inbounds` 按节点入站数组逐条组装（四协议结构见下），`configOverride` 顶层深合并（含 `inbounds` 则整组替换）。
 Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {
@@ -108,6 +118,33 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
               "short_id": ["0123456789abcdef"]
             }
           }
+        },
+        {
+          "type": "hysteria2",
+          "tag": "hy2-in",
+          "listen": "::",
+          "listen_port": 8443,
+          "up_mbps": 100,
+          "down_mbps": 500,
+          "users": [{ "name": "user1@domain.com", "password": "..." }],
+          "tls": { "enabled": true, "server_name": "hy.example.com", "alpn": ["h3"], "certificate_path": "/etc/riricloud/cert.pem", "key_path": "/etc/riricloud/key.pem" }
+        },
+        {
+          "type": "tuic",
+          "tag": "tuic-in",
+          "listen": "::",
+          "listen_port": 8443,
+          "congestion_control": "bbr",
+          "users": [{ "uuid": "user-uuid-1", "name": "user1@domain.com", "password": "..." }],
+          "tls": { "enabled": true, "server_name": "tuic.example.com", "alpn": ["h3"], "certificate_path": "…", "key_path": "…" }
+        },
+        {
+          "type": "shadowsocks",
+          "tag": "ss-in",
+          "listen": "::",
+          "listen_port": 8388,
+          "method": "2022-blake3-aes-128-gcm",
+          "password": "..."
         }
       ],
       "outbounds": [{ "type": "direct" }]
@@ -115,6 +152,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   }
 }
 ```
+
+> 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。
 
 #### 3. 遥测心跳与流量上报 (`heartbeat`) —— Agent -> Master (每 5~10 秒)
 ```json
@@ -124,6 +163,9 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "cpuUsage": 12.5,
     "memoryUsage": 38.2,
     "bandwidthRate": 1048576,
+    "kernelRunning": true,
+    "appliedConfigVersion": 3,
+    "lastError": "",
     "trafficRecords": [
       { "userUuid": "user-uuid-1", "upload": 52428800, "download": 104857600 },
       { "userUuid": "user-uuid-2", "upload": 1024000, "download": 2048000 }
@@ -133,6 +175,18 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 ```
 
 > **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` 已实现 ⭐；`trafficRecords` 为**增量**字节数（本心跳周期内），因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户流量采集暂缓、当前恒为空数组，待上游能力就绪后启用。
+>
+> **内核状态字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）。Master 落 `Node.kernelRunning` / `Node.configError`（`lastError` 为空串时清空 configError）；旧版 Agent 不携带这些字段，对应列保持原值。
+
+#### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
+Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：
+```json
+{ "type": "config_apply_result", "data": { "version": 3, "success": true, "message": "ok" } }
+```
+失败示例（预检拒绝，Agent 侧已回滚 lastGood 配置、内核继续使用旧配置）：
+```json
+{ "type": "config_apply_result", "data": { "version": 4, "success": false, "message": "sing-box check: ERROR: decode inbound ..." } }
+```
 
 ---
 
@@ -143,16 +197,23 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 http(s)://<master-host>/api/v1/sub/:token
 ```
 
-> **实现状态（v0.2.0）**：三种格式与自动协商均已实现 ⭐。
+> **实现状态（v0.3.0）**：三种格式、自动协商与全协议多入站输出均已实现 ⭐。订阅按**入站**逐条生成：仅含公开节点的公开入站（`isPublic`）；单入站节点输出名为节点名，多入站节点为「节点名·tag」，重名全局去重。
 
 ### 3.1 客户端请求头自动识别与参数适配
 - 格式协商优先级：显式 `?type=` 参数 > User-Agent 嗅探 > 默认 Base64。
-- `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`：输出 **Clash Meta YAML**（`Content-Type: text/yaml`）。⭐ 完整最小可用配置：`mixed-port`/`mode`/`log-level` 基础段 + `proxies[]`（vless：`server`/`port`/`uuid`/`flow=xtls-rprx-vision`/`tls`/`servername`/`client-fingerprint=chrome`/`reality-opts.{public-key,short-id}`/`udp`）+ `节点选择` select 策略组 + `MATCH` 兜底规则；重名节点自动追加序号保证 proxy 名唯一。
-- `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（vless：`tag`/`server`/`server_port`/`uuid`/`flow=xtls-rprx-vision`/`tls.utls`/`tls.reality.{public_key,short_id}`，tag 同样去重）+ `direct` 兜底出站。
-- 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG 等）：⭐
+- `?type=clash` 或 User-Agent 包含 `Clash` / `meta` / `Mihomo`：输出 **Clash Meta YAML**（`Content-Type: text/yaml`）。⭐ 完整最小可用配置：`mixed-port`/`mode`/`log-level` 基础段 + `proxies[]` + `节点选择` select 策略组 + `MATCH` 兜底规则。支持 VLESS、VMess、Trojan、Hysteria 2、TUIC、Shadowsocks 等主流协议代理（含 `ws-opts`、`grpc-opts`、`httpupgrade-opts`、`reality-opts`）。
+- `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（全协议出站，解耦 `transport` 与 `tls` 配置）+ `direct` 兜底出站，tag 同样去重。
+- 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG、NekoBox 等）：⭐
   ```
-  vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#🇯🇵东京01
+  vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#🇯🇵东京01·vless-in
+  vmess://<BASE64_JSON>#🇯🇵东京01·vmess-in
+  trojan://<PASSWORD>@<IP>:<PORT>?sni=trojan.example.com&type=ws&path=/ws#🇯🇵东京01·trojan-in
+  hy2://<PASSWORD>@<IP>:<PORT>?sni=hy.example.com&alpn=h3&insecure=1&upmbps=100&downmbps=500#🇯🇵东京01·hy2-in
+  tuic://<UUID>:<PASSWORD>@<IP>:<PORT>?congestion_control=bbr&alpn=h3&sni=…&udp_relay_mode=native#🇯🇵东京01·tuic-in
+  ss://<BASE64URL(method:password)>@<IP>:<PORT>#🇯🇵东京01·ss-in   (SIP002)
+  naive+https://<USERNAME>:<PASSWORD>@<IP>:<PORT>#🇯🇵东京01·naive-in
   ```
+  凭证：hy2/trojan/tuic/naive 密码取 `User.password ?? User.uuid`；ss 为共享密码或多用户密码；vless/vmess/tuic 用户名为 `User.uuid`。
 
 ### 3.2 流量与有效期标准响应头 (UserInfo Header)
 订阅接口返回标准响应头，主流客户端会自动在首页显示流量条与过期日：

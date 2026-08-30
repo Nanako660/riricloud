@@ -52,9 +52,8 @@ interface NodesData {
     id: string;
     name: string;
     serverHost: string;
-    serverPort: number;
-    protocol: string;
     status: string;
+    inbounds: Array<{ type: string; tag: string; port: number }>;
   }>;
 }
 
@@ -205,11 +204,19 @@ export default function DashboardPage() {
                 {nodes.data.nodes.map((n) => (
                   <TableRow key={n.id}>
                     <TableCell className="font-medium">{n.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {n.serverHost}:{n.serverPort}
-                    </TableCell>
+                    <TableCell className="text-muted-foreground">{n.serverHost}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{n.protocol}</Badge>
+                      {n.inbounds.length ? (
+                        <div className="flex flex-wrap gap-1">
+                          {n.inbounds.map((inbound) => (
+                            <Badge key={inbound.tag} variant="outline">
+                              {inbound.type}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant={n.status === 'ONLINE' ? 'default' : 'secondary'}>

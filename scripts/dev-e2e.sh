@@ -96,17 +96,23 @@ AGENT_TOKEN="${AGENT_TOKEN:-}"
 if [ -n "$AGENT_TOKEN" ]; then
   say "使用环境变量指定的 AGENT_TOKEN"
 else
-  # 按地址:端口查找联调节点（避免中文名经 Windows 控制台的编码问题）；已存在则对齐端口，不存在则创建
+  # 按地址查找联调节点（避免中文名经 Windows 控制台的编码问题）；已存在则复用，不存在则创建并添加入站
+  # 新数据模型：端口在 NodeInbound 上（POST /admin/nodes 只收基础信息，入站走 /admin/nodes/:id/inbounds）
   NODE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/nodes" \
-    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const n=(JSON.parse(d)||[]).find(x=>x.serverHost===process.argv[1]&&x.serverPort===Number(process.argv[2]));console.log(n?[n.id,n.agentToken,n.serverHost,n.serverPort].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$NODE_PORT")"
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const n=(JSON.parse(d)||[]).find(x=>x.serverHost===process.argv[1]&&x.inbounds.some(i=>i.port===Number(process.argv[2])));console.log(n?[n.id,n.agentToken].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$NODE_PORT")"
   if [ -n "$NODE_LINE" ]; then
-    read -r NODE_ID AGENT_TOKEN OLD_HOST OLD_PORT <<<"$NODE_LINE"
-    say "复用既有节点（$OLD_HOST:$OLD_PORT）"
+    read -r NODE_ID AGENT_TOKEN <<<"$NODE_LINE"
+    say "复用既有节点（$NODE_HOST:$NODE_PORT）"
   else
     say "创建联调节点「$NODE_NAME」（$NODE_HOST:$NODE_PORT）…"
-    CREATE_BODY=$(printf '{"name":"%s","serverHost":"%s","serverPort":%s}' "$NODE_NAME" "$NODE_HOST" "$NODE_PORT")
-    AGENT_TOKEN="$(curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$CREATE_BODY" "$SERVER_URL/api/v1/admin/nodes" | jsonget agentToken)"
-    [ -n "$AGENT_TOKEN" ] || die "创建节点失败"
+    CREATE_BODY=$(printf '{"name":"%s","serverHost":"%s"}' "$NODE_NAME" "$NODE_HOST")
+    CREATE_RESULT="$(curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$CREATE_BODY" "$SERVER_URL/api/v1/admin/nodes")" || die "创建节点失败"
+    NODE_ID="$(printf '%s' "$CREATE_RESULT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d).node.id)}catch{console.log("")}})')"
+    AGENT_TOKEN="$(printf '%s' "$CREATE_RESULT" | jsonget agentToken)"
+    [ -n "$AGENT_TOKEN" ] && [ -n "$NODE_ID" ] || die "创建节点失败"
+    say "添加 VLESS Reality 入站（端口 $NODE_PORT）…"
+    INBOUND_BODY=$(printf '{"type":"VLESS_REALITY","port":%s}' "$NODE_PORT")
+    curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$INBOUND_BODY" "$SERVER_URL/api/v1/admin/nodes/$NODE_ID/inbounds" >/dev/null || die "创建入站失败"
   fi
 fi
 

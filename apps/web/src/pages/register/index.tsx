@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, Loader2 } from 'lucide-react';
@@ -73,7 +73,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
             <Cloud className="h-6 w-6" />
@@ -130,9 +130,9 @@ export default function RegisterPage() {
               </Button>
               <p className="text-muted-foreground text-center text-sm">
                 已有账号？
-                <a className="text-primary underline-offset-4 hover:underline" href="/login">
+                <Link className="text-primary underline-offset-4 hover:underline" to="/login">
                   返回登录
-                </a>
+                </Link>
               </p>
             </form>
           </Form>

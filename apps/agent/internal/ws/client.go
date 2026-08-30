@@ -43,7 +43,17 @@ type heartbeatData struct {
 	CPUUsage       float64            `json:"cpuUsage"`
 	MemoryUsage    float64            `json:"memoryUsage"`
 	BandwidthRate  float64            `json:"bandwidthRate"`
+	KernelRunning  bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
+	AppliedVersion int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
+	LastError      string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
 	TrafficRecords []heartbeatTraffic `json:"trafficRecords"`
+}
+
+// configApplyResult config_sync 的处理回执（Agent -> Master）
+type configApplyResult struct {
+	Version int64  `json:"version"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 // Client 长连接客户端：负责连接、鉴权、心跳与配置接收
@@ -158,13 +168,16 @@ func (c *Client) readLoop(conn *websocket.Conn) error {
 			var sync configSync
 			if err := json.Unmarshal(msg.Data, &sync); err != nil {
 				c.log.WithError(err).Warn("invalid config_sync payload")
+				c.sendApplyResult(conn, sync.Version, false, "invalid config_sync payload")
 				continue
 			}
-			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig); err != nil {
+			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig, int64(sync.Version)); err != nil {
 				c.log.WithError(err).Error("apply singbox config failed")
+				c.sendApplyResult(conn, sync.Version, false, err.Error())
 				continue
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")
+			c.sendApplyResult(conn, sync.Version, true, "ok")
 		default:
 			c.log.WithField("type", msg.Type).Debug("unknown message")
 		}
@@ -182,10 +195,14 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 		case <-ticker.C:
 			// 采集含 1 秒采样窗口，放行到 goroutine 避免阻塞 ticker
 			sample := telemetry.Collect()
+			kernel := c.singboxMgr.Status()
 			payload := heartbeatData{
 				CPUUsage:       sample.CPUUsage,
 				MemoryUsage:    sample.MemoryUsage,
 				BandwidthRate:  sample.BandwidthRate,
+				KernelRunning:  kernel.Running,
+				AppliedVersion: kernel.AppliedConfigVersion,
+				LastError:      kernel.LastError,
 				TrafficRecords: []heartbeatTraffic{}, // 按用户流量统计受 sing-box 上游能力限制暂未采集（docs/ROADMAP.md）
 			}
 			data, err := json.Marshal(payload)
@@ -208,6 +225,23 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				"mem": fmt.Sprintf("%.1f%%", payload.MemoryUsage),
 			}).Debug("heartbeat sent")
 		}
+	}
+}
+
+// sendApplyResult 回执 config_sync 处理结果（写失败仅记日志：回执是尽力而为的增强信息）
+func (c *Client) sendApplyResult(conn *websocket.Conn, version int, success bool, resultMsg string) {
+	data, err := json.Marshal(configApplyResult{Version: int64(version), Success: success, Message: resultMsg})
+	if err != nil {
+		return
+	}
+	frame, err := json.Marshal(message{Type: "config_apply_result", Data: data})
+	if err != nil {
+		return
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+		c.log.WithError(err).Warn("send config_apply_result failed")
 	}
 }
 

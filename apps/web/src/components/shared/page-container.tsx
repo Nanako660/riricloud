@@ -3,7 +3,11 @@ import { cn } from '@/lib/utils';
 
 // 所有子页面统一嵌 PageContainer（FRONTEND_UI_GUIDELINES 组件分层）
 export function PageContainer({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <div className={cn('flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6', className)}>{children}</div>;
+  return (
+    <div className={cn('flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6 animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out', className)}>
+      {children}
+    </div>
+  );
 }
 
 export function PageHeader({ title, description }: { title: string; description?: string }) {
