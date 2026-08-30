@@ -21,13 +21,20 @@
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、在线节点数）。⭐
 - `GET /user/nodes`：获取当前用户有权访问的公开节点列表及状态。⭐
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）。
+- `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、节点匹配模式。
+- `GET /user/subscription`：查询当前用户唯一订阅及按套餐匹配的可用节点。⭐ 无订阅时返回 `{ subscription: null, nodes: [] }`。
+- `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409。
+- `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；切换套餐、重置已用流量并按新套餐重算周期。
+- `POST /user/subscription/cancel`：取消当前订阅。⭐ 状态变为 `CANCELED`，到期前保留使用权。
+- `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段。
 
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive`：分页查询。⭐ `search` 为邮箱模糊匹配；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, trafficLimitBytes?, expireAt?(ISO) }`；配额缺省取系统设置默认值，`expireAt` 缺省永久；邮箱冲突 409。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态与套餐筛选；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, plan{id,name} }`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额/期限作为初始值且可由 `trafficLimitBytes`/`expireAt` 覆盖；明确传 `planId: null` 时创建无套餐用户；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
+- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录）。⭐
 
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
@@ -39,6 +46,8 @@
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, isPublic?, sortOrder?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；入站与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
+- `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version, url, sha256 }`；Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
+- `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供入站表单「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 节点入站管理（v0.3.0，多协议多入站）⭐
@@ -51,6 +60,29 @@
 #### 系统设置
 - `GET /admin/settings`：读取全量设置。⭐ 响应 `{ siteName, registrationEnabled, defaultTrafficLimitBytes }`。
 - `PUT /admin/settings`：部分更新。⭐ 请求任意子集，键约束见 `docs/DATA_MODELS.md` §SystemSetting；响应返回更新后全量。
+
+#### 套餐管理
+- `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
+- `GET /admin/plans/:id`：查询套餐详情。⭐
+- `GET /admin/plans/:id/nodes`：按套餐规则计算当前在线公开节点。⭐
+- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, nodeMatchMode?, nodeTags?, nodeIds?, templateId?, isPublic?, sortOrder? }`。
+- `PATCH /admin/plans/:id`：部分更新套餐。⭐
+- `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
+
+#### 订阅模板管理
+- `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量。⭐
+- `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
+- `GET /admin/subscription-templates/:id`：查询模板详情。⭐
+- `POST /admin/subscription-templates`：创建模板。⭐ 请求含 `proxyGroups?`、`ruleSets?`、`dnsConfig?`、`customInjectYaml?`、`customInjectJson?`、`isDefault?`。
+- `PATCH /admin/subscription-templates/:id`：部分更新模板；YAML/JSON 覆写在服务端校验语法。⭐
+- `DELETE /admin/subscription-templates/:id`：删除非默认且未被套餐使用的模板。⭐
+
+#### 订阅管控
+- `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐ 保留为兼容接口；管理端主入口已融合至 `/admin/users`。
+- `GET /admin/subscriptions/:id`：查询订阅详情。⭐
+- `POST /admin/subscriptions/users/:userId`：为尚无订阅的用户绑定套餐。⭐ 请求字段同管理员订阅调整接口，必须提供 `planId`；已有订阅时按更新语义处理。
+- `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`；传 `planId: null` 会删除订阅实例，用户回到无套餐状态并使旧订阅 Token 失效。
+- `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
@@ -187,6 +219,39 @@ Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`
 ```json
 { "type": "config_apply_result", "data": { "version": 4, "success": false, "message": "sing-box check: ERROR: decode inbound ..." } }
 ```
+
+#### 5. 远程升级回执 (`upgrade_result`) —— Agent -> Master (v0.3.0)
+```json
+{
+  "type": "upgrade_result",
+  "data": {
+    "taskId": "task-uuid",
+    "target": "singbox",
+    "version": "1.11.0",
+    "success": true,
+    "message": "ok"
+  }
+}
+```
+
+Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配置预检、停止旧进程、原子替换并确认新进程启动。新进程启动失败时恢复 `.riri-old` 备份并重试旧版本。Agent 自身升级成功后保留原命令行参数平滑重启。
+
+#### 6. 网络探针回执 (`probe_result`) —— Agent -> Master (v0.3.0)
+```json
+{
+  "type": "probe_result",
+  "data": {
+    "taskId": "task-uuid",
+    "success": true,
+    "results": [
+      { "type": "tcp", "target": "example.com", "success": true, "latencyMs": 32 },
+      { "type": "dns", "target": "example.com", "success": true, "latencyMs": 8 }
+    ]
+  }
+}
+```
+
+Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result` 四类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
 ---
 

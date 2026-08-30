@@ -31,7 +31,9 @@ import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
 const createSchema = z.object({
   name: z.string().max(32, '名称不超过 32 字符').optional(),
   serverHost: z.string().min(1, '请输入服务器地址'),
-  isPublic: z.boolean()
+  isPublic: z.boolean(),
+  tags: z.string().optional(),
+  level: z.coerce.number().int().min(0)
 });
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -49,7 +51,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: '', serverHost: '', isPublic: true }
+    defaultValues: { name: '', serverHost: '', isPublic: true, tags: '', level: 0 }
   });
 
   // 打开时重置到初始状态
@@ -62,7 +64,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
-      { name: v.name?.trim() || undefined, serverHost: v.serverHost, isPublic: v.isPublic },
+      { name: v.name?.trim() || undefined, serverHost: v.serverHost, isPublic: v.isPublic, tags: v.tags?.split(',').map((tag) => tag.trim()).filter(Boolean), level: v.level },
       { onSuccess: (data) => setCreated(data) }
     );
   };
@@ -155,6 +157,10 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                     </FormItem>
                   )}
                 />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField control={createForm.control} name="tags" render={({ field }) => <FormItem><FormLabel>节点标签</FormLabel><FormControl><Input placeholder="vip, hk" {...field} /></FormControl><FormDescription>用逗号分隔，供套餐匹配</FormDescription><FormMessage /></FormItem>} />
+                  <FormField control={createForm.control} name="level" render={({ field }) => <FormItem><FormLabel>节点等级</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>} />
+                </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                     取消

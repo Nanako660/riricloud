@@ -5,6 +5,8 @@ import { Roles } from '../common/roles.decorator';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { CreateInboundDto, UpdateInboundDto } from './dto/inbound.dto';
+import { ProbeNodeDto } from './dto/probe-node.dto';
+import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 import { NodesService } from './nodes.service';
 
 @ApiTags('admin')
@@ -48,6 +50,16 @@ export class NodesController {
   @Post(':id/reload')
   reload(@Param('id') id: string) {
     return this.nodesService.requestReload(id);
+  }
+
+  @Post(':id/upgrade')
+  upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto) {
+    return this.nodesService.requestUpgrade(id, dto);
+  }
+
+  @Post(':id/probe')
+  probe(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ProbeNodeDto) {
+    return this.nodesService.requestProbe(id, dto);
   }
 
   @Post(':id/inbounds')

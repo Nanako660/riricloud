@@ -1,347 +1,181 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Form } from '@/components/ui/form';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import type { Plan } from '../../plans/use-plans';
 import { useUserMutations, type AdminUser } from '../use-users';
-
-const GB = 1024 ** 3;
-
-const createSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
-  password: z.string().min(8, '密码至少 8 位').max(64),
-  role: z.enum(['USER', 'ADMIN']).default('USER'),
-  quotaGB: z.coerce.number().min(1, '配额至少 1 GB').max(1048576, '过大'),
-  permanent: z.boolean().default(true),
-  expireAt: z.string().optional()
-});
-
-const editSchema = z
-  .object({
-    role: z.enum(['USER', 'ADMIN']),
-    quotaGB: z.coerce.number().min(1).max(1048576),
-    permanent: z.boolean(),
-    expireAt: z.string().optional(),
-    isActive: z.boolean(),
-    password: z.string().min(8, '密码至少 8 位').max(64).optional().or(z.literal(''))
-  })
-  .refine((v) => v.permanent || !!v.expireAt, {
-    message: '请填写到期日期或选择永久有效',
-    path: ['expireAt']
-  });
-
-type CreateForm = z.infer<typeof createSchema>;
-type EditForm = z.infer<typeof editSchema>;
+import { CreateUserFields, EditAccountFields } from './user-account-fields';
+import { UserSubscriptionFields } from './user-subscription-fields';
+import { createUserSchema, dateInputAfterDays, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
 
 interface UserFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 编辑目标（null=创建） */
   user: AdminUser | null;
-  /** 当前登录管理员 id：禁止修改自己的角色 */
   selfId: string;
+  plans: Plan[];
 }
 
-export function UserFormDialog({ open, onOpenChange, user, selfId }: UserFormDialogProps) {
-  const { createUser, updateUser } = useUserMutations();
+const emptyCreateValues: CreateUserForm = {
+  email: '',
+  password: '',
+  role: 'USER',
+  planId: '',
+  quotaGB: 100,
+  permanent: false,
+  expireAt: dateInputAfterDays(30)
+};
+
+export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: UserFormDialogProps) {
+  const { createUser, updateUser, updateSubscription, assignSubscription, resetSubscriptionToken } = useUserMutations();
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [removeSubscriptionConfirmOpen, setRemoveSubscriptionConfirmOpen] = useState(false);
   const isEdit = !!user;
   const isSelf = user?.id === selfId;
+  const accountForm = useForm<EditAccountForm>({ resolver: zodResolver(editAccountSchema), defaultValues: { role: 'USER', isActive: true, password: '' } });
+  const createForm = useForm<CreateUserForm>({ resolver: zodResolver(createUserSchema), defaultValues: emptyCreateValues });
+  const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 100, usedGB: 0, expireAt: '', addDays: undefined } });
 
-  const editForm = useForm<EditForm>({
-    resolver: zodResolver(editSchema),
-    defaultValues: { role: 'USER', quotaGB: 100, permanent: true, expireAt: '', isActive: true, password: '' }
-  });
-
-  // 打开时用目标用户回填
   useEffect(() => {
-    if (user && open) {
-      editForm.reset({
-        role: user.role,
-        quotaGB: Math.round(user.trafficLimitBytes / GB),
-        permanent: !user.expireAt,
-        expireAt: user.expireAt ? user.expireAt.slice(0, 10) : '',
-        isActive: user.isActive,
-        password: ''
-      });
+    if (!open) return;
+    if (!user) {
+      createForm.reset(emptyCreateValues);
+      return;
     }
-  }, [user, open, editForm]);
+    accountForm.reset({ role: user.role, isActive: user.isActive, password: '' });
+    const subscription = user.subscription;
+    subscriptionForm.reset({
+      planId: subscription?.plan?.id ?? '',
+      status: subscription?.status ?? 'ACTIVE',
+      quotaGB: (subscription?.trafficLimitBytes ?? 100 * GB) / GB,
+      usedGB: (subscription?.trafficUsedBytes ?? 0) / GB,
+      expireAt: subscription?.expireAt ? subscription.expireAt.slice(0, 10) : '',
+      addDays: undefined
+    });
+  }, [accountForm, createForm, open, subscriptionForm, user]);
 
-  const createForm = useForm<CreateForm>({
-    resolver: zodResolver(createSchema),
-    defaultValues: { email: '', password: '', role: 'USER', quotaGB: 100, permanent: true, expireAt: '' }
-  });
-
-  const onEditSubmit = (v: EditForm) => {
+  const submitAccount = (values: EditAccountForm) => {
     if (!user) return;
-    updateUser.mutate(
-      {
-        id: user.id,
-        role: v.role,
-        trafficLimitBytes: Math.round(v.quotaGB * GB),
-        expireAt: v.permanent ? null : new Date(`${v.expireAt}T23:59:59Z`).toISOString(),
-        isActive: v.isActive,
-        ...(v.password ? { password: v.password } : {})
-      },
-      { onSuccess: () => onOpenChange(false) }
-    );
+    updateUser.mutate({ id: user.id, role: values.role, isActive: values.isActive, ...(values.password ? { password: values.password } : {}) }, { onSuccess: () => onOpenChange(false) });
   };
 
-  const onCreateSubmit = (v: CreateForm) => {
-    createUser.mutate(
-      {
-        email: v.email,
-        password: v.password,
-        role: v.role,
-        trafficLimitBytes: Math.round(v.quotaGB * GB),
-        ...(v.permanent || !v.expireAt ? {} : { expireAt: new Date(`${v.expireAt}T23:59:59Z`).toISOString() })
-      },
-      { onSuccess: () => onOpenChange(false) }
-    );
+  const submitCreate = (values: CreateUserForm) => {
+    createUser.mutate({
+      email: values.email,
+      password: values.password,
+      role: values.role,
+      planId: values.planId || null,
+      trafficLimitBytes: Math.round(values.quotaGB * GB),
+      expireAt: values.permanent ? null : dateInputToIso(values.expireAt ?? '')
+    }, { onSuccess: () => onOpenChange(false) });
+  };
+
+  const submitSubscription = (values: SubscriptionForm) => {
+    if (!user) return;
+    const planId = values.planId || null;
+    if (!planId && !user.subscription) {
+      onOpenChange(false);
+      return;
+    }
+    if (!planId && user.subscription) {
+      setRemoveSubscriptionConfirmOpen(true);
+      return;
+    }
+    const payload = {
+      planId,
+      status: values.status,
+      trafficLimitBytes: Math.round(values.quotaGB * GB),
+      trafficUsedBytes: Math.round(values.usedGB * GB),
+      expireAt: values.addDays ? undefined : dateInputToIso(values.expireAt ?? ''),
+      addDays: values.addDays
+    };
+    if (user.subscription) {
+      updateSubscription.mutate({ id: user.subscription.id, ...payload }, { onSuccess: () => onOpenChange(false) });
+    } else if (planId) {
+      assignSubscription.mutate({ userId: user.id, ...payload, planId }, { onSuccess: () => onOpenChange(false) });
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? `编辑用户 ${user?.email}` : '创建用户'}</DialogTitle>
-          <DialogDescription>{isEdit ? '修改角色、配额、有效期与激活状态' : '新用户默认配额可在系统设置中调整'}</DialogDescription>
-        </DialogHeader>
-
-        {isEdit ? (
-          <Form {...editForm}>
-            <form className="space-y-4" onSubmit={editForm.handleSubmit(onEditSubmit)}>
-              <FormField
-                control={editForm.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>角色</FormLabel>
-                    <Select disabled={isSelf} onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="USER">用户</SelectItem>
-                        <SelectItem value="ADMIN">管理员</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {isSelf ? <FormDescription>不能修改自己的角色</FormDescription> : null}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={editForm.control}
-                name="quotaGB"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>流量配额（GB）</FormLabel>
-                    <FormControl>
-                      <Input type="number" min={1} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  control={editForm.control}
-                  name="permanent"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                      <FormLabel>永久有效</FormLabel>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={editForm.control}
-                  name="isActive"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                      <FormLabel>启用账号</FormLabel>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-              {!editForm.watch('permanent') ? (
-                <FormField
-                  control={editForm.control}
-                  name="expireAt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>到期日期</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
-              <FormField
-                control={editForm.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>重置密码（可选）</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="留空表示不修改" autoComplete="new-password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  取消
-                </Button>
-                <Button type="submit" disabled={updateUser.isPending}>
-                  {updateUser.isPending ? '保存中…' : '保存'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        ) : (
-          <Form {...createForm}>
-            <form className="space-y-4" onSubmit={createForm.handleSubmit(onCreateSubmit)}>
-              <FormField
-                control={createForm.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>邮箱</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="user@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={createForm.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>初始密码</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="至少 8 位" autoComplete="new-password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  control={createForm.control}
-                  name="role"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>角色</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="USER">用户</SelectItem>
-                          <SelectItem value="ADMIN">管理员</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={createForm.control}
-                  name="quotaGB"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>配额（GB）</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={createForm.control}
-                name="permanent"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <FormLabel>永久有效</FormLabel>
-                      <FormDescription>关闭后需填写到期日期</FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              {!createForm.watch('permanent') ? (
-                <FormField
-                  control={createForm.control}
-                  name="expireAt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>到期日期</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ) : null}
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  取消
-                </Button>
-                <Button type="submit" disabled={createUser.isPending}>
-                  {createUser.isPending ? '创建中…' : '创建'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        )}
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
+            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，配额和有效期可继续微调。'}</DialogDescription>
+          </DialogHeader>
+          {isEdit ? (
+            <Tabs key={user?.id} defaultValue="account" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="account">账号安全</TabsTrigger>
+                <TabsTrigger value="subscription">订阅管理</TabsTrigger>
+              </TabsList>
+              <TabsContent value="account">
+                <Form {...accountForm}>
+                  <form className="space-y-4" onSubmit={accountForm.handleSubmit(submitAccount)}>
+                    <EditAccountFields form={accountForm} isSelf={isSelf} />
+                    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={updateUser.isPending}>{updateUser.isPending ? '保存中…' : '保存账号'}</Button></DialogFooter>
+                  </form>
+                </Form>
+              </TabsContent>
+              <TabsContent value="subscription">
+                <Form {...subscriptionForm}>
+                  <form className="space-y-4" onSubmit={subscriptionForm.handleSubmit(submitSubscription)}>
+                    <UserSubscriptionFields form={subscriptionForm} plans={plans} subscription={user.subscription} onResetToken={() => setResetConfirmOpen(true)} resetPending={resetSubscriptionToken.isPending} />
+                    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={updateSubscription.isPending || assignSubscription.isPending}>{updateSubscription.isPending || assignSubscription.isPending ? '保存中…' : '保存订阅'}</Button></DialogFooter>
+                  </form>
+                </Form>
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <Form {...createForm}>
+              <form className="space-y-4" onSubmit={createForm.handleSubmit(submitCreate)}>
+                <CreateUserFields form={createForm} plans={plans} />
+                <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={createUser.isPending}>{createUser.isPending ? '创建中…' : '创建用户'}</Button></DialogFooter>
+              </form>
+            </Form>
+          )}
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>重置订阅链接？</AlertDialogTitle><AlertDialogDescription>旧链接会立即失效，用户需要重新导入订阅。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (user) resetSubscriptionToken.mutate(user.id); setResetConfirmOpen(false); }}>确认重置</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={removeSubscriptionConfirmOpen} onOpenChange={setRemoveSubscriptionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除用户订阅？</AlertDialogTitle>
+            <AlertDialogDescription>该操作会彻底取消当前订阅、移除套餐关联，并使旧订阅链接立即失效。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={updateSubscription.isPending}
+              onClick={() => {
+                if (user?.subscription) {
+                  updateSubscription.mutate(
+                    { id: user.subscription.id, planId: null },
+                    { onSuccess: () => onOpenChange(false) }
+                  );
+                }
+                setRemoveSubscriptionConfirmOpen(false);
+              }}
+            >
+              确认移除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

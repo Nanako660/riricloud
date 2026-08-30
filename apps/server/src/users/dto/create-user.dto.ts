@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEmail, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLES, Role } from '../../common/constants';
 
@@ -26,8 +26,13 @@ export class CreateUserDto {
   @IsOptional()
   trafficLimitBytes?: number;
 
-  @ApiPropertyOptional({ example: '2027-01-01T00:00:00Z', description: 'ISO 日期；缺省永久' })
+  @ApiPropertyOptional({ example: '2027-01-01T00:00:00Z', nullable: true, description: 'ISO 日期；传 null 或缺省时按套餐/永久规则处理' })
   @IsString()
   @IsOptional()
-  expireAt?: string;
+  expireAt?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '初始套餐；传 null 创建无套餐用户，缺省自动绑定体验套餐' })
+  @IsUUID()
+  @IsOptional()
+  planId?: string | null;
 }

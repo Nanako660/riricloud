@@ -8,7 +8,8 @@ describe('SubscriptionService', () => {
   let service: SubscriptionService;
   const prisma = {
     user: { findUnique: jest.fn() },
-    node: { findMany: jest.fn() }
+    node: { findMany: jest.fn() },
+    subscriptionTemplate: { findFirst: jest.fn() }
   };
 
   beforeAll(async () => {
@@ -21,7 +22,7 @@ describe('SubscriptionService', () => {
     service = moduleRef.get(SubscriptionService);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => jest.resetAllMocks());
 
   const activeUser = {
     id: 'u1',
@@ -172,6 +173,21 @@ describe('SubscriptionService', () => {
       expect(result.userInfoHeader).toBe(
         'upload=0; download=0; total=107374182400; expire=0'
       );
+    });
+
+    it('套餐未绑定模板时使用全局默认模板', async () => {
+      prisma.user.findUnique.mockResolvedValue(activeUser);
+      prisma.node.findMany.mockResolvedValue([node({ inbounds: [inbound({})] })]);
+      prisma.subscriptionTemplate.findFirst.mockResolvedValue({
+        proxyGroupsJson: JSON.stringify([{ name: '默认策略', type: 'select', proxies: 'all' }]),
+        ruleSetsJson: '[]',
+        dnsConfigJson: '{}'
+      });
+
+      const result = await service.getSubscription('tok-1', { type: 'clash' });
+      expect(parseYaml(result.body)['proxy-groups']).toEqual([
+        { name: '默认策略', type: 'select', proxies: ['东京节点 01'] }
+      ]);
     });
 
     it('用户未设置密码时 hy2 凭证回退 uuid', async () => {

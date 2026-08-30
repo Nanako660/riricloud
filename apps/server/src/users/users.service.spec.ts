@@ -10,7 +10,9 @@ describe('UsersService', () => {
   const prisma = {
     $transaction: jest.fn(),
     user: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    node: { count: jest.fn(), findMany: jest.fn() }
+    node: { count: jest.fn(), findMany: jest.fn() },
+    plan: { findUnique: jest.fn(), findFirst: jest.fn() },
+    subscription: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() }
   };
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn(), getDefaultQuota: jest.fn() };
@@ -27,7 +29,7 @@ describe('UsersService', () => {
     service = moduleRef.get(UsersService);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => jest.resetAllMocks());
 
   const seededUser = {
     id: 'u1',
@@ -58,13 +60,137 @@ describe('UsersService', () => {
   describe('listUsers', () => {
     it('分页查询返回统一结构并做 BigInt 边界转换', async () => {
       prisma.$transaction.mockResolvedValue([
-        [{ ...seededUser, createdAt: new Date() }],
+        [{
+          ...seededUser,
+          createdAt: new Date(),
+          subscription: {
+            id: 's1',
+            status: 'ACTIVE',
+            trafficLimitBytes: BigInt(214748364800),
+            trafficUsedBytes: BigInt(1073741824),
+            startedAt: new Date(),
+            expireAt: null,
+            plan: { id: 'p1', name: '体验套餐' }
+          }
+        }],
         1
       ]);
-      const result = await service.listUsers({ page: 1, pageSize: 20, search: 'demo' });
+      const result = await service.listUsers({
+        page: 1,
+        pageSize: 20,
+        search: 'demo',
+        isActive: false,
+        subscriptionStatus: 'ACTIVE',
+        planId: 'p1'
+      });
       expect(result.total).toBe(1);
       expect(result.data[0].trafficLimitBytes).toBe(107374182400);
       expect(typeof result.data[0].trafficLimitBytes).toBe('number');
+      expect(result.data[0].subscription).toMatchObject({
+        status: 'ACTIVE',
+        trafficLimitBytes: 214748364800,
+        trafficUsedBytes: 1073741824,
+        plan: { id: 'p1', name: '体验套餐' }
+      });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          email: { contains: 'demo' },
+          isActive: false,
+          subscription: { is: { status: 'ACTIVE', planId: 'p1' } }
+        }
+      }));
+    });
+  });
+
+  describe('createUser', () => {
+    it('指定套餐时在同一事务创建用户与初始订阅', async () => {
+      const now = new Date();
+      const plan = {
+        id: 'p1',
+        name: '体验套餐',
+        durationDays: 30,
+        trafficLimitBytes: BigInt(214748364800),
+        isPublic: true
+      };
+      const created = { ...seededUser, id: 'u2', email: 'new@riricloud.local', createdAt: now };
+      const tx = {
+        user: { create: jest.fn().mockResolvedValue(created) },
+        subscription: { create: jest.fn().mockResolvedValue({ id: 's2' }) }
+      };
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.plan.findUnique.mockResolvedValue(plan);
+      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
+      prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+
+      const result = await service.createUser({
+        email: 'new@riricloud.local',
+        password: 'strong-pass',
+        planId: 'p1',
+        expireAt: null
+      });
+
+      expect(result.email).toBe('new@riricloud.local');
+      expect(tx.user.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          trafficLimitBytes: BigInt(214748364800),
+          subscriptionToken: expect.any(String)
+        })
+      }));
+      const subscriptionCall = tx.subscription.create.mock.calls[0][0];
+      expect(subscriptionCall.data).toMatchObject({
+        userId: 'u2',
+        planId: 'p1',
+        status: 'ACTIVE',
+        trafficLimitBytes: BigInt(214748364800),
+        trafficUsedBytes: BigInt(0),
+        expireAt: null
+      });
+      expect(subscriptionCall.data.subscriptionToken).toBe(
+        tx.user.create.mock.calls[0][0].data.subscriptionToken
+      );
+    });
+
+    it('未指定套餐时自动选择体验套餐并使用套餐配额与周期', async () => {
+      const plan = {
+        id: 'p1',
+        name: '体验套餐',
+        durationDays: 30,
+        trafficLimitBytes: BigInt(214748364800),
+        isPublic: true
+      };
+      const tx = {
+        user: { create: jest.fn().mockResolvedValue({ ...seededUser, id: 'u3' }) },
+        subscription: { create: jest.fn().mockResolvedValue({ id: 's3' }) }
+      };
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.plan.findFirst.mockResolvedValue(plan);
+      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
+      prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+
+      await service.createUser({ email: 'default@riricloud.local', password: 'strong-pass' });
+
+      expect(prisma.plan.findFirst).toHaveBeenCalledWith({ where: { name: '体验套餐' } });
+      expect(tx.subscription.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ planId: 'p1', trafficLimitBytes: BigInt(214748364800) })
+      }));
+    });
+
+    it('明确传 null 时创建无套餐用户', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ ...seededUser, id: 'u4', email: 'unassigned@riricloud.local' });
+      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
+
+      const result = await service.createUser({
+        email: 'unassigned@riricloud.local',
+        password: 'strong-pass',
+        planId: null
+      });
+
+      expect(result.email).toBe('unassigned@riricloud.local');
+      expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ trafficLimitBytes: BigInt(107374182400) })
+      }));
+      expect(prisma.subscription.create).not.toHaveBeenCalled();
     });
   });
 

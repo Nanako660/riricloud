@@ -54,8 +54,33 @@ export const router = createBrowserRouter([
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/settings')).default
                 })
-              }
+              },
+              {
+                path: '/admin/plans',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/plans')).default
+                })
+              },
+              {
+                path: '/admin/templates',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/templates')).default
+                })
+              },
+              { path: '/admin/subscriptions', element: <Navigate to="/admin/users" replace /> }
             ]
+          },
+          {
+            path: '/market',
+            lazy: async () => ({
+              Component: (await import('@/pages/user/market')).default
+            })
+          },
+          {
+            path: '/subscription',
+            lazy: async () => ({
+              Component: (await import('@/pages/user/subscription')).default
+            })
           }
         ]
       }

@@ -155,6 +155,23 @@ describe('AgentGatewayService', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('旧连接断开时不会把同节点的新连接标记为离线', async () => {
+    const oldSocket = { send: jest.fn(), close: jest.fn() };
+    const newSocket = { send: jest.fn(), close: jest.fn() };
+    prisma.node.update.mockResolvedValue({});
+    prisma.node.findUnique.mockResolvedValue({ name: '节点 1' });
+
+    await service.register('n1', oldSocket);
+    await service.register('n1', newSocket);
+    await service.unregister('n1', oldSocket);
+
+    expect(prisma.node.update).toHaveBeenCalledTimes(2);
+    expect(prisma.node.update).not.toHaveBeenLastCalledWith({
+      where: { id: 'n1' },
+      data: { status: 'OFFLINE' }
+    });
+  });
+
   describe('buildConfigSync', () => {
     const entitledUser = {
       uuid: 'uuid-1',

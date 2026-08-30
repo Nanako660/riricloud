@@ -1,4 +1,4 @@
-import { stringify } from 'yaml';
+import { parseDocument, stringify } from 'yaml';
 import type {
   Hysteria2Params,
   NaiveParams,
@@ -9,6 +9,7 @@ import type {
   VmessParams
 } from '../common/inbound';
 import type { ProtocolType } from '../common/constants';
+import { deepMerge } from '../common/utils';
 
 // 订阅用户凭证：vless/vmess 以 uuid 登录；hy2/trojan/tuic/naive 密码为 User.password ?? uuid；ss 为入站密码
 export interface SubUser {
@@ -28,7 +29,59 @@ export interface SubInbound {
 export interface SubNode {
   name: string;
   serverHost: string;
+  tags?: string[];
+  level?: number;
   inbounds: SubInbound[];
+}
+
+export interface SubscriptionTemplateConfig {
+  proxyGroupsJson?: string;
+  ruleSetsJson?: string;
+  dnsConfigJson?: string;
+  customInjectYaml?: string | null;
+  customInjectJson?: string | null;
+}
+
+function parseJson<T>(value: string | undefined, fallback: T): T {
+  try {
+    return value ? (JSON.parse(value) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function matchesProxyFilter(entry: SubEntry, group: Record<string, unknown>): boolean {
+  const filter = group.filter;
+  if (typeof filter !== 'string' || !filter.trim()) return true;
+  try {
+    return new RegExp(filter, 'i').test(entry.node.name) || new RegExp(filter, 'i').test(entry.inbound.tag);
+  } catch {
+    return false;
+  }
+}
+
+function templateGroups(template: SubscriptionTemplateConfig | undefined): Array<Record<string, unknown>> {
+  return parseJson<unknown[]>(template?.proxyGroupsJson, [])
+    .filter((group): group is Record<string, unknown> => !!group && typeof group === 'object' && !Array.isArray(group));
+}
+
+function templateRules(template: SubscriptionTemplateConfig | undefined): Array<Record<string, unknown>> {
+  return parseJson<unknown[]>(template?.ruleSetsJson, [])
+    .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object' && !Array.isArray(rule));
+}
+
+function templateDns(template: SubscriptionTemplateConfig | undefined): Record<string, unknown> {
+  const dns = parseJson<unknown>(template?.dnsConfigJson, {});
+  return dns && typeof dns === 'object' && !Array.isArray(dns) ? (dns as Record<string, unknown>) : {};
+}
+
+function parseYamlObject(value: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = parseDocument(value).toJS();
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 const REALITY_CLIENT_DEFAULTS = {
@@ -463,22 +516,60 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
 }
 
 // Clash Meta 客户端配置：完整最小可用（基础设置 + proxies + 策略组 + 兜底规则）
-export function buildClashYaml(user: SubUser, nodes: SubNode[]): string {
-  const proxies = entries(nodes)
+export function buildClashYaml(user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
+  const allEntries = entries(nodes);
+  const proxies = allEntries
     .map((entry) => buildClashProxy(user, entry))
     .filter((p) => Object.keys(p).length > 0);
 
   const names = proxies.map((p) => p.name as string);
-  const group = '节点选择';
-  const config = {
+  const defaultGroup = '节点选择';
+  const groups = templateGroups(template);
+  const proxyGroups = groups.length
+    ? groups.map((group) => {
+        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group));
+        const groupNames = groupEntries
+          .map((entry) => names[allEntries.indexOf(entry)])
+          .filter((name): name is string => !!name && names.includes(name));
+        const type = typeof group.type === 'string' ? group.type : 'select';
+        return {
+          name: typeof group.name === 'string' && group.name.trim() ? group.name : defaultGroup,
+          type,
+          proxies: groupNames.length ? groupNames : [...names, 'DIRECT'],
+          ...(typeof group.url === 'string' ? { url: group.url } : {}),
+          ...(typeof group.interval === 'number' ? { interval: group.interval } : {}),
+          ...(typeof group.tolerance === 'number' ? { tolerance: group.tolerance } : {})
+        };
+      })
+    : [{ name: defaultGroup, type: 'select', proxies: [...names, 'DIRECT'] }];
+  const primaryGroup = (proxyGroups[0]?.name as string) || defaultGroup;
+  const configuredRules = templateRules(template);
+  const rules = configuredRules.length
+    ? configuredRules
+        .filter((rule) => rule.enabled !== false)
+        .flatMap((rule) => {
+          const type = typeof rule.type === 'string' ? rule.type.toUpperCase() : 'DOMAIN-SUFFIX';
+          const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
+          const values = Array.isArray(rule.rules) ? rule.rules.filter((item): item is string => typeof item === 'string') : [];
+          return type === 'MATCH' || type === 'FINAL'
+            ? [`MATCH,${target}`]
+            : values.map((value) => `${type},${value},${target}`);
+        })
+    : [`MATCH,${primaryGroup}`];
+  const config: Record<string, unknown> = {
     'mixed-port': 7890,
     'allow-lan': false,
     mode: 'rule',
     'log-level': 'info',
     proxies,
-    'proxy-groups': [{ name: group, type: 'select', proxies: [...names, 'DIRECT'] }],
-    rules: [`MATCH,${group}`]
+    'proxy-groups': proxyGroups,
+    rules,
+    ...(Object.keys(templateDns(template)).length ? { dns: templateDns(template) } : {})
   };
+  if (template?.customInjectYaml?.trim()) {
+    const parsed = parseYamlObject(template.customInjectYaml);
+    return stringify(deepMerge(config, parsed));
+  }
   return stringify(config);
 }
 
@@ -687,12 +778,51 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
 }
 
 // Sing-box 客户端配置：多协议出站 + direct 兜底
-export function buildSingboxJson(user: SubUser, nodes: SubNode[]): string {
+export function buildSingboxJson(user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
   const outbounds: Record<string, unknown>[] = entries(nodes)
     .map((entry) => buildSingboxOutbound(user, entry))
     .filter((o) => Object.keys(o).length > 0);
 
+  const names = outbounds.map((outbound) => outbound.tag as string);
+  const groups = templateGroups(template);
+  const strategyOutbounds = groups.map((group) => {
+    const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'selector';
+    const outboundType = type === 'url-test' ? 'urltest' : 'selector';
+    return {
+      type: outboundType,
+      tag: typeof group.name === 'string' && group.name.trim() ? group.name : '节点选择',
+      outbounds: [...names],
+      ...(outboundType === 'urltest'
+        ? {
+            url: typeof group.url === 'string' ? group.url : 'https://www.gstatic.com/generate_204',
+            interval: typeof group.interval === 'number' ? `${group.interval}s` : '5m'
+          }
+        : {})
+    };
+  });
+  const primaryGroup = (strategyOutbounds[0]?.tag as string) || '节点选择';
   outbounds.push({ type: 'direct', tag: 'direct' });
-  return JSON.stringify({ log: { level: 'info' }, outbounds }, null, 2);
+  outbounds.push(...strategyOutbounds);
+  const routeRules: Array<Record<string, unknown>> = templateRules(template)
+    .filter((rule) => rule.enabled !== false)
+    .flatMap((rule): Array<Record<string, unknown>> => {
+      const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
+      const values = Array.isArray(rule.rules) ? rule.rules.filter((item): item is string => typeof item === 'string') : [];
+      const type = typeof rule.type === 'string' ? rule.type.toLowerCase() : 'domain_suffix';
+      if (type === 'match' || type === 'final') return [{ action: 'route', outbound: target }];
+      if (type === 'geosite') return [{ rule_set: values, outbound: target }];
+      if (type === 'ip-cidr' || type === 'ip_cidr') return [{ ip_cidr: values, outbound: target }];
+      return [{ domain_suffix: values, outbound: target }];
+    });
+  const config: Record<string, unknown> = {
+    log: { level: 'info' },
+    dns: templateDns(template),
+    outbounds,
+    route: { rules: routeRules.length ? routeRules : [{ action: 'route', outbound: primaryGroup }] }
+  };
+  if (template?.customInjectJson?.trim()) {
+    const parsed = JSON.parse(template.customInjectJson) as Record<string, unknown>;
+    return JSON.stringify(deepMerge(config, parsed), null, 2);
+  }
+  return JSON.stringify(config, null, 2);
 }
-

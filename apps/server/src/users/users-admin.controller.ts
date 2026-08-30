@@ -24,6 +24,12 @@ export class UsersAdminController {
     return this.usersService.createUser(dto);
   }
 
+  @Post(':id/reset-subscription-token')
+  async resetSubscriptionToken(@Param('id', ParseUUIDPipe) id: string) {
+    const subscriptionToken = await this.usersService.resetSubscriptionToken(id);
+    return { subscriptionToken };
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,

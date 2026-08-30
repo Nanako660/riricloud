@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateNodeDto {
@@ -29,4 +29,16 @@ export class UpdateNodeDto {
   @IsString()
   @IsOptional()
   configOverride?: string | null;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  tags?: string[];
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  level?: number;
 }

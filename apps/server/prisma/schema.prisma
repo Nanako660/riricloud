@@ -13,21 +13,22 @@ datasource db {
 }
 
 model User {
-  id                String   @id @default(uuid())
-  email             String   @unique
+  id                String    @id @default(uuid())
+  email             String    @unique
   passwordHash      String
-  role              String   @default("USER") // Role 枚举：ADMIN | USER
-  trafficLimitBytes BigInt   @default(107374182400) // 100 GiB
-  trafficUsedBytes  BigInt   @default(0)
+  role              String    @default("USER") // Role 枚举：ADMIN | USER
+  trafficLimitBytes BigInt    @default(107374182400) // 100 GiB
+  trafficUsedBytes  BigInt    @default(0)
   expireAt          DateTime?
-  subscriptionToken String   @unique @default(uuid())
-  uuid              String   @unique @default(uuid()) // VLESS/Sing-box 用户识别
+  subscriptionToken String    @unique @default(uuid())
+  uuid              String    @unique @default(uuid()) // VLESS/Sing-box 用户识别
   password          String? // SS/Hysteria2 连接密码（预留）
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  trafficLogs TrafficLog[]
+  trafficLogs  TrafficLog[]
+  subscription Subscription?
 
   @@index([role])
   @@index([isActive])
@@ -46,6 +47,8 @@ model Node {
   bandwidthRate  Float?
   kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
   configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
+  tagsJson       String    @default("[]") // 节点标签数组 JSON
+  level          Int       @default(0) // 节点等级，供套餐匹配与前端展示
   sortOrder      Int       @default(0)
   isPublic       Boolean   @default(true)
   createdAt      DateTime  @default(now())
@@ -56,6 +59,68 @@ model Node {
 
   @@index([status])
   @@index([isPublic])
+}
+
+model Plan {
+  id                String   @id @default(uuid())
+  name              String
+  description       String?
+  price             Int      @default(0) // 价格最小货币单位
+  durationDays      Int
+  trafficLimitBytes BigInt
+  nodeMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
+  nodeTagsJson      String   @default("[]")
+  nodeIdsJson       String   @default("[]")
+  templateId        String?
+  isPublic          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  subscriptions Subscription[]
+
+  @@index([isPublic])
+  @@index([sortOrder])
+}
+
+model SubscriptionTemplate {
+  id               String   @id @default(uuid())
+  name             String
+  description      String?
+  isDefault        Boolean  @default(false)
+  proxyGroupsJson  String   @default("[]")
+  ruleSetsJson     String   @default("[]")
+  dnsConfigJson    String   @default("{}")
+  customInjectYaml String?
+  customInjectJson String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  plans Plan[]
+
+  @@index([isDefault])
+}
+
+model Subscription {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  planId            String
+  status            String    @default("ACTIVE") // ACTIVE | CANCELED | EXPIRED | REVOKED
+  trafficLimitBytes BigInt
+  trafficUsedBytes  BigInt    @default(0)
+  startedAt         DateTime  @default(now())
+  expireAt          DateTime?
+  subscriptionToken String    @unique @default(uuid())
+  canceledAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([expireAt])
 }
 
 model NodeInbound {
