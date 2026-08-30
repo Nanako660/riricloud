@@ -22,7 +22,7 @@
     "dev:server": "pnpm --filter @riricloud/server start:dev",
     "dev:web": "pnpm --filter @riricloud/web dev",
     "gate:server": "pnpm --filter @riricloud/server exec tsc --noEmit && pnpm --filter @riricloud/server lint && pnpm --filter @riricloud/server test",
-    "gate:web": "pnpm --filter @riricloud/web exec tsc --noEmit && pnpm --filter @riricloud/web build",
+    "gate:web": "pnpm --filter @riricloud/web lint && pnpm --filter @riricloud/web build",
     "gate:agent": "bash scripts/gate-agent.sh",
     "gate": "pnpm gate:server && pnpm gate:web && pnpm gate:agent"
   },

@@ -37,5 +37,14 @@ module.exports = tseslint.config(
       'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }]
     }
+  },
+  {
+    // shadcn/ui 原子组件经 CLI 生成并保持官方标准实现，其导出形态固定（buttonVariants、
+    // useFormField 等与组件同文件），Fast Refresh 粒度规则不适用于该层，否则每次
+    // shadcn add 都会重新引入警告
+    files: ['apps/web/src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off'
+    }
   }
 );
