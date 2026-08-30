@@ -6,14 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
+	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
 
 // 消息帧：{ "type": "...", "data": {...} }
@@ -54,6 +59,40 @@ type configApplyResult struct {
 	Version int64  `json:"version"`
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+type upgradeTask struct {
+	TaskID  string `json:"taskId"`
+	Target  string `json:"target"`
+	Version string `json:"version"`
+	URL     string `json:"url"`
+	SHA256  string `json:"sha256"`
+}
+
+type upgradeResult struct {
+	TaskID  string `json:"taskId"`
+	Target  string `json:"target"`
+	Version string `json:"version"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type probeTask struct {
+	TaskID string         `json:"taskId"`
+	Probes []probeRequest `json:"probes"`
+}
+
+type probeRequest struct {
+	Type      string `json:"type"`
+	Target    string `json:"target"`
+	Port      int    `json:"port"`
+	TimeoutMs int    `json:"timeoutMs"`
+}
+
+type probeResultData struct {
+	TaskID  string         `json:"taskId"`
+	Success bool           `json:"success"`
+	Results []probe.Result `json:"results"`
 }
 
 // Client 长连接客户端：负责连接、鉴权、心跳与配置接收
@@ -132,7 +171,7 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// 读取循环（含 config_sync）；心跳独立 goroutine，ctx 退出
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- c.readLoop(conn)
+		errCh <- c.readLoop(ctx, conn)
 	}()
 	go func() {
 		errCh <- c.heartbeatLoop(ctx, conn)
@@ -151,8 +190,8 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 }
 
-// readLoop 持续读取服务端消息（当前仅 config_sync）
-func (c *Client) readLoop(conn *websocket.Conn) error {
+// readLoop 持续读取服务端消息；升级与探针任务在该连接的可取消上下文中执行。
+func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
@@ -178,10 +217,98 @@ func (c *Client) readLoop(conn *websocket.Conn) error {
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")
 			c.sendApplyResult(conn, sync.Version, true, "ok")
+		case "upgrade_task":
+			var task upgradeTask
+			if err := json.Unmarshal(msg.Data, &task); err != nil {
+				c.sendUpgradeResult(conn, task, false, "invalid upgrade_task payload")
+				continue
+			}
+			c.handleUpgrade(ctx, conn, task)
+		case "probe_task":
+			var task probeTask
+			if err := json.Unmarshal(msg.Data, &task); err != nil {
+				c.sendProbeResult(conn, task.TaskID, nil, false)
+				continue
+			}
+			c.handleProbe(ctx, conn, task)
 		default:
 			c.log.WithField("type", msg.Type).Debug("unknown message")
 		}
 	}
+}
+
+func (c *Client) handleUpgrade(parent context.Context, conn *websocket.Conn, task upgradeTask) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
+	defer cancel()
+	var err error
+	switch task.Target {
+	case "singbox":
+		err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256)
+	case "agent":
+		err = c.upgradeSelf(ctx, task)
+	default:
+		err = fmt.Errorf("unsupported upgrade target %q", task.Target)
+	}
+	if err != nil {
+		c.log.WithError(err).Warn("upgrade task failed")
+		c.sendUpgradeResult(conn, task, false, err.Error())
+		return
+	}
+	c.sendUpgradeResult(conn, task, true, "ok")
+	if task.Target == "agent" {
+		go c.restartSelf()
+	}
+}
+
+func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {
+	target, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve agent executable: %w", err)
+	}
+	temp, err := upgrade.DownloadAndVerify(ctx, task.URL, task.SHA256, filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if removeErr := os.Remove(temp); removeErr != nil && !os.IsNotExist(removeErr) {
+			c.log.WithError(removeErr).Warn("remove agent upgrade temp file failed")
+		}
+	}()
+	return upgrade.AtomicReplace(temp, target)
+}
+
+func (c *Client) restartSelf() {
+	time.Sleep(250 * time.Millisecond)
+	target, err := os.Executable()
+	if err != nil {
+		c.log.WithError(err).Error("resolve agent executable for restart failed")
+		return
+	}
+	cmd := exec.Command(target, os.Args[1:]...)
+	cmd.Env = os.Environ()
+	if err := cmd.Start(); err != nil {
+		c.log.WithError(err).Error("restart agent failed")
+		return
+	}
+	os.Exit(0)
+}
+
+func (c *Client) handleProbe(ctx context.Context, conn *websocket.Conn, task probeTask) {
+	requests := make([]probe.Request, 0, len(task.Probes))
+	for _, item := range task.Probes {
+		requests = append(requests, probe.Request{
+			Type: probe.Type(item.Type), Target: item.Target, Port: item.Port, TimeoutMs: item.TimeoutMs,
+		})
+	}
+	results := probe.Run(ctx, requests)
+	success := len(results) > 0
+	for _, result := range results {
+		if !result.Success {
+			success = false
+			break
+		}
+	}
+	c.sendProbeResult(conn, task.TaskID, results, success)
 }
 
 // heartbeatLoop 周期上报系统指标；goroutine 随 ctx 退出
@@ -242,6 +369,37 @@ func (c *Client) sendApplyResult(conn *websocket.Conn, version int, success bool
 	defer c.writeMu.Unlock()
 	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
 		c.log.WithError(err).Warn("send config_apply_result failed")
+	}
+}
+
+func (c *Client) sendUpgradeResult(conn *websocket.Conn, task upgradeTask, success bool, resultMsg string) {
+	data, err := json.Marshal(upgradeResult{TaskID: task.TaskID, Target: task.Target, Version: task.Version, Success: success, Message: resultMsg})
+	if err != nil {
+		c.log.WithError(err).Warn("marshal upgrade_result failed")
+		return
+	}
+	c.sendFrame(conn, "upgrade_result", data)
+}
+
+func (c *Client) sendProbeResult(conn *websocket.Conn, taskID string, results []probe.Result, success bool) {
+	data, err := json.Marshal(probeResultData{TaskID: taskID, Success: success, Results: results})
+	if err != nil {
+		c.log.WithError(err).Warn("marshal probe_result failed")
+		return
+	}
+	c.sendFrame(conn, "probe_result", data)
+}
+
+func (c *Client) sendFrame(conn *websocket.Conn, messageType string, data json.RawMessage) {
+	frame, err := json.Marshal(message{Type: messageType, Data: data})
+	if err != nil {
+		c.log.WithError(err).Warn("marshal agent frame failed")
+		return
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+		c.log.WithError(err).Warn("send agent frame failed")
 	}
 }
 

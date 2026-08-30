@@ -1,18 +1,49 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
 import { buildServerInbound, type InboundUserCredential } from '../common/inbound';
 import type { ProtocolType } from '../common/constants';
-import type { AuthResultData, ConfigApplyResultData, ConfigSyncData, HeartbeatData } from './agent-message';
+import type {
+  AuthResultData,
+  ConfigApplyResultData,
+  ConfigSyncData,
+  HeartbeatData,
+  ProbeRequest,
+  ProbeResultData,
+  UpgradeResultData,
+  UpgradeTarget
+} from './agent-message';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
+
+type SubscriptionUserSnapshot = {
+  uuid: string;
+  email: string;
+  password: string | null;
+  isActive: boolean;
+};
+
+type SubscriptionSnapshot = {
+  status: string;
+  trafficLimitBytes: bigint;
+  trafficUsedBytes: bigint;
+  expireAt: Date | null;
+  user: SubscriptionUserSnapshot;
+};
+
+type SubscriptionDelegate = {
+  findMany: (args: Record<string, unknown>) => Promise<SubscriptionSnapshot[]>;
+};
 
 @Injectable()
 export class AgentGatewayService implements OnModuleDestroy {
   private readonly logger = new Logger(AgentGatewayService.name);
   private readonly sockets = new Map<string, AgentSocket>();
   private configVersion = Date.now();
+  private configPushTimer?: NodeJS.Timeout;
+  private configPushWaiters: Array<(count: number) => void> = [];
 
   constructor(private prisma: PrismaService) {}
 
@@ -72,7 +103,7 @@ export class AgentGatewayService implements OnModuleDestroy {
       for (const record of data.trafficRecords ?? []) {
         const user = await tx.user.findUnique({ where: { uuid: record.userUuid } });
         if (!user) {
-          this.logger.warn(`heartbeat: unknown userUuid=${record.userUuid}`);
+          this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
         await tx.trafficLog.create({
@@ -104,6 +135,19 @@ export class AgentGatewayService implements OnModuleDestroy {
     }
   }
 
+  async handleUpgradeResult(nodeId: string, data: UpgradeResultData): Promise<void> {
+    const outcome = data.success ? 'succeeded' : 'failed';
+    this.logger[data.success ? 'log' : 'warn'](
+      `agent upgrade ${outcome}: node=${nodeId} target=${data.target} version=${data.version} task=${data.taskId} message=${data.message}`
+    );
+  }
+
+  async handleProbeResult(nodeId: string, data: ProbeResultData): Promise<void> {
+    this.logger.log(
+      `agent probe completed: node=${nodeId} task=${data.taskId} success=${data.success} results=${data.results.length}`
+    );
+  }
+
   // 组装完整 Sing-box 服务端配置：入站数组逐条按协议生成（users 为有资格用户注入），
   // configOverride 顶层深合并（数组整体替换，含 inbounds 则覆盖整组入站）
   async buildConfigSync(nodeId: string): Promise<ConfigSyncData> {
@@ -116,13 +160,33 @@ export class AgentGatewayService implements OnModuleDestroy {
     }
 
     // vless/tuic 用 uuid 登录；hy2 的 password 回退 uuid（与订阅输出一致，见 docs/DATA_MODELS.md §3.1）
-    const entitledUsers = await this.prisma.user.findMany({
-      where: { isActive: true },
-      select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
-    });
-    const users: InboundUserCredential[] = entitledUsers
-      .filter(isUserEntitled)
-      .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
+    const subscriptionDelegate = (this.prisma as unknown as { subscription?: SubscriptionDelegate }).subscription;
+    let users: InboundUserCredential[];
+    if (subscriptionDelegate) {
+      const subscriptions = await subscriptionDelegate.findMany({
+        where: { status: { in: ['ACTIVE', 'CANCELED'] } },
+        include: { user: { select: { uuid: true, email: true, password: true, isActive: true } } }
+      });
+      users = subscriptions
+        .filter((subscription) =>
+          subscription.user.isActive &&
+          subscription.trafficUsedBytes < subscription.trafficLimitBytes &&
+          (!subscription.expireAt || subscription.expireAt.getTime() > Date.now())
+        )
+        .map((subscription) => ({
+          uuid: subscription.user.uuid,
+          email: subscription.user.email,
+          credential: subscription.user.password ?? subscription.user.uuid
+        }));
+    } else {
+      const entitledUsers = await this.prisma.user.findMany({
+        where: { isActive: true },
+        select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
+      });
+      users = entitledUsers
+        .filter(isUserEntitled)
+        .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
+    }
 
     const inbounds = node.inbounds.map((inbound) =>
       buildServerInbound({
@@ -164,6 +228,20 @@ export class AgentGatewayService implements OnModuleDestroy {
 
   // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）
   async pushConfigToAll(): Promise<number> {
+    return new Promise((resolve) => {
+      this.configPushWaiters.push(resolve);
+      if (this.configPushTimer) clearTimeout(this.configPushTimer);
+      this.configPushTimer = setTimeout(() => {
+        this.configPushTimer = undefined;
+        void this.flushConfigToAll().then((count) => {
+          const waiters = this.configPushWaiters.splice(0);
+          waiters.forEach((waiter) => waiter(count));
+        });
+      }, 250);
+    });
+  }
+
+  private async flushConfigToAll(): Promise<number> {
     let pushed = 0;
     for (const nodeId of this.sockets.keys()) {
       if (await this.pushConfig(nodeId)) {
@@ -176,8 +254,38 @@ export class AgentGatewayService implements OnModuleDestroy {
     return pushed;
   }
 
+  async requestUpgrade(nodeId: string, target: UpgradeTarget, version: string, url: string, sha256: string) {
+    if (!/^https?:\/\//i.test(url)) throw new Error('upgrade URL must use http or https');
+    if (!/^[a-f0-9]{64}$/i.test(sha256)) throw new Error('upgrade sha256 must be 64 hexadecimal characters');
+    const taskId = randomUUID();
+    const sent = this.sendTask(nodeId, 'upgrade_task', { taskId, target, version, url, sha256 });
+    return { taskId, requested: sent };
+  }
+
+  async requestProbe(nodeId: string, probes: ProbeRequest[]) {
+    if (!probes.length || probes.length > 8) throw new Error('probe task must contain 1 to 8 probes');
+    const taskId = randomUUID();
+    const sent = this.sendTask(nodeId, 'probe_task', { taskId, probes });
+    return { taskId, requested: sent };
+  }
+
+  private sendTask(nodeId: string, type: string, data: unknown): boolean {
+    const socket = this.sockets.get(nodeId);
+    if (!socket) return false;
+    try {
+      socket.send(JSON.stringify({ type, data }));
+      return true;
+    } catch (err) {
+      this.logger.warn(`send agent task failed: node=${nodeId} type=${type} error=${err}`);
+      return false;
+    }
+  }
+
   // 断开：置离线并移除注册
-  async unregister(nodeId: string): Promise<void> {
+  async unregister(nodeId: string, socket?: AgentSocket): Promise<void> {
+    if (socket && this.sockets.get(nodeId) !== socket) {
+      return;
+    }
     this.sockets.delete(nodeId);
     await this.prisma.node
       .update({ where: { id: nodeId }, data: { status: 'OFFLINE' } })
@@ -207,6 +315,8 @@ export class AgentGatewayService implements OnModuleDestroy {
   }
 
   onModuleDestroy() {
+    if (this.configPushTimer) clearTimeout(this.configPushTimer);
+    this.configPushWaiters.splice(0).forEach((waiter) => waiter(0));
     for (const [, socket] of this.sockets) {
       socket.close(1001, 'server shutdown');
     }

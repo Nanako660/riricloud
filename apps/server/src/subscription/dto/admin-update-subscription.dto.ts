@@ -1,0 +1,44 @@
+import { Type } from 'class-transformer';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsUUID, Min, ValidateIf } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED'] as const;
+
+export class AdminUpdateSubDto {
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsUUID()
+  @IsOptional()
+  planId?: string;
+
+  @ApiPropertyOptional({ enum: SUBSCRIPTION_STATUSES })
+  @IsIn(SUBSCRIPTION_STATUSES)
+  @IsOptional()
+  status?: (typeof SUBSCRIPTION_STATUSES)[number];
+
+  @ApiPropertyOptional({ description: '新的配额，单位字节' })
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(1)
+  @IsOptional()
+  trafficLimitBytes?: number;
+
+  @ApiPropertyOptional({ description: '手动设置已用流量，单位字节' })
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @IsOptional()
+  trafficUsedBytes?: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  @ValidateIf((value) => value.expireAt !== null)
+  @IsDateString()
+  @IsOptional()
+  expireAt?: string | null;
+
+  @ApiPropertyOptional({ description: '在当前到期时间上增加天数' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  addDays?: number;
+}

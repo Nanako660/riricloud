@@ -357,4 +357,28 @@ export function cn(...inputs: ClassValue[]) {
 
 完整规范、索引矩阵与执行 SOP 详见 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md)。
 
+## 12. 订阅业务页面规范 (Subscription UX)
+
+v0.3.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageContainer`、`PageHeader`、Card、Badge、Progress、Dialog、AlertDialog、Select、Switch、Input、Textarea 和 Sonner：
+
+| 页面 | 路由 | 主要内容 | 交互边界 |
+| :--- | :--- | :--- | :--- |
+| 套餐市场 | `/market` | 公开套餐网格、流量/期限/价格、当前套餐标记 | 订购或升配必须经 AlertDialog 二次确认 |
+| 我的订阅 | `/subscription` | 当前套餐、流量进度、到期时间、Token 链接、可用节点 | 重置 Token 与取消订阅必须经 AlertDialog；取消需说明到期前仍可使用 |
+| 套餐管理 | `/admin/plans` | 套餐卡片、上下架状态、匹配模式、模板关联 | 删除使用中的套餐只显示服务端错误并建议下架 |
+| 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
+| 订阅管控 | `/admin/subscriptions` | 用户、套餐、流量进度、有效期、状态 | 状态、配额、日期和套餐调整使用表单校验 |
+| 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、版本、下载地址、SHA-256 | 提交前校验 URL 与 SHA-256；下发中禁用提交按钮 |
+
+### 12.1 页面与响应式要求
+
+- 业务列表优先使用可扫描的网格或表格；套餐、模板和订阅条目保持统一的 `Card` 内边距，不在页面区块外再套装饰性卡片。
+- 大型模板 JSON/YAML 编辑区使用等宽字体、固定最小高度和弹窗内滚动，不能撑破桌面或移动端视口。
+- 移动端列表转为单列，表单在 `sm` 断点前单列布局；操作按钮保留图标与文字的可读组合，危险操作使用 `AlertDialog`。
+- 数据加载使用与真实内容相近的骨架或紧凑加载态；错误和变更结果统一通过 `sonner` 呈现，不使用原生 `alert`。
+- Token 仅在已认证的用户/管理员视图显示；复制、重置后必须刷新相关 Query，避免界面继续展示旧链接。
+
+### 12.2 视觉验证登记
+
+新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-16 至 UI-24。视觉验证仍按需执行，不能接入 CI 或 Git Hook。
 

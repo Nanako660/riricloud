@@ -1,7 +1,18 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { isUserEntitled } from '../common/utils';
 import type { ProtocolType } from '../common/constants';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   buildClashYaml,
   buildSingboxJson,
@@ -9,6 +20,58 @@ import {
   type SubNode,
   type SubUser
 } from './builders';
+import type { AdminUpdateSubDto } from './dto/admin-update-subscription.dto';
+import type { QuerySubscriptionDto } from './dto/query-subscription.dto';
+import type { Prisma } from '@prisma/client';
+import type { SubscriptionTemplateConfig } from './builders';
+
+type SubscriptionPlan = {
+  id: string;
+  name: string;
+  durationDays: number;
+  trafficLimitBytes: bigint;
+  nodeMatchMode: string;
+  nodeTagsJson: string;
+  nodeIdsJson: string;
+  isPublic?: boolean;
+  template?: SubscriptionTemplateConfig | null;
+};
+
+type SubscriptionUser = {
+  id: string;
+  email: string;
+  uuid: string;
+  password: string | null;
+  isActive: boolean;
+  expireAt: Date | null;
+  trafficLimitBytes: bigint;
+  trafficUsedBytes: bigint;
+};
+
+type SubscriptionRecord = {
+  id: string;
+  userId: string;
+  planId: string;
+  status: string;
+  trafficLimitBytes: bigint;
+  trafficUsedBytes: bigint;
+  startedAt: Date;
+  expireAt: Date | null;
+  subscriptionToken: string;
+  canceledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  user?: SubscriptionUser | null;
+  plan?: SubscriptionPlan | null;
+};
+
+type SubscriptionDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<SubscriptionRecord | null>;
+  findMany: (args: Record<string, unknown>) => Promise<SubscriptionRecord[]>;
+  count: (args: Record<string, unknown>) => Promise<number>;
+  update: (args: Record<string, unknown>) => Promise<SubscriptionRecord>;
+  updateMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+};
 
 export type SubscriptionFormat = 'base64' | 'clash' | 'singbox';
 
@@ -18,49 +81,60 @@ export const SUBSCRIPTION_CONTENT_TYPES: Record<SubscriptionFormat, string> = {
   singbox: 'application/json; charset=utf-8'
 };
 
-// 格式协商：显式 ?type= 优先，其次 User-Agent 嗅探，默认 Base64（docs/API_AND_PROTOCOLS.md §3.1）
 export function resolveFormat(type?: string, userAgent?: string): SubscriptionFormat {
   const t = (type ?? '').trim().toLowerCase();
-  if (t === 'clash') {
-    return 'clash';
-  }
-  if (t === 'sing-box' || t === 'singbox') {
-    return 'singbox';
-  }
+  if (t === 'clash') return 'clash';
+  if (t === 'sing-box' || t === 'singbox') return 'singbox';
   const ua = userAgent ?? '';
-  if (/clash|meta|mihomo/i.test(ua)) {
-    return 'clash';
-  }
-  if (/sing-?box/i.test(ua)) {
-    return 'singbox';
-  }
+  if (/clash|meta|mihomo/i.test(ua)) return 'clash';
+  if (/sing-?box/i.test(ua)) return 'singbox';
   return 'base64';
 }
 
+function addDays(base: Date, days: number): Date {
+  return new Date(base.getTime() + days * 86400000);
+}
+
+function parseArray(value: string | null | undefined): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 @Injectable()
-export class SubscriptionService {
-  constructor(private prisma: PrismaService) {}
+export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
+  private expiryTimer?: NodeJS.Timeout;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly agentGateway?: AgentGatewayService
+  ) {}
+
+  onModuleInit() {
+    if (this.subscriptionDelegate()) {
+      // 用进程内巡检保持零外部依赖；unref 不阻止测试进程自然退出。
+      this.expiryTimer = setInterval(() => void this.expireSubscriptions(), 60000);
+      this.expiryTimer.unref();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.expiryTimer) clearInterval(this.expiryTimer);
+  }
 
   async getSubscription(token: string, opts: { type?: string; userAgent?: string } = {}) {
-    const user = await this.prisma.user.findUnique({ where: { subscriptionToken: token } });
-    if (!user) {
-      throw new NotFoundException('订阅不存在');
-    }
-    if (!isUserEntitled(user)) {
+    const subscription = await this.findByToken(token);
+    const user = subscription?.user ?? (await this.prisma.user.findUnique({ where: { subscriptionToken: token } }));
+    if (!user) throw new NotFoundException('订阅不存在');
+
+    if (subscription ? !this.isSubscriptionEntitled(subscription, user) : !isUserEntitled(user)) {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
-    // 逐入站生成订阅条目：仅公开节点的公开入站（isPublic 语义见 docs/DATA_MODELS.md §NodeInbound）
-    const nodes = await this.prisma.node.findMany({
-      where: { isPublic: true, status: { not: 'DISABLED' } },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-      include: {
-        inbounds: {
-          where: { isPublic: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
-        }
-      }
-    });
+    const nodes = subscription ? await this.getNodesForSubscription(subscription) : await this.getLegacyNodes();
     const subNodes: SubNode[] = nodes.map((node) => ({
       name: node.name,
       serverHost: node.serverHost,
@@ -72,35 +146,302 @@ export class SubscriptionService {
       }))
     }));
 
-    // vless/tuic 用 uuid 登录；hy2/tuic 密码回退 uuid（与 config_sync 用户注入一致）
-    const subUser: SubUser = { uuid: user.uuid, credential: user.password ?? user.uuid };
+    const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
+    const template = await this.resolveTemplate(subscription?.plan?.template);
     return {
-      body: this.render(format, subUser, subNodes),
+      body: this.render(format, subUser, subNodes, template),
       contentType: SUBSCRIPTION_CONTENT_TYPES[format],
-      userInfoHeader: this.buildUserInfoHeader(user)
+      userInfoHeader: this.buildUserInfoHeader(subscription ?? user)
     };
   }
 
-  private render(format: SubscriptionFormat, user: SubUser, nodes: SubNode[]): string {
+  async subscribe(userId: string, planId: string) {
+    this.requireSubscriptionDelegate();
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId }, include: { template: true } });
+    if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
+    const now = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.subscription.findUnique({ where: { userId } });
+      if (current && this.isSubscriptionActive(current)) {
+        throw new ConflictException('已有有效订阅，请使用升配操作');
+      }
+      const data = {
+        planId: plan.id,
+        status: 'ACTIVE',
+        trafficLimitBytes: plan.trafficLimitBytes,
+        trafficUsedBytes: BigInt(0),
+        startedAt: now,
+        expireAt: addDays(now, plan.durationDays),
+        subscriptionToken: randomUUID(),
+        canceledAt: null
+      };
+      const subscription = current
+        ? await tx.subscription.update({ where: { id: current.id }, data })
+        : await tx.subscription.create({ data: { ...data, userId } });
+      await this.syncUserMirror(tx, userId, subscription);
+      return subscription;
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(result.id);
+  }
+
+  async upgrade(userId: string, planId: string) {
+    const delegate = this.requireSubscriptionDelegate();
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId }, include: { template: true } });
+    if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
+    const current = await delegate.findUnique({ where: { userId } });
+    if (!current || !this.isSubscriptionActive(current)) throw new ConflictException('当前没有可升配的有效订阅');
+    const subscription = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.subscription.update({
+        where: { id: current.id },
+        data: {
+          planId: plan.id,
+          trafficLimitBytes: plan.trafficLimitBytes,
+          trafficUsedBytes: BigInt(0),
+          startedAt: new Date(),
+          expireAt: addDays(new Date(), plan.durationDays),
+          status: 'ACTIVE',
+          canceledAt: null
+        }
+      });
+      await this.syncUserMirror(tx, userId, updated);
+      return updated;
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(subscription.id);
+  }
+
+  async cancel(userId: string) {
+    const delegate = this.requireSubscriptionDelegate();
+    const current = await delegate.findUnique({ where: { userId } });
+    if (!current) throw new NotFoundException('订阅不存在');
+    const status = current.expireAt && current.expireAt.getTime() <= Date.now() ? 'EXPIRED' : 'CANCELED';
+    const subscription = await this.prisma.subscription.update({
+      where: { id: current.id },
+      data: { status, canceledAt: new Date() }
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(subscription.id);
+  }
+
+  async getForUser(userId: string) {
+    const delegate = this.requireSubscriptionDelegate();
+    const subscription = await delegate.findUnique({
+      where: { userId },
+      include: { user: { select: { id: true, email: true, isActive: true } }, plan: { include: { template: true } } }
+    });
+    if (!subscription) return { subscription: null, nodes: [] };
+    return {
+      subscription: this.toView(subscription),
+      nodes: await this.getNodesForSubscription(subscription)
+    };
+  }
+
+  async resetToken(userId: string) {
+    const delegate = this.requireSubscriptionDelegate();
+    const current = await delegate.findUnique({ where: { userId } });
+    if (!current) {
+      const token = randomUUID();
+      await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken: token } });
+      return { subscriptionToken: token };
+    }
+    return this.resetTokenBySubscription(current.id);
+  }
+
+  async resetTokenBySubscription(id: string) {
+    const current = await this.getRaw(id);
+    const token = randomUUID();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subscription.update({ where: { id }, data: { subscriptionToken: token } });
+      await tx.user.update({ where: { id: current.userId }, data: { subscriptionToken: token } });
+    });
+    return { subscriptionToken: token };
+  }
+
+  async list(query: QuerySubscriptionDto) {
+    const delegate = this.requireSubscriptionDelegate();
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.planId ? { planId: query.planId } : {}),
+      ...(query.search ? { user: { email: { contains: query.search } } } : {})
+    };
+    const [data, total] = await Promise.all([
+      delegate.findMany({
+        where,
+        include: { user: { select: { id: true, email: true, isActive: true } }, plan: { select: { id: true, name: true, price: true } } },
+        orderBy: [{ updatedAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      delegate.count({ where })
+    ]);
+    return { data: data.map((item) => this.toView(item)), total, page, pageSize };
+  }
+
+  async get(id: string) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, email: true, isActive: true } }, plan: { include: { template: true } } }
+    });
+    if (!subscription) throw new NotFoundException('订阅不存在');
+    return this.toView(subscription as unknown as SubscriptionRecord);
+  }
+
+  async adminUpdate(id: string, dto: AdminUpdateSubDto) {
+    const current = await this.getRaw(id);
+    const plan = dto.planId ? await this.prisma.plan.findUnique({ where: { id: dto.planId } }) : null;
+    if (dto.planId && !plan) throw new NotFoundException('套餐不存在');
+    const limit = dto.trafficLimitBytes !== undefined ? BigInt(dto.trafficLimitBytes) : plan?.trafficLimitBytes ?? current.trafficLimitBytes;
+    const used = dto.trafficUsedBytes !== undefined ? BigInt(dto.trafficUsedBytes) : current.trafficUsedBytes;
+    if (used > limit) throw new BadRequestException('已用流量不能大于流量配额');
+    const expireAt = dto.expireAt !== undefined
+      ? dto.expireAt
+        ? new Date(dto.expireAt)
+        : null
+      : dto.addDays
+        ? addDays(current.expireAt && current.expireAt.getTime() > Date.now() ? current.expireAt : new Date(), dto.addDays)
+        : current.expireAt;
+    const subscription = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.subscription.update({
+        where: { id },
+        data: {
+          ...(dto.planId ? { planId: dto.planId } : {}),
+          ...(dto.status ? { status: dto.status } : {}),
+          trafficLimitBytes: limit,
+          trafficUsedBytes: used,
+          expireAt
+        }
+      });
+      await this.syncUserMirror(tx, current.userId, updated);
+      return updated;
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(subscription.id);
+  }
+
+  private render(format: SubscriptionFormat, user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
     switch (format) {
       case 'clash':
-        return buildClashYaml(user, nodes);
+        return buildClashYaml(user, nodes, template);
       case 'singbox':
-        return buildSingboxJson(user, nodes);
+        return buildSingboxJson(user, nodes, template);
       default:
         return Buffer.from(buildUriList(user, nodes).join('\n'), 'utf-8').toString('base64');
     }
   }
 
-  // Subscription-Userinfo: upload=..; download=..; total=..; expire=..
   private buildUserInfoHeader(user: {
     trafficLimitBytes: bigint;
     trafficUsedBytes: bigint;
     expireAt: Date | null;
   }): string {
     const expire = user.expireAt ? Math.floor(user.expireAt.getTime() / 1000) : 0;
-    // upload/download 拆分暂无来源（TrafficLog 按用户聚合待 WS 流量上报落地），先以 0/总量近似
     return `upload=0; download=${user.trafficUsedBytes}; total=${user.trafficLimitBytes}; expire=${expire}`;
+  }
+
+  private isSubscriptionActive(subscription: { status: string; expireAt: Date | null }) {
+    return ['ACTIVE', 'CANCELED'].includes(subscription.status) && (!subscription.expireAt || subscription.expireAt.getTime() > Date.now());
+  }
+
+  private isSubscriptionEntitled(subscription: SubscriptionRecord, user: SubscriptionUser) {
+    return this.isSubscriptionActive(subscription) && user.isActive && subscription.trafficUsedBytes < subscription.trafficLimitBytes;
+  }
+
+  private async expireSubscriptions() {
+    const delegate = this.subscriptionDelegate();
+    if (!delegate) return;
+    const result = await delegate.updateMany({
+      where: { status: { in: ['ACTIVE', 'CANCELED'] }, expireAt: { not: null, lt: new Date() } },
+      data: { status: 'EXPIRED' }
+    });
+    if (result.count > 0) void this.agentGateway?.pushConfigToAll();
+  }
+
+  private async getNodesForSubscription(subscription: SubscriptionRecord) {
+    const plan = subscription.plan;
+    const nodes = await this.prisma.node.findMany({
+      where: { isPublic: true, status: { not: 'DISABLED' } },
+      orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }],
+      include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
+    });
+    if (!plan) return nodes;
+    const tags = parseArray(plan.nodeTagsJson);
+    const ids = parseArray(plan.nodeIdsJson);
+    return nodes.filter((node) => {
+      if (plan.nodeMatchMode === 'EXPLICIT') return ids.includes(node.id);
+      if (plan.nodeMatchMode === 'TAGS') return tags.some((tag) => parseArray(node.tagsJson).includes(tag));
+      return true;
+    });
+  }
+
+  private async getLegacyNodes() {
+    return this.prisma.node.findMany({
+      where: { isPublic: true, status: { not: 'DISABLED' } },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
+    });
+  }
+
+  private async resolveTemplate(template?: SubscriptionTemplateConfig | null) {
+    if (template) return template;
+    const templateDelegate = (this.prisma as unknown as {
+      subscriptionTemplate?: { findFirst: (args: Record<string, unknown>) => Promise<SubscriptionTemplateConfig | null> };
+    }).subscriptionTemplate;
+    if (!templateDelegate) return undefined;
+    return (await templateDelegate.findFirst({ where: { isDefault: true } })) ?? undefined;
+  }
+
+  private subscriptionDelegate(): SubscriptionDelegate | undefined {
+    return (this.prisma as unknown as { subscription?: SubscriptionDelegate }).subscription;
+  }
+
+  private requireSubscriptionDelegate(): SubscriptionDelegate {
+    const delegate = this.subscriptionDelegate();
+    if (!delegate) throw new BadRequestException('订阅模块尚未完成数据库迁移');
+    return delegate;
+  }
+
+  private async findByToken(token: string): Promise<SubscriptionRecord | null> {
+    const delegate = this.subscriptionDelegate();
+    if (!delegate) return null;
+    return delegate.findUnique({
+      where: { subscriptionToken: token },
+      include: { user: true, plan: { include: { template: true } } }
+    });
+  }
+
+  private async getRaw(id: string): Promise<SubscriptionRecord> {
+    const subscription = await this.prisma.subscription.findUnique({ where: { id } });
+    if (!subscription) throw new NotFoundException('订阅不存在');
+    return subscription;
+  }
+
+  private async syncUserMirror(tx: Prisma.TransactionClient, userId: string, subscription: SubscriptionRecord) {
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        trafficLimitBytes: subscription.trafficLimitBytes,
+        trafficUsedBytes: subscription.trafficUsedBytes,
+        expireAt: subscription.expireAt,
+        subscriptionToken: subscription.subscriptionToken
+      }
+    });
+  }
+
+  private toView(subscription: SubscriptionRecord) {
+    return {
+      ...subscription,
+      trafficLimitBytes: Number(subscription.trafficLimitBytes),
+      trafficUsedBytes: Number(subscription.trafficUsedBytes),
+      plan: subscription.plan
+        ? {
+            ...subscription.plan,
+            trafficLimitBytes: Number(subscription.plan.trafficLimitBytes)
+          }
+        : undefined
+    };
   }
 }

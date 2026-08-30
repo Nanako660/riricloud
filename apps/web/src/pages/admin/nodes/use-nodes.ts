@@ -130,6 +130,8 @@ export interface AdminNode {
   bandwidthRate: number | null;
   kernelRunning: boolean | null;
   configError: string | null;
+  tags: string[];
+  level: number;
   sortOrder: number;
   isPublic: boolean;
   inbounds: NodeInbound[];
@@ -195,7 +197,7 @@ export function useNodeMutations() {
 
   // 创建成功不弹 toast：弹窗内切换到 AgentToken 与安装命令展示页
   const createNode = useMutation({
-    mutationFn: async (payload: { name?: string; serverHost: string; isPublic?: boolean }) =>
+    mutationFn: async (payload: { name?: string; serverHost: string; isPublic?: boolean; tags?: string[]; level?: number }) =>
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
@@ -212,6 +214,8 @@ export function useNodeMutations() {
       isPublic?: boolean;
       sortOrder?: number;
       configOverride?: string | null;
+      tags?: string[];
+      level?: number;
     }) => (await api.patch(`/admin/nodes/${id}`, payload)).data,
     ...invalidateSub
   });
@@ -234,7 +238,21 @@ export function useNodeMutations() {
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '重载失败'))
   });
 
-  return { createNode, updateNode, deleteNode, reloadNode };
+  const upgradeNode = useMutation({
+    mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; version: string; url: string; sha256: string }) =>
+      (await api.post(`/admin/nodes/${id}/upgrade`, payload)).data,
+    onSuccess: (data) => toast.success(data.requested ? '升级任务已下发' : '节点不在线，升级任务未下发'),
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '升级下发失败'))
+  });
+
+  const probeNode = useMutation({
+    mutationFn: async ({ id, probes }: { id: string; probes: Array<{ type: 'tcp' | 'dns' | 'icmp'; target: string; port?: number; timeoutMs?: number }> }) =>
+      (await api.post(`/admin/nodes/${id}/probe`, { probes })).data,
+    onSuccess: () => toast.success('探针任务已下发'),
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '探针下发失败'))
+  });
+
+  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode };
 }
 
 // 入站 CRUD（嵌套在节点下）；变更同时刷新列表与详情

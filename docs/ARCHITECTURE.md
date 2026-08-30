@@ -50,8 +50,8 @@ graph TB
     VpnClients -->|"加密代理流量"| SingboxA
     VpnClients -->|"加密代理流量"| SingboxB
 
-    AgentA <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
-    AgentB <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
+    AgentA <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报 / 升级 / 探针)"| WSGateway
+    AgentB <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报 / 升级 / 探针)"| WSGateway
 ```
 
 ---
@@ -64,12 +64,14 @@ graph TB
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
 - **订阅引擎 (`apps/server/subscription`)**：根据用户的有效权限与节点公开入站（`NodeInbound.isPublic`），实时动态组装多协议（VLESS Reality / Hysteria2 / Shadowsocks / TUIC）三格式订阅：Clash Meta (Mihomo) YAML、Sing-box Client JSON 以及通用 Base64 URI 列表。输出名规则：单入站节点用节点名，多入站节点为「节点名·tag」，重名全局去重。
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）与 sing-box 服务端入站 JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识。
+- **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定节点标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
-- **长连接与自愈**：Agent 启动后主动与 Master 建立 WSS 连接，内置重试与断线重连机制。
+- **长连接与自愈**：Agent 启动后主动与 Master 建立 WSS 连接，内置重试与断线重连机制；服务端只接受通过运行时结构校验的 Agent 上行消息。
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
+- **远程升级与网络诊断（v0.3.0）**：升级任务由 Master 下发 URL、版本与 SHA-256。Agent 流式下载至临时文件并校验；Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级原子替换后保留启动参数重启。探针支持 TCP、DNS、ICMP，逐项返回延迟与错误。
 - **多入站监听**：节点可挂多条不同协议入站（`NodeInbound`，结构见 `docs/DATA_MODELS.md` §2.1）；hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。
 - **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报（含内核状态 `kernelRunning`/`appliedConfigVersion`/`lastError`，落 `Node.kernelRunning`/`Node.configError`）。
 - **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。SS 入站为共享密码模式，按用户流量归属在该协议下不可用（按用户配额粒度本就暂缓，可接受）。
@@ -128,6 +130,55 @@ sequenceDiagram
     end
 ```
 
+### 3.3 订阅生命周期与配置联动
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 用户
+    participant Web as Web 面板
+    participant Master as Master 后端
+    participant DB as SQLite
+    participant Agent as 在线 Agent
+
+    User->>Web: 订购 / 升配 / 取消订阅
+    Web->>Master: /user/subscription/*
+    Master->>DB: 事务更新 Subscription 与 User 兼容镜像
+    Master-->>Web: 返回订阅状态、Token 与匹配节点
+    Master->>Master: 250ms 配置推送防抖合并
+    Master->>Agent: config_sync（重新计算有效用户白名单）
+    Agent->>Agent: 预检、原子落盘、按需优雅重启内核
+```
+
+订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开节点和公开入站；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。
+
+### 3.4 远程升级与网络探针时序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as 管理员
+    participant Master as Master 后端
+    participant Agent as Go Agent
+    participant Kernel as Sing-box
+
+    Admin->>Master: POST /admin/nodes/:id/upgrade 或 /probe
+    Master->>Agent: upgrade_task / probe_task
+    alt 升级
+        Agent->>Agent: 流式下载 + SHA-256 校验
+        Agent->>Kernel: 预检当前配置并优雅停止
+        Agent->>Agent: 原子替换并保留旧二进制备份
+        Agent->>Kernel: supervisor 启动新版本
+        alt 启动失败
+            Agent->>Agent: 恢复旧二进制并重新拉起
+        end
+        Agent-->>Master: upgrade_result
+    else 探针
+        Agent->>Agent: TCP / DNS / ICMP 探测
+        Agent-->>Master: probe_result（逐项延迟）
+    end
+```
+
 ---
 
 ## 4. 安全设计 (Security Architecture)
@@ -139,6 +190,7 @@ sequenceDiagram
 2. **Master-Agent 通信安全**：
    - 生产环境强制采用 WSS (WebSocket over TLS) 加密传输。
    - 每个节点在主控端创建时分配唯一的 `AgentToken`（64位高熵随机串），Agent 握手时强制鉴权。
+   - Agent 上行消息先经过类型、范围、数组长度和文本长度校验；升级任务同时校验 URL 协议与 64 位十六进制 SHA-256，失败输入不进入业务层。
 3. **代理传输安全 (Reality / TLS)**：
    - 首推 **VLESS + Reality** 协议：无需自备域名与公网证书，通过窃用大型合法网站（如 `www.apple.com`, `gateway.icloud.com` 等）的 SNI 与 TLS 握手特征，实现极强的抗封锁能力。
    - 支持 **Hysteria2 / TUIC** 协议：基于 UDP/QUIC，具备拥塞控制与抗高丢包能力。

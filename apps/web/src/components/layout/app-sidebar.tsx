@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Cloud, Gauge, Server, Settings, Users } from 'lucide-react';
+import { Cloud, Gauge, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 
@@ -11,7 +11,11 @@ export function AppSidebar() {
   const groups = [
     {
       label: '控制台',
-      items: [{ to: '/', label: '仪表盘', icon: Gauge, end: true }]
+      items: [
+        { to: '/', label: '仪表盘', icon: Gauge, end: true },
+        { to: '/subscription', label: '我的订阅', icon: WalletCards, end: false },
+        { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false }
+      ]
     },
     ...(isAdmin
       ? [
@@ -20,7 +24,10 @@ export function AppSidebar() {
             items: [
               { to: '/admin/users', label: '用户管理', icon: Users, end: false },
               { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
-              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false }
+              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
+              { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
+              { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
+              { to: '/admin/subscriptions', label: '订阅管控', icon: WalletCards, end: false }
             ]
           }
         ]

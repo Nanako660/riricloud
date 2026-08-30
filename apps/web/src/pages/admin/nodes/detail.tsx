@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { ArrowLeft, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractErrorMessage } from '@/lib/api';
 import { PageContainer } from '@/components/shared/page-container';
@@ -48,6 +48,7 @@ import {
   type ProtocolType
 } from './use-nodes';
 import { InboundFormDialog } from './components/inbound-form-dialog';
+import { UpgradeNodeDialog } from './components/upgrade-node-dialog';
 
 // 生成配置只读预览（与 config_sync 下发内容一致的参考实现；实时值以 Agent 应用结果为准）
 function GeneratedConfigPreview({ nodeJson }: { nodeJson: string }) {
@@ -70,7 +71,7 @@ export default function NodeDetailPage() {
   const { resolvedTheme } = useTheme();
 
   const { data: node, isPending, isError } = useAdminNodeDetail(id);
-  const { updateNode, deleteNode, reloadNode } = useNodeMutations();
+  const { updateNode, deleteNode, reloadNode, upgradeNode } = useNodeMutations();
   const { createInbound, updateInbound, deleteInbound, generateKeypair } = useInboundMutations(id);
 
   const [formOpen, setFormOpen] = React.useState(false);
@@ -81,12 +82,17 @@ export default function NodeDetailPage() {
   const [name, setName] = React.useState('');
   const [serverHost, setServerHost] = React.useState('');
   const [isPublic, setIsPublic] = React.useState(true);
+  const [tags, setTags] = React.useState('');
+  const [level, setLevel] = React.useState(0);
   const [override, setOverride] = React.useState('');
+  const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   React.useEffect(() => {
     if (node) {
       setName(node.name);
       setServerHost(node.serverHost);
       setIsPublic(node.isPublic);
+      setTags(node.tags.join(', '));
+      setLevel(node.level);
       setOverride(node.configOverride ?? '');
     }
   }, [node]);
@@ -110,7 +116,7 @@ export default function NodeDetailPage() {
 
   const onSaveBasic = () => {
     if (!node) return;
-    updateNode.mutate({ id: node.id, name, serverHost, isPublic });
+    updateNode.mutate({ id: node.id, name, serverHost, isPublic, tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), level });
   };
 
   const onSaveOverride = () => {
@@ -225,6 +231,7 @@ export default function NodeDetailPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <Button variant="outline" size="sm" onClick={() => setUpgradeOpen(true)}><Upload />远程升级</Button>
         </div>
       </div>
 
@@ -350,6 +357,14 @@ export default function NodeDetailPage() {
                 <div className="space-y-2">
                   <Label htmlFor="node-host">服务器地址</Label>
                   <Input id="node-host" value={serverHost} onChange={(e) => setServerHost(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="node-tags">标签</Label>
+                  <Input id="node-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="vip, hk" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="node-level">等级</Label>
+                  <Input id="node-level" type="number" min="0" value={level} onChange={(e) => setLevel(Number(e.target.value) || 0)} />
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
@@ -525,6 +540,7 @@ export default function NodeDetailPage() {
         }}
         pending={createInbound.isPending || updateInbound.isPending}
       />
+      <UpgradeNodeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} pending={upgradeNode.isPending} onSubmit={(values) => upgradeNode.mutate({ id: node.id, ...values }, { onSuccess: () => setUpgradeOpen(false) })} />
     </PageContainer>
   );
 }

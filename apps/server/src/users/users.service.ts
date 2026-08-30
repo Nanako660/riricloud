@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
@@ -7,6 +8,26 @@ import { isUserEntitled } from '../common/utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+type UserSubscriptionDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
+};
+
+type UserSubscriptionSnapshot = {
+  id: string;
+  status: string;
+  trafficLimitBytes: bigint;
+  trafficUsedBytes: bigint;
+  expireAt: Date | null;
+  subscriptionToken: string;
+  plan?: {
+    id: string;
+    name: string;
+    nodeMatchMode: string;
+    nodeTagsJson: string;
+    nodeIdsJson: string;
+  } | null;
+};
 
 // 管理端用户视图字段（不含 passwordHash / uuid 等敏感字段）
 const ADMIN_USER_SELECT = {
@@ -34,8 +55,19 @@ export class UsersService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    const subscriptionToken = crypto.randomUUID();
-    await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    const subscriptionToken = randomUUID();
+    const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
+    const subscription = subscriptionDelegate
+      ? await subscriptionDelegate.findUnique({ where: { userId } })
+      : null;
+    if (subscription) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.subscription.update({ where: { id: subscription.id }, data: { subscriptionToken } });
+        await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
+      });
+    } else {
+      await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    }
     return subscriptionToken;
   }
 
@@ -110,6 +142,19 @@ export class UsersService {
       data.passwordHash = await bcrypt.hash(dto.password, 10);
     }
     const updated = await this.prisma.user.update({ where: { id }, data, select: ADMIN_USER_SELECT });
+    const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
+    const subscription = subscriptionDelegate
+      ? await subscriptionDelegate.findUnique({ where: { userId: id } })
+      : null;
+    if (subscription) {
+      await this.prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          ...(dto.trafficLimitBytes !== undefined ? { trafficLimitBytes: BigInt(dto.trafficLimitBytes) } : {}),
+          ...(dto.expireAt !== undefined ? { expireAt: dto.expireAt ? new Date(dto.expireAt) : null } : {})
+        }
+      });
+    }
     // 配额/到期/激活/角色变化影响订阅资格，向在线节点同步用户名单
     void this.agentGateway.pushConfigToAll();
     return { ...updated, trafficLimitBytes: Number(updated.trafficLimitBytes), trafficUsedBytes: Number(updated.trafficUsedBytes) };
@@ -134,13 +179,24 @@ export class UsersService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    const onlineCount = await this.prisma.node.count({ where: { status: 'ONLINE', isPublic: true } });
+    const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
+    const subscription = subscriptionDelegate
+      ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
+      : null;
+    const onlineCount = subscription?.plan
+      ? (await this.getPlanNodeIds(subscription.plan)).length
+      : await this.prisma.node.count({ where: { status: 'ONLINE', isPublic: true } });
+    const trafficLimitBytes = subscription?.trafficLimitBytes ?? user.trafficLimitBytes;
+    const trafficUsedBytes = subscription?.trafficUsedBytes ?? user.trafficUsedBytes;
+    const expireAt = subscription?.expireAt ?? user.expireAt;
+    const subscriptionToken = subscription?.subscriptionToken ?? user.subscriptionToken;
     return {
       // BigInt 无法 JSON 序列化，在服务边界转 Number（流量值 < 2^53，无精度损失）
-      trafficLimitBytes: Number(user.trafficLimitBytes),
-      trafficUsedBytes: Number(user.trafficUsedBytes),
-      expireAt: user.expireAt,
-      subscriptionToken: user.subscriptionToken,
+      trafficLimitBytes: Number(trafficLimitBytes),
+      trafficUsedBytes: Number(trafficUsedBytes),
+      expireAt,
+      subscriptionToken,
+      plan: subscription?.plan ? { id: subscription.plan.id, name: subscription.plan.name, status: subscription.status } : null,
       onlineNodeCount: onlineCount
     };
   }
@@ -151,6 +207,11 @@ export class UsersService {
     if (!user) {
       throw new UnauthorizedException();
     }
+    const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
+    const subscription = subscriptionDelegate
+      ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
+      : null;
+    const planNodeIds = subscription?.plan ? await this.getPlanNodeIds(subscription.plan) : null;
     const nodes = await this.prisma.node.findMany({
       where: { isPublic: true, status: { not: 'DISABLED' } },
       select: {
@@ -172,6 +233,36 @@ export class UsersService {
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
     });
-    return { entitled: isUserEntitled(user), nodes };
+    return {
+      entitled: subscription
+        ? user.isActive && ['ACTIVE', 'CANCELED'].includes(subscription.status) && (!subscription.expireAt || subscription.expireAt > new Date()) && subscription.trafficUsedBytes < subscription.trafficLimitBytes
+        : isUserEntitled(user),
+      nodes: planNodeIds ? nodes.filter((node) => planNodeIds.includes(node.id)) : nodes
+    };
+  }
+
+  private async getPlanNodeIds(plan: { nodeMatchMode: string; nodeTagsJson: string; nodeIdsJson: string }) {
+    const nodes = await this.prisma.node.findMany({
+      where: { status: 'ONLINE', isPublic: true },
+      select: { id: true, tagsJson: true }
+    });
+    const ids = this.parseStringArray(plan.nodeIdsJson);
+    const tags = this.parseStringArray(plan.nodeTagsJson);
+    return nodes
+      .filter((node) => {
+        if (plan.nodeMatchMode === 'EXPLICIT') return ids.includes(node.id);
+        if (plan.nodeMatchMode === 'TAGS') return tags.some((tag) => this.parseStringArray(node.tagsJson).includes(tag));
+        return true;
+      })
+      .map((node) => node.id);
+  }
+
+  private parseStringArray(value: string) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
   }
 }

@@ -18,6 +18,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
 
 const (
@@ -48,7 +50,9 @@ type Manager struct {
 	log      *logrus.Entry
 
 	mu            sync.Mutex
+	upgradeMu     sync.Mutex // 串行化二进制升级，避免并行替换同一目标文件
 	wantRun       bool
+	upgrading     bool          // 升级窗口内禁止 supervisor 自动拉起旧二进制
 	stopping      bool          // Shutdown 已调用（终态）：收敛完成后 supervisor 退出
 	desiredConf   []byte        // ApplyConfig 提交的目标配置
 	desiredVer    int64         // ApplyConfig 提交的目标配置版本（来自 config_sync.version）
@@ -158,7 +162,11 @@ func (m *Manager) lastGood() []byte {
 // checkConfig 预检落盘后的配置：`sing-box check -c <path> -D <dir>`，超时视为失败。
 // 预检失败时不落任何状态，调用方负责回滚 lastGood。
 func (m *Manager) checkConfig() error {
-	if _, err := exec.LookPath(m.binPath); err != nil {
+	return m.checkConfigWithBinary(m.binPath)
+}
+
+func (m *Manager) checkConfigWithBinary(binaryPath string) error {
+	if _, err := exec.LookPath(binaryPath); err != nil {
 		// 二进制缺失时 check 与 run 都无从执行，跳过预检交由 supervisor 退避重试
 		m.log.WithError(err).Warn("singbox binary not found, skip check")
 		return nil
@@ -167,7 +175,7 @@ func (m *Manager) checkConfig() error {
 	defer cancel()
 	dir := filepath.Dir(m.confPath)
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, m.binPath, "check", "-c", m.confPath, "-D", dir)
+	cmd := exec.CommandContext(ctx, binaryPath, "check", "-c", m.confPath, "-D", dir)
 	cmd.Stdout = nil
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -186,6 +194,101 @@ func (m *Manager) checkConfig() error {
 		return fmt.Errorf("%s", msg)
 	}
 	return nil
+}
+
+// UpgradeKernel 下载并校验新的 Sing-box 二进制，预检当前配置后原子替换并重启内核。
+func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string) error {
+	m.upgradeMu.Lock()
+	defer m.upgradeMu.Unlock()
+
+	target, err := exec.LookPath(m.binPath)
+	if err != nil {
+		return fmt.Errorf("resolve sing-box binary: %w", err)
+	}
+	temp, err := upgrade.DownloadAndVerify(ctx, rawURL, expectedSHA, filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if removeErr := os.Remove(temp); removeErr != nil && !os.IsNotExist(removeErr) {
+			m.log.WithError(removeErr).Warn("remove upgrade temp file failed")
+		}
+	}()
+	if err := m.checkConfigWithBinary(temp); err != nil {
+		return fmt.Errorf("new sing-box precheck failed: %w", err)
+	}
+	m.mu.Lock()
+	if m.stopping {
+		m.mu.Unlock()
+		return fmt.Errorf("sing-box manager is shutting down")
+	}
+	m.upgrading = true
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.upgrading = false
+		m.mu.Unlock()
+		m.kickSupervisor()
+	}()
+
+	if err := m.gracefulStopForUpgrade(); err != nil {
+		return err
+	}
+	backup, err := upgrade.AtomicReplaceWithBackup(temp, target)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.appliedConf = nil
+	shouldRun := m.wantRun
+	m.upgrading = false
+	m.mu.Unlock()
+	m.kickSupervisor()
+	if !shouldRun {
+		if err := upgrade.CommitBackup(backup); err != nil {
+			m.log.WithError(err).Warn("remove old sing-box backup failed")
+		}
+		return nil
+	}
+	if err := m.waitForRunning(ctx, 15*time.Second); err != nil {
+		m.mu.Lock()
+		m.upgrading = true
+		m.mu.Unlock()
+		m.gracefulStopCurrent()
+		if rollbackErr := upgrade.RestoreBackup(target, backup); rollbackErr != nil {
+			return fmt.Errorf("new sing-box failed to start: %w; rollback failed: %v", err, rollbackErr)
+		}
+		m.mu.Lock()
+		m.appliedConf = nil
+		m.mu.Unlock()
+		return fmt.Errorf("new sing-box failed to start: %w", err)
+	}
+	if err := upgrade.CommitBackup(backup); err != nil {
+		m.log.WithError(err).Warn("remove old sing-box backup failed")
+	}
+	return nil
+}
+
+func (m *Manager) gracefulStopForUpgrade() error {
+	m.gracefulStopCurrent()
+	return nil
+}
+
+func (m *Manager) waitForRunning(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if m.Running() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 // tailString 截取尾部 limit 字节（按 UTF-8 边界对齐），空串安全。
@@ -251,11 +354,15 @@ func (m *Manager) supervisor(ctx context.Context) {
 // reconcile 使实际状态向期望状态收敛，返回建议的重试等待时长（0 表示挂起等事件）。
 func (m *Manager) reconcile() time.Duration {
 	m.mu.Lock()
-	wantRun, desired, desiredVer := m.wantRun, m.desiredConf, m.desiredVer
+	wantRun, desired, desiredVer, upgrading := m.wantRun, m.desiredConf, m.desiredVer, m.upgrading
 	m.mu.Unlock()
 
 	if !wantRun {
 		m.gracefulStopCurrent()
+		return 0
+	}
+	if upgrading {
+		// 升级流程负责停止与替换；此处保持 supervisor 静默，避免中途拉起旧二进制。
 		return 0
 	}
 	if m.Running() && m.confMatches(desired) {

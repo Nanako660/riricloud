@@ -413,3 +413,20 @@ func TestShutdownStopsKernel(t *testing.T) {
 		t.Fatal("kernel should be stopped after shutdown")
 	}
 }
+
+func TestReconcileSuppressesSpawnDuringKernelUpgrade(t *testing.T) {
+	m := &Manager{
+		binPath:     stubBin,
+		wantRun:     true,
+		desiredConf: []byte(`{"log":{"level":"info"}}`),
+		upgrading:   true,
+		log:         silentLog(),
+	}
+
+	if retry := m.reconcile(); retry != 0 {
+		t.Fatalf("upgrade window should not schedule a retry, got %v", retry)
+	}
+	if m.Running() {
+		t.Fatal("supervisor must not spawn a kernel during binary replacement")
+	}
+}

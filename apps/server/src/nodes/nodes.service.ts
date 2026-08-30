@@ -13,6 +13,8 @@ import {
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { CreateInboundDto, UpdateInboundDto } from './dto/inbound.dto';
+import { ProbeNodeDto } from './dto/probe-node.dto';
+import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 
 type NodeWithInbounds = {
   id: string;
@@ -66,7 +68,9 @@ export class NodesService {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
         serverHost: dto.serverHost.trim(),
         agentToken: generateAgentToken(),
-        isPublic: dto.isPublic ?? true
+        isPublic: dto.isPublic ?? true,
+        tagsJson: JSON.stringify(dto.tags ?? []),
+        level: dto.level ?? 0
       },
       include: { inbounds: true }
     });
@@ -86,6 +90,26 @@ export class NodesService {
     return { requested: pushed, nodeId: id };
   }
 
+  async requestUpgrade(id: string, dto: UpgradeNodeDto) {
+    const node = await this.prisma.node.findUnique({ where: { id } });
+    if (!node) throw new NotFoundException('节点不存在');
+    try {
+      return await this.agentGateway.requestUpgrade(id, dto.target, dto.version.trim(), dto.url, dto.sha256.toLowerCase());
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : '升级任务参数无效');
+    }
+  }
+
+  async requestProbe(id: string, dto: ProbeNodeDto) {
+    const node = await this.prisma.node.findUnique({ where: { id } });
+    if (!node) throw new NotFoundException('节点不存在');
+    try {
+      return await this.agentGateway.requestProbe(id, dto.probes);
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : '探针任务参数无效');
+    }
+  }
+
   async update(id: string, dto: UpdateNodeDto) {
     const node = await this.prisma.node.findUnique({ where: { id } });
     if (!node) {
@@ -97,6 +121,8 @@ export class NodesService {
       isPublic?: boolean;
       sortOrder?: number;
       configOverride?: string | null;
+      tagsJson?: string;
+      level?: number;
     } = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
@@ -124,6 +150,12 @@ export class NodesService {
       } else {
         data.configOverride = this.validateConfigOverride(dto.configOverride);
       }
+    }
+    if (dto.tags !== undefined) {
+      data.tagsJson = JSON.stringify(dto.tags.map((tag) => tag.trim()).filter(Boolean));
+    }
+    if (dto.level !== undefined) {
+      data.level = dto.level;
     }
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('未提供任何更新字段');
@@ -354,6 +386,15 @@ export class NodesService {
 
   // 节点输出：入站脱敏；agentToken 保留（管理端安装指引需要，接口本身要求 ADMIN）
   private sanitize(node: NodeWithInbounds): Record<string, unknown> {
-    return { ...node, inbounds: node.inbounds.map((i) => this.sanitizeInbound(i)) };
+    let tags: string[] = [];
+    if (typeof node.tagsJson === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(node.tagsJson);
+        tags = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        tags = [];
+      }
+    }
+    return { ...node, tags, tagsJson: undefined, inbounds: node.inbounds.map((i) => this.sanitizeInbound(i)) };
   }
 }
