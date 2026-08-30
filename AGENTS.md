@@ -54,7 +54,7 @@ riricloud/
 1. **技术栈锁定**：只用 [docs/TECH_STACK.md](docs/TECH_STACK.md) 选定的技术；禁止引入外部数据库/Redis/MQ（零依赖红线）。
 2. **版本最小递增**：能 PATCH 不 MINOR，能 MINOR 不 MAJOR；三应用共用根 `package.json` 的统一版本号，不私设版本（[docs/VERSIONING.md](docs/VERSIONING.md)）。
 3. **提交规范**：Conventional Commits，英文 type + 中文描述（`feat(server): 实现用户登录`）；原子提交；破坏性变更标 `!` + `BREAKING CHANGE`（[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)）。
-4. **分支模型**：GitHub Flow；main 受保护，一切变更走 PR；squash merge，PR 标题即提交信息。
+4. **分支模型与 main 绝对保护（零容忍红线）**：GitHub Flow；main 绝对受保护，**严禁在 main 分支直接修改、提交（commit）或推送（push）**；AI Agent 动代码前**第一步必须执行 `git branch --show-current` 并切出独立特性分支**；严禁使用 `--no-verify` 绕过拦截；一切变更无例外 100% 走 PR 合并。
 5. **分层约束**：Controller 不碰 Prisma；WS Gateway 复用 Service；前端请求只走统一 API 客户端；前端 UI 强制遵循 [docs/FRONTEND_UI_GUIDELINES.md](docs/FRONTEND_UI_GUIDELINES.md) 与 shadcn/ui 规范（禁裸 HTML 交互标签）；Go 禁 CGO、goroutine 必须可退出（[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) §3）。
 6. **文档同步**：改了什么就必须同一 PR 更新对应文档（映射表见下）；代码与文档不一致视为 bug。
 7. **安全红线**：密钥不入 git/日志；生产强制 HTTPS/WSS；密码 bcrypt；服务端默认拒绝鉴权（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §4）。
@@ -113,7 +113,14 @@ cd apps/agent && AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent 
 bash scripts/release.sh
 ```
 
-Git 操作约定：从 main 切出 `feat|fix|docs|chore/<scope>-<desc>` 分支 → 提交（husky + commitlint 校验信息格式）→ push → PR → 门禁全绿 → squash merge。
+### 标准 Git 分支与 PR 工作流（强制执行 SOP）
+
+1. **动代码前必先切分支**：执行 `git checkout -b <type>/<scope>-<desc>`（严禁在 main 分支编辑/暂存/提交）
+2. **本地门禁自查**：`pnpm gate:server` / `pnpm gate:web` / `pnpm gate:agent` 全绿
+3. **原子提交**：`git add <files>` → `git commit -m "<type>(<scope>): <中文描述>"`（严禁 `--no-verify`）
+4. **推送并提 PR**：`git push -u origin <branch>` → `gh pr create --title "<type>(<scope>): <中文描述>" --body "..."`
+5. **等待 CI 并合并**：等待 GitHub Actions 门禁通过 → `gh pr merge --squash --delete-branch`
+6. **切回主分支同步**：`git checkout main && git pull origin main`
 
 ---
 

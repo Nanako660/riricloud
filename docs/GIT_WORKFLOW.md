@@ -26,7 +26,8 @@ flowchart LR
 
 | 规则 | 说明 |
 | :--- | :--- |
-| **main 受保护** | 禁止直接 push、禁止 force push、禁止删除；只能通过 PR 合入 |
+| **main 绝对受保护** | 禁止直接 push、禁止 force push、禁止直接 commit、禁止删除；唯一合法合入方式为 PR Squash Merge |
+| **本地 Hook 物理阻断** | `.husky/pre-commit` 与 `.husky/pre-push` 自动检测并物理阻断在 main/master 分支上的提交与推送，严禁使用 `--no-verify` 绕过 |
 | **短生命周期** | 功能分支存活以「天」为单位，合入即删；长期不合并的分支须定期 rebase main 解决漂移 |
 | **随时可发布** | main 上每个提交都必须通过质量门禁（见 [CODE_REVIEW.md](./CODE_REVIEW.md) §2），不引入半成品特性 |
 | **未完成功能** | 通过功能开关或按模块渐进合入，而不是长期挂分支 |
@@ -129,10 +130,12 @@ Master 拒绝。Agent 侧需同步升级到本版本。
 
 ---
 
-## 5. 禁止事项清单
+## 5. 禁止事项清单（零容忍红线）
 
-1. 禁止对 `main` 使用 force push / 或改写其历史。
-2. 禁止绕过 PR 门禁直接向 `main` 提交（初始化仓库的首次提交除外）。
-3. 禁止在提交信息或 diff 中携带任何密钥、Token、证书私钥（含 `.env` 实文件——`.env.example` 除外）。
-4. 禁止合并非绿 CI 的 PR；紧急回滚场景先 `revert` 再修复，不在 main 上"补丁式"直接修改。
-5. 禁止一版多义：一个提交同时含 `feat` 与 `fix` 时拆分提交。
+1. **严禁在 `main` / `master` 分支直接提交（commit）代码**：动代码前必须先切出特性分支。
+2. **严禁直接向 `main` / `master` 分支执行 push 或 force push**：所有变更必须经 PR 由 GitHub Actions 门禁验证后合并。
+3. **严禁使用 `--no-verify`** 绕过本地 Husky 的 `pre-commit` 与 `pre-push` 安全检查。
+4. 禁止在提交信息或 diff 中携带任何密钥、Token、证书私钥（含 `.env` 实文件——`.env.example` 除外）。
+5. 禁止合并非绿 CI 的 PR；紧急回滚场景先 `revert` 再修复，不在 main 上"补丁式"直接修改。
+6. 禁止一版多义：一个提交同时含 `feat` 与 `fix` 时拆分提交。
+
