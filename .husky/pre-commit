@@ -1,3 +1,15 @@
-# pre-commit：暂存区代码规范检查（lint-staged 配置见根 package.json）
+# pre-commit：禁止在 main/master 分支直接提交；暂存区代码规范检查（lint-staged）
+current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
+  echo ""
+  echo "❌ 【错误】严禁在 $current_branch 分支直接提交代码！"
+  echo "👉 请先切出独立特性分支后再提交："
+  echo "   git checkout -b <type>/<scope>-<desc>"
+  echo "   示例：git checkout -b feat/web-user-panel"
+  echo ""
+  exit 1
+fi
+
 [ -f scripts/dev-env.sh ] && . scripts/dev-env.sh
 pnpm exec lint-staged
+

@@ -1,0 +1,15 @@
+# pre-push：禁止直接向 main/master 分支推送代码
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ] || [ "$remote_ref" = "refs/heads/master" ]; then
+    echo ""
+    echo "❌ 【错误】严禁直接向 main / master 分支 push 代码！"
+    echo "👉 所有变更必须先 push 到特性分支并创建 PR 进行代码审查与门禁验证："
+    echo "   1. git push -u origin <your-feature-branch>"
+    echo "   2. gh pr create"
+    echo "   3. CI 全绿后经 PR 合并"
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0
