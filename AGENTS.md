@@ -17,11 +17,12 @@
 ```
 riricloud/
 ├── docs/              # 设计与规范文档库
+│   └── plans/         # 规划任务总台账（进行中，archive/ 存放历史归档）
 ├── apps/              # 三端应用（已落地）
 │   ├── web/           # React + Vite 前端（@riricloud/web）
 │   ├── server/        # NestJS 主控后端（@riricloud/server，含 Prisma schema）
 │   └── agent/         # Go 边缘节点守护程序
-├── scripts/           # dev-env.sh（缓存环境）、gate-agent.sh（Go 门禁）
+├── scripts/           # dev-env.sh、doc-governance.mjs、gate-agent.sh 等
 ├── .cache/            # 【gitignore】依赖缓存（pnpm/npm/corepack/go）
 ├── .tools/            # 【gitignore】便携工具链（如本地 Go）
 ├── AGENTS.md          # 本文件
@@ -62,6 +63,7 @@ riricloud/
 9. **质量门禁**：合入 main 前本 §常用命令 全绿；修 bug 先写复现测试。
 10. **不越权**：架构级决策（换框架、加外部服务、突破资源上限）不得自行实施——先提 RFC 改文档，获批准后再动代码。
 11. **视觉验证约束**：前端 UI 视觉验证为**按需执行**且**仅在 Antigravity 代理环境下执行**；严禁在自动化 CI / Git hook 中挂接视觉测试，严禁私自引入重型测试框架。UI 改动需核对并维护 [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md) 索引台账。
+12. **任务规划与归档机械约束**：所有中短期任务规划必须存放于 `docs/plans/`；严禁在 `docs/` 根目录散落 TODO/计划文档；规划任务 100% 完成后必须使用 `pnpm plan:archive <file>` 归档至 `docs/plans/archive/`，未归档将触发 `pnpm gate:docs` 门禁阻断。
 
 ---
 
@@ -74,6 +76,7 @@ riricloud/
 | 组件、通信链路、时序 | `docs/ARCHITECTURE.md` |
 | 前端 UI 规范、主题、组件层级 | `docs/FRONTEND_UI_GUIDELINES.md` |
 | 前端 UI 页面 / 模态框 / 样式 | `docs/FRONTEND_UI_GUIDELINES.md`、`docs/VISUAL_VERIFICATION.md` |
+| 任务规划与细粒度待办 | `docs/plans/`（进行中）/ 完成后必须 `pnpm plan:archive` 归档 |
 | 选型或依赖库增删 | `docs/TECH_STACK.md` |
 | 部署方式或脚本行为 | `docs/DEPLOYMENT_GUIDE.md` |
 | 规范与红线本身 | `docs/VERSIONING.md` / `GIT_WORKFLOW.md` / `CODE_REVIEW.md` / `PROJECT_CONSTRAINTS.md` |
@@ -97,10 +100,16 @@ pnpm install
 pnpm dev:server    # NestJS 主控（http://localhost:3000，API 文档 /api/docs）
 pnpm dev:web       # Vite 前端（http://localhost:5173，代理 /api → 3000）
 
-# 质量门禁（提交前本地自查，三端一次全跑用 pnpm gate）
+# 规划与任务管理
+pnpm plan:new <name>       # 创建新规划模板（放入 docs/plans/）
+pnpm plan:archive <file>   # 一键归档已完成规划（移入 docs/plans/archive/ 并刷新台账）
+
+# 质量门禁（提交前本地自查，四端一次全跑用 pnpm gate）
+pnpm gate:docs     # 文档治理与规划归档机械约束校验
 pnpm gate:server   # tsc --noEmit + eslint + jest
 pnpm gate:web      # tsc --noEmit + eslint + vite build
 pnpm gate:agent    # go vet + gofmt + go test + go build（经 scripts/gate-agent.sh）
+pnpm gate          # gate:docs + gate:server + gate:web + gate:agent 全跑
 
 # 数据库迁移与种子（server）
 pnpm --filter @riricloud/server exec prisma migrate dev

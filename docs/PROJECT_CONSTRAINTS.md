@@ -71,7 +71,8 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 | 组件拓扑、通信链路、时序 | [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | 选型、依赖库 | [TECH_STACK.md](./TECH_STACK.md) |
 | 部署方式、安装脚本行为 | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) |
-| 工程规范、红线 | 本文档 / [VERSIONING.md](./VERSIONING.md) / [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) / [CODE_REVIEW.md](./CODE_REVIEW.md) |
+| 任务规划与细粒度待办 | [plans/README.md](./plans/README.md)（进行中放入 `docs/plans/`，完成后必须 `pnpm plan:archive` 归档） |
+| 规范与红线本身 | 本文档 / [VERSIONING.md](./VERSIONING.md) / [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) / [CODE_REVIEW.md](./CODE_REVIEW.md) |
 | 里程碑进度 | [ROADMAP.md](./ROADMAP.md)（完成的条目打勾） |
 
 `feat` / `fix` 类变更还须在 [CHANGELOG.md](../CHANGELOG.md) 的 `[Unreleased]` 追加条目（详见 [VERSIONING.md](./VERSIONING.md) §5）。
@@ -105,3 +106,9 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 
 1. **统一基础控件层级**：表单中承载 `Switch`、`Checkbox` 或操作按钮的边框卡片，必须直接复用 shadcn/ui 的 `FormItem` / `Card` 结构；与同层 `Input`、`SelectTrigger` 等基础控件并列时，外层卡片统一使用 `shadow-sm`、语义边框和一致的高度与间距。
 2. **禁止自定义视觉分叉**：不得仅用裸 `div` 替代既有 shadcn/ui 卡片结构，也不得为相似操作卡片单独引入不一致的阴影、圆角或内边距；新增相似样式必须同步更新 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md) 并纳入对应 UI 走查。
+
+## 9. 任务规划与机械归档约束
+
+1. **统一收敛**：所有中短期任务清单、架构重构计划等必须存放于 `docs/plans/`；严禁在 `docs/` 根目录随意堆放散落的 TODO / 计划文件（门禁脚本白名单强制校验）。
+2. **机械阻断**：进行中规划（`docs/plans/`）内所有任务复选框 100% 勾选完成时，`pnpm gate:docs` 门禁将强制阻断报错，防止陈旧完成项滞留在活跃目录。
+3. **规范归档**：必须通过 `pnpm plan:archive <file>` 或符合 `YYYY-MM-DD-*.md` 规范将已完结任务移入 `docs/plans/archive/`，并同步刷新 [plans/README.md](./plans/README.md) 台账。
