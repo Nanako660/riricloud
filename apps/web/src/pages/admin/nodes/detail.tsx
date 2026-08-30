@@ -2,9 +2,11 @@ import * as React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useTheme } from 'next-themes';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { ArrowLeft, Cpu, KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { extractErrorMessage } from '@/lib/api';
 import { PageContainer } from '@/components/shared/page-container';
 import { CopyButton } from '@/components/shared/copy-button';
@@ -17,6 +19,18 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 import {
   Table,
   TableBody,
@@ -53,6 +67,7 @@ export default function NodeDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
 
   const { data: node, isPending, isError } = useAdminNodeDetail(id);
   const { updateNode, deleteNode, reloadNode } = useNodeMutations();
@@ -130,10 +145,31 @@ export default function NodeDetailPage() {
   if (isPending) {
     return (
       <PageContainer>
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          加载中…
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-md" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-6 w-36" />
+              <Skeleton className="h-4 w-28" />
+            </div>
+            <Skeleton className="h-5 w-14 rounded-full" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-24 rounded-md" />
+          </div>
         </div>
+        <Skeleton className="h-9 w-72 rounded-lg" />
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-8 w-24 rounded-md" />
+          </CardHeader>
+          <CardContent className="space-y-3 pt-2">
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-md" />
+          </CardContent>
+        </Card>
       </PageContainer>
     );
   }
@@ -167,14 +203,28 @@ export default function NodeDetailPage() {
           <Badge variant={node.status === 'ONLINE' ? 'default' : 'secondary'}>{statusLabel}</Badge>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" disabled={reloadNode.isPending} onClick={() => reloadNode.mutate(node.id)}>
-            <RefreshCw className="h-4 w-4" />
-            重载配置
-          </Button>
-          <Button variant="destructive" size="sm" className="gap-1.5" disabled={deleteNode.isPending} onClick={onDelete}>
-            <Trash2 className="h-4 w-4" />
-            删除节点
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5" disabled={reloadNode.isPending}>
+                <RefreshCw className={cn('h-4 w-4', reloadNode.isPending && 'animate-spin')} />
+                {reloadNode.isPending ? '正在下发…' : '重载配置'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>重载节点配置？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  系统将重新生成服务端 sing-box 配置并向在线 Agent 下发热重载指令。热重载期间活动连接可能会发生短暂重连。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={() => reloadNode.mutate(node.id)}>
+                  确认重载
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -194,8 +244,8 @@ export default function NodeDetailPage() {
       <Tabs defaultValue="inbounds">
         <TabsList>
           <TabsTrigger value="inbounds">入站协议</TabsTrigger>
-          <TabsTrigger value="basic">基础信息</TabsTrigger>
-          <TabsTrigger value="advanced">高级模式</TabsTrigger>
+          <TabsTrigger value="basic">基础与遥测</TabsTrigger>
+          <TabsTrigger value="advanced">高级与运维</TabsTrigger>
         </TabsList>
 
         {/* 入站管理 */}
@@ -380,6 +430,7 @@ export default function NodeDetailPage() {
                   <CodeMirror
                     value={override}
                     height="360px"
+                    theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
                     extensions={[json()]}
                     onChange={setOverride}
                     className="overflow-hidden rounded-md border"
@@ -403,6 +454,48 @@ export default function NodeDetailPage() {
                   </p>
                 </TabsContent>
               </Tabs>
+            </CardContent>
+          </Card>
+
+          {/* 危险操作区 */}
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="text-base text-destructive flex items-center gap-2">
+                <Trash2 className="h-4 w-4" />
+                危险操作区
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">删除此节点</p>
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    删除后该节点的全部入站协议配置与关联流量记录将永久清空，在线 Agent 将立即断开并注销连接。
+                  </p>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm" className="gap-1.5 shrink-0" disabled={deleteNode.isPending}>
+                      <Trash2 className="h-4 w-4" />
+                      {deleteNode.isPending ? '正在删除…' : '删除节点'}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确认删除节点「{node.name}」？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        该操作不可撤销。所有属于该节点的入站协议与流量记录将被一并清除，正在连接的用户连接将被强制中断。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" onClick={onDelete}>
+                        确认删除
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

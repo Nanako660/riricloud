@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, Cloud, Gauge, HardDrive } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Gauge, HardDrive, HelpCircle, Radio, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { StatCard } from '@/components/shared/stat-card';
 import { CopyButton } from '@/components/shared/copy-button';
 import { EmptyState } from '@/components/shared/empty-state';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -21,14 +20,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table';
 
 // 字节数格式化（与后端 formatBytes 保持一致）
 function formatBytes(bytes: number): string {
@@ -44,17 +35,6 @@ interface DashboardData {
   expireAt: string | null;
   subscriptionToken: string;
   onlineNodeCount: number;
-}
-
-interface NodesData {
-  entitled: boolean;
-  nodes: Array<{
-    id: string;
-    name: string;
-    serverHost: string;
-    status: string;
-    inbounds: Array<{ type: string; tag: string; port: number }>;
-  }>;
 }
 
 export default function DashboardPage() {
@@ -73,11 +53,6 @@ export default function DashboardPage() {
       void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
     },
     onError: (e) => toast.error(extractErrorMessage(e, '重置失败'))
-  });
-
-  const nodes = useQuery({
-    queryKey: ['user', 'nodes'],
-    queryFn: async () => (await api.get<NodesData>('/user/nodes')).data
   });
 
   if (dashboard.isPending) {
@@ -116,10 +91,10 @@ export default function DashboardPage() {
           icon={<HardDrive className="h-5 w-5" />}
         />
         <StatCard
-          title="在线节点"
+          title="可用线路"
           value={`${d.onlineNodeCount}`}
-          hint="公开可用节点"
-          icon={<Cloud className="h-5 w-5" />}
+          hint="已自动同步至订阅"
+          icon={<Radio className="h-5 w-5" />}
         />
         <StatCard
           title="账户有效期"
@@ -146,11 +121,14 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">订阅链接</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4" />
+            我的订阅
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs">{subUrl}</code>
+            <code className="flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">{subUrl}</code>
             <CopyButton value={subUrl} />
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -180,56 +158,52 @@ export default function DashboardPage() {
             </AlertDialog>
           </div>
           <p className="text-muted-foreground text-xs">
-            将该链接导入 Clash Meta / Sing-box / Shadowrocket 等客户端即可自动同步节点。
+            将该链接导入 Clash Meta / Sing-box / Shadowrocket 等客户端即可自动同步所有可用代理线路。
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">可用节点</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <HelpCircle className="h-4 w-4" />
+            客户端使用指引
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          {nodes.data?.nodes?.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>节点</TableHead>
-                  <TableHead>地址</TableHead>
-                  <TableHead>协议</TableHead>
-                  <TableHead>状态</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {nodes.data.nodes.map((n) => (
-                  <TableRow key={n.id}>
-                    <TableCell className="font-medium">{n.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{n.serverHost}</TableCell>
-                    <TableCell>
-                      {n.inbounds.length ? (
-                        <div className="flex flex-wrap gap-1">
-                          {n.inbounds.map((inbound) => (
-                            <Badge key={inbound.tag} variant="outline">
-                              {inbound.type}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={n.status === 'ONLINE' ? 'default' : 'secondary'}>
-                        {n.status === 'ONLINE' ? '在线' : '离线'}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <EmptyState title="暂无可用节点" description="等待管理员添加节点并接入 Agent" />
-          )}
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border p-3.5 space-y-1.5 bg-muted/20">
+              <div className="flex items-center gap-2 font-medium text-sm">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">1</span>
+                复制订阅链接
+              </div>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                点击上方“复制”按钮获取您专属的通用多格式订阅链接。
+              </p>
+            </div>
+            <div className="rounded-lg border p-3.5 space-y-1.5 bg-muted/20">
+              <div className="flex items-center gap-2 font-medium text-sm">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">2</span>
+                导入客户端
+              </div>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                在 Clash Meta (Mihomo)、Sing-box、Shadowrocket 等客户端中新建配置并粘贴订阅链接。
+              </p>
+            </div>
+            <div className="rounded-lg border p-3.5 space-y-1.5 bg-muted/20">
+              <div className="flex items-center gap-2 font-medium text-sm">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">3</span>
+                选择线路并连接
+              </div>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                更新订阅配置后，在客户端选择延迟较低的可用线路开启代理即可开始使用。
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-md bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+            <span>所有公开可用的节点线路将由系统自动同步至客户端，无需手动配置服务器与端口。</span>
+          </div>
         </CardContent>
       </Card>
     </PageContainer>
