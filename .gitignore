@@ -29,5 +29,10 @@ riri-agent.exe
 .cache/
 .tools/
 
+# Docker 镜像导出包（本地生成，体积较大）
+docker-images/*.tar.gz
+docker-images/*.sha256
+docker-images/*.manifest.json
+
 # husky 运行时目录
 .husky/_

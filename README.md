@@ -5,7 +5,7 @@
 **现代化的多节点分布式 VPN / 代理管理系统**  
 *极简架构 · 零外部依赖 · WSS 毫秒级长连接 · 现代协议支持 · 多格式订阅统一输出*
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8.svg?logo=go)](https://go.dev)
@@ -142,16 +142,18 @@ graph TB
 git clone https://github.com/your-org/riricloud.git
 cd riricloud
 
-# 2. 一键搭建（安装依赖 + Prisma 迁移 + 种子数据播种）
+# 2. 一键搭建（安装依赖 + Prisma 迁移 + 本地演示数据播种）
 pnpm setup
 ```
 
-播种完成后，将自动生成默认的演示账号（凭据可通过环境变量自定义）：
+`pnpm setup` 仅用于本地演示，会使用演示默认值生成账号；生产启动不会使用这些默认凭据。播种完成后：
 
 | 角色 | 邮箱 | 初始密码 |
 | :--- | :--- | :--- |
 | **系统管理员 (ADMIN)** | `admin@riricloud.local` | `riri-admin-demo` |
 | **普通用户 (USER)** | `demo@riricloud.local` | `riri-user-demo` |
+
+本地启动后端前，请在 `apps/server/.env` 中设置至少 32 位随机 `JWT_SECRET`；首次空库的生产式初始化可设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 后执行 `node prisma/bootstrap-admin.js`，已有管理员不会被覆盖。
 
 ### 3. 启动开发模式
 
@@ -191,33 +193,64 @@ AGENT_TOKEN="<从面板复制的_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/a
 
 ### 1. 主控端 (Master) 部署
 
-推荐在生产环境通过 Docker Compose 一键启动主控服务：
+推荐在生产环境通过 Docker Compose 一键启动主控服务（仓库内 Dockerfile 与 Compose 已提供）。Compose 默认使用 `riricloud/master:latest`，构建脚本会同时生成版本标签与 `latest` 标签：
 
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  master:
-    image: riricloud/master:latest
-    container_name: riri-master
-    restart: always
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - PORT=3000
-      - DATABASE_URL=file:/app/data/riri.db
-      - JWT_SECRET=your-super-secret-jwt-key-minimum-32-chars
-      - SEED_ADMIN_EMAIL=admin@yourdomain.com
-      - SEED_ADMIN_PASSWORD=your-secure-password
-```
-
-启动命令：
 ```bash
-docker compose up -d
+# 在 WSL/Linux Docker 环境中执行
+cp .env.example .env
+# 编辑 .env，设置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+pnpm docker:build
+pnpm docker:up
 ```
+
+空数据库首次启动时，Master 会使用 `ADMIN_EMAIL` 和 `ADMIN_PASSWORD` 创建首个管理员；已有管理员不会被环境变量覆盖。旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD` 仍兼容，但不再提供生产默认值。需要显式重置已有管理员密码时执行：
+
+```bash
+pnpm admin:reset -- --email admin@example.com
+printf '%s\n' 'new-password' | pnpm admin:reset -- --email admin@example.com --password-stdin
+```
+
+生产默认 `AUTO_SEED=false`，会初始化管理员和不可删除的 `Master-Local` 本机 Agent 节点，不会创建演示用户、套餐、模板和线路；仅开发/演示环境设置 `AUTO_SEED=true` 才会额外运行完整 seed。Master 镜像已经内置 Agent 与 Sing-box，不需要再启用独立的本机 Agent 服务。
+
+`Master-Local` 的订阅地址优先使用 `MASTER_LOCAL_HOST`，未填写时从 `RIRICLOUD_PUBLIC_URL` 推导。Linux/WSL Compose 使用 host network，本机 Agent 的动态 TCP/UDP 线路端口直接监听宿主机；请在防火墙放行实际线路端口。远程 VPS 节点仍按“节点端 Agent”章节独立接入。
+
+`pnpm docker:build` 会构建并标记以下镜像，同时导出到仓库根目录的 `docker-images/`：
+
+```text
+riricloud/master:0.2.0
+riricloud/master:latest
+riricloud/agent:0.2.0
+riricloud/agent:latest
+```
+
+导出文件使用 `riricloud-<组件>_<版本>_<平台>.tar.gz` 命名，并附带 `.manifest.json` 版本清单和 `.sha256` 校验文件。只需要重新导出现有镜像时执行 `pnpm docker:export`；可用 `pnpm docker:tags` 查看当前标签。镜像包含 OCI 版本、Git 提交和构建时间元数据。
+
+如果使用已经导出的镜像进行离线安装，可加载镜像后使用专用 Compose 模板；该模板只使用本地镜像，不会触发构建或拉取：
+
+```bash
+docker load -i docker-images/riricloud-master_0.2.0_linux_amd64.tar.gz
+# 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
+# docker load -i docker-images/riricloud-agent_0.2.0_linux_amd64.tar.gz
+cp .env.image.example .env.image
+# 编辑 .env.image：确认镜像标签，并填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
+docker compose --env-file .env.image -f docker-compose.image.yml ps
+```
+
+Master 本机 Agent 会随 `master` 服务自动启动；不需要启用 `agent` profile。只有在同一 Compose 中联调额外的远程节点时，才创建节点并取得其 AgentToken 后启用远程 Agent profile：
+
+```bash
+docker compose --env-file .env.image -f docker-compose.image.yml --profile agent up -d --no-build
+```
+
+密码重置命令：
+
+```bash
+printf '%s\n' 'new-password' | docker compose --env-file .env.image -f docker-compose.image.yml exec -T master \
+  /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
+```
+
+运行时使用 Distroless 镜像；2026-08-31 在 WSL Ubuntu 的 `linux/amd64` 验收结果约为 Master `376 MB`（压缩包 `87 MB`）、Agent `155 MB`（压缩包 `38 MB`）。
 
 ### 2. 节点端 (Agent) 一键部署
 
@@ -262,7 +295,8 @@ riricloud/
 │       ├── internal/config# 配置落盘与原子更新
 │       └── internal/telemetry # CPU / 内存 / 网速系统遥测采集
 ├── docs/                  # 官方完整架构设计与技术实施文档库
-├── scripts/               # 研发环境与自动化脚本（dev-env.sh / release.sh / gate-agent.sh）
+├── scripts/               # 研发环境与自动化脚本（dev-env.sh / release.sh / docker-build.sh / gate-agent.sh）
+├── docker-images/         # 【gitignore】本地 Docker 镜像导出包、版本清单与校验文件
 ├── .cache/                # 【gitignore】本地便携依赖缓存
 ├── .tools/                # 【gitignore】便携开发工具链（如免安装 Go）
 ├── AGENTS.md              # AI 代理与协作者工作规范
@@ -293,7 +327,7 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 - `docs: 更新系统架构拓扑图`
 
 ### 发布自动化
-项目使用本地发布脚本（`scripts/release.sh`），在隔离的工作区复跑三端门禁，自动完成 Agent 三平台二进制交叉编译、SHA-256 校验和打包，并通过 GitHub CLI 一键生成附带 Release Notes 的版本发布。
+项目使用本地发布脚本（`scripts/release.sh`），在隔离的工作区复跑三端门禁，自动完成 Agent 三平台二进制交叉编译、SHA-256 校验和打包，并通过 GitHub CLI 一键生成附带 Release Notes 的版本发布。Docker 镜像则由 `scripts/docker-build.sh` 构建、双标签标记并导出到 `docker-images/`。
 
 ---
 
@@ -325,11 +359,10 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 - [x] **Phase 3: Go 边缘 Agent 基线** (WSS 长连接 / 指数退避重连 / 配置原子落盘 / CPU/内存/带宽遥测上报)
 - [x] **Phase 4: Web 控制面板** (用户仪表盘 / 节点监控 / TanStack Table 用户管理 / 系统设置 / 暗黑模式)
 - [ ] **Phase 5: Sing-box 内核全托管** (Agent 自动拉起与 PID 监控 / 增量用户流量统计采集 / 订阅 Clash & Sing-box 格式扩充)
-- [ ] **Phase 6: 部署套件与一键脚本** (`install-agent.sh` 脚本 / Docker Compose 全套编排 / 多机全链路自动化联调)
+- [x] **Phase 6: 部署套件与一键脚本** (`install-agent.sh` 脚本 / Docker Compose 全套编排 / WSL Docker 验收 / 镜像双标签导出)
 
 ---
 
 ## 📄 开源协议
 
 本项目源码遵循 [GNU General Public License v3.0 (GPL-3.0)](./LICENSE) 协议开源。
-

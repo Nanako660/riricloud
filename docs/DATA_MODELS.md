@@ -10,12 +10,14 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中�
 
 ## 2. 种子数据（首次启动引导）
 
-首个管理员账号通过 **Prisma seed 脚本**（`apps/server/prisma/seed.js`）幂等创建，机制如下：
+管理员初始化与演示 seed 分离：
 
-- 执行 `pnpm --filter @riricloud/server exec prisma db seed`（已并入根 `pnpm setup`）。
-- 默认播种两个演示账号：`admin@riricloud.local`（ADMIN）与 `demo@riricloud.local`（USER）；邮箱与密码可通过环境变量 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` 覆盖（默认值仅用于本地演示，生产环境务必修改）。
-- 幂等性：按 email upsert，重复执行不产生重复数据；已存在账号仅补齐角色与激活状态。
-- 首次 seed 同时幂等创建 `Master-Local` 本机节点、一条 VLESS/Reality 直连线路和一条盲转发示例线路；新建示例端口在 `20000~29999` 范围随机生成，重复 seed 保留未冲突的已有端口并自动修复冲突端口；同节点中继的入口与出口端口始终分配为不同端口。本机地址可由 `MASTER_LOCAL_HOST` 覆盖。线路协议与参数直接保存在 `Line`，不再创建新的业务入站记录。
+- 启动入口先执行 `apps/server/prisma/bootstrap-admin.js`。数据库没有 `role=ADMIN` 时，按 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 创建首个管理员；兼容 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`，优先级为正式配置高于旧配置。已有管理员时完全跳过，不改密码，也不因邮箱配置变化创建重复账号。
+- 空数据库没有管理员且未提供凭据时启动失败；管理员邮箱沿用 `class-validator` 的 `IsEmail` 规则，密码长度必须为 `8-64` 位。
+- `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、套餐、模板和线路。
+- `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、默认模板、VLESS/Reality 直连线路和盲转发示例线路；本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
+- `Master-Local` 使用 `Node.isLocal=true` 标记，是 Master 内置 Agent 的固定数据库身份。启动时复用已有 `agentToken` 与节点配置；管理端删除接口对该节点返回 `409`，防止误删内置 Agent 身份。
+- 管理员密码不能通过启动环境变量隐式修改；使用 `pnpm admin:reset -- --email <email>` 或发行包 `./admin-reset.sh` 显式重置，目标账号必须已存在且角色为 `ADMIN`。
 
 ---
 

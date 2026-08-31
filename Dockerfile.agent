@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.23-bookworm AS agent-build
+
+ARG TARGETARCH=amd64
+ARG RIRICLOUD_VERSION=dev
+WORKDIR /src
+
+COPY apps/agent/go.mod apps/agent/go.sum ./
+RUN go mod download
+COPY apps/agent/ ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
+    -o /out/riri-agent .
+
+FROM debian:bookworm-slim AS singbox-download
+
+ARG TARGETARCH=amd64
+ARG SINGBOX_VERSION=1.14.0
+WORKDIR /tmp
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
+    && curl --fail --silent --show-error --location \
+      "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-${TARGETARCH}.tar.gz" \
+      --output sing-box.tar.gz \
+    && tar -xzf sing-box.tar.gz \
+    && install -m 0755 "sing-box-${SINGBOX_VERSION}-linux-${TARGETARCH}/sing-box" /sing-box
+
+FROM gcr.io/distroless/cc-debian12 AS runtime
+
+ARG RIRICLOUD_VERSION=dev
+ARG RIRICLOUD_VCS_REF=unknown
+ARG RIRICLOUD_BUILD_DATE=unknown
+ARG RIRICLOUD_IMAGE_TAGS=latest
+ARG SINGBOX_VERSION=1.14.0
+LABEL org.opencontainers.image.title="RiriCloud Agent" \
+      org.opencontainers.image.description="RiriCloud edge node agent with sing-box" \
+      org.opencontainers.image.version="$RIRICLOUD_VERSION" \
+      org.opencontainers.image.revision="$RIRICLOUD_VCS_REF" \
+      org.opencontainers.image.created="$RIRICLOUD_BUILD_DATE" \
+      org.opencontainers.image.licenses="GPL-3.0-only" \
+      io.riricloud.image.tags="$RIRICLOUD_IMAGE_TAGS" \
+      io.riricloud.singbox.version="$SINGBOX_VERSION"
+
+WORKDIR /var/lib/riri-agent
+ENV SINGBOX_CONFIG_PATH=/var/lib/riri-agent/config.json \
+    SINGBOX_BINARY_PATH=/usr/local/bin/sing-box
+
+COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
+COPY --from=singbox-download /sing-box /usr/local/bin/sing-box
+
+USER 0
+
+VOLUME ["/var/lib/riri-agent"]
+ENTRYPOINT ["/usr/local/bin/riri-agent"]

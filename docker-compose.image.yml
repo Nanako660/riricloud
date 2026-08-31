@@ -1,0 +1,55 @@
+# RiriCloud 离线镜像部署模板：仅使用已导入本地 Docker 的镜像，不执行构建或拉取。
+name: riricloud
+
+services:
+  master:
+    image: ${MASTER_IMAGE:-riricloud/master:latest}
+    pull_policy: never
+    restart: unless-stopped
+    # Linux/WSL 下使用 host network，让内置 Agent 的动态 TCP/UDP 线路端口直接暴露。
+    network_mode: host
+    environment:
+      PORT: ${MASTER_PORT:-3000}
+      DATABASE_URL: file:/app/data/riri.db
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env.image}
+      AUTO_SEED: ${AUTO_SEED:-false}
+      MASTER_AGENT_ENABLED: ${MASTER_AGENT_ENABLED:-true}
+      MASTER_LOCAL_HOST: ${MASTER_LOCAL_HOST:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      RIRICLOUD_PUBLIC_URL: ${RIRICLOUD_PUBLIC_URL:-}
+    volumes:
+      - master-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.PORT).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  agent:
+    profiles: ["agent"]
+    image: ${AGENT_IMAGE:-riricloud/agent:latest}
+    pull_policy: never
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      master:
+        condition: service_healthy
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:-}
+      MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:3000/ws/agent}
+      AGENT_MODE: ${AGENT_MODE:-ws}
+      POLL_INTERVAL_SECS: ${POLL_INTERVAL_SECS:-15}
+    volumes:
+      - agent-data:/var/lib/riri-agent
+
+volumes:
+  master-data:
+  agent-data:
