@@ -20,6 +20,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
 
@@ -152,6 +153,30 @@ func (m *Manager) Status() Status {
 		LastError:            m.lastError,
 		Version:              m.binaryVersion,
 	}
+}
+
+// StatsAddress 返回当前配置里的 V2Ray API 地址；未配置时使用本地默认地址。
+func (m *Manager) StatsAddress() string {
+	m.mu.Lock()
+	conf := m.appliedConf
+	if conf == nil {
+		conf = m.desiredConf
+	}
+	m.mu.Unlock()
+	if len(conf) == 0 {
+		return stats.DefaultAddress
+	}
+	var root struct {
+		Experimental struct {
+			V2RayAPI *struct {
+				Listen string `json:"listen"`
+			} `json:"v2ray_api"`
+		} `json:"experimental"`
+	}
+	if err := json.Unmarshal(conf, &root); err != nil || root.Experimental.V2RayAPI == nil || root.Experimental.V2RayAPI.Listen == "" {
+		return stats.DefaultAddress
+	}
+	return root.Experimental.V2RayAPI.Listen
 }
 
 var binaryVersionPattern = regexp.MustCompile(`\b\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?\b`)

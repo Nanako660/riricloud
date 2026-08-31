@@ -338,9 +338,9 @@ model SystemSetting {
 - **TROJAN**：`transport`、`tls`
 - **HYSTERIA2**：`upMbps`、`downMbps`、`ignoreClientBandwidth`、`obfs: { type: "salamander", password }`、`tls`
 - **TUIC**：`congestionControl`（`bbr`/`cubic`/`new_reno`）、`zeroRttHandshake`（默认关闭）、`heartbeat`、`tls`
-- **SHADOWSOCKS**：`method`、`password`、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥
+- **SHADOWSOCKS**：`method`、`password`、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥；多用户客户端密码按协议组装为 `server_password:user_password`
 - **NAIVE**：`network`、`tls`
-- **SHADOWTLS**：`version`（v2/v3）、`handshakeDest`、`password`、`strictMode`
+- **SHADOWTLS**：固定 v3，结构为 `version: 3`、`handshakeDest`、`strictMode`、`inner: { type: "SHADOWSOCKS", method, password }`。内层必须使用 SS2022；`password` 是内层 SS2022 服务端密钥，外层 ShadowTLS 用户密码由用户凭证注入。旧版 v2 与独立 ShadowTLS 密码结构不再接受。
 - **MIXED / SOCKS / HTTP**：`allowLan`、`usersEnabled`
 - **DIRECT**：`overrideAddress`、`overridePort`
 
@@ -354,8 +354,8 @@ model SystemSetting {
 | **HYSTERIA2** | `User.email`（name） | `User.password ?? User.uuid` | 是（逐用户注入） |
 | **TUIC** | `User.uuid` | `User.password ?? User.uuid` | 是（逐用户注入） |
 | **NAIVE** | `User.email`（username） | `User.password ?? User.uuid` | 是（逐用户注入） |
-| **SHADOWSOCKS** | `User.email`（name） | 共享模式用入站密钥；多用户模式按用户 UUID 稳定派生 SS2022 密钥 | 共享/多用户可选 |
-| **SHADOWTLS** | v3 使用 `User.email`（name） | v3 使用用户密码；v2 使用入站密码 | v3 支持用户列表 |
+| **SHADOWSOCKS** | `User.email`（name） | 共享模式用入站密钥；多用户 SS2022 客户端使用 `server_password:user_password`，用户密钥按 UUID 稳定派生 | 共享/多用户可选 |
+| **SHADOWTLS** | v3 使用 `User.email`（name） | 外层使用用户密码；内层使用线路固定的 SS2022 服务端密钥 | v3 支持用户列表 |
 | **MIXED/SOCKS/HTTP**| `User.email`（username） | `User.password ?? User.uuid`（若启用认证） | 是 |
 
 **端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；HYSTERIA2/TUIC 视为 UDP，可与 TCP 线路共存于同一端口。Line 的入口端口和出口端口都会参与占用检查；未提供端口时，服务端从 `20000~29999` 随机生成五位端口。编辑已有 Line 会保留原端口，显式修改仍按上述规则校验。
@@ -403,6 +403,8 @@ model SystemSetting {
 每个用户通过 `userId @unique` 只有一条订阅实例。首次订购或原订阅已失效时复用/创建实例；升配立即重置已用流量并按新套餐重算周期；取消将状态置为 `CANCELED`，在 `expireAt` 前仍可使用；巡检将到期的 `ACTIVE`/`CANCELED` 更新为 `EXPIRED`；管理员可设置 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED`、配额、已用流量和有效期。
 
 `User.trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`subscriptionToken` 暂时保留为兼容镜像。订阅模块存在时以 `Subscription` 为准，每次订购、升配、管理员修改或 Token 重置在同一事务中同步镜像；旧迁移/旧测试缺少订阅表时沿用原 User 配额路径。
+
+用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 按心跳周期上报。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。`TrafficLog` 与两处已用流量更新必须在同一事务中完成。
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 

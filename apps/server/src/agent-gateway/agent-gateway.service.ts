@@ -5,13 +5,13 @@ import { deepMerge, isUserEntitled } from '../common/utils';
 import {
   buildClientTls,
   buildClientTransport,
-  buildServerInbound,
+  buildShadowsocksClientPassword,
+  buildServerInbounds,
   normalizeShadowsocksPassword,
-  resolveShadowsocksUserPassword,
   type InboundUserCredential
 } from '../common/inbound';
 import { resolveLineTags } from '../common/line-tags';
-import { DEFAULT_INBOUND_LISTEN } from '../common/ports';
+import { DEFAULT_INBOUND_LISTEN, DEFAULT_STATS_API_LISTEN } from '../common/ports';
 import { type ProtocolType } from '../common/constants';
 import type {
   AuthResultData,
@@ -49,6 +49,11 @@ type SubscriptionSnapshot = {
 
 type SubscriptionDelegate = {
   findMany: (args: Record<string, unknown>) => Promise<SubscriptionSnapshot[]>;
+};
+
+type TrafficSubscriptionDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<{ id: string } | null>;
+  update: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
 type PendingTask = AgentTaskMessage & { deliveredAt: number };
@@ -132,22 +137,38 @@ export class AgentService implements OnModuleDestroy {
         }
       });
       for (const record of data.trafficRecords ?? []) {
-        const user = await tx.user.findUnique({ where: { uuid: record.userUuid } });
+        let user = await tx.user.findUnique({ where: { uuid: record.userUuid } });
+        // 非 UUID 协议的 sing-box 用户统计使用用户名称（当前为邮箱），兼容回查邮箱。
+        if (!user) {
+          user = await tx.user.findUnique({ where: { email: record.userUuid } });
+        }
         if (!user) {
           this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
+        const upload = BigInt(record.upload);
+        const download = BigInt(record.download);
         await tx.trafficLog.create({
           data: {
             nodeId,
             userId: user.id,
-            upload: BigInt(record.upload),
-            download: BigInt(record.download)
+            upload,
+            download
           }
         });
+        const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
+        const userSubscription = subscription
+          ? await subscription.findUnique({ where: { userId: user.id } })
+          : null;
+        if (subscription && userSubscription) {
+          await subscription.update({
+            where: { id: userSubscription.id },
+            data: { trafficUsedBytes: { increment: upload + download } }
+          });
+        }
         await tx.user.update({
           where: { id: user.id },
-          data: { trafficUsedBytes: { increment: BigInt(record.upload + record.download) } }
+          data: { trafficUsedBytes: { increment: upload + download } }
         });
       }
     });
@@ -340,7 +361,7 @@ export class AgentService implements OnModuleDestroy {
       const isEntry = line.entryNodeId === nodeId;
       const isExit = line.exitNodeId === nodeId;
       if (line.type === 'DIRECT' && isEntry) {
-        inbounds.push(buildServerInbound({
+        inbounds.push(...buildServerInbounds({
           type: protocolType,
           tag: lineTags.direct ?? `line-${line.id}`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
@@ -364,19 +385,18 @@ export class AgentService implements OnModuleDestroy {
 
       if (isEntry && line.relayMode === 'PROTOCOL_PROXY') {
         const relayTag = lineTags.entry ?? `relay-${line.id}-entry`;
-        inbounds.push(
-          buildServerInbound({
-            type: protocolType,
-            tag: relayTag,
-            listen: line.listen || DEFAULT_INBOUND_LISTEN,
-            port: line.entryPort,
-            params,
-            users
-          })
-        );
+        const relayInbounds = buildServerInbounds({
+          type: protocolType,
+          tag: relayTag,
+          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          port: line.entryPort,
+          params,
+          users
+        });
+        inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound(line, users);
         if (!outbound) {
-          inbounds.pop();
+          inbounds.splice(-relayInbounds.length, relayInbounds.length);
           continue;
         }
         outbounds.push(outbound);
@@ -384,7 +404,7 @@ export class AgentService implements OnModuleDestroy {
       }
 
       if (isExit) {
-        inbounds.push(buildServerInbound({
+        inbounds.push(...buildServerInbounds({
           type: protocolType,
           tag: lineTags.exit ?? `line-${line.id}-exit`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
@@ -399,6 +419,15 @@ export class AgentService implements OnModuleDestroy {
       log: { level: 'info', timestamp: true },
       inbounds,
       outbounds,
+      experimental: {
+        v2ray_api: {
+          listen: DEFAULT_STATS_API_LISTEN,
+          stats: {
+            enabled: true,
+            users: [...new Set(users.map((user) => user.email).filter(Boolean))]
+          }
+        }
+      },
       ...(relayRules.length ? { route: { rules: relayRules } } : {})
     };
     if (node.configOverride) {
@@ -471,22 +500,28 @@ export class AgentService implements OnModuleDestroy {
       case 'SHADOWSOCKS':
         outbound.method = typeof params.method === 'string' ? params.method : '2022-blake3-aes-128-gcm';
         outbound.password = params.mode === 'multi-user'
-          ? resolveShadowsocksUserPassword(outbound.method as string, firstUser.credential, firstUser.uuid)
+          ? buildShadowsocksClientPassword(
+            outbound.method as string,
+            typeof params.password === 'string' ? params.password : '',
+            firstUser.credential,
+            firstUser.uuid
+          )
           : normalizeShadowsocksPassword(outbound.method as string, typeof params.password === 'string' ? params.password : '');
         break;
       case 'NAIVE':
         outbound.username = firstUser.email;
         outbound.password = firstUser.credential;
         break;
+      case 'SHADOWTLS':
+        return undefined;
       default:
-        outbound.type = 'direct';
-        break;
+        return undefined;
     }
 
     const clientTls = buildClientTls(
       tls as unknown as Parameters<typeof buildClientTls>[0],
       tlsServerName,
-      protocolType === 'NAIVE' ? { includeAlpn: false } : undefined
+      protocolType === 'NAIVE' ? { includeAlpn: false, includeInsecure: false } : undefined
     );
     if (clientTls) outbound.tls = clientTls;
     const transport = (params.transport ?? {}) as Record<string, unknown>;

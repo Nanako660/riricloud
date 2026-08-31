@@ -134,6 +134,11 @@ export interface InboundParams {
   version?: number;
   handshakeDest?: string;
   strictMode?: boolean;
+  inner?: {
+    type: 'SHADOWSOCKS';
+    method: string;
+    password: string;
+  };
   allowLan?: boolean;
   usersEnabled?: boolean;
   overrideAddress?: string;

@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复 SS2022 多用户订阅、Sing-box 出站和协议代理中继只携带用户密钥的问题；客户端凭证现在按协议组合为 `server_password:user_password`，可正确完成认证并保留用户归属统计。
+
 ### Changed
 
 - 完善 Master 管理员初始化：新增 `ADMIN_EMAIL`/`ADMIN_PASSWORD` 与兼容旧配置的首个管理员 bootstrap；生产默认 `AUTO_SEED=false`，演示 seed 与管理员初始化分离。
@@ -37,7 +41,8 @@
 - 线路编辑弹窗布局扁平化：移除 Accordion 折叠和表单内部嵌套卡片，改用分区标题与分隔线展示完整配置。
 - 优化线路编辑流程：将必选的入口节点选择移至“入站配置”页签，高级页仅保留出口拓扑与线路级设置。
 - 统一管理端弹窗尺寸：普通表单使用适中的统一宽度，线路和模板编辑保留更宽的编辑空间，移动端统一留白并支持内容滚动。
-- 统一 sing-box 协议配置兼容性：修复 VMess 入站 `alterId`、ShadowTLS v3 `users`、SS2022 固定长度密钥、Reality 客户端 TLS、WebSocket `headers.Host` 与协议代理中继出站字段；TUIC 0-RTT 默认关闭。
+- 统一 sing-box 协议配置：修复 VMess 入站 `alterId`、ShadowTLS v3 + SS2022 内层双入站、SS2022 固定长度密钥、Reality 客户端 TLS、WebSocket `headers.Host` 与协议代理中继出站字段；ShadowTLS v2/独立密码结构不再兼容；TUIC 0-RTT 默认关闭。
+- 补齐 Docker 与发行包内置 Sing-box 的 `with_quic` 和 `with_naive_outbound` 构建标签，确保 Hysteria2/TUIC 线路可以实际启动、NaiveProxy 订阅出站可用。
 
 - 深色主题色阶调优：消除 OLED 极黑刺眼眩光，升级为柔和深炭灰（`#141417`）与立体卡片（`#1c1c20`），降低纯白文字对比度至温润浅灰白（`#e4e4e7`），显著提升暗光环境下的阅读舒适度。
 - 富文本编辑器深色模式自适应：为高级配置中的 CodeMirror JSON 编辑器绑定 `resolvedTheme` 主题适配，实现全站明暗模式与暗色代码高亮无缝联动。
@@ -49,6 +54,7 @@
 
 ### Fixed
 
+- 修复流量监控链路失效：Agent 通过启用 V2Ray API 的 Sing-box 读取按用户周期增量，Master 按订阅实体事务扣减并同步 User 兼容镜像，仪表盘、订阅页和管理员用户列表每 5 秒自动刷新。
 - 修复 Distroless Docker 镜像中 seed 命令和 Compose healthcheck 仍依赖 PATH 中 `node` 命令的问题；现在统一使用镜像内 Node 可执行文件路径，保留自动迁移、seed 和健康检查能力。
 - 修复本机 VLESS/Reality 线路错误组合 `xtls-rprx-vision` + 明文 TLS 配置导致客户端握手超时；服务端现在会自动清除明文 VLESS 的 flow，seed 默认生成有效 Reality 配置，并迁移修复存量记录。
 - 节点删除保护：主控本机 `Master-Local` 节点不再允许删除，管理端隐藏对应删除入口，服务端接口统一返回 `409`。

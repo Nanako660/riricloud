@@ -69,6 +69,9 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - `github.com/gorilla/websocket`：工业级成熟稳定的 WebSocket 客户端实现。
 - `github.com/shirou/gopsutil/v3`：跨平台采集 Linux / Darwin / Windows 的 CPU、Memory、Disk、Net IO 指标。
 - `github.com/sirupsen/logrus` 或 `go.uber.org/zap`：结构化日志输出。
+- `google.golang.org/grpc` + `google.golang.org/protobuf`：访问 Sing-box `experimental.v2ray_api` 的本地 StatsService；仅携带最小生成客户端代码，不引入 V2Ray/Sing-box Go 运行时。
+
+Docker 与发行包中的 Sing-box 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建标签，以启用按用户流量统计、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站；Agent 仍保持 `CGO_ENABLED=0` 静态构建。
 
 ---
 

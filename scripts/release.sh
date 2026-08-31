@@ -135,26 +135,66 @@ cp "$DIST/riri-agent_${VERSION}_linux_arm64/riri-agent" "$MASTER_DIR/binaries/ag
 if [ -f "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" ]; then
   cp "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
 fi
-# 主控发行包内置本机 Agent；优先使用本地缓存，否则下载并缓存指定版本的 Linux x64 Sing-box。
+# 主控发行包内置本机 Agent；优先使用本地缓存，否则构建并缓存启用 V2Ray API/NaiveProxy 的 Linux x64 Sing-box。
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
+CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 SINGBOX_SOURCE_DIR="${SINGBOX_BINARY_DIR:-$RIRI_ROOT/.tools/sing-box}"
-if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ]; then
-  command -v curl >/dev/null 2>&1 || die "缺少 Linux x64 sing-box，且系统没有 curl；请设置 SINGBOX_BINARY_DIR"
-  command -v tar >/dev/null 2>&1 || die "缺少 Linux x64 sing-box，且系统没有 tar；请设置 SINGBOX_BINARY_DIR"
-  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-release/$SINGBOX_VERSION"
-  mkdir -p "$DOWNLOAD_DIR/linux-amd64"
-  if [ ! -f "$DOWNLOAD_DIR/linux-amd64/sing-box" ]; then
-    echo "下载内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION"
-    TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
-    curl --fail --silent --show-error --location \
-      "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz" \
-      --output "$TMP_ARCHIVE"
-    tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
-    install -m 0755 "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" "$DOWNLOAD_DIR/linux-amd64/sing-box"
-  fi
-  SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
+if [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ]; then
+	SINGBOX_VERSION_OUTPUT="$($SINGBOX_SOURCE_DIR/linux-amd64/sing-box version 2>/dev/null || true)"
+else
+	SINGBOX_VERSION_OUTPUT=""
+fi
+if ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
+	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
+	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
+	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
+	|| [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ]; then
+	if [ -n "${SINGBOX_BINARY_DIR:-}" ]; then
+		die "SINGBOX_BINARY_DIR 中的 Sing-box 缺少所需构建标签或 libcronet.so"
+	fi
+	command -v curl >/dev/null 2>&1 || die "缺少 curl，无法获取 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
+	command -v tar >/dev/null 2>&1 || die "缺少 tar，无法解压 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
+	command -v go >/dev/null 2>&1 || die "缺少 Go 1.25.5+，无法构建启用 V2Ray API 的 Sing-box；请设置 SINGBOX_BINARY_DIR"
+	DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION"
+	mkdir -p "$DOWNLOAD_DIR/linux-amd64"
+	if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
+		echo "获取内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION 源码"
+		TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
+		curl --fail --silent --show-error --location \
+		  "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
+		  --output "$TMP_ARCHIVE"
+		tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
+	fi
+	if [ ! -f "$DOWNLOAD_DIR/linux-amd64/libcronet.so" ]; then
+		echo "获取 NaiveProxy purego 运行库 $CRONET_VERSION"
+		curl --fail --silent --show-error --location \
+		  "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-amd64.so" \
+		  --output "$DOWNLOAD_DIR/linux-amd64/libcronet.so"
+		chmod 0755 "$DOWNLOAD_DIR/linux-amd64/libcronet.so"
+	fi
+	echo "构建内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION（with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego）"
+	(
+		cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+		  -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego -ldflags "-s -w" \
+		  -o "$DOWNLOAD_DIR/linux-amd64/sing-box" ./cmd/sing-box
+	)
+	SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
+	SINGBOX_VERSION_OUTPUT="$($SINGBOX_SOURCE_DIR/linux-amd64/sing-box version)"
+fi
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
+	|| die "Sing-box 未启用 with_v2ray_api，无法提供按用户流量统计"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
+	|| die "Sing-box 未启用 with_utls，无法提供 VLESS Reality"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
+	|| die "Sing-box 未启用 with_quic，无法提供 Hysteria2/TUIC"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
+	|| die "Sing-box 未启用 with_naive_outbound，无法提供 NaiveProxy"
+if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ]; then
+	die "Sing-box 启用了 NaiveProxy，但缺少同目录的 libcronet.so"
 fi
 cp "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" "$MASTER_DIR/binaries/singbox-linux-amd64"
+cp "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" "$MASTER_DIR/binaries/libcronet.so"
 chmod +x "$MASTER_DIR/binaries/singbox-linux-amd64"
 for target in linux-amd64 linux-arm64 windows-amd64; do
   case "$target" in

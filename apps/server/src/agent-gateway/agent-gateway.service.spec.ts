@@ -10,7 +10,14 @@ describe('AgentGatewayService', () => {
   const txUserFindUnique = jest.fn();
   const txTrafficCreate = jest.fn(async () => undefined);
   const txUserUpdate = jest.fn(async () => undefined);
-  const tx = { node: { update: txNodeUpdate }, user: { findUnique: txUserFindUnique, update: txUserUpdate }, trafficLog: { create: txTrafficCreate } };
+  const txSubscriptionFindUnique = jest.fn();
+  const txSubscriptionUpdate = jest.fn(async () => undefined);
+  const tx = {
+    node: { update: txNodeUpdate },
+    user: { findUnique: txUserFindUnique, update: txUserUpdate },
+    trafficLog: { create: txTrafficCreate },
+    subscription: { findUnique: txSubscriptionFindUnique, update: txSubscriptionUpdate }
+  };
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
     node: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
@@ -25,6 +32,7 @@ describe('AgentGatewayService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.user.findMany.mockResolvedValue([]);
+    txSubscriptionFindUnique.mockResolvedValue(null);
   });
 
   const user = { uuid: 'uuid-1', email: 'user@example.com', password: 'secret', isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) };
@@ -39,16 +47,36 @@ describe('AgentGatewayService', () => {
     const lines = [
       line(),
       line({ id: 'line-hy2', protocolType: 'HYSTERIA2', entryPort: 24444, exitPort: 24444, paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'hy.example.com', certificatePath: '/c', keyPath: '/k' } }) }),
-      line({ id: 'line-ss', protocolType: 'SHADOWSOCKS', entryPort: 24445, exitPort: 24445, paramsJson: JSON.stringify({ method: 'aes-256-gcm', password: 'shared' }) })
+      line({ id: 'line-ss', protocolType: 'SHADOWSOCKS', entryPort: 24445, exitPort: 24445, paramsJson: JSON.stringify({ method: 'aes-256-gcm', password: 'shared' }) }),
+      line({
+        id: 'line-shadowtls',
+        protocolType: 'SHADOWTLS',
+        entryPort: 24446,
+        exitPort: 24446,
+        paramsJson: JSON.stringify({
+          version: 3,
+          handshakeDest: 'gateway.example.com:443',
+          strictMode: true,
+          inner: { type: 'SHADOWSOCKS', method: '2022-blake3-aes-128-gcm', password: 'inner-password' }
+        })
+      })
     ];
     prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: lines, exitLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     const inbounds = singboxConfig.inbounds as Array<Record<string, unknown>>;
+    expect(singboxConfig.experimental).toEqual({
+      v2ray_api: {
+        listen: '127.0.0.1:10085',
+        stats: { enabled: true, users: ['user@example.com'] }
+      }
+    });
     expect(inbounds).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'vless', listen_port: 24443 }),
       expect.objectContaining({ type: 'hysteria2', listen_port: 24444 }),
-      expect.objectContaining({ type: 'shadowsocks', listen_port: 24445 })
+      expect.objectContaining({ type: 'shadowsocks', listen_port: 24445 }),
+      expect.objectContaining({ type: 'shadowtls', listen_port: 24446, detour: expect.stringContaining('-inner') }),
+      expect.objectContaining({ type: 'shadowsocks', listen: '127.0.0.1', listen_port: 0, tag: expect.stringContaining('-inner') })
     ]));
   });
 
@@ -90,6 +118,27 @@ describe('AgentGatewayService', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(txTrafficCreate).toHaveBeenCalled();
     expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(300) } } });
+    expect(txSubscriptionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('订阅存在时扣减 Subscription 并同步 User 镜像', async () => {
+    txUserFindUnique.mockResolvedValue({ id: 'user-1', uuid: user.uuid });
+    txSubscriptionFindUnique.mockResolvedValue({ id: 'sub-1' });
+    const heartbeat: HeartbeatData = {
+      cpuUsage: 12,
+      memoryUsage: 30,
+      bandwidthRate: 512,
+      trafficRecords: [{ userUuid: user.uuid, upload: 4503599627370497, download: 4503599627370498 }]
+    };
+    await service.handleHeartbeat('node-1', heartbeat);
+    expect(txSubscriptionUpdate).toHaveBeenCalledWith({
+      where: { id: 'sub-1' },
+      data: { trafficUsedBytes: { increment: BigInt('9007199254740995') } }
+    });
+    expect(txUserUpdate).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { trafficUsedBytes: { increment: BigInt('9007199254740995') } }
+    });
   });
 
   it('节点不存在时配置同步抛出 NotFoundException', async () => {

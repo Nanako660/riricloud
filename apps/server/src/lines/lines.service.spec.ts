@@ -73,6 +73,25 @@ describe('LinesService', () => {
     expect(prisma.line.create).not.toHaveBeenCalled();
   });
 
+  it('ShadowTLS 不允许使用协议代理中继', async () => {
+    await expect(service.create({
+      name: 'ShadowTLS 协议代理',
+      type: 'RELAY',
+      relayMode: 'PROTOCOL_PROXY',
+      protocolType: 'SHADOWTLS',
+      entryNodeId: entryNode.id,
+      entryPort: 25201,
+      exitNodeId: exitNode.id,
+      exitPort: 25202,
+      params: {
+        version: 3,
+        handshakeDest: 'gateway.example.com:443',
+        inner: { type: 'SHADOWSOCKS', method: '2022-blake3-aes-128-gcm', password: 'inner-password' }
+      }
+    })).rejects.toThrow('ShadowTLS 仅支持直连或盲转发');
+    expect(prisma.line.create).not.toHaveBeenCalled();
+  });
+
   it('套餐线路匹配只返回公开、启用且入口出口均在线的线路', async () => {
     prisma.line.findMany.mockResolvedValue([rawLine, { ...rawLine, id: 'offline', exitNode: { ...exitNode, status: 'OFFLINE' } }]);
     const result = await service.getAvailableForPlan({ lineMatchMode: 'TAGS', lineTagsJson: '["premium"]', lineIdsJson: '[]' });

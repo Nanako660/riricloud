@@ -101,10 +101,14 @@ export interface NaiveParams {
 }
 
 export interface ShadowtlsParams {
-  version?: number;
+  version: 3;
   handshakeDest: string;
-  password?: string;
-  strictMode?: boolean;
+  strictMode: boolean;
+  inner: {
+    type: 'SHADOWSOCKS';
+    method: string;
+    password: string;
+  };
 }
 
 export interface MixedParams {
@@ -209,6 +213,18 @@ export function resolveShadowsocksUserPassword(method: string, credential: strin
   const candidate = credential.trim();
   if (!keyLength || isValidShadowsocks2022Key(candidate, keyLength)) return candidate;
   return deriveShadowsocks2022Key(method, `user:${userUuid || candidate}`);
+}
+
+// SS2022 客户端凭证由服务端主密钥和用户密钥组成；普通 SS 仍使用用户密码本身。
+export function buildShadowsocksClientPassword(
+  method: string,
+  serverPassword: string,
+  credential: string,
+  userUuid: string
+): string {
+  const userPassword = resolveShadowsocksUserPassword(method, credential, userUuid);
+  if (!shadowsocks2022KeyLength(method)) return userPassword;
+  return `${normalizeShadowsocksPassword(method, serverPassword)}:${userPassword}`;
 }
 
 // X25519 Reality 密钥对生成（32 字节裸密钥 base64url）
@@ -479,13 +495,33 @@ export function normalizeInboundParams(
     }
 
     case 'SHADOWTLS': {
+      if (Number(raw.version) !== 3) {
+        throw new BadRequestException('ShadowTLS 仅支持 v3');
+      }
       const handshakeDest = asNonEmptyString(raw.handshakeDest, 'ShadowTLS 握手目标 (handshakeDest)');
       parseDest(handshakeDest);
+      const rawInner = raw.inner;
+      if (!rawInner || typeof rawInner !== 'object' || Array.isArray(rawInner)) {
+        throw new BadRequestException('ShadowTLS 必须配置内层 Shadowsocks 2022');
+      }
+      const inner = rawInner as Record<string, unknown>;
+      if (inner.type !== 'SHADOWSOCKS') {
+        throw new BadRequestException('ShadowTLS 内层协议必须为 SHADOWSOCKS');
+      }
+      const method = asNonEmptyString(inner.method, 'ShadowTLS 内层 Shadowsocks 算法');
+      const keyLength = shadowsocks2022KeyLength(method);
+      if (!keyLength) {
+        throw new BadRequestException('ShadowTLS 内层必须使用 Shadowsocks 2022 算法');
+      }
+      const rawPassword = typeof inner.password === 'string' ? inner.password.trim() : '';
+      const password = rawPassword
+        ? normalizeShadowsocksPassword(method, rawPassword)
+        : randomBytes(keyLength).toString('base64');
       const params: ShadowtlsParams = {
-        version: Number(raw.version) === 2 ? 2 : 3,
+        version: 3,
         handshakeDest,
-        password: typeof raw.password === 'string' ? raw.password.trim() : undefined,
-        strictMode: raw.strictMode === true
+        strictMode: raw.strictMode !== false,
+        inner: { type: 'SHADOWSOCKS', method, password }
       };
       return params as unknown as Record<string, unknown>;
     }
@@ -573,7 +609,7 @@ export function buildClientTransport(
 export function buildClientTls(
   tls?: InboundTlsConfig,
   serverNameOverride?: string | null,
-  options: { includeAlpn?: boolean } = {}
+  options: { includeAlpn?: boolean; includeInsecure?: boolean } = {}
 ): Record<string, unknown> | undefined {
   if (!tls || !tls.enabled || tls.mode === 'none') return undefined;
   const reality = tls.reality;
@@ -596,7 +632,7 @@ export function buildClientTls(
     enabled: true,
     ...(serverName ? { server_name: serverName } : {}),
     ...(options.includeAlpn !== false && tls.alpn?.length ? { alpn: tls.alpn } : {}),
-    insecure: tls.insecure === true
+    ...(options.includeInsecure !== false ? { insecure: tls.insecure === true } : {})
   };
 }
 
@@ -837,22 +873,18 @@ export function buildServerInbound(input: {
     }
 
     case 'SHADOWTLS': {
-      const p = normalizedParams as unknown as ShadowtlsParams;
+      const p = normalizeInboundParams('SHADOWTLS', normalizedParams) as unknown as ShadowtlsParams;
       const { host, port: destPort } = parseDest(p.handshakeDest);
-      const version = p.version || 3;
       return {
         type: 'shadowtls',
         tag,
         listen,
         listen_port: port,
-        version,
-        ...(version === 3
-          ? { users: users.map((u) => ({ name: u.email, password: u.credential })) }
-          : p.password
-            ? { password: p.password }
-            : {}),
+        detour: `${tag}-inner`,
+        version: 3,
+        users: users.map((u) => ({ name: u.email, password: u.credential })),
         handshake: { server: host, server_port: destPort },
-        ...(p.strictMode ? { strict_mode: true } : {})
+        strict_mode: p.strictMode !== false
       };
     }
 
@@ -887,4 +919,23 @@ export function buildServerInbound(input: {
     default:
       throw new BadRequestException(`不支持的入站协议：${type as string}`);
   }
+}
+
+// ShadowTLS v3 只作为外层伪装，内层 SS 入站仅绑定回环地址并由 detour 注入。
+export function buildServerInbounds(input: Parameters<typeof buildServerInbound>[0]): Array<Record<string, unknown>> {
+  if (input.type !== 'SHADOWTLS') return [buildServerInbound(input)];
+  const params = normalizeInboundParams('SHADOWTLS', input.params) as unknown as ShadowtlsParams;
+  const normalizedInput = { ...input, params: params as unknown as Record<string, unknown> };
+  const primary = buildServerInbound(normalizedInput);
+  return [
+    primary,
+    {
+      type: 'shadowsocks',
+      tag: `${input.tag}-inner`,
+      listen: '127.0.0.1',
+      listen_port: 0,
+      method: params.inner.method,
+      password: normalizeShadowsocksPassword(params.inner.method, params.inner.password)
+    }
+  ];
 }

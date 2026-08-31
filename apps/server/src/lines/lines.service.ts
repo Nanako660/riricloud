@@ -195,6 +195,9 @@ export class LinesService {
     if (type === 'RELAY' && (!relayMode || !RELAY_MODES.includes(relayMode))) {
       throw new BadRequestException('中继线路必须指定有效的中继机制');
     }
+    if (type === 'RELAY' && relayMode === 'PROTOCOL_PROXY' && protocolType === 'SHADOWTLS') {
+      throw new BadRequestException('ShadowTLS 仅支持直连或盲转发，不支持协议代理中继');
+    }
 
     const [entryNode, exitNode] = await Promise.all([
       this.prisma.node.findUnique({ where: { id: entryNodeId } }),
