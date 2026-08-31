@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { QueryPlanDto } from './dto/query-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { LinesService } from '../lines/lines.service';
 
 type PlanViewInput = {
   id: string;
@@ -11,9 +12,9 @@ type PlanViewInput = {
   price: number;
   durationDays: number;
   trafficLimitBytes: bigint;
-  nodeMatchMode: string;
-  nodeTagsJson: string;
-  nodeIdsJson: string;
+  lineMatchMode: string;
+  lineTagsJson: string;
+  lineIdsJson: string;
   templateId: string | null;
   isPublic: boolean;
   sortOrder: number;
@@ -31,7 +32,10 @@ function parseStringArray(value: string): string[] {
 
 @Injectable()
 export class PlansService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly linesService?: LinesService
+  ) {}
 
   async create(dto: CreatePlanDto) {
     await this.ensureTemplate(dto.templateId);
@@ -93,33 +97,16 @@ export class PlansService {
     return { deleted: true };
   }
 
-  async getAvailableNodes(id: string) {
+  async getAvailableLines(id: string) {
     const plan = await this.prisma.plan.findUnique({ where: { id } });
     if (!plan) throw new NotFoundException('套餐不存在');
-    const tags = parseStringArray(plan.nodeTagsJson);
-    const ids = parseStringArray(plan.nodeIdsJson);
-    const nodes = await this.prisma.node.findMany({
-      where: { status: 'ONLINE', isPublic: true },
-      include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } },
-      orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }]
-    });
-    return nodes
-      .filter((node) => {
-        if (plan.nodeMatchMode === 'EXPLICIT') return ids.includes(node.id);
-        if (plan.nodeMatchMode === 'TAGS') {
-          const nodeTags = parseStringArray(node.tagsJson);
-          return tags.some((tag) => nodeTags.includes(tag));
-        }
-        return true;
-      })
-      .map((node) => ({
-        id: node.id,
-        name: node.name,
-        serverHost: node.serverHost,
-        level: node.level,
-        tags: parseStringArray(node.tagsJson),
-        inbounds: node.inbounds.map((inbound) => ({ id: inbound.id, type: inbound.type, tag: inbound.tag, port: inbound.port }))
-      }));
+    if (!this.linesService) throw new NotFoundException('线路服务不可用');
+    return this.linesService.getAvailableForPlan(plan);
+  }
+
+  // 兼容旧管理端路径；返回内容已切换为线路。
+  async getAvailableNodes(id: string) {
+    return this.getAvailableLines(id);
   }
 
   private async ensureTemplate(templateId: string | null | undefined) {
@@ -135,9 +122,9 @@ export class PlansService {
       price: dto.price ?? 0,
       durationDays: dto.durationDays,
       trafficLimitBytes: BigInt(dto.trafficLimitBytes),
-      nodeMatchMode: dto.nodeMatchMode ?? 'ALL',
-      nodeTagsJson: JSON.stringify(dto.nodeTags ?? []),
-      nodeIdsJson: JSON.stringify(dto.nodeIds ?? []),
+      lineMatchMode: dto.lineMatchMode ?? 'ALL',
+      lineTagsJson: JSON.stringify(dto.lineTags ?? []),
+      lineIdsJson: JSON.stringify(dto.lineIds ?? []),
       templateId: dto.templateId ?? null,
       isPublic: dto.isPublic ?? true,
       sortOrder: dto.sortOrder ?? 0
@@ -151,9 +138,9 @@ export class PlansService {
       ...(dto.price !== undefined ? { price: dto.price } : {}),
       ...(dto.durationDays !== undefined ? { durationDays: dto.durationDays } : {}),
       ...(dto.trafficLimitBytes !== undefined ? { trafficLimitBytes: BigInt(dto.trafficLimitBytes) } : {}),
-      ...(dto.nodeMatchMode !== undefined ? { nodeMatchMode: dto.nodeMatchMode } : {}),
-      ...(dto.nodeTags !== undefined ? { nodeTagsJson: JSON.stringify(dto.nodeTags) } : {}),
-      ...(dto.nodeIds !== undefined ? { nodeIdsJson: JSON.stringify(dto.nodeIds) } : {}),
+      ...(dto.lineMatchMode !== undefined ? { lineMatchMode: dto.lineMatchMode } : {}),
+      ...(dto.lineTags !== undefined ? { lineTagsJson: JSON.stringify(dto.lineTags) } : {}),
+      ...(dto.lineIds !== undefined ? { lineIdsJson: JSON.stringify(dto.lineIds) } : {}),
       ...(dto.templateId !== undefined ? { templateId: dto.templateId } : {}),
       ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
       ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {})
@@ -164,10 +151,10 @@ export class PlansService {
     return {
       ...plan,
       trafficLimitBytes: Number(plan.trafficLimitBytes),
-      nodeTags: parseStringArray(plan.nodeTagsJson),
-      nodeIds: parseStringArray(plan.nodeIdsJson),
-      nodeTagsJson: undefined,
-      nodeIdsJson: undefined
+      lineTags: parseStringArray(plan.lineTagsJson),
+      lineIds: parseStringArray(plan.lineIdsJson),
+      lineTagsJson: undefined,
+      lineIdsJson: undefined
     };
   }
 }

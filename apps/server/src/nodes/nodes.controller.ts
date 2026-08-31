@@ -80,4 +80,9 @@ export class NodesController {
   removeInbound(@Param('id', ParseUUIDPipe) id: string, @Param('inboundId', ParseUUIDPipe) inboundId: string) {
     return this.nodesService.removeInbound(id, inboundId);
   }
+
+  @Post(':id/inbounds/:inboundId/derive-line')
+  deriveLine(@Param('id', ParseUUIDPipe) id: string, @Param('inboundId', ParseUUIDPipe) inboundId: string) {
+    return this.nodesService.deriveLine(id, inboundId);
+  }
 }

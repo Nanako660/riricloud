@@ -14,6 +14,11 @@ export class UsersController {
     return this.usersService.getDashboard(user.id);
   }
 
+  @Get('lines')
+  getLines(@CurrentUser() user: { id: string }) {
+    return this.usersService.getAvailableNodes(user.id);
+  }
+
   @Get('nodes')
   getNodes(@CurrentUser() user: { id: string }) {
     return this.usersService.getAvailableNodes(user.id);

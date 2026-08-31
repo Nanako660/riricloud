@@ -112,15 +112,36 @@ export interface NodeInbound {
   port: number;
   params: InboundParams;
   sortOrder: number;
-  isPublic: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NodeLine {
+  id: string;
+  name: string;
+  type: 'DIRECT' | 'RELAY';
+  relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null;
+  entryNodeId: string | null;
+  entryPort: number | null;
+  targetInboundId: string;
+  serverHost: string | null;
+  serverPort: number | null;
+  serverName: string | null;
+  host: string | null;
+  trafficRate: number;
+  tags: string[];
+  level: number;
+  sortOrder: number;
+  isPublic: boolean;
+  status: 'ACTIVE' | 'DISABLED';
+  targetInbound: { id: string; type: ProtocolType; tag: string; port: number };
 }
 
 export interface AdminNode {
   id: string;
   name: string;
   serverHost: string;
+  isLocal: boolean;
   configOverride: string | null;
   agentToken: string;
   status: string;
@@ -130,11 +151,8 @@ export interface AdminNode {
   bandwidthRate: number | null;
   kernelRunning: boolean | null;
   configError: string | null;
-  tags: string[];
-  level: number;
-  sortOrder: number;
-  isPublic: boolean;
   inbounds: NodeInbound[];
+  entryLines: NodeLine[];
   createdAt: string;
   updatedAt: string;
 }
@@ -149,10 +167,9 @@ export interface CreateInboundPayload {
   type: ProtocolType;
   tag?: string;
   listen?: string;
-  port: number;
+  port?: number;
   params?: InboundParams;
   sortOrder?: number;
-  isPublic?: boolean;
 }
 
 export interface UpdateInboundPayload {
@@ -161,7 +178,6 @@ export interface UpdateInboundPayload {
   port?: number;
   params?: InboundParams;
   sortOrder?: number;
-  isPublic?: boolean;
 }
 
 // 节点列表：5 秒轮询实时观察 Agent 在线状态与负载
@@ -197,7 +213,7 @@ export function useNodeMutations() {
 
   // 创建成功不弹 toast：弹窗内切换到 AgentToken 与安装命令展示页
   const createNode = useMutation({
-    mutationFn: async (payload: { name?: string; serverHost: string; isPublic?: boolean; tags?: string[]; level?: number }) =>
+    mutationFn: async (payload: { name?: string; serverHost: string }) =>
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
@@ -211,11 +227,7 @@ export function useNodeMutations() {
       id: string;
       name?: string;
       serverHost?: string;
-      isPublic?: boolean;
-      sortOrder?: number;
       configOverride?: string | null;
-      tags?: string[];
-      level?: number;
     }) => (await api.patch(`/admin/nodes/${id}`, payload)).data,
     ...invalidateSub
   });
@@ -292,11 +304,22 @@ export function useInboundMutations(nodeId: string) {
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '删除失败'))
   });
 
+  const deriveLine = useMutation({
+    mutationFn: async (inboundId: string) =>
+      (await api.post(`/admin/nodes/${nodeId}/inbounds/${inboundId}/derive-line`)).data,
+    onSuccess: () => {
+      toast.success('线路已派生');
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'lines'] });
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '派生线路失败'))
+  });
+
   // 生成 Reality 密钥对（不落库）
   const generateKeypair = useMutation({
     mutationFn: async () =>
       (await api.post<{ privateKey: string; publicKey: string }>('/admin/nodes/reality-keypair')).data
   });
 
-  return { createInbound, updateInbound, deleteInbound, generateKeypair };
+  return { createInbound, updateInbound, deleteInbound, deriveLine, generateKeypair };
 }

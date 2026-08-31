@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { LinesService } from '../lines/lines.service';
 import { isUserEntitled } from '../common/utils';
 import type { ProtocolType } from '../common/constants';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,6 +19,7 @@ import {
   buildSingboxJson,
   buildUriList,
   type SubNode,
+  type SubLine,
   type SubUser
 } from './builders';
 import type { AdminUpdateSubDto } from './dto/admin-update-subscription.dto';
@@ -30,9 +32,9 @@ type SubscriptionPlan = {
   name: string;
   durationDays: number;
   trafficLimitBytes: bigint;
-  nodeMatchMode: string;
-  nodeTagsJson: string;
-  nodeIdsJson: string;
+  lineMatchMode: string;
+  lineTagsJson: string;
+  lineIdsJson: string;
   isPublic?: boolean;
   template?: SubscriptionTemplateConfig | null;
 };
@@ -95,22 +97,14 @@ function addDays(base: Date, days: number): Date {
   return new Date(base.getTime() + days * 86400000);
 }
 
-function parseArray(value: string | null | undefined): string[] {
-  try {
-    const parsed: unknown = JSON.parse(value ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 @Injectable()
 export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private expiryTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly agentGateway?: AgentGatewayService
+    @Optional() private readonly agentGateway?: AgentGatewayService,
+    @Optional() private readonly linesService?: LinesService
   ) {}
 
   onModuleInit() {
@@ -134,23 +128,50 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
-    const nodes = subscription ? await this.getNodesForSubscription(subscription) : await this.getLegacyNodes();
-    const subNodes: SubNode[] = nodes.map((node) => ({
-      name: node.name,
-      serverHost: node.serverHost,
-      inbounds: node.inbounds.map((inbound) => ({
-        type: inbound.type as ProtocolType,
-        tag: inbound.tag,
-        port: inbound.port,
-        params: JSON.parse(inbound.paramsJson) as Record<string, unknown>
-      }))
-    }));
+    let subscriptionSources: Array<SubLine | SubNode>;
+    if (this.linesService) {
+      const lines = subscription
+        ? await this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+        : await this.linesService.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+      subscriptionSources = lines.map((line) => ({
+          id: line.id,
+          name: line.name,
+          type: line.type,
+          relayMode: line.relayMode,
+          endpointOverrideEnabled: line.endpointOverrideEnabled,
+          serverHost: line.serverHost,
+          serverPort: line.serverPort,
+          serverName: line.serverName,
+          host: line.host,
+          trafficRate: line.trafficRate,
+          tags: line.tags,
+          level: line.level,
+          targetInbound: {
+            type: line.targetInbound.type as ProtocolType,
+            tag: line.targetInbound.tag,
+            port: line.targetInbound.port,
+            params: line.targetInbound.params
+          }
+        }));
+    } else {
+      const nodes = subscription ? await this.getLegacyNodes() : await this.getLegacyLines();
+      subscriptionSources = nodes.map((node) => ({
+          name: node.name,
+          serverHost: node.serverHost,
+          inbounds: node.inbounds.map((inbound) => ({
+            type: inbound.type as ProtocolType,
+            tag: inbound.tag,
+            port: inbound.port,
+            params: JSON.parse(inbound.paramsJson) as Record<string, unknown>
+          }))
+        }));
+    }
 
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
     const template = await this.resolveTemplate(subscription?.plan?.template);
     return {
-      body: this.render(format, subUser, subNodes, template),
+      body: this.render(format, subscriptionSources, subUser, template),
       contentType: SUBSCRIPTION_CONTENT_TYPES[format],
       userInfoHeader: this.buildUserInfoHeader(subscription ?? user)
     };
@@ -231,10 +252,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       where: { userId },
       include: { user: { select: { id: true, email: true, isActive: true } }, plan: { include: { template: true } } }
     });
-    if (!subscription) return { subscription: null, nodes: [] };
+    if (!subscription) return { subscription: null, lines: [], nodes: [] };
     return {
       subscription: this.toView(subscription),
-      nodes: await this.getNodesForSubscription(subscription)
+      lines: await this.getLinesForSubscription(subscription),
+      nodes: await this.getLinesForSubscription(subscription)
     };
   }
 
@@ -375,14 +397,14 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return this.get(subscription.id);
   }
 
-  private render(format: SubscriptionFormat, user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
+  private render(format: SubscriptionFormat, lines: Array<SubLine | SubNode>, user: SubUser, template?: SubscriptionTemplateConfig): string {
     switch (format) {
       case 'clash':
-        return buildClashYaml(user, nodes, template);
+        return buildClashYaml(user, lines, template);
       case 'singbox':
-        return buildSingboxJson(user, nodes, template);
+        return buildSingboxJson(user, lines, template);
       default:
-        return Buffer.from(buildUriList(user, nodes).join('\n'), 'utf-8').toString('base64');
+        return Buffer.from(buildUriList(user, lines).join('\n'), 'utf-8').toString('base64');
     }
   }
 
@@ -413,25 +435,22 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (result.count > 0) void this.agentGateway?.pushConfigToAll();
   }
 
-  private async getNodesForSubscription(subscription: SubscriptionRecord) {
-    const plan = subscription.plan;
-    const nodes = await this.prisma.node.findMany({
-      where: { isPublic: true, status: { not: 'DISABLED' } },
-      orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }],
-      include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
-    });
-    if (!plan) return nodes;
-    const tags = parseArray(plan.nodeTagsJson);
-    const ids = parseArray(plan.nodeIdsJson);
-    return nodes.filter((node) => {
-      if (plan.nodeMatchMode === 'EXPLICIT') return ids.includes(node.id);
-      if (plan.nodeMatchMode === 'TAGS') return tags.some((tag) => parseArray(node.tagsJson).includes(tag));
-      return true;
-    });
+  private async getLinesForSubscription(subscription: SubscriptionRecord) {
+    if (this.linesService) {
+      return this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+    }
+    return this.getLegacyNodes();
+  }
+
+  private async getLegacyLines() {
+    return this.getLegacyNodes();
   }
 
   private async getLegacyNodes() {
-    return this.prisma.node.findMany({
+    const nodeDelegate = (this.prisma as unknown as {
+      node: { findMany: (args: Record<string, unknown>) => Promise<Array<{ name: string; serverHost: string; inbounds: Array<{ type: string; tag: string; port: number; paramsJson: string }> }>> };
+    }).node;
+    return nodeDelegate.findMany({
       where: { isPublic: true, status: { not: 'DISABLED' } },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }

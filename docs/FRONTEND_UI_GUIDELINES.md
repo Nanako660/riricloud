@@ -362,13 +362,16 @@ export function cn(...inputs: ClassValue[]) {
 
 ## 12. 订阅业务页面规范 (Subscription UX)
 
-v0.3.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageContainer`、`PageHeader`、Card、Badge、Progress、Dialog、AlertDialog、Select、Switch、Input、Textarea 和 Sonner：
+v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageContainer`、`PageHeader`、Card、Badge、Progress、Dialog、AlertDialog、Select、Switch、Input、Textarea、Checkbox 和 Sonner：
 
 | 页面 | 路由 | 主要内容 | 交互边界 |
 | :--- | :--- | :--- | :--- |
 | 套餐市场 | `/market` | 公开套餐网格、流量/期限/价格、当前套餐标记 | 订购或升配必须经 AlertDialog 二次确认 |
-| 我的订阅 | `/subscription` | 当前套餐、流量进度、到期时间、Token 链接、可用节点 | 重置 Token 与取消订阅必须经 AlertDialog；取消需说明到期前仍可使用 |
+| 我的订阅 | `/subscription` | 当前套餐、流量进度、到期时间、Token 链接、可用线路 | 重置 Token 与取消订阅必须经 AlertDialog；取消需说明到期前仍可使用 |
+| 可用线路 | `/lines` | 当前套餐授权的线路、倍率、标签、中继机制与底层健康状态 | 无订阅时引导前往套餐市场；线路状态只读 |
 | 套餐管理 | `/admin/plans` | 套餐卡片、上下架状态、匹配模式、模板关联 | 删除使用中的套餐只显示服务端错误并建议下架 |
+| 线路管理 | `/admin/lines` | 直连/中继线路表格、类型/状态/标签筛选、排序、批量启停、复制、解析测试 | 删除使用 AlertDialog；中继表单必须校验入口节点/端口/机制 |
+| 线路编辑弹窗 | `/admin/lines`（点击新建/编辑） | 直连与中继动态字段、目标入站、对外覆盖开关、地址/端口/SNI/Host 覆盖、倍率与线路标签 | 覆盖开关默认关闭；关闭时禁用四个覆盖输入但保留已填值；中继入口端口留空时提示服务端随机分配五位端口；类型切换时显示对应字段；提交使用 React Hook Form + Zod |
 | 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
 | 用户管理 | `/admin/users` | 用户、角色、账号状态、当前套餐、订阅状态、流量进度与到期日 | 创建用户可选择初始套餐或暂不绑定；编辑用户通过双 Tab 管理账号安全与订阅，可用“无套餐”彻底移除订阅 |
 | 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、版本、下载地址、SHA-256 | 提交前校验 URL 与 SHA-256；下发中禁用提交按钮 |
@@ -384,6 +387,9 @@ v0.3.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 ### 12.2 页面与响应式要求
 
 - 业务列表优先使用可扫描的网格或表格；套餐、模板和订阅条目保持统一的 `Card` 内边距，不在页面区块外再套装饰性卡片。
+- 线路管理列表优先使用表格；线路类型、倍率、标签、中继机制和底层健康状态必须可快速扫描，筛选条件使用 `Input` / `Select`，批量状态使用 `Checkbox` + `Button`。
+- 线路编辑弹窗的对外覆盖默认关闭；使用 `Switch` 控制地址、端口、SNI、Host 四项输入，关闭时复用底层默认设置并保留已填写的覆盖值。入站新建弹窗打开时直接预填 `20000~29999` 的五位随机端口，编辑已有入站必须保留当前端口；中继入口端口仍可留空，由服务端分配五位随机端口。
+- 入站弹窗仅在当前协议存在可编辑的协议专属字段时显示「协议专属参数」卡片，避免出现空卡片。
 - 大型模板 JSON/YAML 编辑区使用等宽字体、固定最小高度和弹窗内滚动，不能撑破桌面或移动端视口。
 - 移动端列表转为单列，表单在 `sm` 断点前单列布局；操作按钮保留图标与文字的可读组合，危险操作使用 `AlertDialog`。
 - 数据加载使用与真实内容相近的骨架或紧凑加载态；错误和变更结果统一通过 `sonner` 呈现，不使用原生 `alert`。
@@ -391,4 +397,4 @@ v0.3.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 
 ### 12.3 视觉验证登记
 
-新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-22。视觉验证仍按需执行，不能接入 CI 或 Git Hook。
+新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-25。视觉验证仍按需执行，不能接入 CI 或 Git Hook。

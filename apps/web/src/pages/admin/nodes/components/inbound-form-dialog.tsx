@@ -41,12 +41,16 @@ import {
   type TransportType
 } from '../use-nodes';
 
+const optionalPortSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined ? undefined : value),
+  z.coerce.number().int().min(1, '端口 1~65535').max(65535, '端口 1~65535').optional()
+);
+
 const formSchema = z.object({
   type: z.enum(PROTOCOL_TYPES),
   tag: z.string().max(64, 'tag 不超过 64 字符').optional(),
   listen: z.string().max(64),
-  port: z.coerce.number().int().min(1, '端口 1~65535').max(65535, '端口 1~65535'),
-  isPublic: z.boolean(),
+  port: optionalPortSchema,
   sortOrder: z.coerce.number().int().min(0).optional(),
 
   // 传输层 Transport
@@ -100,6 +104,13 @@ const formSchema = z.object({
 
 type InboundFormValues = z.infer<typeof formSchema>;
 
+const RANDOM_SERVICE_PORT_MIN = 20000;
+const RANDOM_SERVICE_PORT_MAX = 29999;
+
+const generateRandomServicePort = () =>
+  Math.floor(Math.random() * (RANDOM_SERVICE_PORT_MAX - RANDOM_SERVICE_PORT_MIN + 1)) +
+  RANDOM_SERVICE_PORT_MIN;
+
 const splitList = (s?: string) =>
   s
     ? s
@@ -110,7 +121,6 @@ const splitList = (s?: string) =>
 
 const getDefaultForm = (type: ProtocolType): InboundFormValues => {
   const isQuic = type === 'HYSTERIA2' || type === 'TUIC';
-  const defaultPort = isQuic ? 8443 : type === 'SHADOWSOCKS' ? 8388 : 443;
   const defaultTlsMode: TlsMode =
     type === 'VLESS'
       ? 'reality'
@@ -121,9 +131,8 @@ const getDefaultForm = (type: ProtocolType): InboundFormValues => {
   return {
     type,
     tag: '',
-    listen: '::',
-    port: defaultPort,
-    isPublic: !['DIRECT', 'MIXED', 'SOCKS', 'HTTP'].includes(type),
+    listen: '0.0.0.0',
+    port: generateRandomServicePort(),
     sortOrder: 0,
 
     transportType: 'tcp',
@@ -156,7 +165,7 @@ const getDefaultForm = (type: ProtocolType): InboundFormValues => {
     hy2IgnoreClientBandwidth: false,
     hy2ObfsPassword: '',
     tuicCongestionControl: 'bbr',
-    tuicZeroRtt: true,
+    tuicZeroRtt: false,
     ssMethod: '2022-blake3-aes-128-gcm',
     ssPassword: '',
     ssMode: 'shared',
@@ -183,7 +192,6 @@ const fromInbound = (inbound: NodeInbound): InboundFormValues => {
     tag: inbound.tag,
     listen: inbound.listen,
     port: inbound.port,
-    isPublic: inbound.isPublic,
     sortOrder: inbound.sortOrder,
 
     transportType: t.type || 'tcp',
@@ -216,7 +224,7 @@ const fromInbound = (inbound: NodeInbound): InboundFormValues => {
     hy2IgnoreClientBandwidth: p.ignoreClientBandwidth || false,
     hy2ObfsPassword: p.obfs?.password || '',
     tuicCongestionControl: p.congestionControl || 'bbr',
-    tuicZeroRtt: p.zeroRttHandshake ?? true,
+    tuicZeroRtt: p.zeroRttHandshake ?? false,
     ssMethod: p.method || '2022-blake3-aes-128-gcm',
     ssPassword: p.password || '',
     ssMode: p.mode || 'shared',
@@ -346,10 +354,9 @@ interface InboundFormDialogProps {
     type: ProtocolType;
     tag?: string;
     listen: string;
-    port: number;
+    port?: number;
     params?: InboundParams;
     sortOrder?: number;
-    isPublic?: boolean;
   }) => void;
   onUpdate: (
     inboundId: string,
@@ -359,7 +366,6 @@ interface InboundFormDialogProps {
       port?: number;
       params?: InboundParams;
       sortOrder?: number;
-      isPublic?: boolean;
     }
   ) => void;
   onGenerateKeypair: () => Promise<{ privateKey: string; publicKey: string }>;
@@ -403,8 +409,7 @@ export function InboundFormDialog({
       ...defaults,
       tag: values.tag,
       listen: values.listen,
-      port: defaults.port,
-      isPublic: defaults.isPublic,
+      port: values.port,
       sortOrder: values.sortOrder
     });
   };
@@ -422,10 +427,9 @@ export function InboundFormDialog({
   const onSubmit = (v: InboundFormValues) => {
     const common = {
       tag: v.tag?.trim() ? v.tag.trim() : undefined,
-      listen: v.listen.trim() || '::',
+      listen: v.listen.trim() || '0.0.0.0',
       port: v.port,
       sortOrder: v.sortOrder ?? 0,
-      isPublic: v.isPublic
     };
     const params = buildParamsFromValues(v);
 
@@ -448,6 +452,17 @@ export function InboundFormDialog({
   const showReality = currentTlsMode === 'reality';
   const showAcme = currentTlsMode === 'acme';
   const showStandardTls = currentTlsMode === 'tls';
+  const showProtocolSection = [
+    'VMESS',
+    'HYSTERIA2',
+    'TUIC',
+    'SHADOWSOCKS',
+    'SHADOWTLS',
+    'MIXED',
+    'SOCKS',
+    'HTTP',
+    'DIRECT'
+  ].includes(type);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -519,7 +534,7 @@ export function InboundFormDialog({
                       <FormItem>
                         <FormLabel>监听地址</FormLabel>
                         <FormControl>
-                          <Input placeholder="::" {...field} />
+                          <Input placeholder="0.0.0.0" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -556,23 +571,6 @@ export function InboundFormDialog({
                   />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="isPublic"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-2.5">
-                      <div>
-                        <FormLabel className="text-sm">对订阅公开</FormLabel>
-                        <FormDescription className="text-xs">
-                          开启后该入站将自动生成并包含在用户订阅输出中
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
               </CardContent>
             </Card>
 
@@ -949,14 +947,15 @@ export function InboundFormDialog({
             )}
 
             {/* 协议专属高级参数卡片 */}
-            <Card className="border-border/60">
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Settings2 className="h-4 w-4 text-primary" />
-                  协议专属参数
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 pt-0">
+            {showProtocolSection && (
+              <Card className="border-border/60">
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Settings2 className="h-4 w-4 text-primary" />
+                    协议专属参数
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
                 {type === 'HYSTERIA2' && (
                   <>
                     <div className="grid grid-cols-2 gap-3">
@@ -1242,8 +1241,9 @@ export function InboundFormDialog({
                     />
                   </div>
                 )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -1259,4 +1259,3 @@ export function InboundFormDialog({
     </Dialog>
   );
 }
-

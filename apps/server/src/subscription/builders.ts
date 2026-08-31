@@ -1,6 +1,7 @@
 import { parseDocument, stringify } from 'yaml';
 import type {
   Hysteria2Params,
+  InboundTransport,
   NaiveParams,
   ShadowsocksParams,
   TrojanParams,
@@ -9,6 +10,12 @@ import type {
   VmessParams
 } from '../common/inbound';
 import type { ProtocolType } from '../common/constants';
+import {
+  buildClientTls,
+  buildClientTransport,
+  normalizeShadowsocksPassword,
+  resolveShadowsocksUserPassword
+} from '../common/inbound';
 import { deepMerge } from '../common/utils';
 
 // 订阅用户凭证：vless/vmess 以 uuid 登录；hy2/trojan/tuic/naive 密码为 User.password ?? uuid；ss 为入站密码
@@ -32,6 +39,23 @@ export interface SubNode {
   tags?: string[];
   level?: number;
   inbounds: SubInbound[];
+}
+
+// 订阅编译的主输入：一条 Line 已经解析出对外端点与目标入站参数。
+export interface SubLine {
+  id?: string;
+  name: string;
+  type?: 'DIRECT' | 'RELAY' | string;
+  relayMode?: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | string | null;
+  endpointOverrideEnabled?: boolean;
+  serverHost: string;
+  serverPort: number;
+  serverName?: string | null;
+  host?: string | null;
+  trafficRate?: number;
+  tags?: string[];
+  level?: number;
+  targetInbound: SubInbound;
 }
 
 export interface SubscriptionTemplateConfig {
@@ -92,26 +116,99 @@ interface SubEntry {
   label: string;
   node: SubNode;
   inbound: SubInbound;
+  line?: SubLine;
+}
+
+type SubscriptionSource = SubNode | SubLine;
+
+function isSubLine(source: SubscriptionSource): source is SubLine {
+  return 'targetInbound' in source;
+}
+
+function formatLineName(name: string, trafficRate?: number): string {
+  return trafficRate !== undefined && trafficRate !== 1 ? `${name} [${trafficRate}x]` : name;
+}
+
+function endpointHost(entry: SubEntry): string {
+  return entry.line?.serverHost ?? entry.node.serverHost;
+}
+
+function endpointPort(entry: SubEntry): number {
+  return entry.line?.serverPort ?? entry.inbound.port;
+}
+
+function effectiveServerName(entry: SubEntry, fallback?: string): string | undefined {
+  return entry.line && entry.line.endpointOverrideEnabled !== false ? entry.line.serverName || fallback : fallback;
+}
+
+function effectiveTransportHost(entry: SubEntry, fallback?: string): string | undefined {
+  return entry.line && entry.line.endpointOverrideEnabled !== false ? entry.line.host || fallback : fallback;
+}
+
+function buildClashTransportOptions(
+  transport: InboundTransport | undefined,
+  hostOverride?: string | null
+): Record<string, unknown> | undefined {
+  const client = buildClientTransport(transport, hostOverride);
+  if (!client || typeof client.type !== 'string') return undefined;
+
+  const path = typeof client.path === 'string' && client.path ? client.path : '/';
+  const headers = client.headers && typeof client.headers === 'object' && !Array.isArray(client.headers)
+    ? client.headers
+    : undefined;
+
+  if (client.type === 'ws') {
+    const options: Record<string, unknown> = { path };
+    if (headers) options.headers = headers;
+    if (typeof client.max_early_data === 'number') options['max-early-data'] = client.max_early_data;
+    if (typeof client.early_data_header_name === 'string') options['early-data-header-name'] = client.early_data_header_name;
+    return { 'ws-opts': options };
+  }
+
+  if (client.type === 'grpc') {
+    return { 'grpc-opts': { 'grpc-service-name': typeof client.service_name === 'string' ? client.service_name : '' } };
+  }
+
+  if (client.type === 'http') {
+    return { 'http-opts': { path, ...(headers ? { headers } : {}) } };
+  }
+
+  if (client.type === 'httpupgrade') {
+    const options: Record<string, unknown> = { path };
+    if (typeof client.host === 'string' && client.host) options.host = client.host;
+    if (headers) options.headers = headers;
+    return { 'httpupgrade-opts': options };
+  }
+
+  return undefined;
 }
 
 // 输出条目名：单入站节点用节点名，多入站节点追加 tag 区分；再全局去重保证 Clash proxy 名唯一
-export function entryLabels(nodes: SubNode[]): string[] {
+export function entryLabels(nodes: SubscriptionSource[]): string[] {
   return dedupeNames(
-    nodes.flatMap((node) =>
-      node.inbounds.map((inbound) =>
-        node.inbounds.length > 1 ? `${node.name}·${inbound.tag}` : node.name
-      )
+    nodes.flatMap((source) => {
+      if (isSubLine(source)) return [formatLineName(source.name, source.trafficRate)];
+      return source.inbounds.map((inbound) =>
+        source.inbounds.length > 1 ? `${source.name}·${inbound.tag}` : source.name
+      );
+    }
     )
   );
 }
 
-function entries(nodes: SubNode[]): SubEntry[] {
+function entries(nodes: SubscriptionSource[]): SubEntry[] {
   const labels = entryLabels(nodes);
   const list: SubEntry[] = [];
   let i = 0;
-  for (const node of nodes) {
-    for (const inbound of node.inbounds) {
-      list.push({ label: labels[i], node, inbound });
+  for (const source of nodes) {
+    if (isSubLine(source)) {
+      const node: SubNode = { name: source.name, serverHost: source.serverHost, inbounds: [source.targetInbound], tags: source.tags, level: source.level };
+      list.push({ label: labels[i], node, inbound: source.targetInbound, line: source });
+      i += 1;
+      continue;
+    }
+    for (const inbound of source.inbounds) {
+      list.push({ label: labels[i], node: source, inbound });
       i += 1;
     }
   }
@@ -148,30 +245,33 @@ function buildVlessUri(user: SubUser, entry: SubEntry): string {
 
   if (transport === 'ws' && p.transport?.path) {
     params.set('path', p.transport.path);
-    if (p.transport.host) params.set('host', p.transport.host);
+    const host = effectiveTransportHost(entry, p.transport.host);
+    if (host) params.set('host', host);
   } else if (transport === 'grpc' && p.transport?.serviceName) {
     params.set('serviceName', p.transport.serviceName);
   } else if (transport === 'httpupgrade' && p.transport?.path) {
     params.set('path', p.transport.path);
-    if (p.transport.host) params.set('host', p.transport.host);
+    const host = effectiveTransportHost(entry, p.transport.host);
+    if (host) params.set('host', host);
   }
 
   if (tls && tls.enabled) {
     if (tls.mode === 'reality' && tls.reality) {
       params.set('security', 'reality');
-      params.set('sni', tls.serverName || tls.reality.serverNames[0]);
+      params.set('sni', effectiveServerName(entry, tls.serverName || tls.reality.serverNames[0])!);
       params.set('fp', REALITY_CLIENT_DEFAULTS.fp);
       params.set('pbk', tls.reality.publicKey);
       params.set('sid', tls.reality.shortIds[0]);
     } else {
       params.set('security', 'tls');
-      if (tls.serverName) params.set('sni', tls.serverName);
+      const serverName = effectiveServerName(entry, tls.serverName);
+      if (serverName) params.set('sni', serverName);
       if (tls.alpn && tls.alpn.length) params.set('alpn', tls.alpn.join(','));
       if (tls.insecure) params.set('allowInsecure', '1');
     }
   }
 
-  return `vless://${user.uuid}@${entry.node.serverHost}:${entry.inbound.port}?${params.toString()}#${encodeURIComponent(entry.label)}`;
+  return `vless://${user.uuid}@${endpointHost(entry)}:${endpointPort(entry)}?${params.toString()}#${encodeURIComponent(entry.label)}`;
 }
 
 function buildVmessUri(user: SubUser, entry: SubEntry): string {
@@ -182,17 +282,17 @@ function buildVmessUri(user: SubUser, entry: SubEntry): string {
   const vmessJson = {
     v: '2',
     ps: entry.label,
-    add: entry.node.serverHost,
-    port: entry.inbound.port,
+    add: endpointHost(entry),
+    port: endpointPort(entry),
     id: user.uuid,
     aid: p.alterId || 0,
     scy: 'auto',
     net: transport === 'httpupgrade' ? 'http' : transport,
     type: 'none',
-    host: p.transport?.host || '',
+    host: effectiveTransportHost(entry, p.transport?.host) || '',
     path: p.transport?.path || (transport === 'grpc' ? p.transport?.serviceName : '') || '',
     tls: tls && tls.enabled ? 'tls' : '',
-    sni: tls?.serverName || ''
+    sni: effectiveServerName(entry, tls?.serverName) || ''
   };
 
   const b64 = Buffer.from(JSON.stringify(vmessJson), 'utf8').toString('base64');
@@ -208,8 +308,9 @@ function buildTrojanUri(user: SubUser, entry: SubEntry): string {
     type: transport
   });
 
-  if (tls?.serverName) {
-    params.set('sni', tls.serverName);
+  const serverName = effectiveServerName(entry, tls?.serverName);
+  if (serverName) {
+    params.set('sni', serverName);
   }
   if (tls?.alpn && tls.alpn.length) {
     params.set('alpn', tls.alpn.join(','));
@@ -220,22 +321,25 @@ function buildTrojanUri(user: SubUser, entry: SubEntry): string {
 
   if (transport === 'ws' && p.transport?.path) {
     params.set('path', p.transport.path);
-    if (p.transport.host) params.set('host', p.transport.host);
+    const host = effectiveTransportHost(entry, p.transport.host);
+    if (host) params.set('host', host);
   } else if (transport === 'grpc' && p.transport?.serviceName) {
     params.set('serviceName', p.transport.serviceName);
   } else if (transport === 'httpupgrade' && p.transport?.path) {
     params.set('path', p.transport.path);
-    if (p.transport.host) params.set('host', p.transport.host);
+    const host = effectiveTransportHost(entry, p.transport.host);
+    if (host) params.set('host', host);
   }
 
-  return `trojan://${encodeURIComponent(user.credential)}@${entry.node.serverHost}:${entry.inbound.port}?${params.toString()}#${encodeURIComponent(entry.label)}`;
+  return `trojan://${encodeURIComponent(user.credential)}@${endpointHost(entry)}:${endpointPort(entry)}?${params.toString()}#${encodeURIComponent(entry.label)}`;
 }
 
 function buildHysteria2Uri(user: SubUser, entry: SubEntry): string {
   const p = entry.inbound.params as unknown as Hysteria2Params;
   const params = new URLSearchParams();
-  if (p.tls?.serverName) {
-    params.set('sni', p.tls.serverName);
+  const serverName = effectiveServerName(entry, p.tls?.serverName);
+  if (serverName) {
+    params.set('sni', serverName);
   }
   if (p.tls?.alpn && p.tls.alpn.length) {
     params.set('alpn', p.tls.alpn.join(','));
@@ -254,14 +358,16 @@ function buildHysteria2Uri(user: SubUser, entry: SubEntry): string {
     params.set('obfs-password', p.obfs.password);
   }
   const qs = params.toString();
-  return `hy2://${encodeURIComponent(user.credential)}@${entry.node.serverHost}:${entry.inbound.port}${qs ? `?${qs}` : ''}#${encodeURIComponent(entry.label)}`;
+  return `hy2://${encodeURIComponent(user.credential)}@${endpointHost(entry)}:${endpointPort(entry)}${qs ? `?${qs}` : ''}#${encodeURIComponent(entry.label)}`;
 }
 
 function buildShadowsocksUri(user: SubUser, entry: SubEntry): string {
   const p = entry.inbound.params as unknown as ShadowsocksParams;
-  const password = p.mode === 'multi-user' ? user.credential : p.password || '';
+  const password = p.mode === 'multi-user'
+    ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+    : normalizeShadowsocksPassword(p.method, p.password || '');
   const userinfo = Buffer.from(`${p.method}:${password}`, 'utf8').toString('base64url');
-  return `ss://${userinfo}@${entry.node.serverHost}:${entry.inbound.port}#${encodeURIComponent(entry.label)}`;
+  return `ss://${userinfo}@${endpointHost(entry)}:${endpointPort(entry)}#${encodeURIComponent(entry.label)}`;
 }
 
 function buildTuicUri(user: SubUser, entry: SubEntry): string {
@@ -270,8 +376,9 @@ function buildTuicUri(user: SubUser, entry: SubEntry): string {
     congestion_control: p.congestionControl || 'bbr',
     udp_relay_mode: 'native'
   });
-  if (p.tls?.serverName) {
-    params.set('sni', p.tls.serverName);
+  const serverName = effectiveServerName(entry, p.tls?.serverName);
+  if (serverName) {
+    params.set('sni', serverName);
   }
   if (p.tls?.alpn && p.tls.alpn.length) {
     params.set('alpn', p.tls.alpn.join(','));
@@ -279,16 +386,16 @@ function buildTuicUri(user: SubUser, entry: SubEntry): string {
   if (p.tls?.insecure) {
     params.set('allow_insecure', '1');
   }
-  return `tuic://${user.uuid}:${encodeURIComponent(user.credential)}@${entry.node.serverHost}:${entry.inbound.port}?${params.toString()}#${encodeURIComponent(entry.label)}`;
+  return `tuic://${user.uuid}:${encodeURIComponent(user.credential)}@${endpointHost(entry)}:${endpointPort(entry)}?${params.toString()}#${encodeURIComponent(entry.label)}`;
 }
 
 function buildNaiveUri(user: SubUser, entry: SubEntry): string {
   const username = user.email || user.uuid;
-  return `naive+https://${encodeURIComponent(username)}:${encodeURIComponent(user.credential)}@${entry.node.serverHost}:${entry.inbound.port}#${encodeURIComponent(entry.label)}`;
+  return `naive+https://${encodeURIComponent(username)}:${encodeURIComponent(user.credential)}@${endpointHost(entry)}:${endpointPort(entry)}#${encodeURIComponent(entry.label)}`;
 }
 
 // 逐入站生成 URI 行（Base64 订阅体）；未知或本地协议跳过（空行）
-export function buildUriList(user: SubUser, nodes: SubNode[]): string[] {
+export function buildUriList(user: SubUser, nodes: SubscriptionSource[]): string[] {
   return entries(nodes)
     .map((entry) => {
       switch (entry.inbound.type) {
@@ -319,8 +426,8 @@ export function buildUriList(user: SubUser, nodes: SubNode[]): string[] {
 // ==============================
 
 function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown> {
-  const { serverHost } = entry.node;
-  const { port } = entry.inbound;
+  const serverHost = endpointHost(entry);
+  const port = endpointPort(entry);
 
   switch (entry.inbound.type) {
     case 'VLESS':
@@ -345,12 +452,13 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
 
       if (tls && tls.enabled) {
         proxy.tls = true;
-        if (tls.serverName) proxy.servername = tls.serverName;
+        const serverName = effectiveServerName(entry, tls.serverName);
+        if (serverName) proxy.servername = serverName;
         if (tls.insecure) proxy['skip-cert-verify'] = true;
         if (tls.alpn) proxy.alpn = [...tls.alpn];
 
         if (tls.mode === 'reality' && tls.reality) {
-          proxy.servername = tls.serverName || tls.reality.serverNames[0];
+          proxy.servername = effectiveServerName(entry, tls.serverName || tls.reality.serverNames[0]);
           proxy['client-fingerprint'] = REALITY_CLIENT_DEFAULTS.fp;
           proxy['reality-opts'] = {
             'public-key': tls.reality.publicKey,
@@ -359,21 +467,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         }
       }
 
-      if (transport === 'ws') {
-        proxy['ws-opts'] = {
-          path: p.transport?.path || '/',
-          headers: p.transport?.headers || (p.transport?.host ? { Host: p.transport.host } : undefined)
-        };
-      } else if (transport === 'grpc') {
-        proxy['grpc-opts'] = {
-          'grpc-service-name': p.transport?.serviceName || ''
-        };
-      } else if (transport === 'httpupgrade') {
-        proxy['httpupgrade-opts'] = {
-          path: p.transport?.path || '/',
-          host: p.transport?.host || ''
-        };
-      }
+      Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
 
       return proxy;
     }
@@ -397,25 +491,12 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
 
       if (tls && tls.enabled) {
         proxy.tls = true;
-        if (tls.serverName) proxy.servername = tls.serverName;
+        const serverName = effectiveServerName(entry, tls.serverName);
+        if (serverName) proxy.servername = serverName;
         if (tls.insecure) proxy['skip-cert-verify'] = true;
       }
 
-      if (transport === 'ws') {
-        proxy['ws-opts'] = {
-          path: p.transport?.path || '/',
-          headers: p.transport?.headers || (p.transport?.host ? { Host: p.transport.host } : undefined)
-        };
-      } else if (transport === 'grpc') {
-        proxy['grpc-opts'] = {
-          'grpc-service-name': p.transport?.serviceName || ''
-        };
-      } else if (transport === 'httpupgrade') {
-        proxy['httpupgrade-opts'] = {
-          path: p.transport?.path || '/',
-          host: p.transport?.host || ''
-        };
-      }
+      Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
 
       return proxy;
     }
@@ -435,25 +516,12 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         network: transport === 'httpupgrade' ? 'ws' : transport
       };
 
-      if (tls?.serverName) proxy.sni = tls.serverName;
+      const serverName = effectiveServerName(entry, tls?.serverName);
+      if (serverName) proxy.sni = serverName;
       if (tls?.insecure) proxy['skip-cert-verify'] = true;
       if (tls?.alpn) proxy.alpn = [...tls.alpn];
 
-      if (transport === 'ws') {
-        proxy['ws-opts'] = {
-          path: p.transport?.path || '/',
-          headers: p.transport?.headers || (p.transport?.host ? { Host: p.transport.host } : undefined)
-        };
-      } else if (transport === 'grpc') {
-        proxy['grpc-opts'] = {
-          'grpc-service-name': p.transport?.serviceName || ''
-        };
-      } else if (transport === 'httpupgrade') {
-        proxy['httpupgrade-opts'] = {
-          path: p.transport?.path || '/',
-          host: p.transport?.host || ''
-        };
-      }
+      Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
 
       return proxy;
     }
@@ -466,7 +534,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         server: serverHost,
         port,
         password: user.credential,
-        sni: p.tls?.serverName || '',
+        sni: effectiveServerName(entry, p.tls?.serverName) || '',
         'skip-cert-verify': p.tls?.insecure ?? false,
         alpn: p.tls?.alpn ? [...p.tls.alpn] : ['h3'],
         ...(p.upMbps && p.upMbps > 0 ? { up: `${p.upMbps} Mbps` } : {}),
@@ -481,7 +549,9 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
 
     case 'SHADOWSOCKS': {
       const p = entry.inbound.params as unknown as ShadowsocksParams;
-      const password = p.mode === 'multi-user' ? user.credential : p.password || '';
+      const password = p.mode === 'multi-user'
+        ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+        : normalizeShadowsocksPassword(p.method, p.password || '');
       return {
         name: entry.label,
         type: 'ss',
@@ -502,7 +572,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         port,
         uuid: user.uuid,
         password: user.credential,
-        sni: p.tls?.serverName || '',
+        sni: effectiveServerName(entry, p.tls?.serverName) || '',
         'skip-cert-verify': p.tls?.insecure ?? false,
         alpn: p.tls?.alpn ? [...p.tls.alpn] : ['h3'],
         'congestion-controller': p.congestionControl || 'bbr',
@@ -516,7 +586,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
 }
 
 // Clash Meta 客户端配置：完整最小可用（基础设置 + proxies + 策略组 + 兜底规则）
-export function buildClashYaml(user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
+export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], template?: SubscriptionTemplateConfig): string {
   const allEntries = entries(nodes);
   const proxies = allEntries
     .map((entry) => buildClashProxy(user, entry))
@@ -578,8 +648,8 @@ export function buildClashYaml(user: SubUser, nodes: SubNode[], template?: Subsc
 // ==============================
 
 function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, unknown> {
-  const { serverHost } = entry.node;
-  const { port } = entry.inbound;
+  const serverHost = endpointHost(entry);
+  const port = endpointPort(entry);
 
   switch (entry.inbound.type) {
     case 'VLESS':
@@ -600,37 +670,10 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         outbound.flow = p.flow;
       }
 
-      if (tls && tls.enabled) {
-        if (tls.mode === 'reality' && tls.reality) {
-          outbound.tls = {
-            enabled: true,
-            server_name: tls.serverName || tls.reality.serverNames[0],
-            utls: { enabled: true, fingerprint: REALITY_CLIENT_DEFAULTS.fp },
-            reality: {
-              enabled: true,
-              public_key: tls.reality.publicKey,
-              short_id: tls.reality.shortIds[0]
-            }
-          };
-        } else {
-          outbound.tls = {
-            enabled: true,
-            server_name: tls.serverName,
-            ...(tls.alpn ? { alpn: tls.alpn } : {}),
-            insecure: tls.insecure === true
-          };
-        }
-      }
-
-      if (transport) {
-        outbound.transport = {
-          type: transport.type,
-          ...(transport.path ? { path: transport.path } : {}),
-          ...(transport.headers ? { headers: transport.headers } : {}),
-          ...(transport.serviceName ? { service_name: transport.serviceName } : {}),
-          ...(transport.host ? { host: transport.host } : {})
-        };
-      }
+      const clientTls = buildClientTls(tls, effectiveServerName(entry));
+      if (clientTls) outbound.tls = clientTls;
+      const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
+      if (clientTransport) outbound.transport = clientTransport;
 
       return outbound;
     }
@@ -650,23 +693,10 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         security: 'auto'
       };
 
-      if (tls && tls.enabled) {
-        outbound.tls = {
-          enabled: true,
-          server_name: tls.serverName,
-          insecure: tls.insecure === true
-        };
-      }
-
-      if (transport) {
-        outbound.transport = {
-          type: transport.type,
-          ...(transport.path ? { path: transport.path } : {}),
-          ...(transport.headers ? { headers: transport.headers } : {}),
-          ...(transport.serviceName ? { service_name: transport.serviceName } : {}),
-          ...(transport.host ? { host: transport.host } : {})
-        };
-      }
+      const clientTls = buildClientTls(tls, effectiveServerName(entry));
+      if (clientTls) outbound.tls = clientTls;
+      const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
+      if (clientTransport) outbound.transport = clientTransport;
 
       return outbound;
     }
@@ -681,31 +711,20 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         tag: entry.label,
         server: serverHost,
         server_port: port,
-        password: user.credential,
-        tls: {
-          enabled: true,
-          server_name: tls?.serverName,
-          ...(tls?.alpn ? { alpn: tls.alpn } : {}),
-          insecure: tls?.insecure === true
-        }
+        password: user.credential
       };
 
-      if (transport) {
-        outbound.transport = {
-          type: transport.type,
-          ...(transport.path ? { path: transport.path } : {}),
-          ...(transport.headers ? { headers: transport.headers } : {}),
-          ...(transport.serviceName ? { service_name: transport.serviceName } : {}),
-          ...(transport.host ? { host: transport.host } : {})
-        };
-      }
+      const clientTls = buildClientTls(tls, effectiveServerName(entry));
+      if (clientTls) outbound.tls = clientTls;
+      const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
+      if (clientTransport) outbound.transport = clientTransport;
 
       return outbound;
     }
 
     case 'HYSTERIA2': {
       const p = entry.inbound.params as unknown as Hysteria2Params;
-      return {
+      const outbound: Record<string, unknown> = {
         type: 'hysteria2',
         tag: entry.label,
         server: serverHost,
@@ -713,19 +732,18 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         password: user.credential,
         ...(p.upMbps && p.upMbps > 0 ? { up_mbps: p.upMbps } : {}),
         ...(p.downMbps && p.downMbps > 0 ? { down_mbps: p.downMbps } : {}),
-        ...(p.obfs ? { obfs: p.obfs } : {}),
-        tls: {
-          enabled: true,
-          server_name: p.tls?.serverName,
-          alpn: p.tls?.alpn || ['h3'],
-          insecure: p.tls?.insecure === true
-        }
+        ...(p.obfs ? { obfs: p.obfs } : {})
       };
+      const clientTls = buildClientTls(p.tls, effectiveServerName(entry));
+      if (clientTls) outbound.tls = clientTls;
+      return outbound;
     }
 
     case 'SHADOWSOCKS': {
       const p = entry.inbound.params as unknown as ShadowsocksParams;
-      const password = p.mode === 'multi-user' ? user.credential : p.password || '';
+      const password = p.mode === 'multi-user'
+        ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+        : normalizeShadowsocksPassword(p.method, p.password || '');
       return {
         type: 'shadowsocks',
         tag: entry.label,
@@ -738,7 +756,7 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
 
     case 'TUIC': {
       const p = entry.inbound.params as unknown as TuicParams;
-      return {
+      const outbound: Record<string, unknown> = {
         type: 'tuic',
         tag: entry.label,
         server: serverHost,
@@ -746,30 +764,26 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         uuid: user.uuid,
         password: user.credential,
         congestion_control: p.congestionControl || 'bbr',
-        tls: {
-          enabled: true,
-          server_name: p.tls?.serverName,
-          alpn: p.tls?.alpn || ['h3'],
-          insecure: p.tls?.insecure === true
-        }
+        ...(p.zeroRttHandshake ? { zero_rtt_handshake: true } : {})
       };
+      const clientTls = buildClientTls(p.tls, effectiveServerName(entry));
+      if (clientTls) outbound.tls = clientTls;
+      return outbound;
     }
 
     case 'NAIVE': {
       const p = entry.inbound.params as unknown as NaiveParams;
-      return {
+      const outbound: Record<string, unknown> = {
         type: 'naive',
         tag: entry.label,
         server: serverHost,
         server_port: port,
         username: user.email || user.uuid,
-        password: user.credential,
-        tls: {
-          enabled: true,
-          server_name: p.tls?.serverName,
-          insecure: p.tls?.insecure === true
-        }
+        password: user.credential
       };
+      const clientTls = buildClientTls(p.tls, effectiveServerName(entry), { includeAlpn: false });
+      if (clientTls) outbound.tls = clientTls;
+      return outbound;
     }
 
     default:
@@ -778,35 +792,43 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
 }
 
 // Sing-box 客户端配置：多协议出站 + direct 兜底
-export function buildSingboxJson(user: SubUser, nodes: SubNode[], template?: SubscriptionTemplateConfig): string {
+export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], template?: SubscriptionTemplateConfig): string {
   const outbounds: Record<string, unknown>[] = entries(nodes)
     .map((entry) => buildSingboxOutbound(user, entry))
     .filter((o) => Object.keys(o).length > 0);
 
   const names = outbounds.map((outbound) => outbound.tag as string);
   const groups = templateGroups(template);
-  const strategyOutbounds = groups.map((group) => {
-    const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'selector';
-    const outboundType = type === 'url-test' ? 'urltest' : 'selector';
-    return {
-      type: outboundType,
-      tag: typeof group.name === 'string' && group.name.trim() ? group.name : '节点选择',
-      outbounds: [...names],
-      ...(outboundType === 'urltest'
-        ? {
-            url: typeof group.url === 'string' ? group.url : 'https://www.gstatic.com/generate_204',
-            interval: typeof group.interval === 'number' ? `${group.interval}s` : '5m'
-          }
-        : {})
-    };
-  });
+  const strategyOutbounds = groups.length
+    ? groups.map((group) => {
+        const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'selector';
+        const outboundType = type === 'url-test' ? 'urltest' : 'selector';
+        return {
+          type: outboundType,
+          tag: typeof group.name === 'string' && group.name.trim() ? group.name : '节点选择',
+          outbounds: [...names],
+          ...(outboundType === 'urltest'
+            ? {
+                url: typeof group.url === 'string' ? group.url : 'https://www.gstatic.com/generate_204',
+                interval: typeof group.interval === 'number' ? `${group.interval}s` : '5m'
+              }
+            : {})
+        };
+      })
+    : [{ type: 'selector', tag: '节点选择', outbounds: [...names] }];
   const primaryGroup = (strategyOutbounds[0]?.tag as string) || '节点选择';
+  const routeTarget = (target: string): string => {
+    if (target.toUpperCase() === 'DIRECT') return 'direct';
+    if (target.toUpperCase() === 'REJECT') return 'block';
+    return target;
+  };
   outbounds.push({ type: 'direct', tag: 'direct' });
+  outbounds.push({ type: 'block', tag: 'block' });
   outbounds.push(...strategyOutbounds);
   const routeRules: Array<Record<string, unknown>> = templateRules(template)
     .filter((rule) => rule.enabled !== false)
     .flatMap((rule): Array<Record<string, unknown>> => {
-      const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
+      const target = routeTarget(typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup);
       const values = Array.isArray(rule.rules) ? rule.rules.filter((item): item is string => typeof item === 'string') : [];
       const type = typeof rule.type === 'string' ? rule.type.toLowerCase() : 'domain_suffix';
       if (type === 'match' || type === 'final') return [{ action: 'route', outbound: target }];

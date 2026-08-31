@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { parse as parseYaml } from 'yaml';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizeShadowsocksPassword } from '../common/inbound';
 import { resolveFormat, SubscriptionService } from './subscription.service';
 
 describe('SubscriptionService', () => {
@@ -162,7 +163,9 @@ describe('SubscriptionService', () => {
       const ss = lines.find((l) => l.startsWith('ss://'));
       expect(ss).toContain(`@203.0.113.10:8388`);
       const userinfo = Buffer.from(ss!.split('@')[0].slice(5), 'base64url').toString('utf8');
-      expect(userinfo).toBe('2022-blake3-aes-128-gcm:ss-shared');
+      expect(userinfo).toBe(
+        `2022-blake3-aes-128-gcm:${normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'ss-shared')}`
+      );
 
       const tuic = lines.find((l) => l.startsWith('tuic://'));
       expect(tuic).toContain(`tuic://${activeUser.uuid}:user-pass@203.0.113.10:8443?`);
@@ -262,7 +265,7 @@ describe('SubscriptionService', () => {
         server: '203.0.113.10',
         port: 8388,
         cipher: '2022-blake3-aes-128-gcm',
-        password: 'ss-shared'
+        password: normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'ss-shared')
       });
 
       const tuic = proxies.find((p: { type: string }) => p.type === 'tuic');
@@ -319,7 +322,7 @@ describe('SubscriptionService', () => {
       expect(result.contentType).toBe('application/json; charset=utf-8');
       const config = JSON.parse(result.body);
       const outbounds = config.outbounds;
-      expect(outbounds).toHaveLength(5);
+      expect(outbounds).toHaveLength(7);
 
       const vless = outbounds.find((o: { type: string }) => o.type === 'vless');
       expect(vless).toMatchObject({
@@ -351,7 +354,7 @@ describe('SubscriptionService', () => {
         server: '203.0.113.10',
         server_port: 8388,
         method: '2022-blake3-aes-128-gcm',
-        password: 'ss-shared'
+        password: normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'ss-shared')
       });
 
       const tuic = outbounds.find((o: { type: string }) => o.type === 'tuic');
@@ -364,7 +367,17 @@ describe('SubscriptionService', () => {
       });
       expect(tuic.tls.insecure).toBe(true);
 
-      expect(outbounds[4]).toEqual({ type: 'direct', tag: 'direct' });
+      expect(outbounds).toEqual(expect.arrayContaining([
+        { type: 'direct', tag: 'direct' },
+        { type: 'block', tag: 'block' },
+        { type: 'selector', tag: '节点选择', outbounds: expect.arrayContaining([
+          '东京节点 01·vless-in',
+          '东京节点 01·hy2-in',
+          '东京节点 01·ss-in',
+          '东京节点 01·tuic-in'
+        ]) }
+      ]));
+      expect(config.route).toEqual({ rules: [{ action: 'route', outbound: '节点选择' }] });
     });
 
     it('User-Agent 含 sing-box 时自动切换 JSON', async () => {

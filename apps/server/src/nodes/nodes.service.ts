@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateAgentToken } from '../common/utils';
@@ -10,11 +10,13 @@ import {
   sanitizeInboundParams,
   UDP_INBOUND_TYPES
 } from '../common/inbound';
+import { DEFAULT_INBOUND_LISTEN, findAvailableRandomPort } from '../common/ports';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { CreateInboundDto, UpdateInboundDto } from './dto/inbound.dto';
 import { ProbeNodeDto } from './dto/probe-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
+import { LinesService } from '../lines/lines.service';
 
 type NodeWithInbounds = {
   id: string;
@@ -27,9 +29,28 @@ type NodeWithInbounds = {
     port: number;
     paramsJson: string;
     sortOrder: number;
-    isPublic: boolean;
     createdAt: Date;
     updatedAt: Date;
+  }>;
+  entryLines: Array<{
+    id: string;
+    name: string;
+    type: string;
+    relayMode: string | null;
+    entryNodeId: string | null;
+    entryPort: number | null;
+    targetInboundId: string;
+    serverHost: string | null;
+    serverPort: number | null;
+    serverName: string | null;
+    host: string | null;
+    trafficRate: number;
+    tagsJson: string;
+    level: number;
+    sortOrder: number;
+    isPublic: boolean;
+    status: string;
+    targetInbound: { id: string; type: string; tag: string; port: number };
   }>;
 } & Record<string, unknown>;
 
@@ -37,7 +58,8 @@ type NodeWithInbounds = {
 export class NodesService {
   constructor(
     private prisma: PrismaService,
-    private agentGateway: AgentGatewayService
+    private agentGateway: AgentGatewayService,
+    @Optional() private linesService?: LinesService
   ) {}
 
   private readonly inboundOrder = [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }];
@@ -45,8 +67,11 @@ export class NodesService {
   // 管理端列表（含 agentToken、遥测与入站摘要）
   async list() {
     const nodes = await this.prisma.node.findMany({
-      include: { inbounds: { orderBy: this.inboundOrder } },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+      include: {
+        inbounds: { orderBy: this.inboundOrder },
+        entryLines: { include: { targetInbound: { select: { id: true, type: true, tag: true, port: true } } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }
+      },
+      orderBy: [{ createdAt: 'asc' }]
     });
     return nodes.map((node) => this.sanitize(node));
   }
@@ -54,7 +79,10 @@ export class NodesService {
   async detail(id: string) {
     const node = await this.prisma.node.findUnique({
       where: { id },
-      include: { inbounds: { orderBy: this.inboundOrder } }
+      include: {
+        inbounds: { orderBy: this.inboundOrder },
+        entryLines: { include: { targetInbound: { select: { id: true, type: true, tag: true, port: true } } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }
+      }
     });
     if (!node) {
       throw new NotFoundException('节点不存在');
@@ -68,11 +96,8 @@ export class NodesService {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
         serverHost: dto.serverHost.trim(),
         agentToken: generateAgentToken(),
-        isPublic: dto.isPublic ?? true,
-        tagsJson: JSON.stringify(dto.tags ?? []),
-        level: dto.level ?? 0
       },
-      include: { inbounds: true }
+      include: { inbounds: true, entryLines: { include: { targetInbound: { select: { id: true, type: true, tag: true, port: true } } } } }
     });
     return {
       node: this.sanitize(node),
@@ -118,11 +143,7 @@ export class NodesService {
     const data: {
       name?: string;
       serverHost?: string;
-      isPublic?: boolean;
-      sortOrder?: number;
       configOverride?: string | null;
-      tagsJson?: string;
-      level?: number;
     } = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
@@ -138,12 +159,6 @@ export class NodesService {
       }
       data.serverHost = serverHost;
     }
-    if (dto.isPublic !== undefined) {
-      data.isPublic = dto.isPublic;
-    }
-    if (dto.sortOrder !== undefined) {
-      data.sortOrder = dto.sortOrder;
-    }
     if (dto.configOverride !== undefined) {
       if (dto.configOverride === null || dto.configOverride.trim() === '') {
         data.configOverride = null;
@@ -151,19 +166,16 @@ export class NodesService {
         data.configOverride = this.validateConfigOverride(dto.configOverride);
       }
     }
-    if (dto.tags !== undefined) {
-      data.tagsJson = JSON.stringify(dto.tags.map((tag) => tag.trim()).filter(Boolean));
-    }
-    if (dto.level !== undefined) {
-      data.level = dto.level;
-    }
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('未提供任何更新字段');
     }
     const updated = await this.prisma.node.update({
       where: { id },
       data,
-      include: { inbounds: { orderBy: this.inboundOrder } }
+      include: {
+        inbounds: { orderBy: this.inboundOrder },
+        entryLines: { include: { targetInbound: { select: { id: true, type: true, tag: true, port: true } } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }
+      }
     });
     // 主机地址影响订阅输出、configOverride 影响下发配置：在线时热推送
     void this.agentGateway.pushConfig(id);
@@ -174,6 +186,9 @@ export class NodesService {
     const node = await this.prisma.node.findUnique({ where: { id } });
     if (!node) {
       throw new NotFoundException('节点不存在');
+    }
+    if (node.isLocal) {
+      throw new ConflictException('主控本机节点不可删除');
     }
     // 先断开在线 Agent 再删库；入站与 TrafficLog 由外键 onDelete: Cascade 一并删除
     this.agentGateway.disconnectNode(id);
@@ -195,8 +210,10 @@ export class NodesService {
       throw new NotFoundException('节点不存在');
     }
     const tag = this.resolveTag(node.inbounds, dto.type, dto.tag);
-    const listen = dto.listen?.trim() || '::';
-    this.assertPortAvailable(node.inbounds, dto.type, dto.port);
+    const listen = dto.listen?.trim() || DEFAULT_INBOUND_LISTEN;
+    const port = dto.port ?? await this.findAvailableInboundPort(nodeId, node.inbounds, dto.type);
+    this.assertPortAvailable(node.inbounds, dto.type, port);
+    await this.assertRelayEntryPortAvailable(nodeId, port);
     const params = normalizeInboundParams(dto.type, dto.params ?? {});
     const inbound = await this.prisma.nodeInbound.create({
       data: {
@@ -204,10 +221,9 @@ export class NodesService {
         type: dto.type,
         tag,
         listen,
-        port: dto.port,
+        port,
         paramsJson: JSON.stringify(params),
-        sortOrder: dto.sortOrder ?? 0,
-        isPublic: dto.isPublic ?? true
+        sortOrder: dto.sortOrder ?? 0
       }
     });
     void this.agentGateway.pushConfig(nodeId);
@@ -227,7 +243,6 @@ export class NodesService {
       port?: number;
       paramsJson?: string;
       sortOrder?: number;
-      isPublic?: boolean;
     } = {};
     if (dto.tag !== undefined) {
       const tag = dto.tag.trim();
@@ -254,6 +269,7 @@ export class NodesService {
         where: { nodeId, id: { not: inboundId } }
       });
       this.assertPortAvailable(siblings, inbound.type as ProtocolType, dto.port);
+      await this.assertRelayEntryPortAvailable(nodeId, dto.port);
       data.port = dto.port;
     }
     if (dto.params !== undefined) {
@@ -264,9 +280,6 @@ export class NodesService {
     }
     if (dto.sortOrder !== undefined) {
       data.sortOrder = dto.sortOrder;
-    }
-    if (dto.isPublic !== undefined) {
-      data.isPublic = dto.isPublic;
     }
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('未提供任何更新字段');
@@ -286,6 +299,23 @@ export class NodesService {
     await this.prisma.nodeInbound.delete({ where: { id: inboundId } });
     void this.agentGateway.pushConfig(nodeId);
     return { deleted: true, id: inboundId };
+  }
+
+  async deriveLine(nodeId: string, inboundId: string) {
+    if (!this.linesService) throw new BadRequestException('线路服务不可用');
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+    const inbound = await this.prisma.nodeInbound.findFirst({ where: { id: inboundId, nodeId } });
+    if (!node) throw new NotFoundException('节点不存在');
+    if (!inbound) throw new NotFoundException('入站不存在');
+    return this.linesService.create({
+      name: `${node.name} · ${inbound.tag}`,
+      type: 'DIRECT',
+      targetInboundId: inbound.id,
+      serverHost: node.serverHost,
+      serverPort: inbound.port,
+      status: 'ACTIVE',
+      isPublic: true
+    });
   }
 
   // tag 缺省按协议前缀生成；显式指定冲突时报错，缺省生成冲突时自动追加序号
@@ -331,6 +361,32 @@ export class NodesService {
     }
   }
 
+  private async findAvailableInboundPort(
+    nodeId: string,
+    existing: Array<{ type: string; port: number }>,
+    type: ProtocolType
+  ) {
+    try {
+      return await findAvailableRandomPort(async (port) => {
+        const hasInboundConflict = existing.some(
+          (inbound) => inbound.port === port && UDP_INBOUND_TYPES.includes(inbound.type as ProtocolType) === UDP_INBOUND_TYPES.includes(type)
+        );
+        if (hasInboundConflict) return false;
+        const relay = await this.prisma.line.findFirst({ where: { entryNodeId: nodeId, entryPort: port } });
+        return !relay;
+      });
+    } catch {
+      throw new ConflictException('没有可用的随机入站端口');
+    }
+  }
+
+  private async assertRelayEntryPortAvailable(nodeId: string, port: number) {
+    const relay = await this.prisma.line.findFirst({ where: { entryNodeId: nodeId, entryPort: port } });
+    if (relay) {
+      throw new ConflictException(`端口 ${port} 已被中继线路入口占用`);
+    }
+  }
+
   private validateConfigOverride(raw: string): string {
     let parsed: unknown;
     try {
@@ -353,8 +409,9 @@ export class NodesService {
     paramsJson: string;
     [key: string]: unknown;
   }): Record<string, unknown> {
-    const params = JSON.parse(inbound.paramsJson) as Record<string, unknown>;
-    return { ...inbound, params: sanitizeInboundParams(params) };
+    const { paramsJson, ...rest } = inbound;
+    const params = JSON.parse(paramsJson) as Record<string, unknown>;
+    return { ...rest, params: sanitizeInboundParams(params) };
   }
 
   private deepMerge(
@@ -386,15 +443,25 @@ export class NodesService {
 
   // 节点输出：入站脱敏；agentToken 保留（管理端安装指引需要，接口本身要求 ADMIN）
   private sanitize(node: NodeWithInbounds): Record<string, unknown> {
-    let tags: string[] = [];
-    if (typeof node.tagsJson === 'string') {
-      try {
-        const parsed: unknown = JSON.parse(node.tagsJson);
-        tags = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-      } catch {
-        tags = [];
-      }
+    const { entryLines = [], inbounds, ...rest } = node;
+    return {
+      ...rest,
+      inbounds: inbounds.map((i) => this.sanitizeInbound(i)),
+      entryLines: entryLines.map((line) => ({
+        ...line,
+        tags: this.parseTags(line.tagsJson),
+        tagsJson: undefined,
+        targetInbound: line.targetInbound
+      }))
+    };
+  }
+
+  private parseTags(value: string) {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
     }
-    return { ...node, tags, tagsJson: undefined, inbounds: node.inbounds.map((i) => this.sanitizeInbound(i)) };
   }
 }

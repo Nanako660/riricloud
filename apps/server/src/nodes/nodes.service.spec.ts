@@ -8,7 +8,8 @@ describe('NodesService', () => {
   let service: NodesService;
   const prisma = {
     node: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-    nodeInbound: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() }
+    nodeInbound: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    line: { findFirst: jest.fn() }
   };  const agentGateway = { pushConfig: jest.fn(), disconnectNode: jest.fn() };
 
   beforeAll(async () => {
@@ -31,6 +32,7 @@ describe('NodesService', () => {
     agentToken: 'tok',
     status: 'ONLINE',
     configOverride: null,
+    isLocal: false,
     isPublic: true,
     inbounds: []
   };
@@ -132,6 +134,14 @@ describe('NodesService', () => {
   });
 
   describe('remove', () => {
+    it('主控本机节点不可删除', async () => {
+      prisma.node.findUnique.mockResolvedValue({ ...seededNode, isLocal: true });
+
+      await expect(service.remove('n1')).rejects.toThrow(ConflictException);
+      expect(agentGateway.disconnectNode).not.toHaveBeenCalled();
+      expect(prisma.node.delete).not.toHaveBeenCalled();
+    });
+
     it('先断开在线 Agent 再删除节点', async () => {
       prisma.node.findUnique.mockResolvedValue(seededNode);
       prisma.node.delete.mockResolvedValue(seededNode);
@@ -154,6 +164,21 @@ describe('NodesService', () => {
   });
 
   describe('createInbound', () => {
+    it('缺省端口时生成五位随机端口并默认监听 IPv4 通配地址', async () => {
+      prisma.node.findUnique.mockResolvedValue({ ...seededNode, inbounds: [] });
+      prisma.nodeInbound.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'in-random', ...data })
+      );
+
+      await service.createInbound('n1', { type: 'VLESS' });
+
+      const created = prisma.nodeInbound.create.mock.calls[0][0].data;
+      expect(created.listen).toBe('0.0.0.0');
+      expect(created.port).toEqual(expect.any(Number));
+      expect(created.port).toBeGreaterThanOrEqual(20000);
+      expect(created.port).toBeLessThanOrEqual(29999);
+    });
+
     it('缺省 tag 按协议前缀生成，响应剥离私钥并推送配置', async () => {
       prisma.node.findUnique.mockResolvedValue({ ...seededNode, inbounds: [] });
       prisma.nodeInbound.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>

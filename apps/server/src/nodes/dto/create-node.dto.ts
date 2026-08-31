@@ -1,5 +1,5 @@
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 // 创建节点只收基础信息：入站在节点详情中单独管理（POST /admin/nodes/:id/inbounds）
 export class CreateNodeDto {
@@ -12,20 +12,4 @@ export class CreateNodeDto {
   @IsString()
   serverHost!: string;
 
-  @ApiPropertyOptional({ example: true, default: true })
-  @IsBoolean()
-  @IsOptional()
-  isPublic?: boolean;
-
-  @ApiPropertyOptional({ type: [String], example: ['vip', 'hk'] })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  tags?: string[];
-
-  @ApiPropertyOptional({ example: 1, minimum: 0 })
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  level?: number;
 }

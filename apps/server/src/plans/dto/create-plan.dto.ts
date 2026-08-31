@@ -39,19 +39,19 @@ export class CreatePlanDto {
   @ApiPropertyOptional({ enum: PLAN_MATCH_MODES, default: 'ALL' })
   @IsIn(PLAN_MATCH_MODES)
   @IsOptional()
-  nodeMatchMode?: PlanMatchMode;
+  lineMatchMode?: PlanMatchMode;
 
   @ApiPropertyOptional({ type: [String], example: ['vip', 'hk'] })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  nodeTags?: string[];
+  lineTags?: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsOptional()
-  nodeIds?: string[];
+  lineIds?: string[];
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsUUID()

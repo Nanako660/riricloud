@@ -24,16 +24,12 @@ import {
   FormMessage
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
 
 // 创建只收基础信息：协议/端口等入站配置进节点详情页单独管理
 const createSchema = z.object({
   name: z.string().max(32, '名称不超过 32 字符').optional(),
-  serverHost: z.string().min(1, '请输入服务器地址'),
-  isPublic: z.boolean(),
-  tags: z.string().optional(),
-  level: z.coerce.number().int().min(0)
+  serverHost: z.string().min(1, '请输入服务器地址')
 });
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -51,7 +47,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: '', serverHost: '', isPublic: true, tags: '', level: 0 }
+    defaultValues: { name: '', serverHost: '' }
   });
 
   // 打开时重置到初始状态
@@ -64,7 +60,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
-      { name: v.name?.trim() || undefined, serverHost: v.serverHost, isPublic: v.isPublic, tags: v.tags?.split(',').map((tag) => tag.trim()).filter(Boolean), level: v.level },
+      { name: v.name?.trim() || undefined, serverHost: v.serverHost },
       { onSuccess: (data) => setCreated(data) }
     );
   };
@@ -142,25 +138,6 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={createForm.control}
-                  name="isPublic"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <FormLabel>对订阅公开</FormLabel>
-                        <FormDescription>关闭后该节点不出现在用户订阅中</FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField control={createForm.control} name="tags" render={({ field }) => <FormItem><FormLabel>节点标签</FormLabel><FormControl><Input placeholder="vip, hk" {...field} /></FormControl><FormDescription>用逗号分隔，供套餐匹配</FormDescription><FormMessage /></FormItem>} />
-                  <FormField control={createForm.control} name="level" render={({ field }) => <FormItem><FormLabel>节点等级</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>} />
-                </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                     取消

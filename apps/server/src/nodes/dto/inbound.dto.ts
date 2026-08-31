@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PROTOCOL_TYPES, ProtocolType } from '../../common/constants';
 
@@ -13,16 +13,17 @@ export class CreateInboundDto {
   @IsOptional()
   tag?: string;
 
-  @ApiPropertyOptional({ example: '::', default: '::' })
+  @ApiPropertyOptional({ example: '0.0.0.0', default: '0.0.0.0', description: '缺省监听所有 IPv4 网卡' })
   @IsString()
   @IsOptional()
   listen?: string;
 
-  @ApiProperty({ example: 443, minimum: 1, maximum: 65535 })
+  @ApiPropertyOptional({ example: 23456, minimum: 1, maximum: 65535, description: '缺省由服务端生成五位随机端口' })
   @IsInt()
   @Min(1)
   @Max(65535)
-  port!: number;
+  @IsOptional()
+  port?: number;
 
   // 协议专属参数（结构见 docs/DATA_MODELS.md §3.1）；Reality 密钥对与 SS 密码缺省自动生成
   @ApiPropertyOptional({ example: { serverNames: ['www.apple.com'], dest: 'www.apple.com:443' } })
@@ -36,10 +37,6 @@ export class CreateInboundDto {
   @IsOptional()
   sortOrder?: number;
 
-  @ApiPropertyOptional({ example: true, default: true })
-  @IsBoolean()
-  @IsOptional()
-  isPublic?: boolean;
 }
 
 export class UpdateInboundDto {
@@ -48,7 +45,7 @@ export class UpdateInboundDto {
   @IsOptional()
   tag?: string;
 
-  @ApiPropertyOptional({ example: '::' })
+  @ApiPropertyOptional({ example: '0.0.0.0', description: '缺省监听所有 IPv4 网卡' })
   @IsString()
   @IsOptional()
   listen?: string;
@@ -72,8 +69,4 @@ export class UpdateInboundDto {
   @IsOptional()
   sortOrder?: number;
 
-  @ApiPropertyOptional({ example: true })
-  @IsBoolean()
-  @IsOptional()
-  isPublic?: boolean;
 }

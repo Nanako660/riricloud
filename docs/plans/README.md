@@ -28,3 +28,4 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [v0.3.0 订阅架构与极简 Agent 远程升级重构](./archive/2026-08-31-v0.3.0-architecture-refactor.md) | `v0.3.0` | 2026-08-31 | PR #3 (squash commit 2c87b14) |
+| [节点与线路解耦、链式代理中继与主控本机节点架构重构](./archive/2026-08-31-node-line-separation-and-relay.md) | `v0.4.0` | 2026-08-31 | — |

@@ -44,6 +44,12 @@ export const router = createBrowserRouter([
                 })
               },
               {
+                path: '/admin/lines',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/lines')).default
+                })
+              },
+              {
                 path: '/admin/users',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/users')).default
@@ -80,6 +86,12 @@ export const router = createBrowserRouter([
             path: '/subscription',
             lazy: async () => ({
               Component: (await import('@/pages/user/subscription')).default
+            })
+          },
+          {
+            path: '/lines',
+            lazy: async () => ({
+              Component: (await import('@/pages/user/lines')).default
             })
           }
         ]

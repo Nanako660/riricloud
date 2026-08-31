@@ -84,6 +84,136 @@ describe('AgentGatewayService', () => {
     });
   });
 
+  it('为盲转发线路生成 direct inbound 与覆盖目标', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'n-entry',
+      inbounds: [],
+      entryLines: [{
+        id: 'line-blind',
+        entryPort: 8443,
+        relayMode: 'BLIND_FORWARD',
+        targetInbound: { port: 443, paramsJson: '{}', node: { serverHost: '203.0.113.10' } }
+      }]
+    });
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const result = await service.buildConfigSync('n-entry');
+    expect(result.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      {
+        type: 'direct',
+        tag: 'relay-line-blind',
+        listen: '0.0.0.0',
+        listen_port: 8443,
+        override_address: '203.0.113.10',
+        override_port: 443
+      }
+    ]));
+  });
+
+  it('为协议代理线路生成协议入站、目标出站和路由规则', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'n-entry',
+      inbounds: [],
+      entryLines: [{
+        id: 'line-proxy',
+        entryPort: 9443,
+        relayMode: 'PROTOCOL_PROXY',
+        endpointOverrideEnabled: true,
+        serverName: 'relay.example.com',
+        host: 'cdn.example.com',
+        targetInbound: {
+          type: 'VLESS',
+          port: 443,
+          paramsJson: JSON.stringify({ flow: 'xtls-rprx-vision', transport: { type: 'ws', path: '/proxy' }, tls: { enabled: true, mode: 'tls', serverName: 'origin.example.com', certificatePath: '/cert', keyPath: '/key' } }),
+          node: { serverHost: '203.0.113.10' }
+        }
+      }]
+    });
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const result = await service.buildConfigSync('n-entry');
+    expect(result.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'vless', tag: 'relay-line-proxy', listen_port: 9443 })
+    ]));
+    expect(result.singboxConfig.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'vless', tag: 'relay-out-line-proxy', server: '203.0.113.10', server_port: 443, tls: expect.objectContaining({ server_name: 'relay.example.com' }), transport: expect.objectContaining({ headers: { Host: 'cdn.example.com' } }) })
+    ]));
+    expect(result.singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-line-proxy'], outbound: 'relay-out-line-proxy' }] });
+  });
+
+  it('关闭线路覆盖时协议中继复用目标入站的 TLS 与传输 Host', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'n-entry',
+      inbounds: [],
+      entryLines: [{
+        id: 'line-proxy-fallback',
+        entryPort: 9443,
+        relayMode: 'PROTOCOL_PROXY',
+        endpointOverrideEnabled: false,
+        serverName: 'stale.example.com',
+        host: 'stale-cdn.example.com',
+        targetInbound: {
+          type: 'VLESS',
+          port: 443,
+          paramsJson: JSON.stringify({
+            transport: { type: 'ws', path: '/proxy', host: 'origin.example.com' },
+            tls: { enabled: true, mode: 'tls', serverName: 'origin.example.com' }
+          }),
+          node: { serverHost: '203.0.113.10' }
+        }
+      }]
+    });
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const result = await service.buildConfigSync('n-entry');
+    expect(result.singboxConfig.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tag: 'relay-out-line-proxy-fallback',
+        tls: expect.objectContaining({ server_name: 'origin.example.com' }),
+        transport: expect.objectContaining({ headers: { Host: 'origin.example.com' } })
+      })
+    ]));
+  });
+
+  it('NaiveProxy 协议中继不会向不支持的 outbound TLS 写入 ALPN', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'n-entry',
+      inbounds: [],
+      entryLines: [{
+        id: 'line-naive',
+        entryPort: 9444,
+        relayMode: 'PROTOCOL_PROXY',
+        endpointOverrideEnabled: false,
+        serverName: null,
+        host: null,
+        targetInbound: {
+          type: 'NAIVE',
+          port: 443,
+          paramsJson: JSON.stringify({
+            network: 'tcp',
+            tls: {
+              enabled: true,
+              mode: 'tls',
+              serverName: 'naive.example.com',
+              certificatePath: '/cert',
+              keyPath: '/key',
+              alpn: ['h3']
+            }
+          }),
+          node: { serverHost: '203.0.113.10' }
+        }
+      }]
+    });
+    prisma.user.findMany.mockResolvedValue([]);
+
+    const result = await service.buildConfigSync('n-entry');
+    const outbound = (result.singboxConfig.outbounds as Array<Record<string, unknown>>)
+      .find((item) => item.tag === 'relay-out-line-naive');
+
+    expect(outbound).toBeDefined();
+    expect(outbound?.tls).toEqual({ enabled: true, server_name: 'naive.example.com', insecure: false });
+  });
+
   it('未知 userUuid 的流量记录被跳过且不抛错', async () => {
     txMock.user.findUnique.mockResolvedValue(null);
     await expect(service.handleHeartbeat('n1', heartbeat)).resolves.toBeUndefined();

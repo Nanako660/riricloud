@@ -2,14 +2,78 @@
 // 凭据从环境变量读取，默认值仅供本地演示；生产环境务必修改或禁用
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { generateKeyPairSync, randomBytes, randomInt } = require('node:crypto');
 
 const prisma = new PrismaClient();
+const DEFAULT_INBOUND_LISTEN = '0.0.0.0';
+const RANDOM_SERVICE_PORT_MIN = 20000;
+const RANDOM_SERVICE_PORT_MAX = 29999;
+
+async function findAvailableServicePort(nodeId) {
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const port = randomInt(RANDOM_SERVICE_PORT_MIN, RANDOM_SERVICE_PORT_MAX + 1);
+    const [inbound, line] = await Promise.all([
+      prisma.nodeInbound.findFirst({ where: { nodeId, port } }),
+      prisma.line.findFirst({ where: { entryNodeId: nodeId, entryPort: port } })
+    ]);
+    if (!inbound && !line) return port;
+  }
+  throw new Error('没有可用的随机服务端口');
+}
+
+function generateRealityKeypair() {
+  const { publicKey, privateKey } = generateKeyPairSync('x25519');
+  const exportRawKey = (key, type) => {
+    const der = key.export({ type, format: 'der' });
+    return der.subarray(der.length - 32).toString('base64url');
+  };
+  return {
+    privateKey: exportRawKey(privateKey, 'pkcs8'),
+    publicKey: exportRawKey(publicKey, 'spki')
+  };
+}
+
+function defaultLocalVlessParams() {
+  const keys = generateRealityKeypair();
+  return {
+    flow: 'xtls-rprx-vision',
+    transport: { type: 'tcp' },
+    tls: {
+      enabled: true,
+      mode: 'reality',
+      serverName: 'www.apple.com',
+      reality: {
+        dest: 'www.apple.com:443',
+        serverNames: ['www.apple.com'],
+        privateKey: keys.privateKey,
+        publicKey: keys.publicKey,
+        shortIds: ['0123456789abcdef']
+      }
+    }
+  };
+}
+
+function parseParams(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasInvalidVlessFlow(params) {
+  if (!params || typeof params.flow !== 'string' || !params.flow.trim()) return false;
+  const tls = params.tls;
+  return !tls || tls.enabled === false || tls.mode === 'none';
+}
 
 async function main() {
   const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@riricloud.local';
   const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'riri-admin-demo';
   const userEmail = process.env.SEED_USER_EMAIL || 'demo@riricloud.local';
   const userPassword = process.env.SEED_USER_PASSWORD || 'riri-user-demo';
+  const localHost = process.env.MASTER_LOCAL_HOST || '127.0.0.1';
 
   const templateData = {
     name: '默认分流模板',
@@ -50,9 +114,9 @@ async function main() {
     price: 0,
     durationDays: 30,
     trafficLimitBytes: BigInt(107374182400),
-    nodeMatchMode: 'ALL',
-    nodeTagsJson: '[]',
-    nodeIdsJson: '[]',
+    lineMatchMode: 'ALL',
+    lineTagsJson: '[]',
+    lineIdsJson: '[]',
     templateId: template.id,
     isPublic: true,
     sortOrder: 0
@@ -61,6 +125,91 @@ async function main() {
     plan = await prisma.plan.update({ where: { id: plan.id }, data: planData });
   } else {
     plan = await prisma.plan.create({ data: planData });
+  }
+
+  let localNode = await prisma.node.findFirst({ where: { isLocal: true } });
+  if (localNode) {
+    localNode = await prisma.node.update({
+      where: { id: localNode.id },
+      data: { name: 'Master-Local', serverHost: localHost, status: 'OFFLINE' }
+    });
+  } else {
+    localNode = await prisma.node.create({
+      data: {
+        name: 'Master-Local',
+        serverHost: localHost,
+        isLocal: true,
+        agentToken: randomBytes(32).toString('hex'),
+        status: 'OFFLINE'
+      }
+    });
+  }
+
+  let localInbound = await prisma.nodeInbound.findFirst({ where: { nodeId: localNode.id, tag: 'local-vless-in' } });
+  if (localInbound) {
+    const existingParams = parseParams(localInbound.paramsJson);
+    localInbound = await prisma.nodeInbound.update({
+      where: { id: localInbound.id },
+      data: {
+        type: 'VLESS',
+        listen: localInbound.listen === '::' || !localInbound.listen ? DEFAULT_INBOUND_LISTEN : localInbound.listen,
+        port: localInbound.port || await findAvailableServicePort(localNode.id),
+        paramsJson: JSON.stringify(hasInvalidVlessFlow(existingParams) ? defaultLocalVlessParams() : (existingParams || defaultLocalVlessParams())),
+        sortOrder: localInbound.sortOrder ?? 0
+      }
+    });
+  } else {
+    localInbound = await prisma.nodeInbound.create({
+      data: {
+        nodeId: localNode.id,
+        type: 'VLESS',
+        tag: 'local-vless-in',
+        listen: DEFAULT_INBOUND_LISTEN,
+        port: await findAvailableServicePort(localNode.id),
+        paramsJson: JSON.stringify(defaultLocalVlessParams()),
+        sortOrder: 0
+      }
+    });
+  }
+
+  const directLineData = {
+    name: 'Master 本机直连',
+    type: 'DIRECT',
+    relayMode: null,
+    entryNodeId: localNode.id,
+    entryPort: null,
+    targetInboundId: localInbound.id,
+    endpointOverrideEnabled: false,
+    serverHost: localHost,
+    serverPort: localInbound.port,
+    serverName: null,
+    host: null,
+    trafficRate: 1,
+    tagsJson: JSON.stringify(['local']),
+    level: 0,
+    sortOrder: 0,
+    isPublic: true,
+    status: 'ACTIVE'
+  };
+  const existingRelayLine = await prisma.line.findFirst({ where: { name: 'Master 本机盲转示例' } });
+  const relayEntryPort = existingRelayLine?.entryPort ?? await findAvailableServicePort(localNode.id);
+  const relayLineData = {
+    ...directLineData,
+    name: 'Master 本机盲转示例',
+    type: 'RELAY',
+    relayMode: 'BLIND_FORWARD',
+    entryPort: relayEntryPort,
+    serverPort: relayEntryPort,
+    tagsJson: JSON.stringify(['local', 'relay']),
+    sortOrder: 1
+  };
+  for (const lineData of [directLineData, relayLineData]) {
+    const existingLine = await prisma.line.findFirst({ where: { name: lineData.name } });
+    if (existingLine) {
+      await prisma.line.update({ where: { id: existingLine.id }, data: lineData });
+    } else {
+      await prisma.line.create({ data: lineData });
+    }
   }
 
   const admin = await prisma.user.upsert({

@@ -28,6 +28,11 @@ export class PlansController {
     return this.plansService.getAvailableNodes(id);
   }
 
+  @Get(':id/lines')
+  lines(@Param('id', ParseUUIDPipe) id: string) {
+    return this.plansService.getAvailableLines(id);
+  }
+
   @Post()
   create(@Body() dto: CreatePlanDto) {
     return this.plansService.create(dto);

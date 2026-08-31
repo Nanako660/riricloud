@@ -104,11 +104,12 @@ docker run -d \
 ```bash
 bash scripts/dev-e2e.sh                  # 全套启动并跟踪 Agent 日志，Ctrl+C 退出
 SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
-NODE_PORT=9443 bash scripts/dev-e2e.sh   # 自定义内核监听端口（默认 127.0.0.1:8443）
+NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调节点并自定义端口
 ```
 
-- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、创建/复用联调节点（按 `127.0.0.1:<NODE_PORT>` 与公开入站端口匹配；不存在则创建节点并添加一条 VLESS Reality 入站）、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。
+- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、默认复用 seed 预置的 `Master-Local` 节点、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点并添加 VLESS Reality 入站。
 - 已在运行的 3000/5173 服务会被复用而非重启；脚本退出只回收其自身启动的进程。
+- 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时。
 - 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、面板编辑入站后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
 
 ---
@@ -163,12 +164,12 @@ systemctl restart riri-agent
 ```
 
 ### 4.2 节点网络与端口检测
-- 检查 Sing-box 监听端口是否正常：
+- 检查 Sing-box 监听端口是否正常（将 `<port>` 替换为管理端显示的实际五位端口）：
   ```bash
-  ss -tulpn | grep 443
+  ss -tulpn | grep <port>
   ```
 - 检查防火墙是否放行：
   ```bash
-  ufw allow 443/tcp
-  ufw allow 443/udp
+  ufw allow <port>/tcp
+  ufw allow <port>/udp
   ```

@@ -2,8 +2,16 @@ import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
-import { buildServerInbound, type InboundUserCredential } from '../common/inbound';
-import type { ProtocolType } from '../common/constants';
+import {
+  buildClientTls,
+  buildClientTransport,
+  buildServerInbound,
+  normalizeShadowsocksPassword,
+  resolveShadowsocksUserPassword,
+  type InboundUserCredential
+} from '../common/inbound';
+import { DEFAULT_INBOUND_LISTEN } from '../common/ports';
+import { PROTOCOL_PROXY_TARGET_TYPES, type ProtocolType } from '../common/constants';
 import type {
   AuthResultData,
   ConfigApplyResultData,
@@ -153,7 +161,16 @@ export class AgentGatewayService implements OnModuleDestroy {
   async buildConfigSync(nodeId: string): Promise<ConfigSyncData> {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
-      include: { inbounds: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
+      include: {
+        inbounds: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+        entryLines: {
+          where: { status: 'ACTIVE' },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            targetInbound: { include: { node: true } }
+          }
+        }
+      }
     });
     if (!node) {
       throw new NotFoundException('节点不存在');
@@ -199,15 +216,143 @@ export class AgentGatewayService implements OnModuleDestroy {
       })
     );
 
+    const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
+    const relayRules: Array<Record<string, unknown>> = [];
+    for (const line of node.entryLines ?? []) {
+      if (!line.entryPort) continue;
+      const target = line.targetInbound;
+      const relayTag = `relay-${line.id}`;
+      if (line.relayMode === 'BLIND_FORWARD') {
+        inbounds.push({
+          type: 'direct',
+          tag: relayTag,
+          listen: DEFAULT_INBOUND_LISTEN,
+          listen_port: line.entryPort,
+          override_address: target.node.serverHost,
+          override_port: target.port
+        });
+        continue;
+      }
+
+      if (line.relayMode === 'PROTOCOL_PROXY') {
+        if (!PROTOCOL_PROXY_TARGET_TYPES.includes(target.type as (typeof PROTOCOL_PROXY_TARGET_TYPES)[number])) {
+          continue;
+        }
+        inbounds.push(
+          buildServerInbound({
+            type: target.type as ProtocolType,
+            tag: relayTag,
+            listen: DEFAULT_INBOUND_LISTEN,
+            port: line.entryPort,
+            params: JSON.parse(target.paramsJson) as Record<string, unknown>,
+            users
+          })
+        );
+        const outbound = this.buildProtocolRelayOutbound(line, target, users);
+        if (!outbound) {
+          inbounds.pop();
+          continue;
+        }
+        outbounds.push(outbound);
+        relayRules.push({ inbound: [relayTag], outbound: `relay-out-${line.id}` });
+      }
+    }
+
     let singboxConfig: Record<string, unknown> = {
       log: { level: 'info', timestamp: true },
       inbounds,
-      outbounds: [{ type: 'direct', tag: 'direct' }]
+      outbounds,
+      ...(relayRules.length ? { route: { rules: relayRules } } : {})
     };
     if (node.configOverride) {
       singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
     }
     return { version: ++this.configVersion, singboxConfig };
+  }
+
+  private buildProtocolRelayOutbound(
+    line: {
+      id: string;
+      endpointOverrideEnabled?: boolean;
+      serverName: string | null;
+      host: string | null;
+    },
+    target: { type: string; port: number; paramsJson: string; node: { serverHost: string } },
+    users: InboundUserCredential[]
+  ): Record<string, unknown> | undefined {
+    const params = JSON.parse(target.paramsJson) as Record<string, unknown>;
+    const firstUser = users[0] ?? { uuid: randomUUID(), email: 'relay', credential: randomUUID() };
+    const tls = (params.tls ?? {}) as Record<string, unknown>;
+    const useOverrides = line.endpointOverrideEnabled !== false;
+    const reality = tls.reality as Record<string, unknown> | undefined;
+    const fallbackServerName = typeof tls.serverName === 'string'
+      ? tls.serverName
+      : reality && Array.isArray(reality.serverNames) && typeof reality.serverNames[0] === 'string'
+        ? reality.serverNames[0]
+        : undefined;
+    const tlsServerName = useOverrides && line.serverName
+      ? line.serverName
+      : fallbackServerName;
+    const outbound: Record<string, unknown> = {
+      type: target.type.toLowerCase(),
+      tag: `relay-out-${line.id}`,
+      server: target.node.serverHost,
+      server_port: target.port
+    };
+
+    switch (target.type) {
+      case 'VLESS':
+        outbound.uuid = firstUser.uuid;
+        if (typeof params.flow === 'string') outbound.flow = params.flow;
+        break;
+      case 'VMESS':
+        outbound.uuid = firstUser.uuid;
+        outbound.alter_id = typeof params.alterId === 'number' ? params.alterId : 0;
+        outbound.security = 'auto';
+        break;
+      case 'TROJAN':
+        outbound.password = firstUser.credential;
+        break;
+      case 'HYSTERIA2':
+        outbound.password = firstUser.credential;
+        if (typeof params.upMbps === 'number') outbound.up_mbps = params.upMbps;
+        if (typeof params.downMbps === 'number') outbound.down_mbps = params.downMbps;
+        if (params.obfs) outbound.obfs = params.obfs;
+        break;
+      case 'TUIC':
+        outbound.uuid = firstUser.uuid;
+        outbound.password = firstUser.credential;
+        outbound.congestion_control = typeof params.congestionControl === 'string' ? params.congestionControl : 'bbr';
+        if (params.zeroRttHandshake === true) outbound.zero_rtt_handshake = true;
+        break;
+      case 'SHADOWSOCKS':
+        outbound.method = typeof params.method === 'string' ? params.method : '2022-blake3-aes-128-gcm';
+        outbound.password = params.mode === 'multi-user'
+          ? resolveShadowsocksUserPassword(outbound.method as string, firstUser.credential, firstUser.uuid)
+          : normalizeShadowsocksPassword(outbound.method as string, typeof params.password === 'string' ? params.password : '');
+        break;
+      case 'NAIVE':
+        outbound.username = firstUser.email;
+        outbound.password = firstUser.credential;
+        break;
+      default:
+        outbound.type = 'direct';
+        break;
+    }
+
+    const clientTls = buildClientTls(
+      tls as unknown as Parameters<typeof buildClientTls>[0],
+      tlsServerName,
+      target.type === 'NAIVE' ? { includeAlpn: false } : undefined
+    );
+    if (clientTls) outbound.tls = clientTls;
+    const transport = (params.transport ?? {}) as Record<string, unknown>;
+    const clientTransport = buildClientTransport(
+      transport as unknown as Parameters<typeof buildClientTransport>[0],
+      useOverrides ? line.host : null
+    );
+    if (clientTransport) outbound.transport = clientTransport;
+    return outbound;
   }
 
   // 向指定节点推送配置（reload 触发）

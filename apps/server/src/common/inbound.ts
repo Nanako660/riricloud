@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { ProtocolType } from './constants';
 
 // ==============================
@@ -156,11 +156,59 @@ export const REALITY_DEFAULTS = {
 
 export const SS_DEFAULT_METHOD = '2022-blake3-aes-128-gcm';
 
+const SS2022_KEY_LENGTHS: Record<string, number> = {
+  '2022-blake3-aes-128-gcm': 16,
+  '2022-blake3-aes-256-gcm': 32,
+  '2022-blake3-chacha20-poly1305': 32
+};
+
 // 参与流量/资格注入的用户凭证
 export interface InboundUserCredential {
   uuid: string;
   email: string;
   credential: string;
+}
+
+function shadowsocks2022KeyLength(method: string): number | undefined {
+  return SS2022_KEY_LENGTHS[method.trim().toLowerCase()];
+}
+
+function isValidShadowsocks2022Key(value: string, keyLength: number): boolean {
+  const candidate = value.trim();
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(candidate)) {
+    return false;
+  }
+  try {
+    const decoded = Buffer.from(candidate, 'base64');
+    return decoded.length === keyLength && decoded.toString('base64') === candidate;
+  } catch {
+    return false;
+  }
+}
+
+function deriveShadowsocks2022Key(method: string, identity: string): string {
+  const keyLength = shadowsocks2022KeyLength(method);
+  if (!keyLength) return identity;
+  return createHash('sha256')
+    .update(`riricloud:ss2022:${method.trim().toLowerCase()}:${identity}`)
+    .digest()
+    .subarray(0, keyLength)
+    .toString('base64');
+}
+
+// SS 2022 要求用户密钥为固定长度的 Base64 原始密钥；普通用户密码或 UUID 不能直接使用。
+export function normalizeShadowsocksPassword(method: string, password: string): string {
+  const keyLength = shadowsocks2022KeyLength(method);
+  const candidate = password.trim();
+  if (!keyLength || isValidShadowsocks2022Key(candidate, keyLength)) return candidate;
+  return deriveShadowsocks2022Key(method, `shared:${candidate}`);
+}
+
+export function resolveShadowsocksUserPassword(method: string, credential: string, userUuid: string): string {
+  const keyLength = shadowsocks2022KeyLength(method);
+  const candidate = credential.trim();
+  if (!keyLength || isValidShadowsocks2022Key(candidate, keyLength)) return candidate;
+  return deriveShadowsocks2022Key(method, `user:${userUuid || candidate}`);
 }
 
 // X25519 Reality 密钥对生成（32 字节裸密钥 base64url）
@@ -328,12 +376,12 @@ export function normalizeInboundParams(
         };
       }
       const tls = normalizeTlsConfig(rawTls, rawTls ? 'tls' : 'reality');
+      // Vision flow 依赖 TLS/Reality；明文 VLESS 必须省略 flow。
+      const requestedFlow = typeof raw.flow === 'string' && raw.flow.trim() ? raw.flow.trim() : undefined;
       const flow =
-        typeof raw.flow === 'string' && raw.flow.trim()
-          ? raw.flow.trim()
-          : tls.mode === 'reality'
-            ? REALITY_DEFAULTS.flow
-            : undefined;
+        tls.mode === 'none'
+          ? undefined
+          : requestedFlow || (tls.mode === 'reality' ? REALITY_DEFAULTS.flow : undefined);
 
       const params: VlessParams = {
         flow,
@@ -410,6 +458,8 @@ export function normalizeInboundParams(
             ? 32
             : 16;
         password = randomBytes(keyBytes).toString('base64');
+      } else {
+        password = normalizeShadowsocksPassword(method, password);
       }
       const mode = raw.mode === 'multi-user' ? 'multi-user' : 'shared';
       const params: ShadowsocksParams = { method, password, mode };
@@ -474,6 +524,80 @@ export function sanitizeInboundParams(params: Record<string, unknown>): Record<s
   return clone;
 }
 
+// 组装客户端侧 V2Ray Transport；WebSocket 的 Host 必须落在 headers.Host。
+export function buildClientTransport(
+  transport?: InboundTransport,
+  hostOverride?: string | null
+): Record<string, unknown> | undefined {
+  if (!transport || transport.type === 'tcp') return undefined;
+  const host = hostOverride?.trim() || transport.host;
+  const headers = transport.headers ? { ...transport.headers } : {};
+
+  switch (transport.type) {
+    case 'ws':
+      if (host) headers.Host = host;
+      return {
+        type: 'ws',
+        ...(transport.path ? { path: transport.path } : {}),
+        ...(Object.keys(headers).length ? { headers } : {}),
+        ...(transport.maxEarlyData && transport.maxEarlyData > 0 ? { max_early_data: transport.maxEarlyData } : {}),
+        ...(transport.earlyDataHeaderName ? { early_data_header_name: transport.earlyDataHeaderName } : {})
+      };
+    case 'grpc':
+      return {
+        type: 'grpc',
+        ...(transport.serviceName ? { service_name: transport.serviceName } : {})
+      };
+    case 'http':
+      return {
+        type: 'http',
+        ...(host ? { host: [host] } : {}),
+        ...(transport.path ? { path: transport.path } : {}),
+        ...(Object.keys(headers).length ? { headers } : {})
+      };
+    case 'httpupgrade':
+      return {
+        type: 'httpupgrade',
+        ...(host ? { host } : {}),
+        ...(transport.path ? { path: transport.path } : {}),
+        ...(Object.keys(headers).length ? { headers } : {})
+      };
+    default:
+      return undefined;
+  }
+}
+
+// 组装客户端侧 TLS；Reality 需要同时携带公钥、Short ID 和 uTLS 参数。
+export function buildClientTls(
+  tls?: InboundTlsConfig,
+  serverNameOverride?: string | null,
+  options: { includeAlpn?: boolean } = {}
+): Record<string, unknown> | undefined {
+  if (!tls || !tls.enabled || tls.mode === 'none') return undefined;
+  const reality = tls.reality;
+  const serverName = serverNameOverride?.trim() || tls.serverName || reality?.serverNames[0];
+
+  if (tls.mode === 'reality' && reality) {
+    return {
+      enabled: true,
+      ...(serverName ? { server_name: serverName } : {}),
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: {
+        enabled: true,
+        public_key: reality.publicKey,
+        short_id: reality.shortIds[0]
+      }
+    };
+  }
+
+  return {
+    enabled: true,
+    ...(serverName ? { server_name: serverName } : {}),
+    ...(options.includeAlpn !== false && tls.alpn?.length ? { alpn: tls.alpn } : {}),
+    insecure: tls.insecure === true
+  };
+}
+
 // 构建 Sing-box Transport 配置块
 function buildServerTransport(transport?: InboundTransport): Record<string, unknown> | undefined {
   if (!transport || transport.type === 'tcp') return undefined;
@@ -481,8 +605,11 @@ function buildServerTransport(transport?: InboundTransport): Record<string, unkn
   switch (transport.type) {
     case 'ws': {
       const ws: Record<string, unknown> = { type: 'ws' };
+      const headers = transport.headers ? { ...transport.headers } : {};
+      // sing-box 的 WebSocket transport 没有顶层 host 字段，统一映射到 Host 请求头。
+      if (transport.host) headers.Host = transport.host;
       if (transport.path) ws.path = transport.path;
-      if (transport.headers) ws.headers = transport.headers;
+      if (Object.keys(headers).length) ws.headers = headers;
       if (transport.maxEarlyData) ws.max_early_data = transport.maxEarlyData;
       if (transport.earlyDataHeaderName) ws.early_data_header_name = transport.earlyDataHeaderName;
       return ws;
@@ -502,6 +629,7 @@ function buildServerTransport(transport?: InboundTransport): Record<string, unkn
       const hup: Record<string, unknown> = { type: 'httpupgrade' };
       if (transport.host) hup.host = transport.host;
       if (transport.path) hup.path = transport.path;
+      if (transport.headers) hup.headers = transport.headers;
       return hup;
     }
     default:
@@ -560,11 +688,23 @@ export function buildServerInbound(input: {
   users: InboundUserCredential[];
 }): Record<string, unknown> {
   const { type, tag, listen, port, params, users } = input;
+  // VLESS 需要在运行时修复旧版明文 + Vision 数据；其余协议已在入站 CRUD 边界完成归一化，
+  // 中继组装还可能只携带客户端侧 TLS 参数，不能在这里重复要求 Agent 证书路径。
+  const rawVlessTls = params.tls;
+  const vlessTlsDisabled =
+    rawVlessTls && typeof rawVlessTls === 'object' && !Array.isArray(rawVlessTls)
+      ? (rawVlessTls as Record<string, unknown>).enabled === false ||
+        (rawVlessTls as Record<string, unknown>).mode === 'none'
+      : false;
+  const normalizedParams =
+    type === 'VLESS' && (!rawVlessTls || vlessTlsDisabled)
+      ? normalizeInboundParams(type, params)
+      : params;
 
   switch (type) {
     case 'VLESS':
     case 'VLESS_REALITY' as ProtocolType: {
-      const normalized = (params.tls ? params : normalizeInboundParams('VLESS', params)) as unknown as VlessParams;
+      const normalized = normalizedParams as unknown as VlessParams;
       const transport = buildServerTransport(normalized.transport);
       const tls = buildServerTls(normalized.tls);
       return {
@@ -583,7 +723,7 @@ export function buildServerInbound(input: {
     }
 
     case 'VMESS': {
-      const p = params as unknown as VmessParams;
+      const p = normalizedParams as unknown as VmessParams;
       const transport = buildServerTransport(p.transport);
       const tls = buildServerTls(p.tls);
       return {
@@ -594,7 +734,7 @@ export function buildServerInbound(input: {
         users: users.map((u) => ({
           uuid: u.uuid,
           name: u.email,
-          alter_id: p.alterId ?? 0
+          alterId: p.alterId ?? 0
         })),
         ...(transport ? { transport } : {}),
         ...(tls ? { tls } : {})
@@ -602,7 +742,7 @@ export function buildServerInbound(input: {
     }
 
     case 'TROJAN': {
-      const p = params as unknown as TrojanParams;
+      const p = normalizedParams as unknown as TrojanParams;
       const transport = buildServerTransport(p.transport);
       const tls = buildServerTls(p.tls);
       return {
@@ -620,7 +760,7 @@ export function buildServerInbound(input: {
     }
 
     case 'HYSTERIA2': {
-      const p = params as unknown as Hysteria2Params;
+      const p = normalizedParams as unknown as Hysteria2Params;
       const tls = buildServerTls(p.tls);
       return {
         type: 'hysteria2',
@@ -637,7 +777,7 @@ export function buildServerInbound(input: {
     }
 
     case 'TUIC': {
-      const p = params as unknown as TuicParams;
+      const p = normalizedParams as unknown as TuicParams;
       const tls = buildServerTls(p.tls);
       return {
         type: 'tuic',
@@ -653,7 +793,8 @@ export function buildServerInbound(input: {
     }
 
     case 'SHADOWSOCKS': {
-      const p = params as unknown as ShadowsocksParams;
+      const p = normalizedParams as unknown as ShadowsocksParams;
+      const password = normalizeShadowsocksPassword(p.method, p.password || '');
       if (p.mode === 'multi-user') {
         return {
           type: 'shadowsocks',
@@ -661,8 +802,11 @@ export function buildServerInbound(input: {
           listen,
           listen_port: port,
           method: p.method,
-          password: p.password,
-          users: users.map((u) => ({ name: u.email, password: u.credential }))
+          password,
+          users: users.map((u) => ({
+            name: u.email,
+            password: resolveShadowsocksUserPassword(p.method, u.credential, u.uuid)
+          }))
         };
       }
       return {
@@ -671,12 +815,12 @@ export function buildServerInbound(input: {
         listen,
         listen_port: port,
         method: p.method,
-        password: p.password
+        password
       };
     }
 
     case 'NAIVE': {
-      const p = params as unknown as NaiveParams;
+      const p = normalizedParams as unknown as NaiveParams;
       const tls = buildServerTls(p.tls);
       return {
         type: 'naive',
@@ -690,15 +834,20 @@ export function buildServerInbound(input: {
     }
 
     case 'SHADOWTLS': {
-      const p = params as unknown as ShadowtlsParams;
+      const p = normalizedParams as unknown as ShadowtlsParams;
       const { host, port: destPort } = parseDest(p.handshakeDest);
+      const version = p.version || 3;
       return {
         type: 'shadowtls',
         tag,
         listen,
         listen_port: port,
-        version: p.version || 3,
-        ...(p.password ? { password: p.password } : {}),
+        version,
+        ...(version === 3
+          ? { users: users.map((u) => ({ name: u.email, password: u.credential })) }
+          : p.password
+            ? { password: p.password }
+            : {}),
         handshake: { server: host, server_port: destPort },
         ...(p.strictMode ? { strict_mode: true } : {})
       };
@@ -707,7 +856,7 @@ export function buildServerInbound(input: {
     case 'MIXED':
     case 'SOCKS':
     case 'HTTP': {
-      const p = params as unknown as MixedParams;
+      const p = normalizedParams as unknown as MixedParams;
       const inboundObj: Record<string, unknown> = {
         type: type.toLowerCase(),
         tag,
@@ -721,7 +870,7 @@ export function buildServerInbound(input: {
     }
 
     case 'DIRECT': {
-      const p = params as unknown as DirectParams;
+      const p = normalizedParams as unknown as DirectParams;
       return {
         type: 'direct',
         tag,

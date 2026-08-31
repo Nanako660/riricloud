@@ -38,6 +38,7 @@ model Node {
   id             String    @id @default(uuid())
   name           String
   serverHost     String
+  isLocal        Boolean   @default(false) // 主控本机预置节点
   configOverride String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
   agentToken     String    @unique
   status         String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED
@@ -47,18 +48,15 @@ model Node {
   bandwidthRate  Float?
   kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
   configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
-  tagsJson       String    @default("[]") // 节点标签数组 JSON
-  level          Int       @default(0) // 节点等级，供套餐匹配与前端展示
-  sortOrder      Int       @default(0)
-  isPublic       Boolean   @default(true)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   inbounds    NodeInbound[]
+  entryLines  Line[]        @relation("LineEntryNode")
   trafficLogs TrafficLog[]
 
   @@index([status])
-  @@index([isPublic])
+  @@index([isLocal])
 }
 
 model Plan {
@@ -68,9 +66,9 @@ model Plan {
   price             Int      @default(0) // 价格最小货币单位
   durationDays      Int
   trafficLimitBytes BigInt
-  nodeMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
-  nodeTagsJson      String   @default("[]")
-  nodeIdsJson       String   @default("[]")
+  lineMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
+  lineTagsJson      String   @default("[]")
+  lineIdsJson       String   @default("[]")
   templateId        String?
   isPublic          Boolean  @default(true)
   sortOrder         Int      @default(0)
@@ -80,6 +78,42 @@ model Plan {
   template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   subscriptions Subscription[]
 
+  @@index([isPublic])
+  @@index([sortOrder])
+}
+
+// ==============================
+// 2.3 接入线路实体 (Line，v0.4.0)
+// 线路是面向用户的代理接入端点，与底座 Node/NodeInbound 解耦。
+// ==============================
+model Line {
+  id              String   @id @default(uuid())
+  name            String
+  type            String   @default("DIRECT") // DIRECT | RELAY
+  relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY
+  entryNodeId     String?
+  entryPort       Int?
+  targetInboundId String
+  endpointOverrideEnabled Boolean  @default(false)
+  serverHost      String?
+  serverPort      Int?
+  serverName      String?
+  host            String?
+  trafficRate     Float    @default(1)
+  tagsJson        String   @default("[]")
+  level           Int      @default(0)
+  sortOrder       Int      @default(0)
+  isPublic        Boolean  @default(true)
+  status          String   @default("ACTIVE") // ACTIVE | DISABLED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entryNode     Node?       @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
+  targetInbound NodeInbound @relation("LineTargetInbound", fields: [targetInboundId], references: [id], onDelete: Cascade)
+
+  @@index([entryNodeId])
+  @@index([targetInboundId])
+  @@index([type, status])
   @@index([isPublic])
   @@index([sortOrder])
 }
@@ -128,15 +162,15 @@ model NodeInbound {
   nodeId     String
   type       String // ProtocolType 枚举：VLESS_REALITY | HYSTERIA2 | SHADOWSOCKS | TUIC
   tag        String // sing-box 入站 tag，节点内唯一
-  listen     String   @default("::")
+  listen     String   @default("0.0.0.0")
   port       Int
   paramsJson String   @default("{}") // 协议专属参数 JSON（结构见 docs/DATA_MODELS.md §3.1）
   sortOrder  Int      @default(0)
-  isPublic   Boolean  @default(true) // 是否进入订阅输出
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  node        Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  targetLines Line[] @relation("LineTargetInbound")
 
   @@unique([nodeId, tag])
   @@index([nodeId])

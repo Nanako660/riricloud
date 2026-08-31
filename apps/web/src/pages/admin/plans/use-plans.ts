@@ -9,9 +9,9 @@ export interface Plan {
   price: number;
   durationDays: number;
   trafficLimitBytes: number;
-  nodeMatchMode: 'ALL' | 'TAGS' | 'EXPLICIT';
-  nodeTags: string[];
-  nodeIds: string[];
+  lineMatchMode: 'ALL' | 'TAGS' | 'EXPLICIT';
+  lineTags: string[];
+  lineIds: string[];
   templateId: string | null;
   template?: { id: string; name: string; isDefault: boolean } | null;
   isPublic: boolean;
@@ -24,9 +24,9 @@ export interface PlanPayload {
   price: number;
   durationDays: number;
   trafficLimitBytes: number;
-  nodeMatchMode: Plan['nodeMatchMode'];
-  nodeTags: string[];
-  nodeIds: string[];
+  lineMatchMode: Plan['lineMatchMode'];
+  lineTags: string[];
+  lineIds: string[];
   templateId?: string | null;
   isPublic: boolean;
   sortOrder: number;
