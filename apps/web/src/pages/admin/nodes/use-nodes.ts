@@ -103,38 +103,27 @@ export interface InboundParams {
   overridePort?: number;
 }
 
-export interface NodeInbound {
-  id: string;
-  nodeId: string;
-  type: ProtocolType;
-  tag: string;
-  listen: string;
-  port: number;
-  params: InboundParams;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface NodeLine {
   id: string;
   name: string;
   type: 'DIRECT' | 'RELAY';
   relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null;
-  entryNodeId: string | null;
-  entryPort: number | null;
-  targetInboundId: string;
+  protocolType: ProtocolType;
+  entryNodeId: string;
+  entryPort: number;
+  exitNodeId: string;
+  exitPort: number;
   serverHost: string | null;
   serverPort: number | null;
-  serverName: string | null;
-  host: string | null;
   trafficRate: number;
   tags: string[];
   level: number;
   sortOrder: number;
   isPublic: boolean;
   status: 'ACTIVE' | 'DISABLED';
-  targetInbound: { id: string; type: ProtocolType; tag: string; port: number };
+  role: 'ENTRY' | 'EXIT' | 'ENTRY_AND_EXIT';
+  entryNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  exitNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
 }
 
 export interface AdminNode {
@@ -151,8 +140,10 @@ export interface AdminNode {
   bandwidthRate: number | null;
   kernelRunning: boolean | null;
   configError: string | null;
-  inbounds: NodeInbound[];
+  lines: NodeLine[];
   entryLines: NodeLine[];
+  exitLines: NodeLine[];
+  servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: string; port: number }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -161,23 +152,6 @@ export interface CreateNodeResult {
   node: { id: string; name: string };
   agentToken: string;
   installCommand: string;
-}
-
-export interface CreateInboundPayload {
-  type: ProtocolType;
-  tag?: string;
-  listen?: string;
-  port?: number;
-  params?: InboundParams;
-  sortOrder?: number;
-}
-
-export interface UpdateInboundPayload {
-  tag?: string;
-  listen?: string;
-  port?: number;
-  params?: InboundParams;
-  sortOrder?: number;
 }
 
 // 节点列表：5 秒轮询实时观察 Agent 在线状态与负载
@@ -265,61 +239,4 @@ export function useNodeMutations() {
   });
 
   return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode };
-}
-
-// 入站 CRUD（嵌套在节点下）；变更同时刷新列表与详情
-export function useInboundMutations(nodeId: string) {
-  const queryClient = useQueryClient();
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes'] });
-  };
-
-  const invalidateSub = {
-    onSuccess: () => {
-      toast.success('已保存');
-      invalidate();
-    },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '操作失败'))
-  };
-
-  const createInbound = useMutation({
-    mutationFn: async (payload: CreateInboundPayload) =>
-      (await api.post(`/admin/nodes/${nodeId}/inbounds`, payload)).data,
-    ...invalidateSub
-  });
-
-  const updateInbound = useMutation({
-    mutationFn: async ({ inboundId, ...payload }: UpdateInboundPayload & { inboundId: string }) =>
-      (await api.patch(`/admin/nodes/${nodeId}/inbounds/${inboundId}`, payload)).data,
-    ...invalidateSub
-  });
-
-  const deleteInbound = useMutation({
-    mutationFn: async (inboundId: string) =>
-      (await api.delete(`/admin/nodes/${nodeId}/inbounds/${inboundId}`)).data,
-    onSuccess: () => {
-      toast.success('入站已删除');
-      invalidate();
-    },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '删除失败'))
-  });
-
-  const deriveLine = useMutation({
-    mutationFn: async (inboundId: string) =>
-      (await api.post(`/admin/nodes/${nodeId}/inbounds/${inboundId}/derive-line`)).data,
-    onSuccess: () => {
-      toast.success('线路已派生');
-      invalidate();
-      void queryClient.invalidateQueries({ queryKey: ['admin', 'lines'] });
-    },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '派生线路失败'))
-  });
-
-  // 生成 Reality 密钥对（不落库）
-  const generateKeypair = useMutation({
-    mutationFn: async () =>
-      (await api.post<{ privateKey: string; publicKey: string }>('/admin/nodes/reality-keypair')).data
-  });
-
-  return { createInbound, updateInbound, deleteInbound, deriveLine, generateKeypair };
 }

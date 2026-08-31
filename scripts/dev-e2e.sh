@@ -38,6 +38,10 @@ jsonget() {
   node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const v=JSON.parse(d)[process.argv[1]];console.log(v==null?"":String(v))}catch{console.log("")}})' "$1"
 }
 
+jsonquote() {
+  node -e 'console.log(JSON.stringify(process.argv[1]))' "$1"
+}
+
 server_up() { curl -fsS --max-time 2 "$SERVER_URL/api/v1/system/version" >/dev/null 2>&1; }
 web_up() { curl -fsS --max-time 2 "$WEB_URL" >/dev/null 2>&1; }
 
@@ -113,15 +117,14 @@ if [ -n "$AGENT_TOKEN" ]; then
 else
   # 默认复用 seed 预置的 Master-Local，保证面板中的本机节点与本地 Agent 是同一个实体。
   # USE_MASTER_LOCAL=0 时按地址查找独立联调节点（避免中文名经 Windows 控制台的编码问题）。
-  # 新数据模型：端口在 NodeInbound 上（POST /admin/nodes 只收基础信息，入站走 /admin/nodes/:id/inbounds）
   NODE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/nodes" \
-    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const nodes=JSON.parse(d)||[];const local=nodes.find(x=>x.isLocal&&x.inbounds?.length);const matched=nodes.find(x=>x.serverHost===process.argv[1]&&x.inbounds?.some(i=>i.port===Number(process.argv[2])));const n=process.argv[3]==="1"?local:matched;const inbound=n?.isLocal?(n.inbounds.find(i=>i.tag==="local-vless-in")||n.inbounds[0]):n?.inbounds?.find(i=>i.port===Number(process.argv[2]));console.log(n&&inbound?[n.id,n.agentToken,n.serverHost,inbound.port].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$NODE_PORT" "$USE_MASTER_LOCAL")"
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const nodes=JSON.parse(d)||[];const local=nodes.find(x=>x.isLocal&&x.name==="Master-Local")||nodes.find(x=>x.isLocal);const matched=nodes.find(x=>x.serverHost===process.argv[1]);const n=process.argv[2]==="1"?local:matched;console.log(n?[n.id,n.agentToken,n.serverHost].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$USE_MASTER_LOCAL")"
   if [ -n "$NODE_LINE" ]; then
-    read -r NODE_ID AGENT_TOKEN NODE_HOST NODE_PORT <<<"$NODE_LINE"
+    read -r NODE_ID AGENT_TOKEN NODE_HOST <<<"$NODE_LINE"
     if [ "$USE_MASTER_LOCAL" = "1" ]; then
-      say "复用 Master-Local（$NODE_HOST:$NODE_PORT）"
+      say "复用 Master-Local（$NODE_HOST）"
     else
-      say "复用既有节点（$NODE_HOST:$NODE_PORT）"
+      say "复用既有节点（$NODE_HOST）"
     fi
   else
     say "创建联调节点「$NODE_NAME」（$NODE_HOST:$NODE_PORT）…"
@@ -130,9 +133,28 @@ else
     NODE_ID="$(printf '%s' "$CREATE_RESULT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d).node.id)}catch{console.log("")}})')"
     AGENT_TOKEN="$(printf '%s' "$CREATE_RESULT" | jsonget agentToken)"
     [ -n "$AGENT_TOKEN" ] && [ -n "$NODE_ID" ] || die "创建节点失败"
-    say "添加 VLESS Reality 入站（端口 $NODE_PORT）…"
-    INBOUND_BODY=$(printf '{"type":"VLESS","port":%s}' "$NODE_PORT")
-    curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$INBOUND_BODY" "$SERVER_URL/api/v1/admin/nodes/$NODE_ID/inbounds" >/dev/null || die "创建入站失败"
+  fi
+
+  LINE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/lines?page=1&pageSize=100" \
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const body=JSON.parse(d)||{};const lines=Array.isArray(body.data)?body.data:[];const nodeId=process.argv[1];const requestedPort=Number(process.argv[2]);const useLocal=process.argv[3]==="1";const direct=lines.filter(x=>x.type==="DIRECT"&&x.protocolType==="VLESS"&&x.entryNodeId===nodeId&&x.exitNodeId===nodeId);const named=direct.find(x=>x.name==="Master 本机直连");const matched=useLocal?(named||direct[0]):direct.find(x=>x.entryPort===requestedPort);console.log(matched?[matched.id,matched.entryPort,matched.status].join(" "):"")}catch{console.log("")}})' "$NODE_ID" "$NODE_PORT" "$USE_MASTER_LOCAL")"
+  if [ -n "$LINE_LINE" ]; then
+    read -r LINE_ID NODE_PORT LINE_STATUS <<<"$LINE_LINE"
+    if [ "$LINE_STATUS" != "ACTIVE" ]; then
+      say "启用联调线路…"
+      curl -fsS --max-time 5 -X PATCH "${AUTH[@]}" -H 'Content-Type: application/json' \
+        -d '{"status":"ACTIVE"}' "$SERVER_URL/api/v1/admin/lines/$LINE_ID" >/dev/null || die "启用线路失败"
+    fi
+    say "复用 VLESS Reality 线路（端口 $NODE_PORT）"
+  else
+    say "创建 VLESS Reality 线路（端口 $NODE_PORT）…"
+    LINE_PARAMS='{"flow":"xtls-rprx-vision","transport":{"type":"tcp"},"tls":{"enabled":true,"mode":"reality","serverName":"www.apple.com","reality":{"dest":"www.apple.com:443","serverNames":["www.apple.com"],"shortIds":["0123456789abcdef"]}}}'
+    LINE_NAME="$(jsonquote "$NODE_NAME")"
+    LINE_BODY="$(printf '{"name":%s,"type":"DIRECT","protocolType":"VLESS","params":%s,"entryNodeId":"%s","entryPort":%s,"exitNodeId":"%s","exitPort":%s,"tags":["e2e"],"isPublic":true,"status":"ACTIVE"}' \
+      "$LINE_NAME" "$LINE_PARAMS" "$NODE_ID" "$NODE_PORT" "$NODE_ID" "$NODE_PORT")"
+    LINE_RESULT="$(curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' \
+      -d "$LINE_BODY" "$SERVER_URL/api/v1/admin/lines")" || die "创建线路失败"
+    LINE_ID="$(printf '%s' "$LINE_RESULT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d).line.id)}catch{console.log("")}})')"
+    [ -n "$LINE_ID" ] || die "创建线路失败"
   fi
 fi
 

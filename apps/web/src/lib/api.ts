@@ -46,15 +46,21 @@ export function extractErrorMessage(error: unknown, fallback = '操作失败'): 
 export type LineType = 'DIRECT' | 'RELAY';
 export type RelayMode = 'BLIND_FORWARD' | 'PROTOCOL_PROXY';
 export type LineStatus = 'ACTIVE' | 'DISABLED';
+export type ProtocolType = 'VLESS' | 'VMESS' | 'TROJAN' | 'HYSTERIA2' | 'TUIC' | 'SHADOWSOCKS' | 'NAIVE' | 'SHADOWTLS' | 'MIXED' | 'SOCKS' | 'HTTP' | 'DIRECT';
 
 export interface ApiLine {
   id: string;
   name: string;
+  tag: string | null;
+  listen: string;
   type: LineType;
   relayMode: RelayMode | null;
-  entryNodeId: string | null;
-  entryPort: number | null;
-  targetInboundId: string;
+  protocolType: ProtocolType;
+  params: Record<string, unknown>;
+  entryNodeId: string;
+  entryPort: number;
+  exitNodeId: string;
+  exitPort: number;
   endpointOverrideEnabled: boolean;
   serverHost: string;
   serverPort: number;
@@ -72,15 +78,10 @@ export interface ApiLine {
   sortOrder: number;
   isPublic: boolean;
   status: LineStatus;
-  entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
-  targetInbound: {
-    id: string;
-    nodeId: string;
-    type: string;
-    tag: string;
-    listen: string;
-    port: number;
-    params: Record<string, unknown>;
-    node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  topology: {
+    entry: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
+    exit: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
   };
 }

@@ -514,6 +514,8 @@ export function normalizeInboundParams(
 // API 输出脱敏：剥离 Reality 私钥等
 export function sanitizeInboundParams(params: Record<string, unknown>): Record<string, unknown> {
   const clone = JSON.parse(JSON.stringify(params)) as Record<string, unknown>;
+  // 兼容迁移前的扁平 Reality 参数，避免旧存量配置泄露私钥。
+  delete clone.privateKey;
   if (clone.tls && typeof clone.tls === 'object') {
     const tls = clone.tls as Record<string, unknown>;
     if (tls.reality && typeof tls.reality === 'object') {
@@ -623,6 +625,7 @@ function buildServerTransport(transport?: InboundTransport): Record<string, unkn
       const http: Record<string, unknown> = { type: 'http' };
       if (transport.host) http.host = [transport.host];
       if (transport.path) http.path = transport.path;
+      if (transport.headers) http.headers = transport.headers;
       return http;
     }
     case 'httpupgrade': {

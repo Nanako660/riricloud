@@ -51,8 +51,10 @@ model Node {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  // NodeInbound 为历史迁移兼容表，新线路配置不再依赖它。
   inbounds    NodeInbound[]
   entryLines  Line[]        @relation("LineEntryNode")
+  exitLines   Line[]        @relation("LineExitNode")
   trafficLogs TrafficLog[]
 
   @@index([status])
@@ -84,16 +86,21 @@ model Plan {
 
 // ==============================
 // 2.3 接入线路实体 (Line，v0.4.0)
-// 线路是面向用户的代理接入端点，与底座 Node/NodeInbound 解耦。
+// Line 是唯一面向用户的代理业务端点，内聚协议、参数与入口/出口拓扑。
 // ==============================
 model Line {
   id              String   @id @default(uuid())
   name            String
+  tag             String?
+  listen          String   @default("0.0.0.0")
   type            String   @default("DIRECT") // DIRECT | RELAY
   relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY
-  entryNodeId     String?
-  entryPort       Int?
-  targetInboundId String
+  protocolType    String   @default("VLESS") // ProtocolType
+  paramsJson      String   @default("{}") // 协议专属参数 JSON
+  entryNodeId     String
+  entryPort       Int
+  exitNodeId      String
+  exitPort        Int
   endpointOverrideEnabled Boolean  @default(false)
   serverHost      String?
   serverPort      Int?
@@ -108,11 +115,12 @@ model Line {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  entryNode     Node?       @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
-  targetInbound NodeInbound @relation("LineTargetInbound", fields: [targetInboundId], references: [id], onDelete: Cascade)
+  entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
+  exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
 
   @@index([entryNodeId])
-  @@index([targetInboundId])
+  @@index([exitNodeId])
+  @@index([protocolType])
   @@index([type, status])
   @@index([isPublic])
   @@index([sortOrder])
@@ -169,8 +177,7 @@ model NodeInbound {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  node        Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  targetLines Line[] @relation("LineTargetInbound")
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, tag])
   @@index([nodeId])

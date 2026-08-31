@@ -82,7 +82,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
     }
   };
   const busy = create.isPending || update.isPending;
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle><DialogDescription>配置配额、有效期和线路匹配范围。</DialogDescription></DialogHeader><form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle><DialogDescription>配置配额、有效期和线路匹配范围。</DialogDescription></DialogHeader><form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-name">套餐名称</Label><Input id="plan-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-description">描述</Label><Input id="plan-description" {...form.register('description')} /></div>
     <div className="space-y-2"><Label htmlFor="plan-price">价格</Label><Input id="plan-price" type="number" min="0" {...form.register('price')} /></div>

@@ -10,8 +10,9 @@ import {
   resolveShadowsocksUserPassword,
   type InboundUserCredential
 } from '../common/inbound';
+import { resolveLineTags } from '../common/line-tags';
 import { DEFAULT_INBOUND_LISTEN } from '../common/ports';
-import { PROTOCOL_PROXY_TARGET_TYPES, type ProtocolType } from '../common/constants';
+import { type ProtocolType } from '../common/constants';
 import type {
   AuthResultData,
   ConfigApplyResultData,
@@ -156,19 +157,21 @@ export class AgentGatewayService implements OnModuleDestroy {
     );
   }
 
-  // 组装完整 Sing-box 服务端配置：入站数组逐条按协议生成（users 为有资格用户注入），
-  // configOverride 顶层深合并（数组整体替换，含 inbounds 则覆盖整组入站）
+  // Line 自己拥有协议与端点：同一条 Line 在出口节点生成协议入站，
+  // 中继线路再按入口角色追加盲转发或协议代理配置。
   async buildConfigSync(nodeId: string): Promise<ConfigSyncData> {
     const node = await this.prisma.node.findUnique({
       where: { id: nodeId },
       include: {
-        inbounds: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
         entryLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: {
-            targetInbound: { include: { node: true } }
-          }
+          include: { exitNode: true }
+        },
+        exitLines: {
+          where: { status: 'ACTIVE' },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: { entryNode: true }
         }
       }
     });
@@ -205,56 +208,90 @@ export class AgentGatewayService implements OnModuleDestroy {
         .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
     }
 
-    const inbounds = node.inbounds.map((inbound) =>
-      buildServerInbound({
-        type: inbound.type as ProtocolType,
-        tag: inbound.tag,
-        listen: inbound.listen,
-        port: inbound.port,
-        params: JSON.parse(inbound.paramsJson) as Record<string, unknown>,
-        users
-      })
-    );
+    type ConfigLine = {
+      id: string;
+      tag: string | null;
+      listen: string;
+      type: string;
+      relayMode: string | null;
+      protocolType: string;
+      paramsJson: string;
+      entryNodeId: string;
+      entryPort: number;
+      exitNodeId: string;
+      exitPort: number;
+      exitNode: { serverHost: string };
+    };
+    const lines = new Map<string, ConfigLine>();
+    for (const line of node.entryLines ?? []) lines.set(line.id, line);
+    for (const line of node.exitLines ?? []) {
+      if (!lines.has(line.id)) {
+        lines.set(line.id, { ...line, exitNode: { serverHost: node.serverHost } });
+      }
+    }
 
+    const inbounds: Array<Record<string, unknown>> = [];
     const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
     const relayRules: Array<Record<string, unknown>> = [];
-    for (const line of node.entryLines ?? []) {
-      if (!line.entryPort) continue;
-      const target = line.targetInbound;
-      const relayTag = `relay-${line.id}`;
-      if (line.relayMode === 'BLIND_FORWARD') {
-        inbounds.push({
-          type: 'direct',
-          tag: relayTag,
-          listen: DEFAULT_INBOUND_LISTEN,
-          listen_port: line.entryPort,
-          override_address: target.node.serverHost,
-          override_port: target.port
-        });
+    for (const line of lines.values()) {
+      const protocolType = line.protocolType as ProtocolType;
+      const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
+      const lineTags = resolveLineTags(line);
+      const isEntry = line.entryNodeId === nodeId;
+      const isExit = line.exitNodeId === nodeId;
+      if (line.type === 'DIRECT' && isEntry) {
+        inbounds.push(buildServerInbound({
+          type: protocolType,
+          tag: lineTags.direct ?? `line-${line.id}`,
+          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          port: line.entryPort,
+          params,
+          users
+        }));
         continue;
       }
 
-      if (line.relayMode === 'PROTOCOL_PROXY') {
-        if (!PROTOCOL_PROXY_TARGET_TYPES.includes(target.type as (typeof PROTOCOL_PROXY_TARGET_TYPES)[number])) {
-          continue;
-        }
+      if (isEntry && line.relayMode === 'BLIND_FORWARD') {
+        inbounds.push({
+          type: 'direct',
+          tag: lineTags.entry ?? `relay-${line.id}-entry`,
+          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          listen_port: line.entryPort,
+          override_address: line.exitNode.serverHost,
+          override_port: line.exitPort
+        });
+      }
+
+      if (isEntry && line.relayMode === 'PROTOCOL_PROXY') {
+        const relayTag = lineTags.entry ?? `relay-${line.id}-entry`;
         inbounds.push(
           buildServerInbound({
-            type: target.type as ProtocolType,
+            type: protocolType,
             tag: relayTag,
-            listen: DEFAULT_INBOUND_LISTEN,
+            listen: line.listen || DEFAULT_INBOUND_LISTEN,
             port: line.entryPort,
-            params: JSON.parse(target.paramsJson) as Record<string, unknown>,
+            params,
             users
           })
         );
-        const outbound = this.buildProtocolRelayOutbound(line, target, users);
+        const outbound = this.buildProtocolRelayOutbound(line, users);
         if (!outbound) {
           inbounds.pop();
           continue;
         }
         outbounds.push(outbound);
         relayRules.push({ inbound: [relayTag], outbound: `relay-out-${line.id}` });
+      }
+
+      if (isExit) {
+        inbounds.push(buildServerInbound({
+          type: protocolType,
+          tag: lineTags.exit ?? `line-${line.id}-exit`,
+          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          port: line.exitPort,
+          params,
+          users
+        }));
       }
     }
 
@@ -273,34 +310,32 @@ export class AgentGatewayService implements OnModuleDestroy {
   private buildProtocolRelayOutbound(
     line: {
       id: string;
-      endpointOverrideEnabled?: boolean;
-      serverName: string | null;
-      host: string | null;
+      protocolType: string;
+      paramsJson: string;
+      exitPort: number;
+      exitNode: { serverHost: string };
     },
-    target: { type: string; port: number; paramsJson: string; node: { serverHost: string } },
     users: InboundUserCredential[]
   ): Record<string, unknown> | undefined {
-    const params = JSON.parse(target.paramsJson) as Record<string, unknown>;
+    const protocolType = line.protocolType as ProtocolType;
+    const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
     const firstUser = users[0] ?? { uuid: randomUUID(), email: 'relay', credential: randomUUID() };
     const tls = (params.tls ?? {}) as Record<string, unknown>;
-    const useOverrides = line.endpointOverrideEnabled !== false;
     const reality = tls.reality as Record<string, unknown> | undefined;
     const fallbackServerName = typeof tls.serverName === 'string'
       ? tls.serverName
       : reality && Array.isArray(reality.serverNames) && typeof reality.serverNames[0] === 'string'
         ? reality.serverNames[0]
         : undefined;
-    const tlsServerName = useOverrides && line.serverName
-      ? line.serverName
-      : fallbackServerName;
+    const tlsServerName = fallbackServerName;
     const outbound: Record<string, unknown> = {
-      type: target.type.toLowerCase(),
+      type: protocolType.toLowerCase(),
       tag: `relay-out-${line.id}`,
-      server: target.node.serverHost,
-      server_port: target.port
+      server: line.exitNode.serverHost,
+      server_port: line.exitPort
     };
 
-    switch (target.type) {
+    switch (protocolType) {
       case 'VLESS':
         outbound.uuid = firstUser.uuid;
         if (typeof params.flow === 'string') outbound.flow = params.flow;
@@ -343,13 +378,13 @@ export class AgentGatewayService implements OnModuleDestroy {
     const clientTls = buildClientTls(
       tls as unknown as Parameters<typeof buildClientTls>[0],
       tlsServerName,
-      target.type === 'NAIVE' ? { includeAlpn: false } : undefined
+      protocolType === 'NAIVE' ? { includeAlpn: false } : undefined
     );
     if (clientTls) outbound.tls = clientTls;
     const transport = (params.transport ?? {}) as Record<string, unknown>;
     const clientTransport = buildClientTransport(
       transport as unknown as Parameters<typeof buildClientTransport>[0],
-      useOverrides ? line.host : null
+      null
     );
     if (clientTransport) outbound.transport = clientTransport;
     return outbound;

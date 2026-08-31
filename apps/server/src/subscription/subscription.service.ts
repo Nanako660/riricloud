@@ -146,12 +146,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           trafficRate: line.trafficRate,
           tags: line.tags,
           level: line.level,
-          targetInbound: {
-            type: line.targetInbound.type as ProtocolType,
-            tag: line.targetInbound.tag,
-            port: line.targetInbound.port,
-            params: line.targetInbound.params
-          }
+          protocolType: line.protocolType as ProtocolType,
+          params: line.params,
         }));
     } else {
       const nodes = subscription ? await this.getLegacyNodes() : await this.getLegacyLines();
