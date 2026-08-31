@@ -16,12 +16,14 @@ graph TB
         FrontendUI["Web 前端静态站点<br/>(React + Vite + shadcn/ui)"]
         APIServer["RESTful API 业务服务<br/>(NestJS + TypeScript)"]
         WSGateway["WebSocket 主从实时网关<br/>(@nestjs/websockets - ws)"]
+        AgentPollAPI["Agent HTTP 轮询适配器<br/>(POST /api/v1/agent/poll)"]
         SubscriptionEngine["通用多格式订阅生成引擎<br/>(YAML / JSON / Base64)"]
         SQLiteDB[("SQLite 数据库 (WAL 模式)<br/>Prisma ORM")]
         
         FrontendUI -->|"HTTP(S)"| APIServer
         APIServer <-->|"CRUD"| SQLiteDB
         APIServer <--> WSGateway
+        APIServer <--> AgentPollAPI
         APIServer <--> SubscriptionEngine
     end
 
@@ -52,6 +54,8 @@ graph TB
 
     AgentA <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报 / 升级 / 探针)"| WSGateway
     AgentB <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报 / 升级 / 探针)"| WSGateway
+    AgentA -->|"HTTP/HTTPS 定时轮询 (遥测 / 配置 / 任务)"| AgentPollAPI
+    AgentB -->|"HTTP/HTTPS 定时轮询 (遥测 / 配置 / 任务)"| AgentPollAPI
 ```
 
 ---
@@ -61,14 +65,16 @@ graph TB
 ### 2.1 主控中心 (Master Server)
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、线路列表、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
+- **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测事务、配置快照、任务队列与健康判定；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
+- **HTTP 轮询适配器 (`POST /api/v1/agent/poll`)**：为无法完成 WS Upgrade 的网络提供 HTTPS 主动上报、配置差异拉取和异步任务回执。
 - **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 是用户订阅端点的唯一业务实体，直接拥有协议、参数、监听地址、Tag、入口/出口拓扑和端口，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且入口/出口节点在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。
 - **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
-- **长连接与自愈**：Agent 启动后主动与 Master 建立 WSS 连接，内置重试与断线重连机制；服务端只接受通过运行时结构校验的 Agent 上行消息。
+- **双模式通信与自愈**：Agent 根据 `MASTER_URL` 的 `ws(s)://` / `http(s)://` 前缀推导模式，也可由 `AGENT_MODE=ws|http` 显式指定；WS 模式具备指数退避重连，HTTP 模式按 `POLL_INTERVAL_SECS` 轮询并接受 Master 的 `nextPollSecs` 调整；服务端只接受通过结构校验的 Agent 上行数据。
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务由 Master 下发 URL、版本与 SHA-256。Agent 流式下载至临时文件并校验；Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级原子替换后保留启动参数重启。探针支持 TCP、DNS、ICMP，逐项返回延迟与错误。
@@ -120,10 +126,15 @@ sequenceDiagram
     participant Master as Master 后端服务
     participant DB as SQLite 数据库
 
-    loop 每 5~10 秒
+    loop WS 每 5~10 秒 / HTTP 每 15 秒
         Agent->>Agent: 采集系统 CPU / 内存 / 网速
         Agent->>Singbox: 查询各用户已消耗流量 (Upload/Download)（暂缓：上游统计接口无用户归属）
-        Agent->>Master: 发送 Heartbeat WSS 消息 (系统指标 + 增量流量数据)
+        alt WS/WSS 模式
+            Agent->>Master: 发送 Heartbeat WSS 消息 (系统指标 + 增量流量数据)
+        else HTTP/HTTPS 模式
+            Agent->>Master: POST /api/v1/agent/poll (系统指标 + 回执)
+            Master-->>Agent: 配置差异、任务队列与 nextPollSecs
+        end
         Master->>DB: 更新节点状态、记录 TrafficLog、扣减用户剩余配额
         
         alt 发现某用户已过期或配额耗尽

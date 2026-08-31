@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { AgentService } from '../agent-gateway/agent.service';
 import { normalizeInboundParams, sanitizeInboundParams } from '../common/inbound';
 import {
   LINE_TYPES,
@@ -55,7 +55,7 @@ const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
 export class LinesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly agentGateway: AgentGatewayService
+    private readonly agentGateway: AgentService
   ) {}
 
   async list(query: QueryLineDto) {

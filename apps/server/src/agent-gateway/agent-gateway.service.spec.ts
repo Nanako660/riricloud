@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentGatewayService } from './agent-gateway.service';
 import type { HeartbeatData } from './agent-message';
@@ -13,7 +13,7 @@ describe('AgentGatewayService', () => {
   const tx = { node: { update: txNodeUpdate }, user: { findUnique: txUserFindUnique, update: txUserUpdate }, trafficLog: { create: txTrafficCreate } };
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
-    node: { findUnique: jest.fn(), update: jest.fn() },
+    node: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     user: { findMany: jest.fn() }
   };
 
@@ -95,5 +95,90 @@ describe('AgentGatewayService', () => {
   it('节点不存在时配置同步抛出 NotFoundException', async () => {
     prisma.node.findUnique.mockResolvedValue(null);
     await expect(service.buildConfigSync('missing')).rejects.toThrow(NotFoundException);
+  });
+
+  it('HTTP 轮询鉴权失败时拒绝请求', async () => {
+    prisma.node.findUnique.mockResolvedValue(null);
+    await expect(service.poll('bad-token', {
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficRecords: []
+    })).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('HTTP 轮询接入会淘汰同节点旧 WS 连接', async () => {
+    const socket = { send: jest.fn(), close: jest.fn() };
+    prisma.node.update.mockResolvedValue(undefined);
+    prisma.node.findUnique
+      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'OFFLINE' })
+      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
+      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ pollIntervalSecs: 15 });
+    await service.register('poll-node', socket);
+    await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    expect(socket.close).toHaveBeenCalledWith(4002, 'switched to HTTP polling');
+    expect(service.isCurrentSocket('poll-node', socket)).toBe(false);
+  });
+
+  it('HTTP 轮询只在配置版本落后时返回配置', async () => {
+    (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
+    prisma.node.findUnique
+      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
+      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ pollIntervalSecs: 15 });
+    const first = await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    expect(first.needUpdate).toBe(true);
+    expect(first.singboxConfig).toEqual(expect.objectContaining({ inbounds: [] }));
+    expect(first.nextPollSecs).toBe(15);
+
+    prisma.node.findUnique
+      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
+      .mockResolvedValueOnce({ pollIntervalSecs: 30 });
+    const second = await service.poll('token', {
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      appliedConfigVersion: first.version,
+      trafficRecords: []
+    });
+    expect(second.needUpdate).toBe(false);
+    expect(second.singboxConfig).toBeNull();
+    expect(second.nextPollSecs).toBe(30);
+  });
+
+  it('HTTP 节点任务进入队列并在回执后完成', async () => {
+    prisma.node.findUnique.mockResolvedValue({ id: 'http-task-node', status: 'ONLINE', communicationMode: 'HTTP' });
+    const requested = await service.requestProbe('http-task-node', [{ type: 'dns', target: 'example.com' }]);
+    expect(requested.requested).toBe(true);
+
+    (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
+    prisma.node.findUnique
+      .mockResolvedValueOnce({ id: 'http-task-node', name: 'HTTP 任务节点', status: 'ONLINE' })
+      .mockResolvedValueOnce({ id: 'http-task-node', serverHost: '198.51.100.11', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ pollIntervalSecs: 15 });
+    const response = await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    expect(response.tasks).toHaveLength(1);
+    const taskId = response.tasks[0].data.taskId;
+
+    await service.handleProbeResult('http-task-node', {
+      taskId,
+      success: true,
+      results: [{ type: 'dns', target: 'example.com', success: true, latencyMs: 2 }]
+    });
+    expect(service.getTaskStatus('http-task-node', taskId)).toEqual(expect.objectContaining({ status: 'COMPLETED', success: true }));
+  });
+
+  it('WS 与 HTTP 使用不同的离线窗口', async () => {
+    prisma.node.findMany.mockResolvedValue([
+      { id: 'ws-stale', communicationMode: 'WS', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 16_000) },
+      { id: 'http-stale', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 46_000) },
+      { id: 'http-fresh', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 44_000) }
+    ]);
+    await service.sweepStaleNodes();
+    expect(prisma.node.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: expect.arrayContaining(['ws-stale', 'http-stale']) }, status: 'ONLINE' },
+      data: { status: 'OFFLINE' }
+    }));
   });
 });

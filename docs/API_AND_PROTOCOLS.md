@@ -43,12 +43,13 @@
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。⭐
 - `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色与派生端口列表）。⭐
-- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与一键安装命令）。⭐ 请求 `{ name?, serverHost }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand }`。
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式一键安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http } }`。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version, url, sha256 }`；Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。
+- `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 节点线路承载视图
@@ -274,6 +275,62 @@ Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配
 ```
 
 Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result` 四类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
+
+---
+
+## 2.3 Master-Agent HTTP/HTTPS 轮询协议
+
+HTTP 模式使用单一合一端点：
+```
+POST http(s)://<master-host>/api/v1/agent/poll
+X-Agent-Token: <AGENT_TOKEN>
+Content-Type: application/json
+```
+
+该端点通过 `@Public()` 绕过 JWT，但必须在 `X-Agent-Token` 中提供有效节点凭证；凭证无效、节点禁用或缺失时返回 `401`。HTTP 轮询与 WS 共用 `AgentService`，上行遥测、流量事务、配置回执和任务回执使用同一套业务规则。
+
+### 2.3.1 Agent -> Master 请求体
+
+```json
+{
+  "cpuUsage": 12.5,
+  "memoryUsage": 38.2,
+  "bandwidthRate": 1048576,
+  "kernelRunning": true,
+  "appliedConfigVersion": 3,
+  "lastError": "",
+  "trafficRecords": [],
+  "configApplyResults": [
+    { "version": 3, "success": true, "message": "ok" }
+  ],
+  "upgradeResults": [],
+  "probeResults": []
+}
+```
+
+`configApplyResults`、`upgradeResults`、`probeResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳同事务更新节点遥测与流量，再处理回执。
+
+### 2.3.2 Master -> Agent 响应体
+
+```json
+{
+  "needUpdate": true,
+  "version": 4,
+  "singboxConfig": { "log": { "level": "info" }, "inbounds": [], "outbounds": [{ "type": "direct", "tag": "direct" }] },
+  "tasks": [
+    { "type": "probe_task", "data": { "taskId": "task-uuid", "probes": [{ "type": "dns", "target": "example.com" }] } }
+  ],
+  "nextPollSecs": 15
+}
+```
+
+当 `needUpdate=false` 时 `singboxConfig` 为 `null`；`tasks` 中的升级/探针任务在 Agent 侧异步执行，并在下一次轮询的回执数组中提交。Master 会在回执到达前保留已投递任务，网络丢包后按 60 秒重试，回执成功后任务状态变为 `COMPLETED`。`nextPollSecs` 由节点配置给出，服务端限制在 5~300 秒。
+
+### 2.3.3 健康判定
+
+- WS/WSS：最后上报超过 15 秒且没有新连接时标记 `OFFLINE`。
+- HTTP/HTTPS：最后上报超过 `3 × pollIntervalSecs`（默认 45 秒）时标记 `OFFLINE`。
+- 任一模式重新上报都会恢复 `ONLINE`，并把 `communicationMode` 更新为实际传输模式。
 
 ---
 

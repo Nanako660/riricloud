@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { AgentService } from '../agent-gateway/agent.service';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +20,7 @@ type NodeWithLines = Prisma.NodeGetPayload<{ include: typeof nodeLinesInclude }>
 export class NodesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly agentGateway: AgentGatewayService
+    private readonly agentGateway: AgentService
   ) {}
 
   async list() {
@@ -35,18 +35,24 @@ export class NodesService {
   }
 
   async create(dto: CreateNodeDto, _operatorId: string) {
+    const communicationMode = dto.communicationMode ?? 'WS';
     const node = await this.prisma.node.create({
       data: {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
         serverHost: dto.serverHost.trim(),
-        agentToken: generateAgentToken()
+        agentToken: generateAgentToken(),
+        communicationMode
       },
       include: nodeLinesInclude
     });
     return {
       node: this.sanitize(node),
       agentToken: node.agentToken,
-      installCommand: this.buildInstallCommand(node.agentToken)
+      installCommand: this.buildInstallCommand(node.agentToken, communicationMode),
+      installCommands: {
+        ws: this.buildInstallCommand(node.agentToken, 'WS'),
+        http: this.buildInstallCommand(node.agentToken, 'HTTP')
+      }
     };
   }
 
@@ -74,9 +80,14 @@ export class NodesService {
     }
   }
 
+  async taskStatus(nodeId: string, taskId: string) {
+    await this.requireNode(nodeId);
+    return this.agentGateway.getTaskStatus(nodeId, taskId);
+  }
+
   async update(id: string, dto: UpdateNodeDto) {
     await this.requireNode(id);
-    const data: { name?: string; serverHost?: string; configOverride?: string | null } = {};
+    const data: { name?: string; serverHost?: string; configOverride?: string | null; communicationMode?: 'WS' | 'HTTP'; pollIntervalSecs?: number } = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('节点名称不能为空');
@@ -92,6 +103,8 @@ export class NodesService {
         ? null
         : this.validateConfigOverride(dto.configOverride);
     }
+    if (dto.communicationMode !== undefined) data.communicationMode = dto.communicationMode;
+    if (dto.pollIntervalSecs !== undefined) data.pollIntervalSecs = dto.pollIntervalSecs;
     if (Object.keys(data).length === 0) throw new BadRequestException('未提供任何更新字段');
     const updated = await this.prisma.node.update({ where: { id }, data, include: nodeLinesInclude });
     void this.agentGateway.pushConfig(id);
@@ -129,8 +142,9 @@ export class NodesService {
     return raw;
   }
 
-  private buildInstallCommand(token: string) {
-    return `curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- --token=${token} --master=wss://<master-domain>/ws/agent`;
+  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP') {
+    const master = mode === 'HTTP' ? 'http://<master-domain>' : 'wss://<master-domain>/ws/agent';
+    return `curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- --token=${token} --master=${master}`;
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {

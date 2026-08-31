@@ -1,12 +1,12 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { AgentGatewayService } from './agent-gateway.service';
+import { AgentService } from './agent.service';
 
 // 心跳超时扫描：周期任务在模块销毁时清理（进程内定时器，零外部依赖）
 @Injectable()
 export class AgentSweepService implements OnModuleDestroy {
   private sweepTimer?: NodeJS.Timeout;
 
-  constructor(private readonly gateway: AgentGatewayService) {}
+  constructor(private readonly gateway: AgentService) {}
 
   start() {
     this.sweepTimer = setInterval(() => {

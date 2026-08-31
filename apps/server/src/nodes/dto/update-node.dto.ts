@@ -1,4 +1,5 @@
-import { IsOptional, IsString, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateNodeDto {
@@ -18,5 +19,18 @@ export class UpdateNodeDto {
   @IsString()
   @IsOptional()
   configOverride?: string | null;
+
+  @ApiPropertyOptional({ enum: ['WS', 'HTTP'] })
+  @IsIn(['WS', 'HTTP'])
+  @IsOptional()
+  communicationMode?: 'WS' | 'HTTP';
+
+  @ApiPropertyOptional({ example: 15, minimum: 5, maximum: 300 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(300)
+  @IsOptional()
+  pollIntervalSecs?: number;
 
 }

@@ -9,7 +9,7 @@ import {
   Optional
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { AgentService } from '../agent-gateway/agent.service';
 import { LinesService } from '../lines/lines.service';
 import { isUserEntitled } from '../common/utils';
 import type { ProtocolType } from '../common/constants';
@@ -103,7 +103,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly agentGateway?: AgentGatewayService,
+    @Optional() private readonly agentGateway?: AgentService,
     @Optional() private readonly linesService?: LinesService
   ) {}
 

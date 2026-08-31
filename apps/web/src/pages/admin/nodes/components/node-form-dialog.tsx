@@ -24,12 +24,15 @@ import {
   FormMessage
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useNodeMutations, type CommunicationMode, type CreateNodeResult } from '../use-nodes';
 
 // 创建只收基础信息：协议/端口等入站配置进节点详情页单独管理
 const createSchema = z.object({
   name: z.string().max(32, '名称不超过 32 字符').optional(),
-  serverHost: z.string().min(1, '请输入服务器地址')
+  serverHost: z.string().min(1, '请输入服务器地址'),
+  communicationMode: z.enum(['WS', 'HTTP'])
 });
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -44,24 +47,26 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
   const { createNode } = useNodeMutations();
   // 创建成功后的 AgentToken / 安装命令展示（仅创建流程出现）
   const [created, setCreated] = useState<CreateNodeResult | null>(null);
+  const [installMode, setInstallMode] = useState<CommunicationMode>('WS');
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: '', serverHost: '' }
+    defaultValues: { name: '', serverHost: '', communicationMode: 'WS' }
   });
 
   // 打开时重置到初始状态
   useEffect(() => {
     if (open) {
       setCreated(null);
+      setInstallMode('WS');
       createForm.reset();
     }
   }, [open, createForm]);
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
-      { name: v.name?.trim() || undefined, serverHost: v.serverHost },
-      { onSuccess: (data) => setCreated(data) }
+       { name: v.name?.trim() || undefined, serverHost: v.serverHost, communicationMode: v.communicationMode },
+       { onSuccess: (data) => { setInstallMode(v.communicationMode); setCreated(data); } }
     );
   };
 
@@ -80,14 +85,20 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
               </DialogDescription>
             </DialogHeader>
             {/* min-w-0：Dialog 为 grid 布局，截断长文本固有宽度向上传递，避免内容撑出面板 */}
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2">
+             <div className="min-w-0 space-y-3">
+               <Tabs value={installMode.toLowerCase()} onValueChange={(value) => setInstallMode(value === 'http' ? 'HTTP' : 'WS')}>
+                 <TabsList className="grid w-full grid-cols-2">
+                   <TabsTrigger value="ws">WS / WSS</TabsTrigger>
+                   <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
+                 </TabsList>
+               </Tabs>
+               <div className="flex items-center gap-2">
                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.agentToken}</code>
                 <CopyButton value={created.agentToken} />
               </div>
               <div className="flex items-center gap-2">
-                <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.installCommand}</code>
-                <CopyButton value={created.installCommand} />
+                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand}</code>
+                 <CopyButton value={created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand} />
               </div>
             </div>
             <DialogFooter>
@@ -121,6 +132,24 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                         <Input placeholder="东京节点 01" {...field} />
                       </FormControl>
                       <FormDescription>留空时按服务器地址生成</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="communicationMode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>通信模式</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="WS">WS / WSS 长连接</SelectItem>
+                          <SelectItem value="HTTP">HTTP / HTTPS 轮询</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>HTTP 模式适合不支持 WebSocket 升级的网络环境</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
