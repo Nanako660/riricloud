@@ -31,3 +31,4 @@
 | [节点与线路解耦、链式代理中继与主控本机节点架构重构](./archive/2026-08-31-node-line-separation-and-relay.md) | `v0.4.0` | 2026-08-31 | — |
 | [恢复线路管理完整可视化编辑](./archive/2026-08-31-line-visual-editor-restoration.md) | `v0.4.0` | 2026-08-31 | — |
 | [线路顶层编排与出入站生命周期重构 (Line-Centric Pipeline Architecture)](./archive/2026-08-31-line-centric-pipeline.md) | `v0.4.0` | 2026-08-31 | — |
+| [agent-dual-mode-communication](./archive/2026-08-31-agent-dual-mode-communication.md) | `v0.3.0` | 2026-08-31 | — |

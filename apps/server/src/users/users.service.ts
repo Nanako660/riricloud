@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { AgentService } from '../agent-gateway/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { isUserEntitled } from '../common/utils';
@@ -72,7 +72,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private settingsService: SettingsService,
-    private agentGateway: AgentGatewayService,
+    private agentGateway: AgentService,
     @Optional() private linesService?: LinesService
   ) {}
 

@@ -46,6 +46,12 @@ enum NodeStatus {
   DISABLED  // 手动禁用维护中
 }
 
+// Agent 通信模式
+enum AgentTransportMode {
+  WS     // WS/WSS 长连接
+  HTTP   // HTTP/HTTPS 主动轮询
+}
+
 // 支持的代理协议类型（逻辑枚举）
 enum ProtocolType {
   VLESS VMESS TROJAN HYSTERIA2 TUIC SHADOWSOCKS NAIVE SHADOWTLS MIXED SOCKS HTTP DIRECT
@@ -96,6 +102,8 @@ model Node {
 
   // 主从长连接通信凭证
   agentToken      String        @unique @default(uuid()) // Agent 接入认证密钥
+  communicationMode AgentTransportMode @default(WS)      // 当前/期望通信模式
+  pollIntervalSecs Int           @default(15)             // HTTP 轮询建议周期（秒）
   status          NodeStatus    @default(OFFLINE)        // 实时状态
   lastSeenAt      DateTime?                              // 最近心跳时间
 

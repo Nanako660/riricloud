@@ -9,6 +9,8 @@ export type AgentMessageType =
   | 'probe_task'
   | 'probe_result';
 
+export type AgentTransportMode = 'WS' | 'HTTP';
+
 export interface AgentMessage<T = unknown> {
   type: AgentMessageType;
   data: T;
@@ -93,6 +95,18 @@ export interface ProbeResultData {
   taskId: string;
   success: boolean;
   results: ProbeResult[];
+}
+
+export type AgentTaskMessage =
+  | { type: 'upgrade_task'; data: UpgradeTaskData }
+  | { type: 'probe_task'; data: ProbeTaskData };
+
+export interface AgentPollResponse {
+  needUpdate: boolean;
+  version: number;
+  singboxConfig: Record<string, unknown> | null;
+  tasks: AgentTaskMessage[];
+  nextPollSecs: number;
 }
 
 export type AgentInboundMessage =

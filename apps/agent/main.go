@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
+	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	"github.com/Nanako660/riricloud/apps/agent/internal/ws"
 )
@@ -31,15 +32,25 @@ func main() {
 	defer stop()
 
 	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, logrus.NewEntry(log))
-	client := ws.NewClient(
-		cfg.MasterWsURL,
-		cfg.AgentToken,
-		time.Duration(cfg.HeartbeatSecs)*time.Second,
-		singboxMgr,
-		logrus.NewEntry(log),
-	)
-
-	client.Run(ctx)
+	if cfg.Mode == config.ModeHTTP {
+		client := poll.NewClient(
+			cfg.MasterURL,
+			cfg.AgentToken,
+			time.Duration(cfg.PollIntervalSecs)*time.Second,
+			singboxMgr,
+			logrus.NewEntry(log),
+		)
+		client.Run(ctx)
+	} else {
+		client := ws.NewClient(
+			cfg.MasterURL,
+			cfg.AgentToken,
+			time.Duration(cfg.HeartbeatSecs)*time.Second,
+			singboxMgr,
+			logrus.NewEntry(log),
+		)
+		client.Run(ctx)
+	}
 	// WS 已断开：终止内核子进程并等待 supervisor 退出，避免孤儿进程（G6）
 	singboxMgr.Shutdown(5 * time.Second)
 	log.Info("riri-agent stopped")

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
@@ -15,6 +15,9 @@ import { DEFAULT_INBOUND_LISTEN } from '../common/ports';
 import { type ProtocolType } from '../common/constants';
 import type {
   AuthResultData,
+  AgentPollResponse,
+  AgentTaskMessage,
+  AgentTransportMode,
   ConfigApplyResultData,
   ConfigSyncData,
   HeartbeatData,
@@ -23,6 +26,7 @@ import type {
   UpgradeResultData,
   UpgradeTarget
 } from './agent-message';
+import type { AgentPollDto } from './dto/agent-poll.dto';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -46,10 +50,23 @@ type SubscriptionDelegate = {
   findMany: (args: Record<string, unknown>) => Promise<SubscriptionSnapshot[]>;
 };
 
+type PendingTask = AgentTaskMessage & { deliveredAt: number };
+
+type TaskResult = {
+  taskId: string;
+  type: 'upgrade' | 'probe';
+  success: boolean;
+  message: string;
+  completedAt: string;
+};
+
 @Injectable()
-export class AgentGatewayService implements OnModuleDestroy {
-  private readonly logger = new Logger(AgentGatewayService.name);
+export class AgentService implements OnModuleDestroy {
+  private readonly logger = new Logger(AgentService.name);
   private readonly sockets = new Map<string, AgentSocket>();
+  private readonly pendingTasks = new Map<string, PendingTask[]>();
+  private readonly taskResults = new Map<string, TaskResult>();
+  private readonly configCache = new Map<string, ConfigSyncData>();
   private configVersion = Date.now();
   private configPushTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
@@ -83,7 +100,7 @@ export class AgentGatewayService implements OnModuleDestroy {
     this.sockets.set(nodeId, socket);
     await this.prisma.node.update({
       where: { id: nodeId },
-      data: { status: 'ONLINE', lastSeenAt: new Date() }
+      data: { status: 'ONLINE', communicationMode: 'WS', lastSeenAt: new Date() }
     });
     const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
     this.logger.log(`agent online: node=${node?.name ?? nodeId}`);
@@ -91,7 +108,7 @@ export class AgentGatewayService implements OnModuleDestroy {
   }
 
   // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
-  async handleHeartbeat(nodeId: string, data: HeartbeatData): Promise<void> {
+  async handleHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode = 'WS'): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.node.update({
         where: { id: nodeId },
@@ -101,6 +118,7 @@ export class AgentGatewayService implements OnModuleDestroy {
           bandwidthRate: data.bandwidthRate,
           lastSeenAt: new Date(),
           status: 'ONLINE',
+          communicationMode: mode,
           // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
           ...(data.kernelRunning !== undefined ? { kernelRunning: data.kernelRunning } : {}),
           ...(data.lastError !== undefined && data.lastError !== ''
@@ -131,6 +149,42 @@ export class AgentGatewayService implements OnModuleDestroy {
     });
   }
 
+  // HTTP 轮询适配器的单一业务入口：先处理回执，再返回配置差异与待执行任务。
+  async poll(token: string | undefined, data: AgentPollDto): Promise<AgentPollResponse> {
+    const auth = await this.authenticate(token);
+    if (!auth.ok) {
+      throw new UnauthorizedException(auth.message);
+    }
+
+    // 同一节点切换到 HTTP 后，旧 WS 连接不得继续接收任务或覆盖通信模式。
+    this.supersedeSocket(auth.nodeId);
+    await this.handleHeartbeat(auth.nodeId, data, 'HTTP');
+    for (const result of data.configApplyResults ?? []) {
+      await this.handleConfigApplyResult(auth.nodeId, result);
+    }
+    for (const result of data.upgradeResults ?? []) {
+      await this.handleUpgradeResult(auth.nodeId, result);
+    }
+    for (const result of data.probeResults ?? []) {
+      await this.handleProbeResult(auth.nodeId, result);
+    }
+
+    const desired = await this.getDesiredConfigSync(auth.nodeId);
+    const node = await this.prisma.node.findUnique({
+      where: { id: auth.nodeId },
+      select: { pollIntervalSecs: true }
+    });
+    const nextPollSecs = Math.max(5, Math.min(300, node?.pollIntervalSecs ?? 15));
+    const needUpdate = data.appliedConfigVersion !== desired.version;
+    return {
+      needUpdate,
+      version: desired.version,
+      singboxConfig: needUpdate ? desired.singboxConfig : null,
+      tasks: this.takePendingTasks(auth.nodeId),
+      nextPollSecs
+    };
+  }
+
   // config_apply_result 回执处理：失败原因落 configError（成功清空），供管理端展示
   async handleConfigApplyResult(nodeId: string, data: ConfigApplyResultData): Promise<void> {
     const message = data.success ? null : (data.message?.slice(0, 8192) ?? 'unknown error');
@@ -145,6 +199,13 @@ export class AgentGatewayService implements OnModuleDestroy {
   }
 
   async handleUpgradeResult(nodeId: string, data: UpgradeResultData): Promise<void> {
+    this.acknowledgeTask(nodeId, data.taskId, {
+      taskId: data.taskId,
+      type: 'upgrade',
+      success: data.success,
+      message: data.message,
+      completedAt: new Date().toISOString()
+    });
     const outcome = data.success ? 'succeeded' : 'failed';
     this.logger[data.success ? 'log' : 'warn'](
       `agent upgrade ${outcome}: node=${nodeId} target=${data.target} version=${data.version} task=${data.taskId} message=${data.message}`
@@ -152,6 +213,13 @@ export class AgentGatewayService implements OnModuleDestroy {
   }
 
   async handleProbeResult(nodeId: string, data: ProbeResultData): Promise<void> {
+    this.acknowledgeTask(nodeId, data.taskId, {
+      taskId: data.taskId,
+      type: 'probe',
+      success: data.success,
+      message: data.results.find((result) => !result.success)?.message ?? (data.success ? 'ok' : 'probe failed'),
+      completedAt: new Date().toISOString()
+    });
     this.logger.log(
       `agent probe completed: node=${nodeId} task=${data.taskId} success=${data.success} results=${data.results.length}`
     );
@@ -307,6 +375,14 @@ export class AgentGatewayService implements OnModuleDestroy {
     return { version: ++this.configVersion, singboxConfig };
   }
 
+  private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {
+    const cached = this.configCache.get(nodeId);
+    if (cached) return cached;
+    const payload = await this.buildConfigSync(nodeId);
+    this.configCache.set(nodeId, payload);
+    return payload;
+  }
+
   private buildProtocolRelayOutbound(
     line: {
       id: string;
@@ -392,12 +468,17 @@ export class AgentGatewayService implements OnModuleDestroy {
 
   // 向指定节点推送配置（reload 触发）
   async pushConfig(nodeId: string): Promise<boolean> {
-    const socket = this.sockets.get(nodeId);
-    if (!socket) {
-      return false;
-    }
     try {
       const payload = await this.buildConfigSync(nodeId);
+      this.configCache.set(nodeId, payload);
+      const socket = this.sockets.get(nodeId);
+      if (!socket) {
+        const node = await this.prisma.node.findUnique({
+          where: { id: nodeId },
+          select: { status: true, communicationMode: true }
+        });
+        return node?.status === 'ONLINE' && node.communicationMode === 'HTTP';
+      }
       socket.send(JSON.stringify({ type: 'config_sync', data: payload }));
       return true;
     } catch (err) {
@@ -408,6 +489,7 @@ export class AgentGatewayService implements OnModuleDestroy {
 
   // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）
   async pushConfigToAll(): Promise<number> {
+    this.configCache.clear();
     return new Promise((resolve) => {
       this.configPushWaiters.push(resolve);
       if (this.configPushTimer) clearTimeout(this.configPushTimer);
@@ -438,27 +520,69 @@ export class AgentGatewayService implements OnModuleDestroy {
     if (!/^https?:\/\//i.test(url)) throw new Error('upgrade URL must use http or https');
     if (!/^[a-f0-9]{64}$/i.test(sha256)) throw new Error('upgrade sha256 must be 64 hexadecimal characters');
     const taskId = randomUUID();
-    const sent = this.sendTask(nodeId, 'upgrade_task', { taskId, target, version, url, sha256 });
+    const sent = await this.sendTask(nodeId, 'upgrade_task', { taskId, target, version, url, sha256 });
     return { taskId, requested: sent };
   }
 
   async requestProbe(nodeId: string, probes: ProbeRequest[]) {
     if (!probes.length || probes.length > 8) throw new Error('probe task must contain 1 to 8 probes');
     const taskId = randomUUID();
-    const sent = this.sendTask(nodeId, 'probe_task', { taskId, probes });
+    const sent = await this.sendTask(nodeId, 'probe_task', { taskId, probes });
     return { taskId, requested: sent };
   }
 
-  private sendTask(nodeId: string, type: string, data: unknown): boolean {
+  private async sendTask(nodeId: string, type: 'upgrade_task' | 'probe_task', data: unknown): Promise<boolean> {
     const socket = this.sockets.get(nodeId);
-    if (!socket) return false;
-    try {
-      socket.send(JSON.stringify({ type, data }));
-      return true;
-    } catch (err) {
-      this.logger.warn(`send agent task failed: node=${nodeId} type=${type} error=${err}`);
-      return false;
+    if (socket) {
+      try {
+        socket.send(JSON.stringify({ type, data }));
+        return true;
+      } catch (err) {
+        this.logger.warn(`send agent task failed: node=${nodeId} type=${type} error=${err}`);
+        return false;
+      }
     }
+
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      select: { status: true, communicationMode: true }
+    });
+    if (node?.status !== 'ONLINE' || node.communicationMode !== 'HTTP') return false;
+    const task = { type, data } as AgentTaskMessage;
+    const tasks = this.pendingTasks.get(nodeId) ?? [];
+    tasks.push({ ...task, deliveredAt: 0 } as PendingTask);
+    this.pendingTasks.set(nodeId, tasks);
+    return true;
+  }
+
+  private takePendingTasks(nodeId: string): AgentTaskMessage[] {
+    const tasks = this.pendingTasks.get(nodeId) ?? [];
+    const now = Date.now();
+    const selected = tasks.filter((task) => task.deliveredAt === 0 || now - task.deliveredAt >= 60_000).slice(0, 8);
+    selected.forEach((task) => { task.deliveredAt = now; });
+    return selected.map((task): AgentTaskMessage => task.type === 'upgrade_task'
+      ? { type: 'upgrade_task', data: task.data }
+      : { type: 'probe_task', data: task.data });
+  }
+
+  private acknowledgeTask(nodeId: string, taskId: string, result: TaskResult) {
+    const tasks = this.pendingTasks.get(nodeId);
+    if (tasks) {
+      const remaining = tasks.filter((task) => {
+        const candidate = task.data as { taskId?: string };
+        return candidate.taskId !== taskId;
+      });
+      if (remaining.length) this.pendingTasks.set(nodeId, remaining);
+      else this.pendingTasks.delete(nodeId);
+    }
+    this.taskResults.set(`${nodeId}:${taskId}`, result);
+  }
+
+  getTaskStatus(nodeId: string, taskId: string) {
+    const result = this.taskResults.get(`${nodeId}:${taskId}`);
+    if (result) return { ...result, status: 'COMPLETED' as const };
+    const queued = (this.pendingTasks.get(nodeId) ?? []).some((task) => (task.data as { taskId?: string }).taskId === taskId);
+    return { taskId, status: queued ? 'QUEUED' as const : 'PENDING' as const };
   }
 
   // 断开：置离线并移除注册
@@ -467,10 +591,23 @@ export class AgentGatewayService implements OnModuleDestroy {
       return;
     }
     this.sockets.delete(nodeId);
-    await this.prisma.node
-      .update({ where: { id: nodeId }, data: { status: 'OFFLINE' } })
-      .catch(() => undefined);
     this.logger.log(`agent offline: nodeId=${nodeId}`);
+  }
+
+  isCurrentSocket(nodeId: string, socket: AgentSocket): boolean {
+    return this.sockets.get(nodeId) === socket;
+  }
+
+  private supersedeSocket(nodeId: string): void {
+    const socket = this.sockets.get(nodeId);
+    if (!socket) return;
+    this.sockets.delete(nodeId);
+    try {
+      socket.close(4002, 'switched to HTTP polling');
+    } catch (err) {
+      this.logger.warn(`close superseded agent socket failed: node=${nodeId} error=${err}`);
+    }
+    this.logger.log(`agent WS superseded by HTTP polling: node=${nodeId}`);
   }
 
   // 节点删除前断开其在线 Agent：只移除注册与关闭连接，不写库（节点即将删除）
@@ -487,11 +624,26 @@ export class AgentGatewayService implements OnModuleDestroy {
 
   // 心跳超时扫描：超过阈值未心跳的在线节点置离线
   async sweepStaleNodes(): Promise<void> {
-    const threshold = new Date(Date.now() - 30_000);
-    await this.prisma.node.updateMany({
-      where: { status: 'ONLINE', lastSeenAt: { lt: threshold } },
-      data: { status: 'OFFLINE' }
+    const nodes = await this.prisma.node.findMany({
+      where: { status: 'ONLINE' },
+      select: { id: true, communicationMode: true, pollIntervalSecs: true, lastSeenAt: true }
     });
+    const now = Date.now();
+    const staleIds = nodes
+      .filter((node) => {
+        if (!node.lastSeenAt) return true;
+        const thresholdMs = node.communicationMode === 'HTTP'
+          ? Math.max(15_000, node.pollIntervalSecs * 3_000)
+          : 15_000;
+        return now - node.lastSeenAt.getTime() > thresholdMs;
+      })
+      .map((node) => node.id);
+    if (staleIds.length) {
+      await this.prisma.node.updateMany({
+        where: { id: { in: staleIds }, status: 'ONLINE' },
+        data: { status: 'OFFLINE' }
+      });
+    }
   }
 
   onModuleDestroy() {
@@ -501,5 +653,11 @@ export class AgentGatewayService implements OnModuleDestroy {
       socket.close(1001, 'server shutdown');
     }
     this.sockets.clear();
+    this.pendingTasks.clear();
+    this.taskResults.clear();
+    this.configCache.clear();
   }
 }
+
+// 旧名称作为导出别名保留，避免已有测试和扩展模块被无意义地打断。
+export { AgentService as AgentGatewayService };

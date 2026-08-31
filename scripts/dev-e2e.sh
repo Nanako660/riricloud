@@ -33,6 +33,18 @@ mkdir -p "$LOG_DIR" "$SINGBOX_CONF_DIR"
 say() { printf '\033[1;36m[dev-e2e]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[dev-e2e]\033[0m %s\n' "$*" >&2; exit 1; }
 
+SERVER_PID=""
+WEB_PID=""
+AGENT_PID=""
+
+cleanup() {
+  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true
+  # 只回收本次脚本启动的服务；已在运行的复用实例保持不动
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 # 从 stdin 的 JSON 提取顶层字段
 jsonget() {
   node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const v=JSON.parse(d)[process.argv[1]];console.log(v==null?"":String(v))}catch{console.log("")}})' "$1"
@@ -64,15 +76,20 @@ SINGBOX_BIN="$(find_singbox)" || die "未找到 sing-box 内核：请放入 .too
 say "sing-box 内核：$SINGBOX_BIN"
 
 # ---------- 2. 主控端（已在跑则复用） ----------
-SERVER_PID=""
+DB_WAS_PRESENT=0
+if [ -f apps/server/prisma/dev.db ]; then
+  DB_WAS_PRESENT=1
+fi
+say "检查并应用数据库迁移…"
+pnpm --filter @riricloud/server exec -- prisma migrate deploy || die "数据库迁移失败"
+if [ "$DB_WAS_PRESENT" = "0" ]; then
+  say "初始化种子数据…"
+  pnpm --filter @riricloud/server exec -- prisma db seed || die "数据库种子失败"
+fi
+
 if server_up; then
   say "主控端已在 $SERVER_URL 运行，直接复用"
 else
-  if [ ! -f apps/server/prisma/dev.db ]; then
-    say "初始化数据库（migrate deploy + seed）…"
-    pnpm --filter @riricloud/server exec prisma migrate deploy
-    pnpm --filter @riricloud/server exec prisma db seed
-  fi
   say "启动主控端（日志：$LOG_DIR/server.log）…"
   pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
   SERVER_PID=$!
@@ -94,7 +111,6 @@ else
 fi
 
 # ---------- 3. Web 面板（可选） ----------
-WEB_PID=""
 if [ "${SKIP_WEB:-0}" = "1" ]; then
   say "SKIP_WEB=1，跳过 Web 面板"
 elif web_up; then
@@ -191,13 +207,5 @@ else
 fi
 say "跟踪 Agent 日志中，Ctrl+C 退出并回收 Agent 进程…"
 say "--------------------------------------"
-
-cleanup() {
-  kill "$AGENT_PID" 2>/dev/null || true
-  # 只回收本次脚本启动的服务；已在运行的复用实例保持不动
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
 
 tail -n 30 -f "$LOG_DIR/agent.log"

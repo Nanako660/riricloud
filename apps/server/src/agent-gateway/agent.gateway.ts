@@ -1,10 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { Server, WebSocket } from 'ws';
-import { AgentGatewayService } from './agent-gateway.service';
+import { AgentService } from './agent.service';
 import { parseAgentInboundMessage } from './agent-message';
 
-// Agent 长连接网关：只做连接管理与消息编解码，业务逻辑全部在 AgentGatewayService
+// Agent 长连接网关：只做连接管理与消息编解码，业务逻辑全部在 AgentService
 // （分层约束见 docs/CODE_REVIEW.md §3.1 S3）
 @WebSocketGateway({ path: '/ws/agent', perMessageDeflate: false })
 export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -13,7 +13,7 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly gatewayService: AgentGatewayService) {}
+  constructor(private readonly gatewayService: AgentService) {}
 
   async handleConnection(client: WebSocket, request: IncomingMessageLike) {
     const token = new URL(request.url ?? '', 'http://localhost').searchParams.get('token') ?? undefined;
@@ -60,6 +60,9 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const nodeId = this.registry.get(client);
     if (!nodeId) {
+      return;
+    }
+    if (!this.gatewayService.isCurrentSocket(nodeId, client)) {
       return;
     }
     switch (message.type) {

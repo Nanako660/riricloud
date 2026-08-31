@@ -290,6 +290,8 @@ export function PageContainer({ title, description, actions, children }: PageCon
 
 ## 9. 扩展与自定义组件准则
 
+节点运维视图的通信状态使用语义 Badge：在线 WS 显示“WS 在线”，在线 HTTP 显示“HTTP 轮询”，断开显示“离线”；状态旁应展示最近上报时间。探针、升级等异步操作沿用 Dialog + Sonner，并在 HTTP 模式下通过任务状态查询给出完成或超时反馈，不在页面内直接使用裸 `fetch`。
+
 如遇 shadcn/ui 官方未收录的特殊场景（例如：流量波形动效、节点拓扑连线图）：
 1. **优先查找 Radix UI 原语**：在 Radix UI Primitive 之上使用 Tailwind CSS 进行包装。
 2. **严格遵循规范**：组件接口需支持 `className`、`ref` 转发，样式使用 `cva` 维护。

@@ -35,6 +35,7 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
 };
 
 export type TransportType = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
+export type CommunicationMode = 'WS' | 'HTTP';
 
 export interface InboundTransport {
   type: TransportType;
@@ -133,6 +134,8 @@ export interface AdminNode {
   isLocal: boolean;
   configOverride: string | null;
   agentToken: string;
+  communicationMode: CommunicationMode;
+  pollIntervalSecs: number;
   status: string;
   lastSeenAt: string | null;
   cpuUsage: number | null;
@@ -149,9 +152,17 @@ export interface AdminNode {
 }
 
 export interface CreateNodeResult {
-  node: { id: string; name: string };
+  node: { id: string; name: string; communicationMode?: CommunicationMode };
   agentToken: string;
   installCommand: string;
+  installCommands?: { ws: string; http: string };
+}
+
+export interface NodeTaskStatus {
+  taskId: string;
+  status: 'PENDING' | 'QUEUED' | 'COMPLETED';
+  success?: boolean;
+  message?: string;
 }
 
 // 节点列表：5 秒轮询实时观察 Agent 在线状态与负载
@@ -187,7 +198,7 @@ export function useNodeMutations() {
 
   // 创建成功不弹 toast：弹窗内切换到 AgentToken 与安装命令展示页
   const createNode = useMutation({
-    mutationFn: async (payload: { name?: string; serverHost: string }) =>
+    mutationFn: async (payload: { name?: string; serverHost: string; communicationMode?: CommunicationMode }) =>
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
@@ -202,6 +213,8 @@ export function useNodeMutations() {
       name?: string;
       serverHost?: string;
       configOverride?: string | null;
+      communicationMode?: CommunicationMode;
+      pollIntervalSecs?: number;
     }) => (await api.patch(`/admin/nodes/${id}`, payload)).data,
     ...invalidateSub
   });
@@ -238,5 +251,19 @@ export function useNodeMutations() {
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '探针下发失败'))
   });
 
-  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode };
+  const waitForTask = async ({ nodeId, taskId, label }: { nodeId: string; taskId: string; label: string }) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const status = (await api.get<NodeTaskStatus>(`/admin/nodes/${nodeId}/tasks/${taskId}`)).data;
+      if (status.status === 'COMPLETED') {
+        if (status.success) toast.success(`${label}已完成`);
+        else toast.error(`${label}失败`, { description: status.message ?? 'Agent 返回失败' });
+        return status;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+    }
+    toast.info(`${label}仍在执行`, { description: '可稍后返回节点详情查看结果' });
+    return undefined;
+  };
+
+  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, waitForTask };
 }

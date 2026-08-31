@@ -61,4 +61,9 @@ export class NodesController {
     return this.nodesService.requestProbe(id, dto);
   }
 
+  @Get(':id/tasks/:taskId')
+  taskStatus(@Param('id', ParseUUIDPipe) id: string, @Param('taskId', ParseUUIDPipe) taskId: string) {
+    return this.nodesService.taskStatus(id, taskId);
+  }
+
 }

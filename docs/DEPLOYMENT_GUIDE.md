@@ -76,13 +76,21 @@ curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
   --master=wss://<master-domain>/ws/agent
 ```
 
+如果节点所在网络不支持 WebSocket Upgrade，可在安装向导切换为 HTTP 模式：
+
+```bash
+curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
+  --token=<YOUR_AGENT_TOKEN> \
+  --master=https://<master-domain>
+```
+
 #### 安装脚本后台执行步骤：
 1. 检测 VPS 架构（`x86_64` / `aarch64` / `armv7`）。
 2. 下载对应架构的 `riri-agent` 单二进制与官方 `sing-box` 代理内核。
 3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址。
 4. 注册并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启。
 
-> **Agent 环境变量**：`AGENT_TOKEN`（必填）、`MASTER_WS_URL`（默认 `ws://localhost:3000/ws/agent`）、`SINGBOX_CONFIG_PATH`（默认 `./config.json`）、`SINGBOX_BINARY_PATH`（sing-box 内核二进制路径，默认 `sing-box` 走 PATH）。内核缺失或启动失败时 Agent 按指数退避持续重试，不影响长连接与遥测。
+> **Agent 环境变量**：`AGENT_TOKEN`（必填）；推荐使用 `MASTER_URL`（WS/WSS 地址如 `wss://<master>/ws/agent`，HTTP/HTTPS 模式可填主控根地址）；`AGENT_MODE=ws|http` 可显式指定模式，未指定时按 URL 协议前缀推导；`POLL_INTERVAL_SECS` 默认 15 秒、范围 5~300 秒；`MASTER_WS_URL` 继续兼容旧版 Agent。另有 `SINGBOX_CONFIG_PATH`（默认 `./config.json`）与 `SINGBOX_BINARY_PATH`（默认 `sing-box`）。
 
 ### 2.2 方式二：Docker 容器化部署
 如果节点偏好容器化环境，可直接通过 Docker 启动：
@@ -97,6 +105,14 @@ docker run -d \
   riricloud/agent:latest
 ```
 
+HTTP 容器模式只需替换为：
+
+```bash
+  -e MASTER_URL="https://<master-domain>" \
+  -e AGENT_MODE="http" \
+  -e POLL_INTERVAL_SECS="15" \
+```
+
 ### 2.3 本地一键联调（开发）
 
 `scripts/dev-e2e.sh` 一键拉起全套本地联调环境（主控 + Web 面板 + Agent + 真实 sing-box 内核）：
@@ -107,9 +123,9 @@ SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
 NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调节点并自定义端口
 ```
 
-- 脚本自动完成：数据库迁移与播种（首次）、管理员登录、默认复用 seed 预置的 `Master-Local` 节点、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点，并复用或创建对应端口的 VLESS Reality 线路。
+- 脚本每次启动前都会检查并应用数据库迁移，数据库首次创建时再执行种子播种；随后自动完成管理员登录、默认复用 seed 预置的 `Master-Local` 节点、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点，并复用或创建对应端口的 VLESS Reality 线路。
 - 已在运行的 3000/5173 服务会被复用而非重启；脚本退出只回收其自身启动的进程。
-- 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时。
+- 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时；迁移、登录或节点准备阶段失败也会回收本次已启动的主控/Web 进程。
 - 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、面板编辑线路后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
 
 ---

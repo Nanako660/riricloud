@@ -3,6 +3,7 @@ import { AgentGatewayService } from './agent-gateway.service';
 
 describe('AgentGateway', () => {
   const gatewayService = {
+    isCurrentSocket: jest.fn(() => true),
     handleHeartbeat: jest.fn(),
     handleConfigApplyResult: jest.fn(),
     handleUpgradeResult: jest.fn(),

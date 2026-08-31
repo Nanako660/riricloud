@@ -41,6 +41,8 @@ model Node {
   isLocal        Boolean   @default(false) // 主控本机预置节点
   configOverride String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
   agentToken     String    @unique
+  communicationMode String  @default("WS") // WS | HTTP
+  pollIntervalSecs Int     @default(15) // HTTP 轮询建议周期，秒
   status         String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED
   lastSeenAt     DateTime?
   cpuUsage       Float?
