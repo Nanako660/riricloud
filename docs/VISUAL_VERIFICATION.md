@@ -27,12 +27,12 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 卡片居中性、Logo 渲染、输入框聚焦态、登录后跳转与错误 Toast |
 | **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**` | 表单字段对齐、密码确认校验、返回登录跳转链接 |
-| **`UI-03`** | 控制台 | 仪表盘概览 | `/` | `apps/web/src/pages/dashboard/**` | 流量配额卡片、节点在线数、流量使用进度条、可用节点表格与协议 Badge |
+| **`UI-03`** | 控制台 | 仪表盘概览 | `/` | `apps/web/src/pages/dashboard/**` | 流量配额卡片、可用线路数、流量使用进度条与订阅入口 |
 | **`UI-04`** | 控制台 | 重置订阅确认弹窗 | `/`（点击“重置链接”） | `apps/web/src/components/ui/alert-dialog.tsx` | AlertDialog 遮罩、警告文案、危险红色按钮、取消/确认交互 |
 | **`UI-05`** | 节点管理 | 节点管理列表 | `/admin/nodes` | `apps/web/src/pages/admin/nodes/index.tsx` | 节点数据表格、内核运行状态 Badge、CPU/内存/带宽遥测实时刷新、心跳时间 |
 | **`UI-06`** | 节点管理 | 添加节点弹窗 | `/admin/nodes`（点击“添加节点”） | `apps/web/src/pages/admin/nodes/components/node-form-dialog.tsx` | Dialog 居中、服务器地址与名称输入框、公开开关 Switch |
 | **`UI-07`** | 节点详情 | 入站协议列表 Tab | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 入站协议列表表格、Tag 徽章、监听端口显示、公开/隐藏状态 Badge |
-| **`UI-08`** | 节点详情 | 添加入站协议弹窗 | `/admin/nodes/:id`（点击“添加入站”） | `apps/web/src/pages/admin/nodes/components/inbound-form-dialog.tsx` | 协议下拉选择、传输层 Transport 配置、TLS/Reality 密钥对一键生成、流控设置 |
+| **`UI-08`** | 节点详情 | 添加入站协议弹窗 | `/admin/nodes/:id`（点击“添加入站”） | `apps/web/src/pages/admin/nodes/components/inbound-form-dialog.tsx` | 协议下拉选择、IPv4 默认监听、新建时预填五位随机端口、传输层 Transport 配置、TLS/Reality 密钥对一键生成、流控设置；无专属字段的协议不显示空参数卡片 |
 | **`UI-09`** | 节点详情 | 基础信息与接入 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、Agent 接入 Token 展示与一键复制、遥测卡片 |
 | **`UI-10`** | 节点详情 | 高级模式 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | sing-box 服务端生成配置只读预览、JSON 覆盖深合并代码编辑器 |
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | 邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选、套餐 Badge、订阅状态 Badge、流量进度条、到期日、Token 重置确认、管理员防误操作保护 |
@@ -45,8 +45,11 @@
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认模板 Badge、策略组/规则集/DNS 摘要、删除确认 |
 | **`UI-19`** | 模板管理 | 订阅模板编辑弹窗 | `/admin/templates`（点击“新建模板/编辑”） | `apps/web/src/pages/admin/templates/components/template-form-dialog.tsx` | JSON/YAML 等宽编辑区、校验错误、默认模板 Switch、弹窗滚动 |
 | **`UI-20`** | 用户订阅 | 套餐市场 | `/market` | `apps/web/src/pages/user/market/index.tsx` | 套餐权益网格、当前套餐标记、订购/升配二次确认、窄屏单列 |
-| **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、Token 复制/重置、取消保留权益提示、可用节点 |
+| **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、Token 复制/重置、取消保留权益提示、可用线路 |
 | **`UI-22`** | 节点运维 | 远程升级弹窗 | `/admin/nodes/:id`（点击“远程升级”） | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | 目标 Select、版本/URL/SHA-256 校验、下发中禁用状态、错误 Toast |
+| **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
+| **`UI-24`** | 线路管理 | 新建/编辑线路弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 直连/中继动态表单、入口节点/随机端口提示、目标入站、默认关闭的对外覆盖开关、覆盖输入禁用/保留状态、倍率与状态开关 |
+| **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
 
 ---
 
@@ -57,7 +60,7 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-22]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-25]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
     PathCheck -->|控制台模块\npages/dashboard/*| Dash[精准走查: UI-03, UI-04]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
@@ -67,14 +70,16 @@ flowchart TD
     PathCheck -->|模板模块\npages/admin/templates/*| Templates[精准走查: UI-18, UI-19]
     PathCheck -->|用户订阅\npages/user/*| UserSubs[精准走查: UI-20, UI-21]
     PathCheck -->|节点升级\npages/admin/nodes/components/upgrade-node-dialog.tsx| Upgrade[精准走查: UI-22]
+    PathCheck -->|线路管理\npages/admin/lines/*| Lines[精准走查: UI-23 ~ UI-24]
+    PathCheck -->|用户线路\npages/user/lines/*| UserLines[精准走查: UI-25]
 ```
 
 ### 映射规则表
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-22`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-22`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-25`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-25`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
 | `apps/web/src/pages/dashboard/**` | `UI-03`, `UI-04` | **增量** |
@@ -85,6 +90,8 @@ flowchart TD
 | `apps/web/src/pages/admin/templates/**` | `UI-18`, `UI-19` | **增量** |
 | `apps/web/src/pages/user/**` | `UI-20`, `UI-21` | **增量** |
 | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | `UI-22` | **增量** |
+| `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
+| `apps/web/src/pages/user/lines/**` | `UI-25` | **增量** |
 
 ---
 
@@ -119,5 +126,5 @@ flowchart TD
 
 ## 5. 维护与更新约定
 
-1. **新增页面/模态框时**：必须在同一 PR 中向本文件「2. 全量 UI 验证索引台账」追加新的 `UI-xx` 索引项与源码路径映射；当前套餐/订阅相关视图登记为 `UI-16` 至 `UI-22`，管理员订阅履约已归入用户管理的 `UI-11` 至 `UI-13`。
+1. **新增页面/模态框时**：必须在同一 PR 中向本文件「2. 全量 UI 验证索引台账」追加新的 `UI-xx` 索引项与源码路径映射；当前套餐/订阅相关视图登记为 `UI-16` 至 `UI-25`，管理员订阅履约已归入用户管理的 `UI-11` 至 `UI-13`。
 2. **重构/删除页面时**：必须同步更新索引台账，保持文档与代码绝对一致。

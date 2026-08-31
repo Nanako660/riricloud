@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { ArrowLeft, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Cpu, GitBranch, KeyRound, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractErrorMessage } from '@/lib/api';
 import { PageContainer } from '@/components/shared/page-container';
@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +44,7 @@ import {
   useInboundMutations,
   useNodeMutations,
   type NodeInbound,
+  type NodeLine,
   type ProtocolType
 } from './use-nodes';
 import { InboundFormDialog } from './components/inbound-form-dialog';
@@ -72,7 +72,7 @@ export default function NodeDetailPage() {
 
   const { data: node, isPending, isError } = useAdminNodeDetail(id);
   const { updateNode, deleteNode, reloadNode, upgradeNode } = useNodeMutations();
-  const { createInbound, updateInbound, deleteInbound, generateKeypair } = useInboundMutations(id);
+  const { createInbound, updateInbound, deleteInbound, deriveLine, generateKeypair } = useInboundMutations(id);
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editingInbound, setEditingInbound] = React.useState<NodeInbound | null>(null);
@@ -81,18 +81,12 @@ export default function NodeDetailPage() {
   // 基础信息编辑（本地态，保存后失效刷新）
   const [name, setName] = React.useState('');
   const [serverHost, setServerHost] = React.useState('');
-  const [isPublic, setIsPublic] = React.useState(true);
-  const [tags, setTags] = React.useState('');
-  const [level, setLevel] = React.useState(0);
   const [override, setOverride] = React.useState('');
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   React.useEffect(() => {
     if (node) {
       setName(node.name);
       setServerHost(node.serverHost);
-      setIsPublic(node.isPublic);
-      setTags(node.tags.join(', '));
-      setLevel(node.level);
       setOverride(node.configOverride ?? '');
     }
   }, [node]);
@@ -116,7 +110,7 @@ export default function NodeDetailPage() {
 
   const onSaveBasic = () => {
     if (!node) return;
-    updateNode.mutate({ id: node.id, name, serverHost, isPublic, tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), level });
+    updateNode.mutate({ id: node.id, name, serverHost });
   };
 
   const onSaveOverride = () => {
@@ -281,7 +275,7 @@ export default function NodeDetailPage() {
                       <TableHead>协议</TableHead>
                       <TableHead>Tag</TableHead>
                       <TableHead>监听</TableHead>
-                      <TableHead>订阅</TableHead>
+                      <TableHead>线路</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -295,11 +289,18 @@ export default function NodeDetailPage() {
                         <TableCell className="text-muted-foreground tabular-nums">
                           {inbound.listen}:{inbound.port}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={inbound.isPublic ? 'secondary' : 'outline'}>
-                            {inbound.isPublic ? '公开' : '隐藏'}
-                          </Badge>
-                        </TableCell>
+                         <TableCell>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             className="gap-1.5"
+                             disabled={deriveLine.isPending}
+                             onClick={() => deriveLine.mutate(inbound.id)}
+                           >
+                             <GitBranch className="h-3.5 w-3.5" />
+                             派生
+                           </Button>
+                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button
@@ -337,6 +338,39 @@ export default function NodeDetailPage() {
               )}
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">关联线路（{node.entryLines.length}）</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {node.entryLines.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>线路</TableHead>
+                      <TableHead>类型</TableHead>
+                      <TableHead>入口端口</TableHead>
+                      <TableHead>目标入站</TableHead>
+                      <TableHead>状态</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {node.entryLines.map((line: NodeLine) => (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-medium">{line.name}</TableCell>
+                        <TableCell><Badge variant="outline">{line.type === 'RELAY' ? '中继' : '直连'}</Badge></TableCell>
+                        <TableCell className="tabular-nums">{line.entryPort ?? line.targetInbound.port}</TableCell>
+                        <TableCell>{line.targetInbound.tag} · {PROTOCOL_LABELS[line.targetInbound.type]}</TableCell>
+                        <TableCell><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <EmptyState title="暂无关联线路" description="可在上方入站列表中一键派生直连线路。" className="border-0" />
+              )}
+            </CardContent>
+          </Card>
           <p className="text-muted-foreground text-xs">
             端口冲突规则：同节点同传输层（TCP/UDP）端口互斥，QUIC 系协议（Hysteria2/TUIC）可与 TCP 协议共用端口。
           </p>
@@ -358,21 +392,6 @@ export default function NodeDetailPage() {
                   <Label htmlFor="node-host">服务器地址</Label>
                   <Input id="node-host" value={serverHost} onChange={(e) => setServerHost(e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="node-tags">标签</Label>
-                  <Input id="node-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="vip, hk" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="node-level">等级</Label>
-                  <Input id="node-level" type="number" min="0" value={level} onChange={(e) => setLevel(Number(e.target.value) || 0)} />
-                </div>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <Label>对订阅公开</Label>
-                  <p className="text-muted-foreground text-sm">关闭后该节点不出现在用户订阅中</p>
-                </div>
-                <Switch checked={isPublic} onCheckedChange={setIsPublic} />
               </div>
               <Button size="sm" disabled={updateNode.isPending} onClick={onSaveBasic}>
                 {updateNode.isPending ? '保存中…' : '保存'}
@@ -472,47 +491,59 @@ export default function NodeDetailPage() {
             </CardContent>
           </Card>
 
-          {/* 危险操作区 */}
-          <Card className="border-destructive/40 bg-destructive/5">
-            <CardHeader>
-              <CardTitle className="text-base text-destructive flex items-center gap-2">
-                <Trash2 className="h-4 w-4" />
-                危险操作区
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">删除此节点</p>
-                  <p className="text-muted-foreground text-xs leading-relaxed">
-                    删除后该节点的全部入站协议配置与关联流量记录将永久清空，在线 Agent 将立即断开并注销连接。
-                  </p>
+          {node.isLocal ? (
+            <Card className="border-muted bg-muted/20">
+              <CardHeader>
+                <CardTitle className="text-base">系统节点</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  主控本机节点是系统保留节点，不支持删除。你仍可以管理它的入站配置和运行参数。
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardHeader>
+                <CardTitle className="text-base text-destructive flex items-center gap-2">
+                  <Trash2 className="h-4 w-4" />
+                  危险操作区
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">删除此节点</p>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      删除后该节点的全部入站协议配置与关联流量记录将永久清空，在线 Agent 将立即断开并注销连接。
+                    </p>
+                  </div>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" className="gap-1.5 shrink-0" disabled={deleteNode.isPending}>
+                        <Trash2 className="h-4 w-4" />
+                        {deleteNode.isPending ? '正在删除…' : '删除节点'}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>确认删除节点「{node.name}」？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          该操作不可撤销。所有属于该节点的入站协议与流量记录将被一并清除，正在连接的用户连接将被强制中断。
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" onClick={onDelete}>
+                          确认删除
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" className="gap-1.5 shrink-0" disabled={deleteNode.isPending}>
-                      <Trash2 className="h-4 w-4" />
-                      {deleteNode.isPending ? '正在删除…' : '删除节点'}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>确认删除节点「{node.name}」？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        该操作不可撤销。所有属于该节点的入站协议与流量记录将被一并清除，正在连接的用户连接将被强制中断。
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction variant="destructive" onClick={onDelete}>
-                        确认删除
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 

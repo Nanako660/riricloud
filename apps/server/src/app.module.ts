@@ -9,6 +9,7 @@ import { SubscriptionModule } from './subscription/subscription.module';
 import { AgentGatewayModule } from './agent-gateway/agent-gateway.module';
 import { PlansModule } from './plans/plans.module';
 import { TemplatesModule } from './subscription-templates/templates.module';
+import { LinesModule } from './lines/lines.module';
 
 // Web 静态托管在 main.ts 以中间件方式注册（@nestjs/serve-static 与 Express 5 不兼容）
 @Module({
@@ -19,6 +20,7 @@ import { TemplatesModule } from './subscription-templates/templates.module';
     SystemModule,
     UsersModule,
     NodesModule,
+    LinesModule,
     PlansModule,
     TemplatesModule,
     SubscriptionModule,

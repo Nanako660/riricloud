@@ -135,14 +135,16 @@ export default function AdminNodesPage() {
                           </TooltipTrigger>
                           <TooltipContent>重载配置</TooltipContent>
                         </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="删除" onClick={() => setDeleting(n)}>
-                              <Trash2 className="text-destructive h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>删除</TooltipContent>
-                        </Tooltip>
+                        {!n.isLocal && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" aria-label="删除" onClick={() => setDeleting(n)}>
+                                <Trash2 className="text-destructive h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>删除</TooltipContent>
+                          </Tooltip>
+                        )}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button variant="ghost" size="icon" aria-label="详情" asChild>

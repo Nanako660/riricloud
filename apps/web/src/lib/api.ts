@@ -42,3 +42,45 @@ export function extractErrorMessage(error: unknown, fallback = '操作失败'): 
   }
   return fallback;
 }
+
+export type LineType = 'DIRECT' | 'RELAY';
+export type RelayMode = 'BLIND_FORWARD' | 'PROTOCOL_PROXY';
+export type LineStatus = 'ACTIVE' | 'DISABLED';
+
+export interface ApiLine {
+  id: string;
+  name: string;
+  type: LineType;
+  relayMode: RelayMode | null;
+  entryNodeId: string | null;
+  entryPort: number | null;
+  targetInboundId: string;
+  endpointOverrideEnabled: boolean;
+  serverHost: string;
+  serverPort: number;
+  serverName: string | null;
+  host: string | null;
+  endpointOverrides: {
+    serverHost: string | null;
+    serverPort: number | null;
+    serverName: string | null;
+    host: string | null;
+  };
+  trafficRate: number;
+  tags: string[];
+  level: number;
+  sortOrder: number;
+  isPublic: boolean;
+  status: LineStatus;
+  entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
+  targetInbound: {
+    id: string;
+    nodeId: string;
+    type: string;
+    tag: string;
+    listen: string;
+    port: number;
+    params: Record<string, unknown>;
+    node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  };
+}

@@ -2,14 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
-export interface UserPlan { id: string; name: string; description: string | null; price: number; durationDays: number; trafficLimitBytes: number; nodeMatchMode: string; }
+export interface UserPlan { id: string; name: string; description: string | null; price: number; durationDays: number; trafficLimitBytes: number; lineMatchMode: string; }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; plan: UserPlan; }
-export interface UserNode { id: string; name: string; serverHost: string; level: number; tags: string[]; inbounds: Array<{ id: string; type: string; tag: string; port: number }>; }
+export interface UserLine { id: string; name: string; type: 'DIRECT' | 'RELAY'; relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null; serverHost: string; serverPort: number; serverName: string | null; host: string | null; trafficRate: number; tags: string[]; level: number; status: 'ACTIVE' | 'DISABLED'; entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null; targetInbound: { id: string; nodeId: string; type: string; tag: string; port: number; node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } }; }
 
 export function useUserSubscription() {
   return useQuery({
     queryKey: ['user', 'subscription'],
-    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; nodes: UserNode[] }>('/user/subscription')).data
+    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[] }>('/user/subscription')).data
   });
 }
 

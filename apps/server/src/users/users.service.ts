@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
@@ -8,6 +8,7 @@ import { isUserEntitled } from '../common/utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { LinesService } from '../lines/lines.service';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -29,9 +30,9 @@ type UserSubscriptionSnapshot = {
   plan?: {
     id: string;
     name: string;
-    nodeMatchMode: string;
-    nodeTagsJson: string;
-    nodeIdsJson: string;
+    lineMatchMode: string;
+    lineTagsJson: string;
+    lineIdsJson: string;
   } | null;
 };
 
@@ -71,7 +72,8 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private settingsService: SettingsService,
-    private agentGateway: AgentGatewayService
+    private agentGateway: AgentGatewayService,
+    @Optional() private linesService?: LinesService
   ) {}
 
   // 重置订阅令牌：旧链接立即失效，返回新 token
@@ -252,9 +254,9 @@ export class UsersService {
     const subscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
-    const onlineCount = subscription?.plan
-      ? (await this.getPlanNodeIds(subscription.plan)).length
-      : await this.prisma.node.count({ where: { status: 'ONLINE', isPublic: true } });
+    const lines = this.linesService
+      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      : [];
     const trafficLimitBytes = subscription?.trafficLimitBytes ?? user.trafficLimitBytes;
     const trafficUsedBytes = subscription?.trafficUsedBytes ?? user.trafficUsedBytes;
     const expireAt = subscription?.expireAt ?? user.expireAt;
@@ -266,7 +268,8 @@ export class UsersService {
       expireAt,
       subscriptionToken,
       plan: subscription?.plan ? { id: subscription.plan.id, name: subscription.plan.name, status: subscription.status } : null,
-      onlineNodeCount: onlineCount
+      onlineNodeCount: lines.length,
+      lines
     };
   }
 
@@ -280,59 +283,16 @@ export class UsersService {
     const subscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
-    const planNodeIds = subscription?.plan ? await this.getPlanNodeIds(subscription.plan) : null;
-    const nodes = await this.prisma.node.findMany({
-      where: { isPublic: true, status: { not: 'DISABLED' } },
-      select: {
-        id: true,
-        name: true,
-        serverHost: true,
-        status: true,
-        cpuUsage: true,
-        memoryUsage: true,
-        bandwidthRate: true,
-        lastSeenAt: true,
-        sortOrder: true,
-        // 协议/端口视图改由公开入站提供（入站模型见 docs/DATA_MODELS.md §NodeInbound）
-        inbounds: {
-          where: { isPublic: true },
-          select: { type: true, tag: true, port: true },
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
-        }
-      },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
-    });
+    const lines = this.linesService
+      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      : [];
     return {
       entitled: subscription
         ? user.isActive && ['ACTIVE', 'CANCELED'].includes(subscription.status) && (!subscription.expireAt || subscription.expireAt > new Date()) && subscription.trafficUsedBytes < subscription.trafficLimitBytes
         : isUserEntitled(user),
-      nodes: planNodeIds ? nodes.filter((node) => planNodeIds.includes(node.id)) : nodes
+      lines,
+      nodes: lines
     };
-  }
-
-  private async getPlanNodeIds(plan: { nodeMatchMode: string; nodeTagsJson: string; nodeIdsJson: string }) {
-    const nodes = await this.prisma.node.findMany({
-      where: { status: 'ONLINE', isPublic: true },
-      select: { id: true, tagsJson: true }
-    });
-    const ids = this.parseStringArray(plan.nodeIdsJson);
-    const tags = this.parseStringArray(plan.nodeTagsJson);
-    return nodes
-      .filter((node) => {
-        if (plan.nodeMatchMode === 'EXPLICIT') return ids.includes(node.id);
-        if (plan.nodeMatchMode === 'TAGS') return tags.some((tag) => this.parseStringArray(node.tagsJson).includes(tag));
-        return true;
-      })
-      .map((node) => node.id);
-  }
-
-  private parseStringArray(value: string) {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-    } catch {
-      return [];
-    }
   }
 
   private async resolveInitialPlan(planId?: string | null) {

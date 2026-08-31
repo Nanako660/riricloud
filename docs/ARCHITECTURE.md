@@ -59,12 +59,12 @@ graph TB
 ## 2. 核心组件分工
 
 ### 2.1 主控中心 (Master Server)
-- **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、节点列表、通用订阅导出，以及管理员的用户管理、节点纳管、配置下发和系统状态监控。
+- **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、线路列表、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
-- **订阅引擎 (`apps/server/subscription`)**：根据用户的有效权限与节点公开入站（`NodeInbound.isPublic`），实时动态组装多协议（VLESS Reality / Hysteria2 / Shadowsocks / TUIC）三格式订阅：Clash Meta (Mihomo) YAML、Sing-box Client JSON 以及通用 Base64 URI 列表。输出名规则：单入站节点用节点名，多入站节点为「节点名·tag」，重名全局去重。
-- **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）与 sing-box 服务端入站 JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识。
-- **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定节点标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
+- **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 将用户订阅端点与 Node/NodeInbound 底座解耦，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且底层在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
+- **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。
+- **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
@@ -72,7 +72,7 @@ graph TB
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务由 Master 下发 URL、版本与 SHA-256。Agent 流式下载至临时文件并校验；Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级原子替换后保留启动参数重启。探针支持 TCP、DNS、ICMP，逐项返回延迟与错误。
-- **多入站监听**：节点可挂多条不同协议入站（`NodeInbound`，结构见 `docs/DATA_MODELS.md` §2.1）；hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。
+- **多入站与中继监听**：节点可挂多条不同协议入站（`NodeInbound`），默认监听所有 IPv4 网卡 `0.0.0.0`，新建入站与中继入口未指定端口时由主控随机分配 `20000~29999` 的五位端口；已有端口在编辑、重启和配置同步时保持不变。盲转发使用 `direct` inbound 的 `override_address`/`override_port`，协议代理使用目标协议入站、outbound 和路由规则。hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。
 - **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报（含内核状态 `kernelRunning`/`appliedConfigVersion`/`lastError`，落 `Node.kernelRunning`/`Node.configError`）。
 - **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。SS 入站为共享密码模式，按用户流量归属在该协议下不可用（按用户配额粒度本就暂缓，可接受）。
 
@@ -106,7 +106,11 @@ sequenceDiagram
     Agent-->>Master: 7. 上报服务启动成功状态
 ```
 
-### 3.2 节点遥测心跳与流量核算
+### 3.2 线路、中继与配置联动
+
+线路管理先选定目标入站，再根据线路类型决定连接拓扑：直连线路直接暴露目标节点；RELAY 线路由入口节点监听 `entryPort`，未填写时由服务端随机分配五位端口。保存线路后复用 250ms 防抖，将承担入口角色的在线节点重新生成并推送 `config_sync`。盲转发在入口侧保持端到端加密，协议代理在入口侧终止并重新建立目标协议连接。
+
+### 3.3 节点遥测心跳与流量核算
 
 ```mermaid
 sequenceDiagram
@@ -130,7 +134,7 @@ sequenceDiagram
     end
 ```
 
-### 3.3 订阅生命周期与配置联动
+### 3.4 订阅生命周期与配置联动
 
 ```mermaid
 sequenceDiagram
@@ -150,9 +154,9 @@ sequenceDiagram
     Agent->>Agent: 预检、原子落盘、按需优雅重启内核
 ```
 
-订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开节点和公开入站；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。
+订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开、启用且底层在线的 Line；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。
 
-### 3.4 远程升级与网络探针时序
+### 3.5 远程升级与网络探针时序
 
 ```mermaid
 sequenceDiagram

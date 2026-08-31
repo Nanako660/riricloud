@@ -4,10 +4,11 @@
 # 用法（Git Bash / 任意 POSIX shell）：
 #   bash scripts/dev-e2e.sh                  # 全套启动并跟踪 Agent 日志，Ctrl+C 退出
 #   SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
-#   NODE_PORT=9443 bash scripts/dev-e2e.sh   # 自定义内核监听端口（默认 8443）
+#   USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调节点而不是 Master-Local
+#   NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 自定义独立节点端口
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
-# 环境变量：SERVER_URL / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT
+# 环境变量：SERVER_URL / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > .tools/sing-box/ > tools/ > PATH
 set -euo pipefail
 
@@ -23,6 +24,7 @@ ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-riri-admin-demo}"
 NODE_NAME="${NODE_NAME:-local-e2e}"
 NODE_HOST="${NODE_HOST:-127.0.0.1}"
 NODE_PORT="${NODE_PORT:-8443}"
+USE_MASTER_LOCAL="${USE_MASTER_LOCAL:-1}"
 
 LOG_DIR="$ROOT/.cache/logs"
 SINGBOX_CONF_DIR="$ROOT/.cache/agent"
@@ -70,7 +72,20 @@ else
   say "启动主控端（日志：$LOG_DIR/server.log）…"
   pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
   SERVER_PID=$!
-  for i in $(seq 1 60); do server_up && break; sleep 1; [ "$i" = 60 ] && die "主控端 60s 内未就绪，查看 $LOG_DIR/server.log"; done
+  SERVER_READY=0
+  for i in $(seq 1 60); do
+    if server_up; then
+      SERVER_READY=1
+      break
+    fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      say "主控端进程已退出，最近日志：" >&2
+      tail -n 40 "$LOG_DIR/server.log" >&2 || true
+      die "主控端启动失败"
+    fi
+    sleep 1
+  done
+  [ "$SERVER_READY" = "1" ] || die "主控端 60s 内未就绪，查看 $LOG_DIR/server.log"
   say "主控端就绪：$SERVER_URL"
 fi
 
@@ -96,13 +111,18 @@ AGENT_TOKEN="${AGENT_TOKEN:-}"
 if [ -n "$AGENT_TOKEN" ]; then
   say "使用环境变量指定的 AGENT_TOKEN"
 else
-  # 按地址查找联调节点（避免中文名经 Windows 控制台的编码问题）；已存在则复用，不存在则创建并添加入站
+  # 默认复用 seed 预置的 Master-Local，保证面板中的本机节点与本地 Agent 是同一个实体。
+  # USE_MASTER_LOCAL=0 时按地址查找独立联调节点（避免中文名经 Windows 控制台的编码问题）。
   # 新数据模型：端口在 NodeInbound 上（POST /admin/nodes 只收基础信息，入站走 /admin/nodes/:id/inbounds）
   NODE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/nodes" \
-    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const n=(JSON.parse(d)||[]).find(x=>x.serverHost===process.argv[1]&&x.inbounds.some(i=>i.port===Number(process.argv[2])));console.log(n?[n.id,n.agentToken].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$NODE_PORT")"
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const nodes=JSON.parse(d)||[];const local=nodes.find(x=>x.isLocal&&x.inbounds?.length);const matched=nodes.find(x=>x.serverHost===process.argv[1]&&x.inbounds?.some(i=>i.port===Number(process.argv[2])));const n=process.argv[3]==="1"?local:matched;const inbound=n?.isLocal?(n.inbounds.find(i=>i.tag==="local-vless-in")||n.inbounds[0]):n?.inbounds?.find(i=>i.port===Number(process.argv[2]));console.log(n&&inbound?[n.id,n.agentToken,n.serverHost,inbound.port].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$NODE_PORT" "$USE_MASTER_LOCAL")"
   if [ -n "$NODE_LINE" ]; then
-    read -r NODE_ID AGENT_TOKEN <<<"$NODE_LINE"
-    say "复用既有节点（$NODE_HOST:$NODE_PORT）"
+    read -r NODE_ID AGENT_TOKEN NODE_HOST NODE_PORT <<<"$NODE_LINE"
+    if [ "$USE_MASTER_LOCAL" = "1" ]; then
+      say "复用 Master-Local（$NODE_HOST:$NODE_PORT）"
+    else
+      say "复用既有节点（$NODE_HOST:$NODE_PORT）"
+    fi
   else
     say "创建联调节点「$NODE_NAME」（$NODE_HOST:$NODE_PORT）…"
     CREATE_BODY=$(printf '{"name":"%s","serverHost":"%s"}' "$NODE_NAME" "$NODE_HOST")

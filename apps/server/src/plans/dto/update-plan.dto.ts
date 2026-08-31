@@ -40,19 +40,19 @@ export class UpdatePlanDto {
   @ApiPropertyOptional({ enum: PLAN_MATCH_MODES })
   @IsIn(PLAN_MATCH_MODES)
   @IsOptional()
-  nodeMatchMode?: PlanMatchMode;
+  lineMatchMode?: PlanMatchMode;
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  nodeTags?: string[];
+  lineTags?: string[];
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsOptional()
-  nodeIds?: string[];
+  lineIds?: string[];
 
   @ApiPropertyOptional({ nullable: true })
   @IsUUID()

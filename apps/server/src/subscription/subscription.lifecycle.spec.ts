@@ -8,7 +8,7 @@ describe('SubscriptionService lifecycle', () => {
   let service: SubscriptionService;
   const plan = {
     id: 'p1', name: '体验', isPublic: true, durationDays: 30, trafficLimitBytes: BigInt(1000),
-    nodeMatchMode: 'ALL', nodeTagsJson: '[]', nodeIdsJson: '[]', template: null
+    lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null
   };
   const subscription = {
     id: 's1', userId: 'u1', planId: 'p1', status: 'ACTIVE', trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0),

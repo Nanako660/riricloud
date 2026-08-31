@@ -1,10 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  buildClientTls,
+  buildClientTransport,
   buildServerInbound,
   generateRealityKeypair,
+  normalizeShadowsocksPassword,
   normalizeInboundParams,
   parseDest,
   REALITY_DEFAULTS,
+  resolveShadowsocksUserPassword,
   SS_DEFAULT_METHOD
 } from './inbound';
 
@@ -68,6 +72,16 @@ describe('normalizeInboundParams', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('VLESS 关闭 TLS 时自动移除 Vision flow', () => {
+    const params = normalizeInboundParams('VLESS', {
+      flow: 'xtls-rprx-vision',
+      tls: { enabled: false, mode: 'none' }
+    }) as { flow?: string; tls: { enabled: boolean; mode: string } };
+
+    expect(params.flow).toBeUndefined();
+    expect(params.tls).toEqual({ enabled: false, mode: 'none' });
+  });
+
   it('VLESS 非法 dest 提前抛出 BadRequest', () => {
     expect(() =>
       normalizeInboundParams('VLESS', {
@@ -106,10 +120,50 @@ describe('normalizeInboundParams', () => {
     expect(params.mode).toBe('shared');
   });
 
+  it('SHADOWSOCKS 2022 会把普通密码归一化为固定长度 Base64 密钥', () => {
+    const params = normalizeInboundParams('SHADOWSOCKS', {
+      method: '2022-blake3-aes-128-gcm',
+      password: 'plain-password',
+      mode: 'multi-user'
+    }) as { password: string; mode: string };
+
+    expect(params.mode).toBe('multi-user');
+    expect(Buffer.from(params.password, 'base64').length).toBe(16);
+    expect(params.password).not.toBe('plain-password');
+  });
+
   it('TROJAN 协议必须配置 TLS', () => {
     expect(() => normalizeInboundParams('TROJAN', { tls: { enabled: false } })).toThrow(
       BadRequestException
     );
+  });
+
+  it('客户端 WebSocket Host 统一映射到 headers.Host', () => {
+    expect(buildClientTransport({ type: 'ws', path: '/proxy', host: 'cdn.example.com' })).toEqual({
+      type: 'ws',
+      path: '/proxy',
+      headers: { Host: 'cdn.example.com' }
+    });
+  });
+
+  it('客户端 Reality TLS 携带公钥、Short ID 与 uTLS', () => {
+    expect(buildClientTls({
+      enabled: true,
+      mode: 'reality',
+      serverName: 'www.apple.com',
+      reality: {
+        dest: 'www.apple.com:443',
+        serverNames: ['www.apple.com'],
+        privateKey: 'private',
+        publicKey: 'public',
+        shortIds: ['0123456789abcdef']
+      }
+    })).toEqual({
+      enabled: true,
+      server_name: 'www.apple.com',
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'public', short_id: '0123456789abcdef' }
+    });
   });
 
   it('不支持的协议抛出 BadRequest', () => {
@@ -159,7 +213,7 @@ describe('buildServerInbound', () => {
 
   it('VLESS (WebSocket + TLS)：注入 transport 与 tls 配置', () => {
     const params = normalizeInboundParams('VLESS', {
-      transport: { type: 'ws', path: '/ws-path', headers: { Host: 'ws.example.com' } },
+      transport: { type: 'ws', path: '/ws-path', host: 'ws.example.com' },
       tls: {
         mode: 'tls',
         serverName: 'ws.example.com',
@@ -184,7 +238,26 @@ describe('buildServerInbound', () => {
     });
   });
 
-  it('VMESS (gRPC)：注入 transport 与 alter_id', () => {
+  it('服务端组装会修复已存储的 VLESS 明文 Vision 配置', () => {
+    const inbound = buildServerInbound({
+      type: 'VLESS',
+      ...base,
+      params: {
+        flow: 'xtls-rprx-vision',
+        transport: { type: 'tcp' },
+        tls: { enabled: false, mode: 'none' }
+      },
+      users
+    });
+
+    expect(inbound).not.toHaveProperty('tls');
+    expect(inbound.users).toEqual([
+      { uuid: 'uuid-1', name: 'a@x.com' },
+      { uuid: 'uuid-2', name: 'b@x.com' }
+    ]);
+  });
+
+  it('VMESS (gRPC)：注入 transport 与 alterId', () => {
     const params = normalizeInboundParams('VMESS', {
       alterId: 0,
       transport: { type: 'grpc', serviceName: 'my-grpc' }
@@ -194,8 +267,8 @@ describe('buildServerInbound', () => {
       type: 'vmess',
       transport: { type: 'grpc', service_name: 'my-grpc' },
       users: [
-        { uuid: 'uuid-1', name: 'a@x.com', alter_id: 0 },
-        { uuid: 'uuid-2', name: 'b@x.com', alter_id: 0 }
+        { uuid: 'uuid-1', name: 'a@x.com', alterId: 0 },
+        { uuid: 'uuid-2', name: 'b@x.com', alterId: 0 }
       ]
     });
   });
@@ -264,7 +337,7 @@ describe('buildServerInbound', () => {
     expect((inbound as Record<string, unknown>).users).toBeUndefined();
   });
 
-  it('SHADOWTLS：解析 dest 与 version', () => {
+  it('SHADOWTLS v3：解析 dest、version 并使用 users', () => {
     const params = normalizeInboundParams('SHADOWTLS', {
       version: 3,
       handshakeDest: 'gateway.icloud.com:443',
@@ -274,9 +347,28 @@ describe('buildServerInbound', () => {
     expect(inbound).toMatchObject({
       type: 'shadowtls',
       version: 3,
+      users: [
+        { name: 'a@x.com', password: 'pwd-1' },
+        { name: 'b@x.com', password: 'pwd-2' }
+      ],
       handshake: { server: 'gateway.icloud.com', server_port: 443 },
-      password: 'st-password'
     });
   });
-});
 
+  it('SHADOWSOCKS 2022 多用户为每个用户生成合法独立密钥', () => {
+    const params = normalizeInboundParams('SHADOWSOCKS', {
+      method: '2022-blake3-aes-128-gcm',
+      password: 'server-password',
+      mode: 'multi-user'
+    });
+    const inbound = buildServerInbound({ type: 'SHADOWSOCKS', ...base, params, users });
+    const userEntries = inbound.users as Array<{ name: string; password: string }>;
+
+    expect(userEntries).toEqual([
+      { name: 'a@x.com', password: resolveShadowsocksUserPassword('2022-blake3-aes-128-gcm', 'pwd-1', 'uuid-1') },
+      { name: 'b@x.com', password: resolveShadowsocksUserPassword('2022-blake3-aes-128-gcm', 'pwd-2', 'uuid-2') }
+    ]);
+    expect(Buffer.from((inbound.password as string), 'base64').length).toBe(16);
+    expect(inbound.password).toBe(normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'server-password'));
+  });
+});
