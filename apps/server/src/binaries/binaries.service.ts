@@ -88,6 +88,28 @@ export class BinariesService implements OnModuleInit {
     return asset;
   }
 
+  getInstallScript(): string {
+    const configured = process.env.RIRICLOUD_INSTALL_SCRIPT_PATH;
+    const candidates = configured
+      ? [configured]
+      : [
+          resolve(process.cwd(), 'install-agent.sh'),
+          resolve(process.cwd(), 'scripts', 'install-agent.sh'),
+          resolve(process.cwd(), '..', '..', 'scripts', 'install-agent.sh'),
+          resolve(process.cwd(), '..', '..', '..', 'scripts', 'install-agent.sh')
+        ];
+
+    for (const candidate of candidates) {
+      try {
+        const script = readFileSync(candidate, 'utf8');
+        if (script.startsWith('#!/bin/sh')) return script;
+      } catch {
+        // Try the next source layout.
+      }
+    }
+    throw new NotFoundException('主控未找到 Agent 安装脚本');
+  }
+
   async authorizeDownload(token: string | undefined): Promise<void> {
     if (!token) throw new UnauthorizedException('缺少 AgentToken');
     const node = await this.prisma.node.findUnique({ where: { agentToken: token }, select: { status: true } });
@@ -95,7 +117,7 @@ export class BinariesService implements OnModuleInit {
   }
 
   buildDownloadUrl(target: BinaryTarget, token: string): string {
-    const base = (process.env.RIRICLOUD_PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`).replace(/\/$/, '');
+    const base = (process.env.RIRICLOUD_PUBLIC_URL?.trim() || `http://localhost:${process.env.PORT ?? '3000'}`).replace(/\/$/, '');
     return `${base}/api/v1/downloads/binaries/${target}?token=${encodeURIComponent(token)}`;
   }
 

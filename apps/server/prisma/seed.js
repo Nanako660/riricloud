@@ -1,8 +1,10 @@
-// 种子数据：幂等创建演示管理员与普通用户（机制说明见 docs/DATA_MODELS.md §seed）
-// 凭据从环境变量读取，默认值仅供本地演示；生产环境务必修改或禁用
+// 完整演示 seed：幂等创建管理员、普通用户及演示业务数据。
+// 生产启动入口会先执行无默认值的 admin bootstrap；只有明确 AUTO_SEED=true 才调用本脚本。
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
-const { generateKeyPairSync, randomBytes, randomInt } = require('node:crypto');
+const { generateKeyPairSync, randomInt } = require('node:crypto');
+const { ensureAdmin } = require('./admin-bootstrap');
+const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -92,11 +94,10 @@ function hasInvalidVlessFlow(params) {
 }
 
 async function main() {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@riricloud.local';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'riri-admin-demo';
   const userEmail = process.env.SEED_USER_EMAIL || 'demo@riricloud.local';
   const userPassword = process.env.SEED_USER_PASSWORD || 'riri-user-demo';
-  const localHost = process.env.MASTER_LOCAL_HOST || '127.0.0.1';
+  // 完整 seed 仍保留本地演示默认值；生产启动入口只调用无默认值的 bootstrap。
+  const { admin } = await ensureAdmin(prisma, { allowDemoDefaults: true });
 
   const templateData = {
     name: '默认分流模板',
@@ -150,23 +151,8 @@ async function main() {
     plan = await prisma.plan.create({ data: planData });
   }
 
-  let localNode = await prisma.node.findFirst({ where: { isLocal: true } });
-  if (localNode) {
-    localNode = await prisma.node.update({
-      where: { id: localNode.id },
-      data: { name: 'Master-Local', serverHost: localHost, status: 'OFFLINE' }
-    });
-  } else {
-    localNode = await prisma.node.create({
-      data: {
-        name: 'Master-Local',
-        serverHost: localHost,
-        isLocal: true,
-        agentToken: randomBytes(32).toString('hex'),
-        status: 'OFFLINE'
-      }
-    });
-  }
+  const { node: localNode } = await ensureMasterAgentNode(prisma);
+  const localHost = localNode.serverHost;
 
   const existingDirectLine = await prisma.line.findFirst({ where: { name: 'Master 本机直连' } });
   // 直连线路是本机演示端点的稳定入口；若旧盲转线路占用同端口，优先迁移盲转端口。
@@ -222,16 +208,6 @@ async function main() {
     }
   }
 
-  const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { role: 'ADMIN', isActive: true },
-    create: {
-      email: adminEmail,
-      passwordHash: await bcrypt.hash(adminPassword, 10),
-      role: 'ADMIN'
-    }
-  });
-
   const user = await prisma.user.upsert({
     where: { email: userEmail },
     update: { isActive: true },
@@ -268,7 +244,7 @@ async function main() {
     }
   }
 
-  console.log(`seed: admin=${adminEmail}, user=${userEmail}, plan=${plan.name}`);
+  console.log(`seed: admin=${admin.email}, user=${userEmail}, plan=${plan.name}`);
 }
 
 main()

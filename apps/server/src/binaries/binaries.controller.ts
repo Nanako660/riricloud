@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
 import type { Response } from 'express';
@@ -6,12 +6,21 @@ import { Public } from '../auth/public.decorator';
 import { Roles } from '../common/roles.decorator';
 import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
-import { Body } from '@nestjs/common';
 
 @ApiTags('binaries')
 @Controller()
 export class BinariesController {
   constructor(private readonly binaries: BinariesService) {}
+
+  @Public()
+  @Get('install.sh')
+  install(@Res({ passthrough: true }) response: Response) {
+    const script = this.binaries.getInstallScript();
+    response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    response.setHeader('Content-Length', Buffer.byteLength(script, 'utf8'));
+    response.setHeader('Content-Disposition', 'inline; filename="install-agent.sh"');
+    return script;
+  }
 
   @Public()
   @Get('downloads/binaries/:target')

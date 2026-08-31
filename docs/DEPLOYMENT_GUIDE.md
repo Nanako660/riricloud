@@ -10,18 +10,20 @@
 - Linux / macOS / Windows Server
 ### 1.2 方式一：自包含发行包部署（推荐，v0.2.0 起）
 
-从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源、Agent 多架构二进制与全部生产依赖，目标机只需 Node.js >= 20）：
+从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源、Linux x64 本机 Agent、Sing-box 与全部生产依赖，目标机只需 Node.js >= 20）：
 
 ```bash
 tar -xzf riri-master_<version>_linux_amd64.tar.gz && cd riri-master_<version>_linux_amd64
-cp .env.example .env   # 编辑：JWT_SECRET 必填（openssl rand -hex 32）
-./start.sh             # 首启自动：生成 Prisma client（Linux 引擎）→ migrate deploy → 启动
+cp .env.example .env   # 编辑：JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD 必填
+./start.sh             # 首启自动：生成 Prisma client → migrate deploy → admin/Master-Local bootstrap → 启动 Master + 内置 Agent
 ```
 
 - 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
-- 首次登录账号：执行 `node node_modules/prisma/build/index.js db seed` 播种（凭据经 `SEED_ADMIN_EMAIL/PASSWORD` 覆盖，默认密码见包内 README），**登录后立即修改**。
+- 首次启动空数据库时，bootstrap 按 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 创建首个管理员；兼容旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD`，不再提供生产默认管理员密码。
+- 生产环境 `AUTO_SEED=false` 时只创建管理员和系统保留的 `Master-Local`，不会创建演示用户、套餐、模板和线路；开发/演示环境明确设置 `AUTO_SEED=true` 才会执行完整演示 seed。
+- 重置已有管理员密码：`./admin-reset.sh --email admin@example.com`（默认隐藏交互输入）；自动化场景可用 `printf '%s\n' 'new-password' | ./admin-reset.sh --email admin@example.com --password-stdin`。该命令不会创建或提权账号。
 - 主控端静态托管由 `apps/server/src/static/web-static.ts` 实现（探测顺序：`WEB_DIST_PATH` 环境变量 → monorepo 开发布局 → 发行包 `web-dist/`）。
-- 主控二进制分发目录为发行包内的 `binaries/`；Agent 远程升级按节点上报的 `osArch` 选择 `agent-*`，下载端点使用节点 AgentToken 鉴权。生产环境建议设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>`，否则默认只生成本机回环地址。
+- 主控二进制分发目录为发行包内的 `binaries/`；其中 `agent-linux-amd64` 与 `singbox-linux-amd64` 供内置本机 Agent 使用，其他架构资产用于远程 Agent 升级。生产环境建议设置 `MASTER_LOCAL_HOST=<master-domain>`，或设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>` 自动推导订阅地址；否则新库默认使用本机回环地址。
 
 ### 1.3 方式二：源码构建与运行
 
@@ -38,30 +40,99 @@ pnpm --filter @riricloud/server build
 
 # 4. 生产迁移后启动（web 构建产物由 server 托管）
 pnpm --filter @riricloud/server exec prisma migrate deploy
+pnpm --filter @riricloud/server exec node prisma/bootstrap-admin.js
 pnpm --filter @riricloud/server start:prod
 ```
 
-> 源码方式下 `start:prod` 同样会探测并托管 `apps/web/dist`（monorepo 布局自动命中）；`prisma migrate deploy` 不可省略（生产建表），与开发态 `migrate dev` 的区别见 Prisma 文档。
+> 源码方式下请先在当前 shell 或 `apps/server/.env` 设置强随机 `JWT_SECRET` 与首次启动所需的 `ADMIN_EMAIL`、`ADMIN_PASSWORD`；`start:prod` 会探测并托管 `apps/web/dist`（monorepo 布局自动命中）。`prisma migrate deploy` 与 `bootstrap-admin.js` 不可省略，已有管理员时 bootstrap 会安全跳过。
 
-### 1.4 方式三：Docker Compose（规划中，Phase 5）
+### 1.4 方式三：Docker Compose
 
-在生产服务器上使用 Docker Compose 运行主控端（镜像构建待 Phase 5 落地）：
-```yaml
-version: '3.8'
+仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 WSL/Linux Docker 环境执行；Windows PowerShell 仅用于调用 `wsl.exe`，不承担 Docker 测试：
 
-services:
-  master:
-    image: riricloud/master:latest
-    container_name: riri-master
-    restart: always
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - PORT=8080
-      - DATABASE_URL=file:/app/data/riri.db
-      - JWT_SECRET=your-super-secret-jwt-key
+```bash
+cp .env.example .env  # 或手动创建 .env
+# 填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+pnpm docker:build
+pnpm docker:up
+```
+
+若 WSL 仅能调用 Windows `node.exe`、尚未安装 Linux Node.js/pnpm，可直接使用同一脚本：
+
+```bash
+bash scripts/docker-build.sh build
+bash scripts/docker-build.sh up
+```
+
+脚本会自动读取根 `package.json` 版本，并兼容 WSL 的 `node.exe` 路径。
+
+`pnpm docker:build` 会从根 `package.json` 读取当前版本号，并为两个组件各创建两个标签：
+
+```text
+riricloud/master:<version>
+riricloud/master:latest
+riricloud/agent:<version>
+riricloud/agent:latest
+```
+
+同一次构建默认还会把镜像导出到仓库根目录 `docker-images/`：
+
+```text
+docker-images/riricloud-master_<version>_linux_amd64.tar.gz
+docker-images/riricloud-agent_<version>_linux_amd64.tar.gz
+docker-images/riricloud-docker-images_<version>_linux_amd64.manifest.json
+docker-images/riricloud-docker-images_<version>_linux_amd64.sha256
+```
+
+导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。
+
+运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。
+
+主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据持久化到 Compose 命名卷 `master-data`；启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。容器内显式重置命令为：
+
+```bash
+docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com
+printf '%s\n' 'new-password' | docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
+```
+
+Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控制 Master 面板监听端口；本机 Agent 动态使用的 TCP/UDP 线路端口会直接监听宿主机，不需要映射上万条端口。Compose 不固定 `container_name`，可用项目名同时运行多个实例。生产环境应设置 `MASTER_LOCAL_HOST`，或设置 `RIRICLOUD_PUBLIC_URL` 让 bootstrap 自动推导本机线路对外地址。Compose 默认引用 `latest`，`pnpm docker:up` 会注入当前版本和 Git 构建元数据。
+
+导入离线镜像时，在目标 Docker 环境执行：
+
+```bash
+gzip -dc docker-images/riricloud-master_<version>_linux_amd64.tar.gz | docker load
+# 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
+# gzip -dc docker-images/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
+(cd docker-images && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
+```
+
+仓库另提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像。该模板不包含 `build` 配置，并设置 `pull_policy: never`，适合离线或受限网络环境：
+
+```bash
+cp .env.image.example .env.image
+# 编辑 .env.image：默认固定使用 0.2.0，可改为 latest；填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD
+docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
+docker compose --env-file .env.image -f docker-compose.image.yml ps
+```
+
+Master 本机 Agent 会随 `master` 服务自动启动，无需启用独立 Agent profile。只有在同一 Compose 中联调额外远程节点时，才创建节点并取得该远程节点的 AgentToken 后启用 Agent profile：
+
+```bash
+docker compose --env-file .env.image -f docker-compose.image.yml --profile agent up -d --no-build
+```
+
+该模板与标准 `docker-compose.yml` 使用相同的 `master-data` 和 `agent-data` 命名卷，切换部署模板时不会改变数据库持久化位置。停止服务使用 `docker compose ... down`，不要使用 `down -v`，否则会删除数据库卷。
+
+远程节点容器使用 `--network host` 语义，内置静态 `riri-agent` 与官方 sing-box `1.14.0`，默认不自动启动以避免空 AgentToken 容器反复重启。Master 本机 Agent 不使用该服务；创建远程节点并取得 Token 后，在 `.env` 中设置 `AGENT_TOKEN`，再执行：
+
+```bash
+COMPOSE_PROFILES=agent pnpm docker:up
+```
+
+可通过 `AGENT_MASTER_URL`、`AGENT_MODE=http`、`POLL_INTERVAL_SECS` 切换 Agent 的主控地址与 HTTP 轮询模式。停止并清理容器：
+
+```bash
+pnpm docker:down
 ```
 
 ---
@@ -86,10 +157,12 @@ curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
 ```
 
 #### 安装脚本后台执行步骤：
-1. 检测 VPS 架构（`x86_64` / `aarch64` / `armv7`）。
-2. 下载对应架构的 `riri-agent` 单二进制与官方 `sing-box` 代理内核。
-3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址；后续升级无需节点直接访问 GitHub。
-4. 注册并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启。
+1. 检测 VPS 架构（`x86_64` / `aarch64`）；当前发行包资产暂不包含 `armv7`。
+2. 从主控 `GET /api/v1/install.sh` 下载对应架构的 `riri-agent` 与 Sing-box 资产，下载请求使用 `x-agent-token` 鉴权。
+3. 写入 `/etc/riri-agent/agent.env`（权限 `0600`），配置 Token、Master 地址、通信模式和 `/var/lib/riri-agent/config.json` 数据路径；后续升级无需节点直接访问 GitHub。
+4. 写入并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启；安装目录为 `/opt/riri-agent`。
+
+安装脚本由主控的 `GET /api/v1/install.sh` 公开提供，也随主控自包含发行包以 `install-agent.sh` 文件提供。脚本支持 `--token TOKEN`、`--master URL`、`--mode ws|http`，`--master` 可传 `ws://`、`wss://`、`http://` 或 `https://` 地址。
 
 > **Agent 环境变量**：`AGENT_TOKEN`（必填）；推荐使用 `MASTER_URL`（WS/WSS 地址如 `wss://<master>/ws/agent`，HTTP/HTTPS 模式可填主控根地址）；`AGENT_MODE=ws|http` 可显式指定模式，未指定时按 URL 协议前缀推导；`POLL_INTERVAL_SECS` 默认 15 秒、范围 5~300 秒；`MASTER_WS_URL` 继续兼容旧版 Agent。另有 `SINGBOX_CONFIG_PATH`（默认 `./config.json`）与 `SINGBOX_BINARY_PATH`（默认 `sing-box`）。
 
@@ -151,7 +224,7 @@ bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
 1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
 2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
 3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`；
-4. 装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；
+4. 装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/`install-agent.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
 5. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256，含主控端包）；
 6. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
 7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖三端：主控端发行包 + Agent 三平台二进制**。
@@ -162,7 +235,7 @@ Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存�
 节点详情「升级中心」默认从主控 `/api/v1/downloads/binaries/:target` 下载对应架构版本，校验 SHA-256 后执行原子替换；主控不具备对应 Sing-box 架构时，管理员可在面板导入自定义 URL 与 SHA-256 后再下发。Agent 也可通过详情页快捷重启并保留原始启动参数。
 
 ### 3.4 主控端升级
-下载新版本 `riri-master_*.tar.gz` → 停服 → 解压新包替换目录 → 拷回旧目录的 `.env` 与数据库文件（`prisma/data/`）→ `./start.sh`（数据库迁移自动执行，`data/` 与 `.env` 独立于程序目录，升级不丢数据）。
+下载新版本 `riri-master_*.tar.gz` → 停服 → 解压新包替换目录 → 拷回旧目录的 `.env` 与 `prisma/data/` 数据目录 → `./start.sh`（数据库迁移自动执行，数据与 `.env` 独立于程序目录，升级不丢数据）。
 
 ---
 

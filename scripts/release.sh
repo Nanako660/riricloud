@@ -77,18 +77,54 @@ for platform in "linux amd64 riri-agent" "linux arm64 riri-agent" "windows amd64
     -ldflags "-X main.Version=${VERSION}" -o "$DIR/$BIN" .
 done
 
-echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本）"
+echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本 + 安装脚本）"
 MASTER_DIR="$DIST/riri-master_${VERSION}_linux_amd64"
 # pnpm deploy 须在 worktree 内执行（读取其 lockfile 与 workspace 依赖拓扑）
 cd "$WORKTREE"
 pnpm --filter @riricloud/server deploy --prod "$MASTER_DIR"
+rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules"
+# pnpm 在 Windows 上可能生成指向当前工作区的绝对符号链接；发行包必须可移动，统一改写为包内相对链接。
+node - "$MASTER_DIR" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(process.argv[1]);
+let normalized = 0;
+
+function walk(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      const target = path.resolve(path.dirname(entryPath), fs.readlinkSync(entryPath));
+      const relativeToRoot = path.relative(root, target);
+      if (relativeToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToRoot)) {
+        throw new Error(`发行包符号链接指向包外路径：${entryPath} -> ${target}`);
+      }
+      const relativeTarget = path.relative(path.dirname(entryPath), target) || '.';
+      const targetType = fs.statSync(target).isDirectory() ? 'dir' : 'file';
+      fs.unlinkSync(entryPath);
+      fs.symlinkSync(relativeTarget, entryPath, targetType);
+      normalized += 1;
+      continue;
+    }
+    if (entry.isDirectory()) walk(entryPath);
+  }
+}
+
+walk(root);
+console.log(`已将 ${normalized} 个发行包内部绝对符号链接改写为相对链接`);
+NODE
 rm -rf "$MASTER_DIR/src" "$MASTER_DIR/tsconfig.json" "$MASTER_DIR/tsconfig.build.json" \
-  "$MASTER_DIR/nest-cli.json" "$MASTER_DIR/node_modules/.pnpm/node_modules"
+  "$MASTER_DIR/nest-cli.json"
 # 启动入口与配置模板（scripts/master-bundle 维护）
-cp "$RIRI_ROOT/scripts/master-bundle/start.sh" "$MASTER_DIR/"
-cp "$RIRI_ROOT/scripts/master-bundle/README.md" "$MASTER_DIR/"
-cp "$RIRI_ROOT/scripts/master-bundle/.env.example" "$MASTER_DIR/"
+cp "$WORKTREE/scripts/master-bundle/start.sh" "$MASTER_DIR/"
+cp "$WORKTREE/scripts/master-bundle/README.md" "$MASTER_DIR/"
+cp "$WORKTREE/scripts/master-bundle/.env.example" "$MASTER_DIR/"
+cp "$WORKTREE/scripts/master-bundle/admin-reset.sh" "$MASTER_DIR/"
+cp "$WORKTREE/scripts/install-agent.sh" "$MASTER_DIR/"
 chmod +x "$MASTER_DIR/start.sh"
+chmod +x "$MASTER_DIR/admin-reset.sh"
+chmod +x "$MASTER_DIR/install-agent.sh"
 # Web 面板静态资源（main.ts 经 WEB_DIST_PATH 探测的三级布局之一）
 mkdir -p "$MASTER_DIR/web-dist"
 cp -r "$WORKTREE/apps/web/dist/." "$MASTER_DIR/web-dist/"
@@ -99,14 +135,33 @@ cp "$DIST/riri-agent_${VERSION}_linux_arm64/riri-agent" "$MASTER_DIR/binaries/ag
 if [ -f "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" ]; then
   cp "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
 fi
-# Sing-box 由发布机或 CI 通过 SINGBOX_BINARY_DIR 提供；未提供时管理员仍可在后台导入。
+# 主控发行包内置本机 Agent；优先使用本地缓存，否则下载并缓存指定版本的 Linux x64 Sing-box。
+SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
 SINGBOX_SOURCE_DIR="${SINGBOX_BINARY_DIR:-$RIRI_ROOT/.tools/sing-box}"
+if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ]; then
+  command -v curl >/dev/null 2>&1 || die "缺少 Linux x64 sing-box，且系统没有 curl；请设置 SINGBOX_BINARY_DIR"
+  command -v tar >/dev/null 2>&1 || die "缺少 Linux x64 sing-box，且系统没有 tar；请设置 SINGBOX_BINARY_DIR"
+  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-release/$SINGBOX_VERSION"
+  mkdir -p "$DOWNLOAD_DIR/linux-amd64"
+  if [ ! -f "$DOWNLOAD_DIR/linux-amd64/sing-box" ]; then
+    echo "下载内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION"
+    TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
+    curl --fail --silent --show-error --location \
+      "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz" \
+      --output "$TMP_ARCHIVE"
+    tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
+    install -m 0755 "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" "$DOWNLOAD_DIR/linux-amd64/sing-box"
+  fi
+  SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
+fi
+cp "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" "$MASTER_DIR/binaries/singbox-linux-amd64"
+chmod +x "$MASTER_DIR/binaries/singbox-linux-amd64"
 for target in linux-amd64 linux-arm64 windows-amd64; do
   case "$target" in
     windows-amd64) FILE_NAME="sing-box.exe" ;;
     *) FILE_NAME="sing-box" ;;
   esac
-  if [ -f "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" ]; then
+  if [ -f "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" ] && [ "$target" != "linux-amd64" ]; then
     cp "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"
   elif [ -f "$SINGBOX_SOURCE_DIR/$FILE_NAME" ] && [ "$target" = "windows-amd64" ]; then
     cp "$SINGBOX_SOURCE_DIR/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"

@@ -19,12 +19,17 @@ graph TB
         AgentPollAPI["Agent HTTP 轮询适配器<br/>(POST /api/v1/agent/poll)"]
         SubscriptionEngine["通用多格式订阅生成引擎<br/>(YAML / JSON / Base64)"]
         SQLiteDB[("SQLite 数据库 (WAL 模式)<br/>Prisma ORM")]
+        LocalAgent["内置本机 Agent<br/>(riri-agent)"]
+        LocalSingbox["内置本机 Sing-box"]
         
         FrontendUI -->|"HTTP(S)"| APIServer
         APIServer <-->|"CRUD"| SQLiteDB
         APIServer <--> WSGateway
         APIServer <--> AgentPollAPI
         APIServer <--> SubscriptionEngine
+        LocalAgent <-->|"WS / 本机进程"| WSGateway
+        LocalAgent <-->|"本地 JSON 配置管理"| LocalSingbox
+        LocalAgent -->|"CPU/内存/网络遥测"| APIServer
     end
 
     subgraph "边缘节点 A (Edge Node 1 - Data Plane)"
@@ -69,6 +74,7 @@ graph TB
 - **主控二进制分发中心 (`apps/server/src/binaries`)**：启动时扫描发行包 `binaries/`、开发态 Agent/Sing-box 路径并计算 SHA-256；升级任务按节点 `osArch` 选择主控内置版本，下载端点使用 AgentToken 鉴权。自定义 Sing-box 文件经后台导入后落在主控托管目录。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
 - **HTTP 轮询适配器 (`POST /api/v1/agent/poll`)**：为无法完成 WS Upgrade 的网络提供 HTTPS 主动上报、配置差异拉取和异步任务回执。
+- **内置本机 Agent (`apps/agent` + `riri-agent`)**：Docker 镜像和 Linux x64 自包含发行包内置 Agent 与 Sing-box；启动时先完成数据库迁移和 `Master-Local` bootstrap，再启动 Master，等待健康接口就绪后让 Agent 通过回环 WS 连接本机网关。远程 VPS 仍使用独立 Agent 镜像或安装脚本接入。
 - **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 是用户订阅端点的唯一业务实体，直接拥有协议、参数、监听地址、Tag、入口/出口拓扑和端口，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且入口/出口节点在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。
 - **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
@@ -76,7 +82,7 @@ graph TB
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
 - **双模式通信与自愈**：Agent 根据 `MASTER_URL` 的 `ws(s)://` / `http(s)://` 前缀推导模式，也可由 `AGENT_MODE=ws|http` 显式指定；WS 模式具备指数退避重连，HTTP 模式按 `POLL_INTERVAL_SECS` 轮询并接受 Master 的 `nextPollSecs` 调整；服务端只接受通过结构校验的 Agent 上行数据。
-- **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
+- **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。Docker Master 镜像和自包含发行包直接携带 Linux Sing-box；远程 Agent 仍可通过安装脚本获取对应版本。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~29999` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。

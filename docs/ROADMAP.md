@@ -6,7 +6,7 @@
 
 ## 📅 阶段任务拆解
 
-> **当前进度**：Phase 1 已完成；v0.4.0 节点与线路解耦、中继拓扑、主控本机节点和线路订阅编译闭环已完成；节点详情运维与主控自包含升级分发闭环已完成。下方标注 ⭐ 的条目为已实现部分；按用户流量统计仍受 sing-box 上游能力限制暂缓（见 Phase 3 遥测条目）。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
+> **当前进度**：Phase 1 已完成；v0.4.0 节点与线路解耦、中继拓扑、主控本机节点和线路订阅编译闭环已完成；节点详情运维、主控自包含升级分发与部署打包闭环已完成。下方标注 ⭐ 的条目为已实现部分；按用户流量统计仍受 sing-box 上游能力限制暂缓（见 Phase 3 遥测条目）。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
 
 ### Phase 1: 基础设施与 Monorepo 脚手架搭建
 - [x] 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
@@ -83,9 +83,9 @@
 - [x] ⭐ 完成 Server / Web / Agent / 文档门禁与 WS / HTTP 本地真实联调验收。
 
 ### Phase 5: 部署自动化与端到端联调验收
-- [ ] 编写节点一键安装脚本 `scripts/install-agent.sh`。
-- [ ] 编写主控端与 Agent 的 Dockerfile 及 `docker-compose.yml`。
-- [ ] 本地全链路联调：主控添加节点 -> 启动 Agent 建立长连接 -> 订阅生成 -> 客户端连接测试 -> 流量核算与上报。
+- [x] ⭐ 编写节点一键安装脚本 `scripts/install-agent.sh`，由主控 `GET /api/v1/install.sh` 公开分发并注册 systemd。
+- [x] ⭐ 编写主控端与 Agent 的多阶段 Dockerfile 及 `docker-compose.yml`，SQLite 使用持久化卷。
+- [x] ⭐ WSL Docker 验收主控容器：迁移、幂等播种、Web 健康检查与安装脚本端点均通过；Agent 镜像内置静态 Agent 与官方 sing-box。
 
 ---
 

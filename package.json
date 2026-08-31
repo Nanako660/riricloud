@@ -28,7 +28,13 @@
     "gate": "pnpm gate:docs && pnpm gate:server && pnpm gate:web && pnpm gate:agent",
     "plan:new": "node scripts/doc-governance.mjs new",
     "plan:archive": "node scripts/doc-governance.mjs archive",
-    "plan:sync": "node scripts/doc-governance.mjs sync"
+    "plan:sync": "node scripts/doc-governance.mjs sync",
+    "admin:reset": "bash scripts/admin-reset.sh",
+    "docker:build": "bash scripts/docker-build.sh build",
+    "docker:export": "bash scripts/docker-build.sh export",
+    "docker:tags": "bash scripts/docker-build.sh tags",
+    "docker:up": "bash scripts/docker-build.sh up",
+    "docker:down": "bash scripts/docker-build.sh down"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",

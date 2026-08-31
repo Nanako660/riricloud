@@ -101,7 +101,7 @@ flowchart TD
 
 ### Step 1: 环境检查与就绪
 1. 确认后端服务（`http://localhost:3000`）与前端服务（`http://localhost:5173`）正常监听；
-2. 确保数据库已初始化并完成种子数据填充（默认管理员账号：`admin@riricloud.local`，密码：`riri-admin-demo`）。
+2. 确保数据库已初始化并完成本地演示 seed（默认管理员账号：`admin@riricloud.local`，密码：`riri-admin-demo`）；生产环境使用 `.env` 中显式配置的管理员凭据，不依赖演示默认值。
 
 ### Step 2: 浏览器视口与会话初始化
 1. 通过 Chrome DevTools MCP 将浏览器页面视口调整至标准桌面分辨率（如 `1440x900`）；

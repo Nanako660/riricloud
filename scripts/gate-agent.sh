@@ -10,19 +10,30 @@ if [ -f "$RIRI_ROOT/scripts/dev-env.sh" ]; then
 fi
 cd "$RIRI_ROOT/apps/agent"
 
-go vet ./...
-UNFORMATTED="$(gofmt -l .)"
+GO_BIN="go"
+GOFMT_BIN="gofmt"
+if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then
+  # WSL 可复用仓库内缓存的 Windows 便携 Go 工具链。
+  GO_BIN="go.exe"
+  GOFMT_BIN="gofmt.exe"
+fi
+
+command -v "$GO_BIN" >/dev/null 2>&1 || { echo "缺少 Go 工具链（go 或 go.exe）" >&2; exit 1; }
+command -v "$GOFMT_BIN" >/dev/null 2>&1 || { echo "缺少 gofmt 工具链（gofmt 或 gofmt.exe）" >&2; exit 1; }
+
+"$GO_BIN" vet ./...
+UNFORMATTED="$("$GOFMT_BIN" -l .)"
 if [ -n "$UNFORMATTED" ]; then
   echo "以下文件未通过 gofmt："
   echo "$UNFORMATTED"
   exit 1
 fi
-go test ./...
+"$GO_BIN" test ./...
 
 # Windows 本地产物带 .exe 后缀，CI/Linux 产物名 riri-agent
 case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) BIN="riri-agent.exe" ;;
   *) BIN="riri-agent" ;;
 esac
-CGO_ENABLED=0 go build -o "$BIN" .
+CGO_ENABLED=0 "$GO_BIN" build -o "$BIN" .
 echo "agent 门禁通过"
