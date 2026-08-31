@@ -49,7 +49,8 @@ export function useAdminUsers(params: ListUsersParams) {
             ...(params.planId ? { planId: params.planId } : {})
           }
         })
-      ).data
+      ).data,
+    refetchInterval: 5000
   });
 }
 

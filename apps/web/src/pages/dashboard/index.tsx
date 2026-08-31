@@ -41,7 +41,8 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
   const dashboard = useQuery({
     queryKey: ['user', 'dashboard'],
-    queryFn: async () => (await api.get<DashboardData>('/user/dashboard')).data
+    queryFn: async () => (await api.get<DashboardData>('/user/dashboard')).data,
+    refetchInterval: 5000
   });
 
   // 重置订阅令牌（破坏性操作，AlertDialog 二次确认）

@@ -89,4 +89,49 @@ describe('subscription builders with lines', () => {
       { domain_suffix: ['example.com'], outbound: 'block' }
     ]);
   });
+
+  it('ShadowTLS 输出为 SS2022 + ShadowTLS v3 组合线路', () => {
+    const shadowtlsLine: SubLine = {
+      ...line,
+      name: 'ShadowTLS v3',
+      targetInbound: {
+        type: 'SHADOWTLS',
+        tag: 'shadowtls-in',
+        port: 443,
+        params: {
+          version: 3,
+          handshakeDest: 'www.apple.com:443',
+          strictMode: true,
+          inner: {
+            type: 'SHADOWSOCKS',
+            method: '2022-blake3-aes-128-gcm',
+            password: 'inner-password'
+          }
+        }
+      }
+    };
+    const clash = parse(buildClashYaml(user, [shadowtlsLine])) as { proxies: Array<Record<string, unknown>> };
+    expect(clash.proxies[0]).toMatchObject({
+      name: 'ShadowTLS v3 [1.5x]',
+      type: 'ss',
+      cipher: '2022-blake3-aes-128-gcm',
+      plugin: 'shadow-tls',
+      'client-fingerprint': 'chrome',
+      'plugin-opts': { host: 'www.apple.com', password: user.credential, version: 3 }
+    });
+
+    const singbox = JSON.parse(buildSingboxJson(user, [shadowtlsLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect(singbox.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'shadowsocks', tag: 'ShadowTLS v3 [1.5x]', detour: 'ShadowTLS v3 [1.5x] · ShadowTLS' }),
+      expect.objectContaining({ type: 'shadowtls', tag: 'ShadowTLS v3 [1.5x] · ShadowTLS', version: 3, password: user.credential })
+    ]));
+    const selector = singbox.outbounds.find((outbound) => outbound.type === 'selector') as { outbounds: string[] };
+    expect(selector.outbounds).toEqual(['ShadowTLS v3 [1.5x]']);
+
+    const [uri] = buildUriList(user, [shadowtlsLine]);
+    expect(uri).toContain('ss://');
+    expect(uri).toContain('plugin=shadow-tls%3Bhost%3Dwww.apple.com');
+  });
 });

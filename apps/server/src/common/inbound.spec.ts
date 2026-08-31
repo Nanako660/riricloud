@@ -2,7 +2,9 @@ import { BadRequestException } from '@nestjs/common';
 import {
   buildClientTls,
   buildClientTransport,
+  buildShadowsocksClientPassword,
   buildServerInbound,
+  buildServerInbounds,
   generateRealityKeypair,
   normalizeShadowsocksPassword,
   normalizeInboundParams,
@@ -132,6 +134,17 @@ describe('normalizeInboundParams', () => {
     expect(params.password).not.toBe('plain-password');
   });
 
+  it('SHADOWSOCKS 2022 客户端凭证组合服务端密钥和用户密钥', () => {
+    const serverPassword = normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'server-password');
+    const userPassword = resolveShadowsocksUserPassword('2022-blake3-aes-128-gcm', 'pwd-1', 'uuid-1');
+    expect(buildShadowsocksClientPassword(
+      '2022-blake3-aes-128-gcm',
+      'server-password',
+      'pwd-1',
+      'uuid-1'
+    )).toBe(`${serverPassword}:${userPassword}`);
+  });
+
   it('TROJAN 协议必须配置 TLS', () => {
     expect(() => normalizeInboundParams('TROJAN', { tls: { enabled: false } })).toThrow(
       BadRequestException
@@ -163,6 +176,20 @@ describe('normalizeInboundParams', () => {
       server_name: 'www.apple.com',
       utls: { enabled: true, fingerprint: 'chrome' },
       reality: { enabled: true, public_key: 'public', short_id: '0123456789abcdef' }
+    });
+  });
+
+  it('NaiveProxy 客户端 TLS 不输出不支持的 insecure 字段', () => {
+    expect(buildClientTls({
+      enabled: true,
+      mode: 'tls',
+      serverName: 'naive.example.com',
+      certificatePath: '/tmp/test.crt',
+      keyPath: '/tmp/test.key',
+      insecure: true
+    }, null, { includeAlpn: false, includeInsecure: false })).toEqual({
+      enabled: true,
+      server_name: 'naive.example.com'
     });
   });
 
@@ -358,22 +385,61 @@ describe('buildServerInbound', () => {
     expect((inbound as Record<string, unknown>).users).toBeUndefined();
   });
 
-  it('SHADOWTLS v3：解析 dest、version 并使用 users', () => {
+  it('SHADOWTLS v3：强制内层 SS2022、生成 detour 和回环入站', () => {
     const params = normalizeInboundParams('SHADOWTLS', {
       version: 3,
       handshakeDest: 'gateway.icloud.com:443',
-      password: 'st-password'
+      inner: {
+        type: 'SHADOWSOCKS',
+        method: '2022-blake3-aes-128-gcm',
+        password: 'inner-password'
+      }
     });
     const inbound = buildServerInbound({ type: 'SHADOWTLS', ...base, params, users });
     expect(inbound).toMatchObject({
       type: 'shadowtls',
       version: 3,
+      detour: 'in-1-inner',
       users: [
         { name: 'a@x.com', password: 'pwd-1' },
         { name: 'b@x.com', password: 'pwd-2' }
       ],
       handshake: { server: 'gateway.icloud.com', server_port: 443 },
+      strict_mode: true
     });
+    const inbounds = buildServerInbounds({ type: 'SHADOWTLS', ...base, params, users });
+    expect(inbounds).toHaveLength(2);
+    expect(inbounds[1]).toMatchObject({
+      type: 'shadowsocks',
+      tag: 'in-1-inner',
+      listen: '127.0.0.1',
+      listen_port: 0,
+      method: '2022-blake3-aes-128-gcm'
+    });
+    expect(inbounds[1].password).toBe(normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'inner-password'));
+  });
+
+  it('SHADOWTLS：拒绝旧版独立密码和非 SS2022 内层', () => {
+    expect(() => buildServerInbounds({
+      type: 'SHADOWTLS',
+      ...base,
+      params: { version: 2, handshakeDest: 'gateway.icloud.com:443', password: 'legacy-password' },
+      users
+    })).toThrow('ShadowTLS 仅支持 v3');
+    expect(() => normalizeInboundParams('SHADOWTLS', {
+      version: 2,
+      handshakeDest: 'gateway.icloud.com:443',
+      password: 'legacy-password'
+    })).toThrow('ShadowTLS 仅支持 v3');
+    expect(() => normalizeInboundParams('SHADOWTLS', {
+      version: 3,
+      handshakeDest: 'gateway.icloud.com:443'
+    })).toThrow('必须配置内层 Shadowsocks 2022');
+    expect(() => normalizeInboundParams('SHADOWTLS', {
+      version: 3,
+      handshakeDest: 'gateway.icloud.com:443',
+      inner: { type: 'SHADOWSOCKS', method: 'aes-256-gcm', password: 'legacy' }
+    })).toThrow('内层必须使用 Shadowsocks 2022 算法');
   });
 
   it('SHADOWSOCKS 2022 多用户为每个用户生成合法独立密钥', () => {

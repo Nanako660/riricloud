@@ -236,7 +236,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 }
 ```
 
-> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` 已实现 ⭐；`trafficRecords` 为**增量**字节数（本心跳周期内），因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户流量采集暂缓、当前恒为空数组，待上游能力就绪后启用。
+> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `trafficRecords` 均已实现 ⭐。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=true)` 读取并清零本周期用户计数，`trafficRecords` 只携带正数增量；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
 >
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
@@ -368,9 +368,9 @@ http(s)://<master-host>/api/v1/sub/:token
   ss://<BASE64URL(method:password)>@<IP>:<PORT>#东京线路   (SIP002)
   naive+https://<USERNAME>:<PASSWORD>@<IP>:<PORT>#东京线路
   ```
-  凭证：hy2/trojan/tuic/naive 密码取 `User.password ?? User.uuid`；ss 为共享密码或多用户密码；vless/vmess/tuic 用户名为 `User.uuid`。
+  凭证：hy2/trojan/tuic/naive 密码取 `User.password ?? User.uuid`；SS 共享模式使用入站密钥，多用户 SS2022 使用 `server_password:user_password`；vless/vmess/tuic 用户名为 `User.uuid`。
 
-> **协议兼容约束**：VMess 入站用户字段使用 `alterId`，Sing-box VMess 出站仍使用 `alter_id`；ShadowTLS v3 入站必须使用 `users`，v2 才使用单个 `password`；SS2022 在共享模式和多用户模式均输出算法要求长度的 Base64 密钥。WebSocket 的 `host` 会转换为 `headers.Host`，不会写入 sing-box transport 顶层；TUIC `zero_rtt_handshake` 默认关闭。协议代理中继仅允许目标为 VLESS、VMess、Trojan、Hysteria2、TUIC、Shadowsocks 或 NaiveProxy，避免生成无法工作的本地代理出站。
+> **协议兼容约束**：VMess 入站用户字段使用 `alterId`，Sing-box VMess 出站仍使用 `alter_id`；ShadowTLS 仅支持 v3，必须配置 SS2022 内层，服务端生成 `shadowtls` 外层入站与 `127.0.0.1:0` 的回环 SS 入站并通过 `detour` 串联，不再接受 v2 或独立 ShadowTLS 密码；SS2022 在共享模式、多用户模式和 ShadowTLS 内层均输出算法要求长度的 Base64 密钥。WebSocket 的 `host` 会转换为 `headers.Host`，不会写入 sing-box transport 顶层；TUIC `zero_rtt_handshake` 默认关闭。协议代理中继仅允许目标为 VLESS、VMess、Trojan、Hysteria2、TUIC、Shadowsocks 或 NaiveProxy，避免生成无法工作的本地代理出站。
 
 ### 3.2 流量与有效期标准响应头 (UserInfo Header)
 订阅接口返回标准响应头，主流客户端会自动在首页显示流量条与过期日：

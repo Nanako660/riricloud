@@ -13,21 +13,31 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
     -o /out/riri-agent .
 
-FROM debian:bookworm-slim AS singbox-download
+FROM golang:1.26-bookworm AS singbox-build
 
 ARG TARGETARCH=amd64
 ARG SINGBOX_VERSION=1.14.0
-WORKDIR /tmp
+ARG CRONET_VERSION=v150.0.7871.63-2
+WORKDIR /src
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tar \
-    && rm -rf /var/lib/apt/lists/* \
-    && case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
-    && curl --fail --silent --show-error --location \
-      "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-${TARGETARCH}.tar.gz" \
-      --output sing-box.tar.gz \
-    && tar -xzf sing-box.tar.gz \
-    && install -m 0755 "sing-box-${SINGBOX_VERSION}-linux-${TARGETARCH}/sing-box" /sing-box
+	&& apt-get install -y --no-install-recommends ca-certificates curl tar \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
+	&& curl --fail --silent --show-error --location \
+	  "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
+	  --output sing-box.tar.gz \
+	&& tar -xzf sing-box.tar.gz \
+	&& curl --fail --silent --show-error --location \
+	  "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${TARGETARCH}.so" \
+	  --output /libcronet.so \
+	&& chmod 0755 /libcronet.so
+
+WORKDIR /src/sing-box-${SINGBOX_VERSION}
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+	-ldflags "-s -w" \
+	-o /sing-box ./cmd/sing-box
 
 FROM node:20-bookworm-slim AS build
 
@@ -97,7 +107,8 @@ LABEL org.opencontainers.image.title="RiriCloud Master" \
 COPY --from=build /out/server/ ./
 COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
-COPY --from=singbox-download /sing-box /usr/local/bin/sing-box
+COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
+COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
 COPY scripts/install-agent.sh ./install-agent.sh
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 

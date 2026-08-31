@@ -76,9 +76,9 @@ export const lineFormSchema = z.object({
   ssPassword: z.string(),
   ssMode: z.enum(['shared', 'multi-user']),
   naiveNetwork: z.enum(['tcp', 'udp']),
-  stVersion: z.enum(['2', '3']),
   stHandshakeDest: z.string(),
-  stPassword: z.string(),
+  stInnerMethod: z.string(),
+  stInnerPassword: z.string(),
   stStrictMode: z.boolean(),
   localAllowLan: z.boolean(),
   localUsersEnabled: z.boolean(),
@@ -119,6 +119,9 @@ export const lineFormSchema = z.object({
   }
   if (value.protocolType === 'SHADOWTLS' && !value.stHandshakeDest.trim()) {
     ctx.addIssue({ code: 'custom', path: ['stHandshakeDest'], message: '请输入 ShadowTLS 握手目标' });
+  }
+  if (value.protocolType === 'SHADOWTLS' && !value.stInnerMethod.trim()) {
+    ctx.addIssue({ code: 'custom', path: ['stInnerMethod'], message: '请输入内层 Shadowsocks 2022 算法' });
   }
 });
 
@@ -172,7 +175,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
     vlessFlow: 'xtls-rprx-vision', vmessAlterId: 0, hy2UpMbps: 0, hy2DownMbps: 0,
     hy2IgnoreClientBandwidth: false, hy2ObfsPassword: '', tuicCongestionControl: 'bbr', tuicZeroRtt: false,
     tuicHeartbeat: '', ssMethod: '2022-blake3-aes-128-gcm', ssPassword: '', ssMode: 'shared', naiveNetwork: 'tcp',
-    stVersion: '3', stHandshakeDest: 'gateway.icloud.com:443', stPassword: '', stStrictMode: true,
+    stHandshakeDest: 'gateway.icloud.com:443', stInnerMethod: '2022-blake3-aes-128-gcm', stInnerPassword: '', stStrictMode: true,
     localAllowLan: false, localUsersEnabled: false, directOverrideAddress: '', directOverridePort: undefined,
     endpointOverrideEnabled: false, serverHost: '', serverPort: undefined, serverName: '', host: '',
     trafficRate: 1, tags: '', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE'
@@ -207,6 +210,7 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
   const rawTls = asRecord(params.tls);
   const rawReality = asRecord(rawTls.reality);
   const rawAcme = asRecord(rawTls.acme);
+  const rawShadowtlsInner = asRecord(params.inner);
   const transportType = asString(rawTransport.type, defaults.transportType) as LineFormValues['transportType'];
   const tlsMode = asString(rawTls.mode, defaults.tlsMode) as LineFormValues['tlsMode'];
   const transportHeaders = rawTransport.headers;
@@ -260,9 +264,9 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     ssPassword: asString(params.password),
     ssMode: params.mode === 'multi-user' ? 'multi-user' : 'shared',
     naiveNetwork: params.network === 'udp' ? 'udp' : 'tcp',
-    stVersion: params.version === 2 ? '2' : '3',
     stHandshakeDest: asString(params.handshakeDest, defaults.stHandshakeDest),
-    stPassword: asString(params.password),
+    stInnerMethod: asString(rawShadowtlsInner.method, defaults.stInnerMethod),
+    stInnerPassword: asString(rawShadowtlsInner.password),
     stStrictMode: params.strictMode !== false,
     localAllowLan: params.allowLan === true,
     localUsersEnabled: params.usersEnabled === true,
@@ -366,9 +370,13 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       params.network = values.naiveNetwork;
       break;
     case 'SHADOWTLS':
-      params.version = Number(values.stVersion);
+      params.version = 3;
       params.handshakeDest = values.stHandshakeDest.trim();
-      if (values.stPassword.trim()) params.password = values.stPassword.trim();
+      params.inner = {
+        type: 'SHADOWSOCKS',
+        method: values.stInnerMethod.trim(),
+        ...(values.stInnerPassword.trim() ? { password: values.stInnerPassword.trim() } : {})
+      };
       params.strictMode = values.stStrictMode;
       break;
     case 'MIXED':

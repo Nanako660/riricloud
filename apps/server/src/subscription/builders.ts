@@ -3,6 +3,7 @@ import type {
   Hysteria2Params,
   InboundTransport,
   NaiveParams,
+  ShadowtlsParams,
   ShadowsocksParams,
   TrojanParams,
   TuicParams,
@@ -13,8 +14,9 @@ import type { ProtocolType } from '../common/constants';
 import {
   buildClientTls,
   buildClientTransport,
+  buildShadowsocksClientPassword,
   normalizeShadowsocksPassword,
-  resolveShadowsocksUserPassword
+  parseDest
 } from '../common/inbound';
 import { deepMerge } from '../common/utils';
 
@@ -156,6 +158,15 @@ function effectiveServerName(entry: SubEntry, fallback?: string): string | undef
 
 function effectiveTransportHost(entry: SubEntry, fallback?: string): string | undefined {
   return entry.line && entry.line.endpointOverrideEnabled !== false ? entry.line.host || fallback : fallback;
+}
+
+function shadowtlsHandshakeHost(entry: SubEntry, params: ShadowtlsParams): string {
+  const handshakeHost = parseDest(params.handshakeDest).host;
+  return effectiveServerName(entry, handshakeHost) || handshakeHost;
+}
+
+function shadowtlsInnerPassword(params: ShadowtlsParams): string {
+  return normalizeShadowsocksPassword(params.inner.method, params.inner.password);
 }
 
 function buildClashTransportOptions(
@@ -378,7 +389,7 @@ function buildHysteria2Uri(user: SubUser, entry: SubEntry): string {
 function buildShadowsocksUri(user: SubUser, entry: SubEntry): string {
   const p = entry.inbound.params as unknown as ShadowsocksParams;
   const password = p.mode === 'multi-user'
-    ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+    ? buildShadowsocksClientPassword(p.method, p.password || '', user.credential, user.uuid)
     : normalizeShadowsocksPassword(p.method, p.password || '');
   const userinfo = Buffer.from(`${p.method}:${password}`, 'utf8').toString('base64url');
   return `ss://${userinfo}@${endpointHost(entry)}:${endpointPort(entry)}#${encodeURIComponent(entry.label)}`;
@@ -408,6 +419,14 @@ function buildNaiveUri(user: SubUser, entry: SubEntry): string {
   return `naive+https://${encodeURIComponent(username)}:${encodeURIComponent(user.credential)}@${endpointHost(entry)}:${endpointPort(entry)}#${encodeURIComponent(entry.label)}`;
 }
 
+function buildShadowtlsUri(user: SubUser, entry: SubEntry): string {
+  const p = entry.inbound.params as unknown as ShadowtlsParams;
+  const plugin = `shadow-tls;host=${shadowtlsHandshakeHost(entry, p)};password=${user.credential};version=3`;
+  const userinfo = Buffer.from(`${p.inner.method}:${shadowtlsInnerPassword(p)}`, 'utf8').toString('base64url');
+  const query = new URLSearchParams({ plugin });
+  return `ss://${userinfo}@${endpointHost(entry)}:${endpointPort(entry)}?${query.toString()}#${encodeURIComponent(entry.label)}`;
+}
+
 // 逐入站生成 URI 行（Base64 订阅体）；未知或本地协议跳过（空行）
 export function buildUriList(user: SubUser, nodes: SubscriptionSource[]): string[] {
   return entries(nodes)
@@ -428,6 +447,8 @@ export function buildUriList(user: SubUser, nodes: SubscriptionSource[]): string
           return buildTuicUri(user, entry);
         case 'NAIVE':
           return buildNaiveUri(user, entry);
+        case 'SHADOWTLS':
+          return buildShadowtlsUri(user, entry);
         default:
           return '';
       }
@@ -564,7 +585,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
     case 'SHADOWSOCKS': {
       const p = entry.inbound.params as unknown as ShadowsocksParams;
       const password = p.mode === 'multi-user'
-        ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+        ? buildShadowsocksClientPassword(p.method, p.password || '', user.credential, user.uuid)
         : normalizeShadowsocksPassword(p.method, p.password || '');
       return {
         name: entry.label,
@@ -574,6 +595,26 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         cipher: p.method,
         password,
         udp: true
+      };
+    }
+
+    case 'SHADOWTLS': {
+      const p = entry.inbound.params as unknown as ShadowtlsParams;
+      return {
+        name: entry.label,
+        type: 'ss',
+        server: serverHost,
+        port,
+        cipher: p.inner.method,
+        password: shadowtlsInnerPassword(p),
+        udp: true,
+        plugin: 'shadow-tls',
+        'client-fingerprint': REALITY_CLIENT_DEFAULTS.fp,
+        'plugin-opts': {
+          host: shadowtlsHandshakeHost(entry, p),
+          password: user.credential,
+          version: 3
+        }
       };
     }
 
@@ -756,7 +797,7 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
     case 'SHADOWSOCKS': {
       const p = entry.inbound.params as unknown as ShadowsocksParams;
       const password = p.mode === 'multi-user'
-        ? resolveShadowsocksUserPassword(p.method, user.credential, user.uuid)
+        ? buildShadowsocksClientPassword(p.method, p.password || '', user.credential, user.uuid)
         : normalizeShadowsocksPassword(p.method, p.password || '');
       return {
         type: 'shadowsocks',
@@ -765,6 +806,19 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         server_port: port,
         method: p.method,
         password
+      };
+    }
+
+    case 'SHADOWTLS': {
+      const p = entry.inbound.params as unknown as ShadowtlsParams;
+      return {
+        type: 'shadowsocks',
+        tag: entry.label,
+        server: serverHost,
+        server_port: port,
+        method: p.inner.method,
+        password: shadowtlsInnerPassword(p),
+        detour: `${entry.label} · ShadowTLS`
       };
     }
 
@@ -795,7 +849,7 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
         username: user.email || user.uuid,
         password: user.credential
       };
-      const clientTls = buildClientTls(p.tls, effectiveServerName(entry), { includeAlpn: false });
+      const clientTls = buildClientTls(p.tls, effectiveServerName(entry), { includeAlpn: false, includeInsecure: false });
       if (clientTls) outbound.tls = clientTls;
       return outbound;
     }
@@ -805,13 +859,36 @@ function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, un
   }
 }
 
+function buildShadowtlsTransportOutbound(entry: SubEntry, user: SubUser): Record<string, unknown> {
+  const p = entry.inbound.params as unknown as ShadowtlsParams;
+  return {
+    type: 'shadowtls',
+    tag: `${entry.label} · ShadowTLS`,
+    server: endpointHost(entry),
+    server_port: endpointPort(entry),
+    version: 3,
+    password: user.credential,
+    tls: {
+      enabled: true,
+      server_name: shadowtlsHandshakeHost(entry, p)
+    }
+  };
+}
+
 // Sing-box 客户端配置：多协议出站 + direct 兜底
 export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], template?: SubscriptionTemplateConfig): string {
-  const outbounds: Record<string, unknown>[] = entries(nodes)
+  const allEntries = entries(nodes);
+  const primaryOutbounds = allEntries
     .map((entry) => buildSingboxOutbound(user, entry))
     .filter((o) => Object.keys(o).length > 0);
+  const outbounds: Record<string, unknown>[] = [
+    ...primaryOutbounds,
+    ...allEntries
+      .filter((entry) => entry.inbound.type === 'SHADOWTLS')
+      .map((entry) => buildShadowtlsTransportOutbound(entry, user))
+  ];
 
-  const names = outbounds.map((outbound) => outbound.tag as string);
+  const names = primaryOutbounds.map((outbound) => outbound.tag as string);
   const groups = templateGroups(template);
   const strategyOutbounds = groups.length
     ? groups.map((group) => {

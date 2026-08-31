@@ -17,6 +17,7 @@ import (
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
+	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
@@ -117,6 +118,7 @@ type Client struct {
 	version    string
 	osArch     string
 	log        *logrus.Entry
+	traffic    *trafficstats.Collector
 	writeMu    sync.Mutex
 }
 
@@ -129,6 +131,7 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		version:    version,
 		osArch:     osArch,
 		log:        log,
+		traffic:    trafficstats.NewCollector(log),
 	}
 }
 
@@ -352,6 +355,10 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 			// 采集含 1 秒采样窗口，放行到 goroutine 避免阻塞 ticker
 			sample := telemetry.Collect()
 			kernel := c.singboxMgr.Status()
+			trafficRecords, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
+			if err != nil {
+				c.log.WithError(err).Debug("collect sing-box user traffic failed")
+			}
 			payload := heartbeatData{
 				CPUUsage:       sample.CPUUsage,
 				MemoryUsage:    sample.MemoryUsage,
@@ -362,7 +369,14 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				AgentVersion:   c.version,
 				OSArch:         c.osArch,
 				KernelVersion:  kernel.Version,
-				TrafficRecords: []heartbeatTraffic{}, // 按用户流量统计受 sing-box 上游能力限制暂未采集（docs/ROADMAP.md）
+				TrafficRecords: make([]heartbeatTraffic, 0, len(trafficRecords)),
+			}
+			for _, record := range trafficRecords {
+				payload.TrafficRecords = append(payload.TrafficRecords, heartbeatTraffic{
+					UserUUID: record.UserID,
+					Upload:   record.Upload,
+					Download: record.Download,
+				})
 			}
 			data, err := json.Marshal(payload)
 			if err != nil {

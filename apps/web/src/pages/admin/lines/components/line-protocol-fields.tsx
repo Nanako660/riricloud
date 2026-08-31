@@ -30,11 +30,11 @@ export function LineProtocolFields({ form }: { form: UseFormReturn<LineFormValue
     {protocol === 'NAIVE' && <SelectField form={form} name="naiveNetwork" label="网络" options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }]} />}
     {protocol === 'SHADOWTLS' && <>
       <FieldGrid>
-        <SelectField form={form} name="stVersion" label="ShadowTLS 版本" options={[{ value: '2', label: 'v2' }, { value: '3', label: 'v3' }]} />
         <TextField form={form} name="stHandshakeDest" label="握手目标 Dest" placeholder="gateway.icloud.com:443" />
-        <TextField form={form} name="stPassword" label="ShadowTLS 密码" type="password" placeholder="可选" />
+        <TextField form={form} name="stInnerMethod" label="内层 SS2022 算法" placeholder="2022-blake3-aes-128-gcm" />
+        <TextField form={form} name="stInnerPassword" label="内层 SS2022 服务端密钥" type="password" placeholder="留空自动生成" />
       </FieldGrid>
-      <SwitchField form={form} name="stStrictMode" label="Strict Mode" />
+      <SwitchField form={form} name="stStrictMode" label="Strict Mode" description="仅允许严格的 ShadowTLS v3 握手。" />
     </>}
     {['MIXED', 'SOCKS', 'HTTP'].includes(protocol) && <FieldGrid>
       <SwitchField form={form} name="localAllowLan" label="允许局域网连接" />

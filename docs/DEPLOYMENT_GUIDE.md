@@ -48,7 +48,7 @@ pnpm --filter @riricloud/server start:prod
 
 ### 1.4 方式三：Docker Compose
 
-仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 WSL/Linux Docker 环境执行；Windows PowerShell 仅用于调用 `wsl.exe`，不承担 Docker 测试：
+仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 WSL/Linux Docker 环境执行；Windows PowerShell 仅用于调用 `wsl.exe`，不承担 Docker 测试：
 
 ```bash
 cp .env.example .env  # 或手动创建 .env
@@ -123,7 +123,7 @@ docker compose --env-file .env.image -f docker-compose.image.yml --profile agent
 
 该模板与标准 `docker-compose.yml` 使用相同的 `master-data` 和 `agent-data` 命名卷，切换部署模板时不会改变数据库持久化位置。停止服务使用 `docker compose ... down`，不要使用 `down -v`，否则会删除数据库卷。
 
-远程节点容器使用 `--network host` 语义，内置静态 `riri-agent` 与官方 sing-box `1.14.0`，默认不自动启动以避免空 AgentToken 容器反复重启。Master 本机 Agent 不使用该服务；创建远程节点并取得 Token 后，在 `.env` 中设置 `AGENT_TOKEN`，再执行：
+远程节点容器使用 `--network host` 语义，内置静态 `riri-agent` 与启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建的 Sing-box `1.14.0`，默认不自动启动以避免空 AgentToken 容器反复重启。Master 本机 Agent 不使用该服务；创建远程节点并取得 Token 后，在 `.env` 中设置 `AGENT_TOKEN`，再执行：
 
 ```bash
 COMPOSE_PROFILES=agent pnpm docker:up
@@ -200,7 +200,7 @@ NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调�
 - 脚本每次启动前都会检查并应用数据库迁移，数据库首次创建时再执行种子播种；随后自动完成管理员登录、默认复用 seed 预置的 `Master-Local` 节点、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点，并复用或创建对应端口的 VLESS Reality 线路。
 - 已在运行的 3000/5173 服务会被复用而非重启；脚本退出只回收其自身启动的进程。
 - 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时；迁移、登录或节点准备阶段失败也会回收本次已启动的主控/Web 进程。
-- 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、面板编辑线路后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
+- 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、本地 StatsService 监听 `127.0.0.1:10085`、面板编辑线路后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。
 
 ---
 
@@ -224,7 +224,7 @@ bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
 1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
 2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
 3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`；
-4. 装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/`install-agent.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
+4. 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建或校验启用统计服务、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站的 Sing-box，再装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/`install-agent.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
 5. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256，含主控端包）；
 6. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
 7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖三端：主控端发行包 + Agent 三平台二进制**。

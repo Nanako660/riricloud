@@ -9,7 +9,8 @@ export interface UserLine { id: string; name: string; type: 'DIRECT' | 'RELAY'; 
 export function useUserSubscription() {
   return useQuery({
     queryKey: ['user', 'subscription'],
-    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[] }>('/user/subscription')).data
+    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[] }>('/user/subscription')).data,
+    refetchInterval: 5000
   });
 }
 

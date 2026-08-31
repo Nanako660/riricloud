@@ -19,6 +19,7 @@ import (
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
+	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
@@ -74,21 +75,27 @@ type restartAgentResult struct {
 	Message string `json:"message"`
 }
 
+type pollTrafficRecord struct {
+	UserUUID string `json:"userUuid"`
+	Upload   uint64 `json:"upload"`
+	Download uint64 `json:"download"`
+}
+
 type pollPayload struct {
-	CPUUsage            float64           `json:"cpuUsage"`
-	MemoryUsage         float64           `json:"memoryUsage"`
-	BandwidthRate       float64           `json:"bandwidthRate"`
-	KernelRunning       bool              `json:"kernelRunning"`
-	AppliedVersion      int64             `json:"appliedConfigVersion"`
-	LastError           string            `json:"lastError"`
-	AgentVersion        string            `json:"agentVersion"`
-	OSArch              string            `json:"osArch"`
-	KernelVersion       string            `json:"kernelVersion"`
-	TrafficRecords      []any             `json:"trafficRecords"`
-	ConfigApplyResults  []json.RawMessage `json:"configApplyResults,omitempty"`
-	UpgradeResults      []json.RawMessage `json:"upgradeResults,omitempty"`
-	ProbeResults        []json.RawMessage `json:"probeResults,omitempty"`
-	RestartAgentResults []json.RawMessage `json:"restartAgentResults,omitempty"`
+	CPUUsage            float64             `json:"cpuUsage"`
+	MemoryUsage         float64             `json:"memoryUsage"`
+	BandwidthRate       float64             `json:"bandwidthRate"`
+	KernelRunning       bool                `json:"kernelRunning"`
+	AppliedVersion      int64               `json:"appliedConfigVersion"`
+	LastError           string              `json:"lastError"`
+	AgentVersion        string              `json:"agentVersion"`
+	OSArch              string              `json:"osArch"`
+	KernelVersion       string              `json:"kernelVersion"`
+	TrafficRecords      []pollTrafficRecord `json:"trafficRecords"`
+	ConfigApplyResults  []json.RawMessage   `json:"configApplyResults,omitempty"`
+	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`
+	ProbeResults        []json.RawMessage   `json:"probeResults,omitempty"`
+	RestartAgentResults []json.RawMessage   `json:"restartAgentResults,omitempty"`
 }
 
 type pollResponse struct {
@@ -122,6 +129,7 @@ type Client struct {
 	runningTasks     map[string]struct{}
 	completedTasks   map[string]struct{}
 	restartRequested bool
+	traffic          *trafficstats.Collector
 	tasks            sync.WaitGroup
 }
 
@@ -137,6 +145,7 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		log:            log,
 		runningTasks:   make(map[string]struct{}),
 		completedTasks: make(map[string]struct{}),
+		traffic:        trafficstats.NewCollector(log),
 	}
 }
 
@@ -172,6 +181,10 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	}
 	sample := telemetry.Collect()
 	kernel := c.singboxMgr.Status()
+	trafficRecords, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
+	if err != nil {
+		c.log.WithError(err).Debug("collect sing-box user traffic failed")
+	}
 	payload := pollPayload{
 		CPUUsage:       sample.CPUUsage,
 		MemoryUsage:    sample.MemoryUsage,
@@ -182,7 +195,14 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		AgentVersion:   c.version,
 		OSArch:         c.osArch,
 		KernelVersion:  kernel.Version,
-		TrafficRecords: []any{},
+		TrafficRecords: make([]pollTrafficRecord, 0, len(trafficRecords)),
+	}
+	for _, record := range trafficRecords {
+		payload.TrafficRecords = append(payload.TrafficRecords, pollTrafficRecord{
+			UserUUID: record.UserID,
+			Upload:   record.Upload,
+			Download: record.Download,
+		})
 	}
 	sentResults := c.appendPendingResults(&payload)
 	body, err := json.Marshal(payload)

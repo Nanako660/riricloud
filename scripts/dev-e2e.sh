@@ -74,6 +74,15 @@ find_singbox() {
 # ---------- 1. sing-box 内核 ----------
 SINGBOX_BIN="$(find_singbox)" || die "未找到 sing-box 内核：请放入 .tools/sing-box/ 或用 SINGBOX_BINARY_PATH 指定"
 say "sing-box 内核：$SINGBOX_BIN"
+SINGBOX_VERSION_OUTPUT="$($SINGBOX_BIN version)"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
+  || die "当前 sing-box 未启用 with_v2ray_api，无法进行按用户流量联调"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
+  || die "当前 sing-box 未启用 with_utls，无法进行 VLESS Reality 联调"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
+  || die "当前 sing-box 未启用 with_quic，无法进行 Hysteria2/TUIC 联调"
+printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
+  || die "当前 sing-box 未启用 with_naive_outbound，无法进行 NaiveProxy 联调"
 
 # ---------- 2. 主控端（已在跑则复用） ----------
 DB_WAS_PRESENT=0
