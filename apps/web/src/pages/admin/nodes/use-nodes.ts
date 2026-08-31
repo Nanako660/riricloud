@@ -37,6 +37,42 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
 export type TransportType = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type CommunicationMode = 'WS' | 'HTTP';
 
+export type ProbeResult = {
+  type: 'tcp' | 'dns' | 'icmp';
+  target: string;
+  success: boolean;
+  latencyMs?: number;
+  addresses?: string[];
+  packetLossPercent?: number;
+  message?: string;
+};
+
+export type ProbeSnapshot = {
+  taskId: string;
+  success: boolean;
+  results: ProbeResult[];
+  completedAt: string;
+};
+
+export type BinaryTargetInfo = {
+  target: string;
+  kind: 'agent' | 'singbox';
+  os: string;
+  arch: string;
+  filename: string;
+  version: string;
+  sha256: string;
+  size: number;
+  imported: boolean;
+  available: boolean;
+};
+
+export type AdminBinaryInfo = {
+  masterVersion: string;
+  refreshedAt: string | null;
+  targets: BinaryTargetInfo[];
+};
+
 export interface InboundTransport {
   type: TransportType;
   path?: string;
@@ -143,10 +179,15 @@ export interface AdminNode {
   bandwidthRate: number | null;
   kernelRunning: boolean | null;
   configError: string | null;
+  lastProbeResult: ProbeSnapshot | null;
+  agentVersion: string | null;
+  osArch: string | null;
+  kernelVersion: string | null;
   lines: NodeLine[];
   entryLines: NodeLine[];
   exitLines: NodeLine[];
   servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: string; port: number }>;
+  installCommands?: { ws: string; http: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -183,10 +224,21 @@ export function useAdminNodeDetail(id: string) {
   });
 }
 
+export function useAdminBinaryInfo() {
+  return useQuery({
+    queryKey: ['admin', 'binaries', 'info'],
+    queryFn: async () => (await api.get<AdminBinaryInfo>('/admin/binaries/info')).data,
+    staleTime: 60_000,
+    refetchInterval: 60_000
+  });
+}
+
 export function useNodeMutations() {
   const queryClient = useQueryClient();
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes'] });
+  const invalidateDetail = (id: string) =>
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes', 'detail', id] });
 
   const invalidateSub = {
     onSuccess: () => {
@@ -238,17 +290,42 @@ export function useNodeMutations() {
   });
 
   const upgradeNode = useMutation({
-    mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; version: string; url: string; sha256: string }) =>
+    mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; version?: string; url?: string; sha256?: string }) =>
       (await api.post(`/admin/nodes/${id}/upgrade`, payload)).data,
-    onSuccess: (data) => toast.success(data.requested ? '升级任务已下发' : '节点不在线，升级任务未下发'),
+    onSuccess: (data, variables) => {
+      toast.success(data.requested ? '升级任务已下发' : '节点不在线，升级任务未下发');
+      invalidateDetail(variables.id);
+    },
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '升级下发失败'))
   });
 
   const probeNode = useMutation({
     mutationFn: async ({ id, probes }: { id: string; probes: Array<{ type: 'tcp' | 'dns' | 'icmp'; target: string; port?: number; timeoutMs?: number }> }) =>
       (await api.post(`/admin/nodes/${id}/probe`, { probes })).data,
-    onSuccess: () => toast.success('探针任务已下发'),
+    onSuccess: (data, variables) => {
+      toast.success(data.requested ? '探针任务已下发' : '节点不在线，探针任务未下发');
+      invalidateDetail(variables.id);
+    },
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '探针下发失败'))
+  });
+
+  const restartAgent = useMutation({
+    mutationFn: async (id: string) => (await api.post<{ taskId: string; requested: boolean }>(`/admin/nodes/${id}/restart-agent`)).data,
+    onSuccess: (data, id) => {
+      toast.success(data.requested ? 'Agent 重启指令已下发' : '节点不在线，重启指令未下发');
+      invalidateDetail(id);
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, 'Agent 重启失败'))
+  });
+
+  const importBinary = useMutation({
+    mutationFn: async (payload: { target: string; version: string; url: string; sha256: string }) =>
+      (await api.post('/admin/binaries/import', payload)).data,
+    onSuccess: () => {
+      toast.success('自定义内核已导入主控');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'binaries', 'info'] });
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '内核导入失败'))
   });
 
   const waitForTask = async ({ nodeId, taskId, label }: { nodeId: string; taskId: string; label: string }) => {
@@ -257,6 +334,7 @@ export function useNodeMutations() {
       if (status.status === 'COMPLETED') {
         if (status.success) toast.success(`${label}已完成`);
         else toast.error(`${label}失败`, { description: status.message ?? 'Agent 返回失败' });
+        invalidateDetail(nodeId);
         return status;
       }
       await new Promise((resolve) => setTimeout(resolve, 3_000));
@@ -265,5 +343,5 @@ export function useNodeMutations() {
     return undefined;
   };
 
-  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, waitForTask };
+  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask };
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -94,10 +95,19 @@ func AtomicReplace(source, target string) error {
 	if err != nil {
 		return err
 	}
-	if err := CommitBackup(backup); err != nil {
+	if err := commitBackupAfterReplace(backup); err != nil {
 		return err
 	}
 	return nil
+}
+
+// CleanupStaleBackup 清理上一次自更新遗留的旧二进制备份。
+// Windows 进程仍在运行时无法删除自身旧映像，因此清理由下一次启动完成。
+func CleanupStaleBackup(target string) error {
+	if target == "" {
+		return nil
+	}
+	return CommitBackup(target + ".riri-old")
 }
 
 // AtomicReplaceWithBackup 替换二进制但保留旧文件备份，供调用方在启动新进程失败时回滚。
@@ -143,6 +153,18 @@ func CommitBackup(backup string) error {
 	}
 	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove old binary backup: %w", err)
+	}
+	return nil
+}
+
+func commitBackupAfterReplace(backup string) error {
+	if err := CommitBackup(backup); err != nil {
+		// 自更新时当前进程仍然持有旧 executable 的 Windows 文件句柄。
+		// 替换已经完成，备份留给下一次 Agent 启动清理，不能把任务误报为失败。
+		if runtime.GOOS == "windows" {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

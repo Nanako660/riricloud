@@ -115,6 +115,10 @@ model Node {
   // 内核状态（v0.3.0，Agent 心跳上报；旧版 Agent 不上报时保持 null）
   kernelRunning   Boolean?                               // sing-box 内核进程存活
   configError     String?                                // 最近一次配置应用失败原因（成功后清空）
+  lastProbeResult String?                                // 最近一次网络探针结果 JSON（含时间、延迟、解析地址与错误）
+  agentVersion   String?                                 // Agent 编译版本
+  osArch         String?                                 // Agent 运行平台与架构，例如 linux/amd64
+  kernelVersion  String?                                 // sing-box 内核版本
 
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

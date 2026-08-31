@@ -25,4 +25,7 @@ func TestRunTCPAndDNS(t *testing.T) {
 	if len(results) != 2 || !results[0].Success || !results[1].Success {
 		t.Fatalf("unexpected probe results: %+v", results)
 	}
+	if results[0].PacketLossPercent != 0 || results[1].PacketLossPercent != 0 || len(results[1].Addresses) == 0 {
+		t.Fatalf("unexpected probe detail: %+v", results)
+	}
 }

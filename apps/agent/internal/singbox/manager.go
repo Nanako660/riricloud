@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -40,14 +41,16 @@ type Status struct {
 	Running              bool   // 内核进程存活
 	AppliedConfigVersion int64  // 当前生效配置版本（0 表示尚未应用任何配置）
 	LastError            string // 最近一次失败原因（check 失败/启动失败/异常退出采样），空表示无
+	Version              string // sing-box 二进制版本，无法探测时为空
 }
 
 // Manager 内核进程管理器。supervisor goroutine 是唯一的进程操作者，
 // 其余调用方仅通过受 mu 保护的字段提交意图，避免并发操作同一子进程。
 type Manager struct {
-	confPath string
-	binPath  string
-	log      *logrus.Entry
+	confPath      string
+	binPath       string
+	log           *logrus.Entry
+	binaryVersion string
 
 	mu            sync.Mutex
 	upgradeMu     sync.Mutex // 串行化二进制升级，避免并行替换同一目标文件
@@ -71,11 +74,12 @@ type Manager struct {
 
 func NewManager(rootCtx context.Context, confPath, binPath string, log *logrus.Entry) *Manager {
 	m := &Manager{
-		confPath: confPath,
-		binPath:  binPath,
-		log:      log,
-		kick:     make(chan struct{}, 1),
-		done:     make(chan struct{}),
+		confPath:      confPath,
+		binPath:       binPath,
+		log:           log,
+		binaryVersion: detectBinaryVersion(binPath),
+		kick:          make(chan struct{}, 1),
+		done:          make(chan struct{}),
 	}
 	go m.supervisor(rootCtx)
 	return m
@@ -146,7 +150,20 @@ func (m *Manager) Status() Status {
 		Running:              m.child != nil,
 		AppliedConfigVersion: m.appliedVer,
 		LastError:            m.lastError,
+		Version:              m.binaryVersion,
 	}
+}
+
+var binaryVersionPattern = regexp.MustCompile(`\b\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?\b`)
+
+func detectBinaryVersion(binaryPath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, binaryPath, "version").CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return binaryVersionPattern.FindString(string(output))
 }
 
 // lastGood 返回最近一次预检通过且已落盘生效的配置（nil 表示尚无）。

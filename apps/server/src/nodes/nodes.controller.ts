@@ -61,6 +61,11 @@ export class NodesController {
     return this.nodesService.requestProbe(id, dto);
   }
 
+  @Post(':id/restart-agent')
+  restartAgent(@Param('id', ParseUUIDPipe) id: string) {
+    return this.nodesService.requestRestart(id);
+  }
+
   @Get(':id/tasks/:taskId')
   taskStatus(@Param('id', ParseUUIDPipe) id: string, @Param('taskId', ParseUUIDPipe) taskId: string) {
     return this.nodesService.taskStatus(id, taskId);

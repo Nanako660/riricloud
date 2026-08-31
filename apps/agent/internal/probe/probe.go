@@ -28,11 +28,13 @@ type Request struct {
 }
 
 type Result struct {
-	Type      Type   `json:"type"`
-	Target    string `json:"target"`
-	Success   bool   `json:"success"`
-	LatencyMs int64  `json:"latencyMs,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Type              Type     `json:"type"`
+	Target            string   `json:"target"`
+	Success           bool     `json:"success"`
+	LatencyMs         int64    `json:"latencyMs,omitempty"`
+	Addresses         []string `json:"addresses,omitempty"`
+	PacketLossPercent int      `json:"packetLossPercent"`
+	Message           string   `json:"message,omitempty"`
 }
 
 func Run(ctx context.Context, requests []Request) []Result {
@@ -45,6 +47,7 @@ func Run(ctx context.Context, requests []Request) []Result {
 
 func runOne(parent context.Context, request Request) Result {
 	result := Result{Type: request.Type, Target: request.Target}
+	result.PacketLossPercent = 100
 	if strings.TrimSpace(request.Target) == "" {
 		result.Message = "probe target is required"
 		return result
@@ -58,11 +61,12 @@ func runOne(parent context.Context, request Request) Result {
 	started := time.Now()
 
 	var err error
+	var addresses []string
 	switch request.Type {
 	case TCP:
 		err = runTCP(ctx, request.Target, request.Port)
 	case DNS:
-		err = runDNS(ctx, request.Target)
+		addresses, err = runDNS(ctx, request.Target)
 	case ICMP:
 		err = runICMP(ctx, request.Target, timeout)
 	default:
@@ -74,6 +78,8 @@ func runOne(parent context.Context, request Request) Result {
 	}
 	result.Success = true
 	result.LatencyMs = time.Since(started).Milliseconds()
+	result.Addresses = addresses
+	result.PacketLossPercent = 0
 	return result
 }
 
@@ -95,11 +101,12 @@ func runTCP(ctx context.Context, target string, port int) error {
 	return nil
 }
 
-func runDNS(ctx context.Context, target string) error {
-	if _, err := net.DefaultResolver.LookupHost(ctx, target); err != nil {
-		return fmt.Errorf("dns lookup: %w", err)
+func runDNS(ctx context.Context, target string) ([]string, error) {
+	addresses, err := net.DefaultResolver.LookupHost(ctx, target)
+	if err != nil {
+		return nil, fmt.Errorf("dns lookup: %w", err)
 	}
-	return nil
+	return addresses, nil
 }
 
 func runICMP(ctx context.Context, target string, timeout time.Duration) error {

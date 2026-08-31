@@ -82,6 +82,10 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.gatewayService.handleProbeResult(nodeId, message.data);
         break;
       }
+      case 'restart_agent_result': {
+        await this.gatewayService.handleRestartResult(nodeId, message.data);
+        break;
+      }
     }
   }
 }

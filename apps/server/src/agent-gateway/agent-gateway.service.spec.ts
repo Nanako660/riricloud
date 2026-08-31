@@ -169,6 +169,33 @@ describe('AgentGatewayService', () => {
     expect(service.getTaskStatus('http-task-node', taskId)).toEqual(expect.objectContaining({ status: 'COMPLETED', success: true }));
   });
 
+  it('探针回执持久化最近一次结果快照', async () => {
+    await service.handleProbeResult('node-1', {
+      taskId: 'probe-1',
+      success: false,
+      results: [{ type: 'dns', target: 'example.com', success: true, latencyMs: 8, addresses: ['93.184.216.34'], packetLossPercent: 0 }]
+    });
+    expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'node-1' },
+      data: { lastProbeResult: expect.stringContaining('93.184.216.34') }
+    }));
+  });
+
+  it('心跳回执落库 Agent 版本与系统架构画像', async () => {
+    await service.handleHeartbeat('node-1', {
+      cpuUsage: 12,
+      memoryUsage: 30,
+      bandwidthRate: 512,
+      trafficRecords: [],
+      agentVersion: '0.3.0',
+      osArch: 'linux/amd64',
+      kernelVersion: '1.11.0'
+    });
+    expect(txNodeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ agentVersion: '0.3.0', osArch: 'linux/amd64', kernelVersion: '1.11.0' })
+    }));
+  });
+
   it('WS 与 HTTP 使用不同的离线窗口', async () => {
     prisma.node.findMany.mockResolvedValue([
       { id: 'ws-stale', communicationMode: 'WS', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 16_000) },
