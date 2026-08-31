@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
+	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 	"github.com/Nanako660/riricloud/apps/agent/internal/ws"
 )
 
@@ -27,6 +29,11 @@ func main() {
 	if err != nil {
 		log.WithError(err).Fatal("load config")
 	}
+	if executable, err := os.Executable(); err == nil {
+		if err := upgrade.CleanupStaleBackup(executable); err != nil {
+			log.WithError(err).Warn("cleanup stale agent backup failed")
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -38,6 +45,8 @@ func main() {
 			cfg.AgentToken,
 			time.Duration(cfg.PollIntervalSecs)*time.Second,
 			singboxMgr,
+			Version,
+			runtime.GOOS+"/"+runtime.GOARCH,
 			logrus.NewEntry(log),
 		)
 		client.Run(ctx)
@@ -47,6 +56,8 @@ func main() {
 			cfg.AgentToken,
 			time.Duration(cfg.HeartbeatSecs)*time.Second,
 			singboxMgr,
+			Version,
+			runtime.GOOS+"/"+runtime.GOARCH,
 			logrus.NewEntry(log),
 		)
 		client.Run(ctx)

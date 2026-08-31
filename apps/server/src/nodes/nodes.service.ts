@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AgentService } from '../agent-gateway/agent.service';
+import { BinariesService } from '../binaries/binaries.service';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,7 +21,8 @@ type NodeWithLines = Prisma.NodeGetPayload<{ include: typeof nodeLinesInclude }>
 export class NodesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly agentGateway: AgentService
+    private readonly agentGateway: AgentService,
+    private readonly binaries: BinariesService
   ) {}
 
   async list() {
@@ -31,7 +33,15 @@ export class NodesService {
   async detail(id: string) {
     const node = await this.prisma.node.findUnique({ where: { id }, include: nodeLinesInclude });
     if (!node) throw new NotFoundException('节点不存在');
-    return { node: this.sanitize(node) };
+    return {
+      node: {
+        ...this.sanitize(node),
+        installCommands: {
+          ws: this.buildInstallCommand(node.agentToken, 'WS'),
+          http: this.buildInstallCommand(node.agentToken, 'HTTP')
+        }
+      }
+    };
   }
 
   async create(dto: CreateNodeDto, _operatorId: string) {
@@ -63,9 +73,22 @@ export class NodesService {
   }
 
   async requestUpgrade(id: string, dto: UpgradeNodeDto) {
-    await this.requireNode(id);
+    const node = await this.requireNode(id);
     try {
-      return await this.agentGateway.requestUpgrade(id, dto.target, dto.version.trim(), dto.url, dto.sha256.toLowerCase());
+      const hasCustomUrl = dto.url !== undefined;
+      const hasCustomSha = dto.sha256 !== undefined;
+      if (hasCustomUrl !== hasCustomSha) throw new Error('自定义升级地址与 SHA-256 必须同时提供');
+      let version = dto.version?.trim() ?? '';
+      let url = dto.url?.trim() ?? '';
+      let sha256 = dto.sha256?.trim().toLowerCase() ?? '';
+      if (!hasCustomUrl) {
+        const asset = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken);
+        version = version || asset.version;
+        url = asset.url;
+        sha256 = asset.sha256;
+      }
+      if (!version) throw new Error('升级版本不能为空');
+      return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256);
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : '升级任务参数无效');
     }
@@ -78,6 +101,11 @@ export class NodesService {
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : '探针任务参数无效');
     }
+  }
+
+  async requestRestart(id: string) {
+    await this.requireNode(id);
+    return this.agentGateway.requestRestart(id);
   }
 
   async taskStatus(nodeId: string, taskId: string) {
@@ -148,7 +176,7 @@ export class NodesService {
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {
-    const { entryLines, exitLines, ...rest } = node;
+    const { entryLines, exitLines, lastProbeResult, ...rest } = node;
     const toLine = (line: (typeof entryLines)[number], role: 'ENTRY' | 'EXIT') => ({
       id: line.id,
       name: line.name,
@@ -185,7 +213,7 @@ export class NodesService {
       if (line.exitNodeId === node.id) ports.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'EXIT', port: line.exitPort });
       return ports;
     });
-    return { ...rest, lines, entryLines: entry, exitLines: exit, servicePorts };
+    return { ...rest, lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines: entry, exitLines: exit, servicePorts };
   }
 
   private parseTags(value: string) {
@@ -194,6 +222,15 @@ export class NodesService {
       return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
     } catch {
       return [];
+    }
+  }
+
+  private parseJson(value: string | null): unknown {
+    if (!value) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
     }
   }
 }

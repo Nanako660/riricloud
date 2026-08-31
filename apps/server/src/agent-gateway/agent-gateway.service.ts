@@ -23,6 +23,7 @@ import type {
   HeartbeatData,
   ProbeRequest,
   ProbeResultData,
+  RestartAgentResultData,
   UpgradeResultData,
   UpgradeTarget
 } from './agent-message';
@@ -54,7 +55,7 @@ type PendingTask = AgentTaskMessage & { deliveredAt: number };
 
 type TaskResult = {
   taskId: string;
-  type: 'upgrade' | 'probe';
+  type: 'upgrade' | 'probe' | 'restart';
   success: boolean;
   message: string;
   completedAt: string;
@@ -124,7 +125,10 @@ export class AgentService implements OnModuleDestroy {
           ...(data.lastError !== undefined && data.lastError !== ''
             ? { configError: data.lastError }
             : {}),
-          ...(data.lastError === '' ? { configError: null } : {})
+          ...(data.lastError === '' ? { configError: null } : {}),
+          ...(data.agentVersion !== undefined ? { agentVersion: data.agentVersion } : {}),
+          ...(data.osArch !== undefined ? { osArch: data.osArch } : {}),
+          ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
         }
       });
       for (const record of data.trafficRecords ?? []) {
@@ -167,6 +171,9 @@ export class AgentService implements OnModuleDestroy {
     }
     for (const result of data.probeResults ?? []) {
       await this.handleProbeResult(auth.nodeId, result);
+    }
+    for (const result of data.restartAgentResults ?? []) {
+      await this.handleRestartResult(auth.nodeId, result);
     }
 
     const desired = await this.getDesiredConfigSync(auth.nodeId);
@@ -213,15 +220,40 @@ export class AgentService implements OnModuleDestroy {
   }
 
   async handleProbeResult(nodeId: string, data: ProbeResultData): Promise<void> {
+    const completedAt = new Date().toISOString();
     this.acknowledgeTask(nodeId, data.taskId, {
       taskId: data.taskId,
       type: 'probe',
       success: data.success,
       message: data.results.find((result) => !result.success)?.message ?? (data.success ? 'ok' : 'probe failed'),
-      completedAt: new Date().toISOString()
+      completedAt
+    });
+    await this.prisma.node.update({
+      where: { id: nodeId },
+      data: {
+        lastProbeResult: JSON.stringify({
+          taskId: data.taskId,
+          success: data.success,
+          results: data.results,
+          completedAt
+        })
+      }
     });
     this.logger.log(
       `agent probe completed: node=${nodeId} task=${data.taskId} success=${data.success} results=${data.results.length}`
+    );
+  }
+
+  async handleRestartResult(nodeId: string, data: RestartAgentResultData): Promise<void> {
+    this.acknowledgeTask(nodeId, data.taskId, {
+      taskId: data.taskId,
+      type: 'restart',
+      success: data.success,
+      message: data.message,
+      completedAt: new Date().toISOString()
+    });
+    this.logger[data.success ? 'log' : 'warn'](
+      `agent restart ${data.success ? 'succeeded' : 'failed'}: node=${nodeId} task=${data.taskId} message=${data.message}`
     );
   }
 
@@ -531,7 +563,13 @@ export class AgentService implements OnModuleDestroy {
     return { taskId, requested: sent };
   }
 
-  private async sendTask(nodeId: string, type: 'upgrade_task' | 'probe_task', data: unknown): Promise<boolean> {
+  async requestRestart(nodeId: string) {
+    const taskId = randomUUID();
+    const sent = await this.sendTask(nodeId, 'restart_agent_task', { taskId });
+    return { taskId, requested: sent };
+  }
+
+  private async sendTask(nodeId: string, type: 'upgrade_task' | 'probe_task' | 'restart_agent_task', data: unknown): Promise<boolean> {
     const socket = this.sockets.get(nodeId);
     if (socket) {
       try {
@@ -560,9 +598,11 @@ export class AgentService implements OnModuleDestroy {
     const now = Date.now();
     const selected = tasks.filter((task) => task.deliveredAt === 0 || now - task.deliveredAt >= 60_000).slice(0, 8);
     selected.forEach((task) => { task.deliveredAt = now; });
-    return selected.map((task): AgentTaskMessage => task.type === 'upgrade_task'
-      ? { type: 'upgrade_task', data: task.data }
-      : { type: 'probe_task', data: task.data });
+    return selected.map((task): AgentTaskMessage => {
+      if (task.type === 'upgrade_task') return { type: 'upgrade_task', data: task.data };
+      if (task.type === 'probe_task') return { type: 'probe_task', data: task.data };
+      return { type: 'restart_agent_task', data: task.data };
+    });
   }
 
   private acknowledgeTask(nodeId: string, taskId: string, result: TaskResult) {

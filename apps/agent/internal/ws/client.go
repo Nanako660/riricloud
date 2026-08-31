@@ -51,6 +51,9 @@ type heartbeatData struct {
 	KernelRunning  bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
 	AppliedVersion int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
 	LastError      string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
+	AgentVersion   string             `json:"agentVersion"`
+	OSArch         string             `json:"osArch"`
+	KernelVersion  string             `json:"kernelVersion"`
 	TrafficRecords []heartbeatTraffic `json:"trafficRecords"`
 }
 
@@ -95,22 +98,36 @@ type probeResultData struct {
 	Results []probe.Result `json:"results"`
 }
 
+type restartAgentTask struct {
+	TaskID string `json:"taskId"`
+}
+
+type restartAgentResult struct {
+	TaskID  string `json:"taskId"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 // Client 长连接客户端：负责连接、鉴权、心跳与配置接收
 type Client struct {
 	masterURL  string
 	token      string
 	heartbeat  time.Duration
 	singboxMgr *singbox.Manager
+	version    string
+	osArch     string
 	log        *logrus.Entry
 	writeMu    sync.Mutex
 }
 
-func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, version, osArch string, log *logrus.Entry) *Client {
 	return &Client{
 		masterURL:  masterURL,
 		token:      token,
 		heartbeat:  heartbeat,
 		singboxMgr: singboxMgr,
+		version:    version,
+		osArch:     osArch,
 		log:        log,
 	}
 }
@@ -231,6 +248,13 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				continue
 			}
 			c.handleProbe(ctx, conn, task)
+		case "restart_agent_task":
+			var task restartAgentTask
+			if err := json.Unmarshal(msg.Data, &task); err != nil || task.TaskID == "" {
+				c.sendRestartResult(conn, task.TaskID, false, "invalid restart_agent_task payload")
+				continue
+			}
+			c.handleRestart(conn, task)
 		default:
 			c.log.WithField("type", msg.Type).Debug("unknown message")
 		}
@@ -311,6 +335,11 @@ func (c *Client) handleProbe(ctx context.Context, conn *websocket.Conn, task pro
 	c.sendProbeResult(conn, task.TaskID, results, success)
 }
 
+func (c *Client) handleRestart(conn *websocket.Conn, task restartAgentTask) {
+	c.sendRestartResult(conn, task.TaskID, true, "ok")
+	go c.restartSelf()
+}
+
 // heartbeatLoop 周期上报系统指标；goroutine 随 ctx 退出
 func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error {
 	ticker := time.NewTicker(c.heartbeat)
@@ -330,6 +359,9 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				KernelRunning:  kernel.Running,
 				AppliedVersion: kernel.AppliedConfigVersion,
 				LastError:      kernel.LastError,
+				AgentVersion:   c.version,
+				OSArch:         c.osArch,
+				KernelVersion:  kernel.Version,
 				TrafficRecords: []heartbeatTraffic{}, // 按用户流量统计受 sing-box 上游能力限制暂未采集（docs/ROADMAP.md）
 			}
 			data, err := json.Marshal(payload)
@@ -388,6 +420,14 @@ func (c *Client) sendProbeResult(conn *websocket.Conn, taskID string, results []
 		return
 	}
 	c.sendFrame(conn, "probe_result", data)
+}
+
+func (c *Client) sendRestartResult(conn *websocket.Conn, taskID string, success bool, resultMsg string) {
+	data, err := json.Marshal(restartAgentResult{TaskID: taskID, Success: success, Message: resultMsg})
+	if err != nil {
+		return
+	}
+	c.sendFrame(conn, "restart_agent_result", data)
 }
 
 func (c *Client) sendFrame(conn *websocket.Conn, messageType string, data json.RawMessage) {

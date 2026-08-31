@@ -65,7 +65,8 @@ graph TB
 ### 2.1 主控中心 (Master Server)
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、线路列表、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
-- **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测事务、配置快照、任务队列与健康判定；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
+- **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测事务、配置快照、任务队列、探针快照与健康判定；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
+- **主控二进制分发中心 (`apps/server/src/binaries`)**：启动时扫描发行包 `binaries/`、开发态 Agent/Sing-box 路径并计算 SHA-256；升级任务按节点 `osArch` 选择主控内置版本，下载端点使用 AgentToken 鉴权。自定义 Sing-box 文件经后台导入后落在主控托管目录。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
 - **HTTP 轮询适配器 (`POST /api/v1/agent/poll`)**：为无法完成 WS Upgrade 的网络提供 HTTPS 主动上报、配置差异拉取和异步任务回执。
 - **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 是用户订阅端点的唯一业务实体，直接拥有协议、参数、监听地址、Tag、入口/出口拓扑和端口，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且入口/出口节点在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
@@ -77,9 +78,9 @@ graph TB
 - **双模式通信与自愈**：Agent 根据 `MASTER_URL` 的 `ws(s)://` / `http(s)://` 前缀推导模式，也可由 `AGENT_MODE=ws|http` 显式指定；WS 模式具备指数退避重连，HTTP 模式按 `POLL_INTERVAL_SECS` 轮询并接受 Master 的 `nextPollSecs` 调整；服务端只接受通过结构校验的 Agent 上行数据。
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径 `SINGBOX_BINARY_PATH`，默认走 PATH），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。内核二进制由部署方式提供（自动下载校验留待 Phase 5 一键脚本）。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
-- **远程升级与网络诊断（v0.3.0）**：升级任务由 Master 下发 URL、版本与 SHA-256。Agent 流式下载至临时文件并校验；Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级原子替换后保留启动参数重启。探针支持 TCP、DNS、ICMP，逐项返回延迟与错误。
+- **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~29999` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。hy2/tuic 服务端 TLS 证书为 Agent 机本地路径，主控不托管证书文件。
-- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报（含内核状态 `kernelRunning`/`appliedConfigVersion`/`lastError`，落 `Node.kernelRunning`/`Node.configError`）。
+- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报（含内核状态 `kernelRunning`/`appliedConfigVersion`/`lastError`、Agent 版本/系统架构/内核版本，落 `Node.kernelRunning`/`Node.configError`/`Node.agentVersion`/`Node.osArch`/`Node.kernelVersion`）。
 - **流量统计与上报**：协议已约定按用户 UUID 的增量流量字段；因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户采集暂缓，待上游能力就绪后启用。SS 入站为共享密码模式，按用户流量归属在该协议下不可用（按用户配额粒度本就暂缓，可接受）。
 
 ---
@@ -178,7 +179,7 @@ sequenceDiagram
     participant Kernel as Sing-box
 
     Admin->>Master: POST /admin/nodes/:id/upgrade 或 /probe
-    Master->>Agent: upgrade_task / probe_task
+    Master->>Agent: upgrade_task / probe_task / restart_agent_task
     alt 升级
         Agent->>Agent: 流式下载 + SHA-256 校验
         Agent->>Kernel: 预检当前配置并优雅停止
@@ -190,7 +191,10 @@ sequenceDiagram
         Agent-->>Master: upgrade_result
     else 探针
         Agent->>Agent: TCP / DNS / ICMP 探测
-        Agent-->>Master: probe_result（逐项延迟）
+        Agent-->>Master: probe_result（逐项延迟、DNS 地址、丢包率）
+    else Agent 重启
+        Agent-->>Master: restart_agent_result
+        Agent->>Agent: 保留原始参数重新启动
     end
 ```
 

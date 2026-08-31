@@ -92,6 +92,26 @@ chmod +x "$MASTER_DIR/start.sh"
 # Web 面板静态资源（main.ts 经 WEB_DIST_PATH 探测的三级布局之一）
 mkdir -p "$MASTER_DIR/web-dist"
 cp -r "$WORKTREE/apps/web/dist/." "$MASTER_DIR/web-dist/"
+# 将同版本 Agent 运行时复制进主控分发中心，供节点升级和安装脚本内网直连下载。
+mkdir -p "$MASTER_DIR/binaries"
+cp "$DIST/riri-agent_${VERSION}_linux_amd64/riri-agent" "$MASTER_DIR/binaries/agent-linux-amd64"
+cp "$DIST/riri-agent_${VERSION}_linux_arm64/riri-agent" "$MASTER_DIR/binaries/agent-linux-arm64"
+if [ -f "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" ]; then
+  cp "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
+fi
+# Sing-box 由发布机或 CI 通过 SINGBOX_BINARY_DIR 提供；未提供时管理员仍可在后台导入。
+SINGBOX_SOURCE_DIR="${SINGBOX_BINARY_DIR:-$RIRI_ROOT/.tools/sing-box}"
+for target in linux-amd64 linux-arm64 windows-amd64; do
+  case "$target" in
+    windows-amd64) FILE_NAME="sing-box.exe" ;;
+    *) FILE_NAME="sing-box" ;;
+  esac
+  if [ -f "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" ]; then
+    cp "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"
+  elif [ -f "$SINGBOX_SOURCE_DIR/$FILE_NAME" ] && [ "$target" = "windows-amd64" ]; then
+    cp "$SINGBOX_SOURCE_DIR/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"
+  fi
+done
 # 版本号唯一源：system.service 读取 cwd/package.json；prisma.seed 供 db seed 命令使用
 # 路径经 argv 传入（MSYS 对参数做自动路径转换；内嵌 -e 脚本字符串则不会，Windows 下会得到 D:\d\... 坏路径）
 node -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$MASTER_DIR/package.json" "$VERSION"

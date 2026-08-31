@@ -65,6 +65,21 @@ func TestAtomicReplace(t *testing.T) {
 	}
 }
 
+func TestCleanupStaleBackup(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "riri-agent")
+	backup := target + ".riri-old"
+	if err := os.WriteFile(backup, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CleanupStaleBackup(target); err != nil {
+		t.Fatalf("CleanupStaleBackup: %v", err)
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Fatalf("backup still exists: %v", err)
+	}
+}
+
 func TestAtomicReplaceWithBackupAndRestore(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source")

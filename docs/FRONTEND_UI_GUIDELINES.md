@@ -290,7 +290,7 @@ export function PageContainer({ title, description, actions, children }: PageCon
 
 ## 9. 扩展与自定义组件准则
 
-节点运维视图的通信状态使用语义 Badge：在线 WS 显示“WS 在线”，在线 HTTP 显示“HTTP 轮询”，断开显示“离线”；状态旁应展示最近上报时间。探针、升级等异步操作沿用 Dialog + Sonner，并在 HTTP 模式下通过任务状态查询给出完成或超时反馈，不在页面内直接使用裸 `fetch`。
+节点运维视图的通信状态使用语义 Badge：在线 WS 显示“WS 在线”，在线 HTTP 显示“HTTP 轮询”，断开显示“离线”；状态旁应展示最近上报时间。详情页工具栏应提供内核重载、Agent 重启、网络探针、升级中心和安装命令；探针弹窗展示预设目标、延迟、丢包率、DNS 地址与错误详情，最近结果在高级运维 Tab 保留时间戳。探针、升级和重启等异步操作沿用 Dialog + Sonner，并在 HTTP 模式下通过任务状态查询给出完成或超时反馈，不在页面内直接使用裸 `fetch`。
 
 如遇 shadcn/ui 官方未收录的特殊场景（例如：流量波形动效、节点拓扑连线图）：
 1. **优先查找 Radix UI 原语**：在 Radix UI Primitive 之上使用 Tailwind CSS 进行包装。
@@ -378,7 +378,7 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 | 线路编辑弹窗 | `/admin/lines`（点击新建/编辑） | 默认打开的“入站配置”页签与“线路高级设置”页签；入站页集中配置协议、入口节点、监听地址/端口、Transport、TLS/Reality/ACME 与协议专属参数，高级页配置出口拓扑、对外覆盖、倍率与线路属性 | 使用 Tabs 切换；页签内容全部平面展开，以分区标题和 Separator 区分层级，不使用 Accordion 或嵌套卡片；两页共享草稿并统一保存；覆盖开关默认关闭且保留已填值；协议切换清理不适用字段；Reality 私钥留空表示保留服务端密钥；提交使用 React Hook Form + Zod |
 | 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
 | 用户管理 | `/admin/users` | 用户、角色、账号状态、当前套餐、订阅状态、流量进度与到期日 | 创建用户可选择初始套餐或暂不绑定；编辑用户通过双 Tab 管理账号安全与订阅，可用“无套餐”彻底移除订阅 |
-| 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、版本、下载地址、SHA-256 | 提交前校验 URL 与 SHA-256；下发中禁用提交按钮 |
+| 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、当前/推荐版本、主控内置来源、自定义 URL、SHA-256 与主控导入 | 默认使用主控内置版本；自定义来源必须校验 URL/SHA-256；导入或下发中禁用对应按钮 |
 
 ### 12.1 用户管理综合弹窗
 

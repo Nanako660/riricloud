@@ -59,6 +59,18 @@ export class PollProbeResultItemDto {
   latencyMs?: number;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(16)
+  @IsString({ each: true })
+  addresses?: string[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  packetLossPercent?: number;
+
+  @IsOptional()
   @IsString()
   message?: string;
 }
@@ -75,6 +87,17 @@ export class PollProbeResultDto {
   @ValidateNested({ each: true })
   @Type(() => PollProbeResultItemDto)
   results!: PollProbeResultItemDto[];
+}
+
+export class PollRestartAgentResultDto {
+  @IsString()
+  taskId!: string;
+
+  @IsBoolean()
+  success!: boolean;
+
+  @IsString()
+  message!: string;
 }
 
 export class AgentPollDto {
@@ -112,6 +135,18 @@ export class AgentPollDto {
   lastError?: string;
 
   @IsOptional()
+  @IsString()
+  agentVersion?: string;
+
+  @IsOptional()
+  @IsString()
+  osArch?: string;
+
+  @IsOptional()
+  @IsString()
+  kernelVersion?: string;
+
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(8)
   @ValidateNested({ each: true })
@@ -131,4 +166,11 @@ export class AgentPollDto {
   @ValidateNested({ each: true })
   @Type(() => PollProbeResultDto)
   probeResults?: PollProbeResultDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ValidateNested({ each: true })
+  @Type(() => PollRestartAgentResultDto)
+  restartAgentResults?: PollRestartAgentResultDto[];
 }

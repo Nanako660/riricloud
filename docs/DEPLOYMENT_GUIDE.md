@@ -10,7 +10,7 @@
 - Linux / macOS / Windows Server
 ### 1.2 方式一：自包含发行包部署（推荐，v0.2.0 起）
 
-从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源与全部生产依赖，目标机只需 Node.js >= 20）：
+从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源、Agent 多架构二进制与全部生产依赖，目标机只需 Node.js >= 20）：
 
 ```bash
 tar -xzf riri-master_<version>_linux_amd64.tar.gz && cd riri-master_<version>_linux_amd64
@@ -21,6 +21,7 @@ cp .env.example .env   # 编辑：JWT_SECRET 必填（openssl rand -hex 32）
 - 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
 - 首次登录账号：执行 `node node_modules/prisma/build/index.js db seed` 播种（凭据经 `SEED_ADMIN_EMAIL/PASSWORD` 覆盖，默认密码见包内 README），**登录后立即修改**。
 - 主控端静态托管由 `apps/server/src/static/web-static.ts` 实现（探测顺序：`WEB_DIST_PATH` 环境变量 → monorepo 开发布局 → 发行包 `web-dist/`）。
+- 主控二进制分发目录为发行包内的 `binaries/`；Agent 远程升级按节点上报的 `osArch` 选择 `agent-*`，下载端点使用节点 AgentToken 鉴权。生产环境建议设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>`，否则默认只生成本机回环地址。
 
 ### 1.3 方式二：源码构建与运行
 
@@ -87,7 +88,7 @@ curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
 #### 安装脚本后台执行步骤：
 1. 检测 VPS 架构（`x86_64` / `aarch64` / `armv7`）。
 2. 下载对应架构的 `riri-agent` 单二进制与官方 `sing-box` 代理内核。
-3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址。
+3. 创建 `/etc/riri-agent/config.yaml` 存储 Token 与 Master 地址；后续升级无需节点直接访问 GitHub。
 4. 注册并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启。
 
 > **Agent 环境变量**：`AGENT_TOKEN`（必填）；推荐使用 `MASTER_URL`（WS/WSS 地址如 `wss://<master>/ws/agent`，HTTP/HTTPS 模式可填主控根地址）；`AGENT_MODE=ws|http` 可显式指定模式，未指定时按 URL 协议前缀推导；`POLL_INTERVAL_SECS` 默认 15 秒、范围 5~300 秒；`MASTER_WS_URL` 继续兼容旧版 Agent。另有 `SINGBOX_CONFIG_PATH`（默认 `./config.json`）与 `SINGBOX_BINARY_PATH`（默认 `sing-box`）。
@@ -158,7 +159,7 @@ bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
 Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存在则在当前 main HEAD 创建附注 Tag，发布成功后推送。
 
 ### 3.3 节点 Agent 升级
-从 GitHub Release 下载对应架构的压缩包，校验 SHA-256 后替换二进制并 `systemctl restart riri-agent`。后续版本将提供 `install-agent.sh` 一键脚本（见 [ROADMAP.md](./ROADMAP.md) Phase 5）。
+节点详情「升级中心」默认从主控 `/api/v1/downloads/binaries/:target` 下载对应架构版本，校验 SHA-256 后执行原子替换；主控不具备对应 Sing-box 架构时，管理员可在面板导入自定义 URL 与 SHA-256 后再下发。Agent 也可通过详情页快捷重启并保留原始启动参数。
 
 ### 3.4 主控端升级
 下载新版本 `riri-master_*.tar.gz` → 停服 → 解压新包替换目录 → 拷回旧目录的 `.env` 与数据库文件（`prisma/data/`）→ `./start.sh`（数据库迁移自动执行，`data/` 与 `.env` 独立于程序目录，升级不丢数据）。

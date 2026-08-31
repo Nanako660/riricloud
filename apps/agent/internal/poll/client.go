@@ -68,17 +68,27 @@ type probeResultData struct {
 	Results []probe.Result `json:"results"`
 }
 
+type restartAgentResult struct {
+	TaskID  string `json:"taskId"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
 type pollPayload struct {
-	CPUUsage           float64           `json:"cpuUsage"`
-	MemoryUsage        float64           `json:"memoryUsage"`
-	BandwidthRate      float64           `json:"bandwidthRate"`
-	KernelRunning      bool              `json:"kernelRunning"`
-	AppliedVersion     int64             `json:"appliedConfigVersion"`
-	LastError          string            `json:"lastError"`
-	TrafficRecords     []any             `json:"trafficRecords"`
-	ConfigApplyResults []json.RawMessage `json:"configApplyResults,omitempty"`
-	UpgradeResults     []json.RawMessage `json:"upgradeResults,omitempty"`
-	ProbeResults       []json.RawMessage `json:"probeResults,omitempty"`
+	CPUUsage            float64           `json:"cpuUsage"`
+	MemoryUsage         float64           `json:"memoryUsage"`
+	BandwidthRate       float64           `json:"bandwidthRate"`
+	KernelRunning       bool              `json:"kernelRunning"`
+	AppliedVersion      int64             `json:"appliedConfigVersion"`
+	LastError           string            `json:"lastError"`
+	AgentVersion        string            `json:"agentVersion"`
+	OSArch              string            `json:"osArch"`
+	KernelVersion       string            `json:"kernelVersion"`
+	TrafficRecords      []any             `json:"trafficRecords"`
+	ConfigApplyResults  []json.RawMessage `json:"configApplyResults,omitempty"`
+	UpgradeResults      []json.RawMessage `json:"upgradeResults,omitempty"`
+	ProbeResults        []json.RawMessage `json:"probeResults,omitempty"`
+	RestartAgentResults []json.RawMessage `json:"restartAgentResults,omitempty"`
 }
 
 type pollResponse struct {
@@ -102,6 +112,8 @@ type Client struct {
 	interval   time.Duration
 	httpClient *http.Client
 	singboxMgr *singbox.Manager
+	version    string
+	osArch     string
 	log        *logrus.Entry
 
 	resultMu         sync.Mutex
@@ -113,13 +125,15 @@ type Client struct {
 	tasks            sync.WaitGroup
 }
 
-func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, version, osArch string, log *logrus.Entry) *Client {
 	return &Client{
 		masterURL:      masterURL,
 		token:          token,
 		interval:       interval,
 		httpClient:     &http.Client{Timeout: 20 * time.Second},
 		singboxMgr:     singboxMgr,
+		version:        version,
+		osArch:         osArch,
 		log:            log,
 		runningTasks:   make(map[string]struct{}),
 		completedTasks: make(map[string]struct{}),
@@ -165,6 +179,9 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		KernelRunning:  kernel.Running,
 		AppliedVersion: kernel.AppliedConfigVersion,
 		LastError:      kernel.LastError,
+		AgentVersion:   c.version,
+		OSArch:         c.osArch,
+		KernelVersion:  kernel.Version,
 		TrafficRecords: []any{},
 	}
 	sentResults := c.appendPendingResults(&payload)
@@ -226,6 +243,8 @@ func (c *Client) appendPendingResults(payload *pollPayload) []uint64 {
 			payload.UpgradeResults = append(payload.UpgradeResults, result.data)
 		case "probe":
 			payload.ProbeResults = append(payload.ProbeResults, result.data)
+		case "restart":
+			payload.RestartAgentResults = append(payload.RestartAgentResults, result.data)
 		}
 	}
 	return ids
@@ -294,6 +313,8 @@ func (c *Client) startTask(parent context.Context, task taskMessage) {
 			c.runUpgrade(parent, task.Data)
 		case "probe_task":
 			c.runProbe(parent, task.Data)
+		case "restart_agent_task":
+			c.runRestart(task.Data)
 		default:
 			c.log.WithField("type", task.Type).Warn("unsupported poll task")
 		}
@@ -348,6 +369,19 @@ func (c *Client) runProbe(parent context.Context, raw json.RawMessage) {
 		}
 	}
 	c.addResult("probe", probeResultData{TaskID: task.TaskID, Success: success, Results: results})
+}
+
+func (c *Client) runRestart(raw json.RawMessage) {
+	var task struct {
+		TaskID string `json:"taskId"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil || task.TaskID == "" {
+		return
+	}
+	c.addResult("restart", restartAgentResult{TaskID: task.TaskID, Success: true, Message: "ok"})
+	c.resultMu.Lock()
+	c.restartRequested = true
+	c.resultMu.Unlock()
 }
 
 func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {

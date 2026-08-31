@@ -7,7 +7,9 @@ export type AgentMessageType =
   | 'upgrade_task'
   | 'upgrade_result'
   | 'probe_task'
-  | 'probe_result';
+  | 'probe_result'
+  | 'restart_agent_task'
+  | 'restart_agent_result';
 
 export type AgentTransportMode = 'WS' | 'HTTP';
 
@@ -37,6 +39,9 @@ export interface HeartbeatData {
   kernelRunning?: boolean; // 内核进程存活
   appliedConfigVersion?: number; // 当前生效配置版本
   lastError?: string; // 最近一次失败原因（check 失败/启动失败/异常退出 stderr 尾部）
+  agentVersion?: string; // Agent 编译版本
+  osArch?: string; // Agent 运行平台与架构
+  kernelVersion?: string; // sing-box 内核版本
 }
 
 // config_sync 的处理回执（Agent -> Master，v0.3.0）
@@ -88,6 +93,8 @@ export interface ProbeResult {
   target: string;
   success: boolean;
   latencyMs?: number;
+  addresses?: string[];
+  packetLossPercent?: number;
   message?: string;
 }
 
@@ -97,9 +104,20 @@ export interface ProbeResultData {
   results: ProbeResult[];
 }
 
+export interface RestartAgentTaskData {
+  taskId: string;
+}
+
+export interface RestartAgentResultData {
+  taskId: string;
+  success: boolean;
+  message: string;
+}
+
 export type AgentTaskMessage =
   | { type: 'upgrade_task'; data: UpgradeTaskData }
-  | { type: 'probe_task'; data: ProbeTaskData };
+  | { type: 'probe_task'; data: ProbeTaskData }
+  | { type: 'restart_agent_task'; data: RestartAgentTaskData };
 
 export interface AgentPollResponse {
   needUpdate: boolean;
@@ -113,7 +131,8 @@ export type AgentInboundMessage =
   | AgentMessage<HeartbeatData> & { type: 'heartbeat' }
   | AgentMessage<ConfigApplyResultData> & { type: 'config_apply_result' }
   | AgentMessage<UpgradeResultData> & { type: 'upgrade_result' }
-  | AgentMessage<ProbeResultData> & { type: 'probe_result' };
+  | AgentMessage<ProbeResultData> & { type: 'probe_result' }
+  | AgentMessage<RestartAgentResultData> & { type: 'restart_agent_result' };
 
 type JsonObject = Record<string, unknown>;
 
@@ -154,6 +173,9 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (value.lastError !== undefined && (typeof value.lastError !== 'string' || value.lastError.length > 8192)) {
     return false;
   }
+  if (value.agentVersion !== undefined && !isNonEmptyString(value.agentVersion, 128)) return false;
+  if (value.osArch !== undefined && !isNonEmptyString(value.osArch, 128)) return false;
+  if (value.kernelVersion !== undefined && !isNonEmptyString(value.kernelVersion, 128)) return false;
   return value.trafficRecords.every((record) => {
     if (!isJsonObject(record)) return false;
     return (
@@ -198,9 +220,21 @@ function isProbeResultData(value: unknown): value is ProbeResultData {
     }
     return (
       (result.latencyMs === undefined || isSafeNonNegativeInteger(result.latencyMs)) &&
+      (result.packetLossPercent === undefined || (isFiniteNumber(result.packetLossPercent) && result.packetLossPercent >= 0 && result.packetLossPercent <= 100)) &&
+      (result.addresses === undefined || (Array.isArray(result.addresses) && result.addresses.length <= 16 && result.addresses.every((address) => isNonEmptyString(address, 256)))) &&
       (result.message === undefined || (typeof result.message === 'string' && result.message.length <= 8192))
     );
   });
+}
+
+function isRestartAgentResultData(value: unknown): value is RestartAgentResultData {
+  return (
+    isJsonObject(value) &&
+    isNonEmptyString(value.taskId, 128) &&
+    typeof value.success === 'boolean' &&
+    typeof value.message === 'string' &&
+    value.message.length <= 8192
+  );
 }
 
 // 解析并校验 Agent 上行消息，避免类型断言绕过外部输入校验。
@@ -230,6 +264,10 @@ export function parseAgentInboundMessage(raw: string): AgentInboundMessage | nul
         : null;
     case 'probe_result':
       return isProbeResultData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'restart_agent_result':
+      return isRestartAgentResultData(parsed.data)
         ? { type: parsed.type, data: parsed.data }
         : null;
     default:

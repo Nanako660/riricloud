@@ -42,15 +42,21 @@
 
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。⭐
-- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色与派生端口列表）。⭐
+- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐
 - `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式一键安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http } }`。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
-- `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version, url, sha256 }`；Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
-- `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。
+- `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
+- `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。回执会持久化到节点 `lastProbeResult`。
+- `POST /admin/nodes/:id/restart-agent`：请求 Agent 自身平滑重启。⭐ 返回 `{ taskId, requested }`，Agent 在回执后使用原始命令行参数重新启动。
 - `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
+
+#### 二进制分发中心
+- `GET /admin/binaries/info`：管理员查询主控版本及各 OS/架构内置 Agent、Sing-box 二进制的版本、大小、SHA-256 和可用状态。⭐
+- `POST /admin/binaries/import`：管理员把自定义 Sing-box URL 下载到主控托管目录。⭐ 请求 `{ target: "singbox-linux-amd64"|"singbox-linux-arm64"|"singbox-windows-amd64", version, url, sha256 }`；服务端限制 100 MiB，并在落盘前完成 SHA-256 校验。
+- `GET /downloads/binaries/:target?token=<AGENT_TOKEN>`：Agent 内部下载端点。⭐ 仅接受有效且未禁用节点的 AgentToken，响应为二进制流；禁止匿名访问。
 
 #### 节点线路承载视图
 节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/出口的角色、线路协议和派生监听端口；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
@@ -231,7 +237,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` 已实现 ⭐；`trafficRecords` 为**增量**字节数（本心跳周期内），因 sing-box 官方统计接口（Clash API `/connections`）暂不提供连接到入站用户的归属字段，按用户流量采集暂缓、当前恒为空数组，待上游能力就绪后启用。
 >
-> **内核状态字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）。Master 落 `Node.kernelRunning` / `Node.configError`（`lastError` 为空串时清空 configError）；旧版 Agent 不携带这些字段，对应列保持原值。
+> **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
 #### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
 Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：
@@ -267,14 +273,14 @@ Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配
     "taskId": "task-uuid",
     "success": true,
     "results": [
-      { "type": "tcp", "target": "example.com", "success": true, "latencyMs": 32 },
-      { "type": "dns", "target": "example.com", "success": true, "latencyMs": 8 }
+      { "type": "tcp", "target": "example.com", "success": true, "latencyMs": 32, "packetLossPercent": 0 },
+      { "type": "dns", "target": "example.com", "success": true, "latencyMs": 8, "addresses": ["93.184.216.34"], "packetLossPercent": 0 }
     ]
   }
 }
 ```
 
-Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result` 四类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
+Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result` 五类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
 ---
 
@@ -299,16 +305,20 @@ Content-Type: application/json
   "kernelRunning": true,
   "appliedConfigVersion": 3,
   "lastError": "",
+  "agentVersion": "0.3.0",
+  "osArch": "linux/amd64",
+  "kernelVersion": "1.11.0",
   "trafficRecords": [],
   "configApplyResults": [
     { "version": 3, "success": true, "message": "ok" }
   ],
   "upgradeResults": [],
-  "probeResults": []
+  "probeResults": [],
+  "restartAgentResults": []
 }
 ```
 
-`configApplyResults`、`upgradeResults`、`probeResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳同事务更新节点遥测与流量，再处理回执。
+`configApplyResults`、`upgradeResults`、`probeResults`、`restartAgentResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳同事务更新节点遥测与流量，再处理回执。
 
 ### 2.3.2 Master -> Agent 响应体
 
@@ -324,7 +334,7 @@ Content-Type: application/json
 }
 ```
 
-当 `needUpdate=false` 时 `singboxConfig` 为 `null`；`tasks` 中的升级/探针任务在 Agent 侧异步执行，并在下一次轮询的回执数组中提交。Master 会在回执到达前保留已投递任务，网络丢包后按 60 秒重试，回执成功后任务状态变为 `COMPLETED`。`nextPollSecs` 由节点配置给出，服务端限制在 5~300 秒。
+当 `needUpdate=false` 时 `singboxConfig` 为 `null`；`tasks` 中的升级/探针/Agent 重启任务在 Agent 侧异步执行，并在下一次轮询的回执数组中提交。Master 会在回执到达前保留已投递任务，网络丢包后按 60 秒重试，回执成功后任务状态变为 `COMPLETED`。`nextPollSecs` 由节点配置给出，服务端限制在 5~300 秒。
 
 ### 2.3.3 健康判定
 
