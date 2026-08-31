@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { LINE_STATUSES, LINE_TYPES, RELAY_MODES, LineStatus, LineType, RelayMode } from '../../common/constants';
+import { LINE_STATUSES, LINE_TYPES, PROTOCOL_TYPES, RELAY_MODES, LineStatus, LineType, ProtocolType, RelayMode } from '../../common/constants';
 
 export class UpdateLineDto {
   @ApiPropertyOptional()
@@ -10,10 +10,34 @@ export class UpdateLineDto {
   @IsOptional()
   name?: string;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  @IsOptional()
+  tag?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  @IsOptional()
+  listen?: string;
+
   @ApiPropertyOptional({ enum: LINE_TYPES })
   @IsIn(LINE_TYPES)
   @IsOptional()
   type?: LineType;
+
+  @ApiPropertyOptional({ enum: PROTOCOL_TYPES })
+  @IsIn(PROTOCOL_TYPES)
+  @IsOptional()
+  protocolType?: ProtocolType;
+
+  @ApiPropertyOptional()
+  @IsObject()
+  @IsOptional()
+  params?: Record<string, unknown>;
 
   @ApiPropertyOptional({ enum: RELAY_MODES, nullable: true })
   @IsIn(RELAY_MODES)
@@ -33,17 +57,25 @@ export class UpdateLineDto {
   @IsOptional()
   entryPort?: number | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsUUID()
   @IsOptional()
-  targetInboundId?: string;
+  exitNodeId?: string | null;
 
-  @ApiPropertyOptional({ default: false, description: '是否启用线路对外端点覆盖；关闭时复用入口/目标入站默认设置' })
+  @ApiPropertyOptional({ minimum: 1, maximum: 65535, nullable: true })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  exitPort?: number | null;
+
+  @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()
   endpointOverrideEnabled?: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   serverHost?: string | null;
@@ -56,12 +88,12 @@ export class UpdateLineDto {
   @IsOptional()
   serverPort?: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   serverName?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional()
   @IsString()
   @IsOptional()
   host?: string | null;

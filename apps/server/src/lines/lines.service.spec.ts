@@ -1,166 +1,87 @@
-import { ConflictException } from '@nestjs/common';
-import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { Test } from '@nestjs/testing';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { LinesService } from './lines.service';
 
 describe('LinesService', () => {
-  const now = new Date('2026-01-01T00:00:00.000Z');
-  const targetNode = { id: 'n-target', name: '出口节点', serverHost: '203.0.113.10', status: 'ONLINE', isLocal: false };
-  const entryNode = { id: 'n-entry', name: '入口节点', serverHost: '203.0.113.20', status: 'ONLINE', isLocal: false };
-  const targetInbound = {
-    id: 'i-target', nodeId: targetNode.id, type: 'VLESS', tag: 'vless-in', listen: '::', port: 443,
-    paramsJson: JSON.stringify({ transport: { type: 'tcp' }, tls: { enabled: false, mode: 'none' } }),
-    node: targetNode, createdAt: now, updatedAt: now
-  };
-  const rawLine = {
-    id: 'l1', name: '线路一', type: 'DIRECT', relayMode: null, entryNodeId: targetNode.id, entryPort: null,
-    targetInboundId: targetInbound.id, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
-    trafficRate: 1, tagsJson: '["vip"]', level: 1, sortOrder: 0, isPublic: true, status: 'ACTIVE',
-    entryNode: targetNode, targetInbound, createdAt: now, updatedAt: now
-  };
+  let service: LinesService;
+  const entryNode = { id: 'node-entry', name: '入口节点', serverHost: '198.51.100.10', status: 'ONLINE', isLocal: false };
+  const exitNode = { id: 'node-exit', name: '出口节点', serverHost: '198.51.100.20', status: 'ONLINE', isLocal: false };
   const prisma = {
-    line: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), updateMany: jest.fn() },
+    line: {
+      findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), updateMany: jest.fn()
+    },
     node: { findUnique: jest.fn() },
-    nodeInbound: { findUnique: jest.fn(), findFirst: jest.fn() },
-    $transaction: jest.fn()
+    $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[]))
   };
   const gateway = { pushConfigToAll: jest.fn().mockResolvedValue(0) };
-  const service = new LinesService(prisma as never as PrismaService, gateway as never as AgentGatewayService);
 
-  afterEach(() => jest.clearAllMocks());
-
-  it('创建中继线路省略入口端口时生成五位随机端口', async () => {
-    prisma.nodeInbound.findUnique.mockResolvedValue(targetInbound);
-    prisma.node.findUnique.mockResolvedValue(entryNode);
-    prisma.nodeInbound.findFirst.mockResolvedValue(null);
-    prisma.line.findFirst.mockResolvedValue(null);
-    prisma.line.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
-      Promise.resolve({ ...rawLine, ...data, entryNode })
-    );
-
-    await service.create({
-      name: '随机入口', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id,
-      targetInboundId: targetInbound.id
-    });
-
-    const created = prisma.line.create.mock.calls[0][0].data;
-    expect(created.entryPort).toEqual(expect.any(Number));
-    expect(created.entryPort).toBeGreaterThanOrEqual(20000);
-    expect(created.entryPort).toBeLessThanOrEqual(29999);
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ providers: [LinesService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }] }).compile();
+    service = moduleRef.get(LinesService);
   });
 
-  it('创建中继线路时校验入口端口并持久化拓扑字段', async () => {
-    prisma.nodeInbound.findUnique.mockResolvedValue(targetInbound);
-    prisma.node.findUnique.mockResolvedValue(entryNode);
-    prisma.nodeInbound.findFirst.mockResolvedValue(null);
-    prisma.line.findFirst.mockResolvedValue(null);
-    prisma.line.create.mockResolvedValue({ ...rawLine, type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id, entryPort: 8443, entryNode });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.line.findMany.mockResolvedValue([]);
+    prisma.node.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => where.id === entryNode.id ? entryNode : where.id === exitNode.id ? exitNode : null);
+  });
 
-    await service.create({
-      name: '入口盲转', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id, entryPort: 8443,
-      targetInboundId: targetInbound.id, tags: ['relay'], trafficRate: 1.5
-    });
+  const rawLine = {
+    id: 'line-1', name: '东京 VLESS', tag: 'tokyo-vless', listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS',
+    paramsJson: JSON.stringify({ flow: 'xtls-rprx-vision', transport: { type: 'tcp' }, tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], privateKey: 'private', publicKey: 'public', shortIds: ['sid'] } } }),
+    entryNodeId: entryNode.id, entryPort: 24443, exitNodeId: entryNode.id, exitPort: 24443,
+    endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null, trafficRate: 1, tagsJson: '["premium"]', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date(), entryNode, exitNode: entryNode
+  };
 
-    expect(prisma.line.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id, entryPort: 8443, trafficRate: 1.5, tagsJson: '["relay"]' })
-    }));
+  it('创建直连线路时将协议参数归一化并自动绑定同一节点', async () => {
+    prisma.line.create.mockResolvedValue(rawLine);
+    const result = await service.create({ name: '东京 VLESS', tag: 'tokyo-vless', listen: '127.0.0.1', protocolType: 'VLESS', entryNodeId: entryNode.id, entryPort: 24443, params: { tls: { mode: 'reality' } } });
+    expect(prisma.line.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'DIRECT', protocolType: 'VLESS', tag: 'tokyo-vless', listen: '127.0.0.1', entryNodeId: entryNode.id, exitNodeId: entryNode.id, entryPort: 24443, exitPort: 24443 }) }));
+    const params = result.line.params as { tls?: { reality?: Record<string, unknown> } };
+    expect(params.tls).toBeDefined();
+    expect(params.tls?.reality).not.toHaveProperty('privateKey');
+  });
+
+  it('创建双节点盲转发线路时保存独立入口和出口端点', async () => {
+    const relay = { ...rawLine, id: 'line-relay', name: '跨节点盲转', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id, entryPort: 25001, exitNodeId: exitNode.id, exitPort: 25002, entryNode, exitNode };
+    prisma.line.create.mockResolvedValue(relay);
+    const result = await service.create({ name: relay.name, type: 'RELAY', relayMode: 'BLIND_FORWARD', protocolType: 'VLESS', entryNodeId: entryNode.id, entryPort: 25001, exitNodeId: exitNode.id, exitPort: 25002 });
+    expect(result.line.topology.entry.port).toBe(25001);
+    expect(result.line.topology.exit.port).toBe(25002);
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
   });
 
-  it('入口端口与已有入站冲突时拒绝创建', async () => {
-    prisma.nodeInbound.findUnique.mockResolvedValue(targetInbound);
-    prisma.node.findUnique.mockResolvedValue(entryNode);
-    prisma.nodeInbound.findFirst.mockResolvedValue({ id: 'conflict' });
-    await expect(service.create({
-      name: '冲突线路', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: entryNode.id, entryPort: 443,
-      targetInboundId: targetInbound.id
-    })).rejects.toThrow(ConflictException);
+  it('端口被同传输层线路占用时拒绝创建', async () => {
+    prisma.line.findMany.mockResolvedValue([{ protocolType: 'VLESS' }]);
+    await expect(service.create({ name: '冲突线路', protocolType: 'VLESS', entryNodeId: entryNode.id, entryPort: 24443 })).rejects.toThrow(ConflictException);
     expect(prisma.line.create).not.toHaveBeenCalled();
   });
 
-  it('套餐线路匹配只返回公开、启用且底层在线的线路', async () => {
-    prisma.line.findMany.mockResolvedValue([
-      rawLine,
-      { ...rawLine, id: 'l2', name: '离线线路', targetInbound: { ...targetInbound, node: { ...targetNode, status: 'OFFLINE' } } }
-    ]);
-    const result = await service.getAvailableForPlan({ lineMatchMode: 'TAGS', lineTagsJson: '["vip"]', lineIdsJson: '[]' });
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('l1');
-    expect(result[0].targetInbound.node).toEqual(targetNode);
-    expect(prisma.line.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { isPublic: true, status: 'ACTIVE' } }));
-  });
-
-  it('默认复用线路类型对应的底层地址和端口，并保留原始覆盖字段', async () => {
-    prisma.line.findUnique.mockResolvedValue({
-      ...rawLine,
-      serverHost: 'stale.example.com',
-      serverPort: 9443,
-      serverName: 'stale.example.com',
-      host: 'stale-cdn.example.com'
-    });
-
-    const result = await service.detail(rawLine.id);
-
-    expect(result.line).toMatchObject({
-      endpointOverrideEnabled: false,
-      serverHost: targetNode.serverHost,
-      serverPort: targetInbound.port,
-      serverName: null,
-      host: null,
-      endpointOverrides: {
-        serverHost: 'stale.example.com',
-        serverPort: 9443,
-        serverName: 'stale.example.com',
-        host: 'stale-cdn.example.com'
-      }
-    });
-  });
-
-  it('启用对外覆盖后使用自定义端点，同时保留覆盖值', async () => {
-    prisma.line.findUnique.mockResolvedValue({
-      ...rawLine,
-      endpointOverrideEnabled: true,
-      serverHost: 'edge.example.com',
-      serverPort: 8443,
-      serverName: 'www.apple.com',
-      host: 'cdn.example.com'
-    });
-
-    const result = await service.detail(rawLine.id);
-
-    expect(result.line).toMatchObject({
-      endpointOverrideEnabled: true,
-      serverHost: 'edge.example.com',
-      serverPort: 8443,
-      serverName: 'www.apple.com',
-      host: 'cdn.example.com'
-    });
-    expect(result.line.endpointOverrides).toEqual({
-      serverHost: 'edge.example.com',
-      serverPort: 8443,
-      serverName: 'www.apple.com',
-      host: 'cdn.example.com'
-    });
-  });
-
-  it('中继线路关闭覆盖时复用入口节点地址与入口端口', async () => {
-    prisma.line.findUnique.mockResolvedValue({
-      ...rawLine,
+  it('同节点中继线路不得复用相同的入口和出口端口', async () => {
+    await expect(service.create({
+      name: '同节点盲转',
       type: 'RELAY',
+      relayMode: 'BLIND_FORWARD',
+      protocolType: 'VLESS',
       entryNodeId: entryNode.id,
-      entryPort: 8443,
-      entryNode,
-      serverHost: 'stale.example.com',
-      serverPort: 9443,
-      endpointOverrideEnabled: false
-    });
+      entryPort: 25001,
+      exitNodeId: entryNode.id,
+      exitPort: 25001
+    })).rejects.toThrow(BadRequestException);
+    expect(prisma.line.create).not.toHaveBeenCalled();
+  });
 
-    const result = await service.detail(rawLine.id);
+  it('套餐线路匹配只返回公开、启用且入口出口均在线的线路', async () => {
+    prisma.line.findMany.mockResolvedValue([rawLine, { ...rawLine, id: 'offline', exitNode: { ...exitNode, status: 'OFFLINE' } }]);
+    const result = await service.getAvailableForPlan({ lineMatchMode: 'TAGS', lineTagsJson: '["premium"]', lineIdsJson: '[]' });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(rawLine.id);
+  });
 
-    expect(result.line).toMatchObject({
-      serverHost: entryNode.serverHost,
-      serverPort: 8443,
-      endpointOverrideEnabled: false
-    });
+  it('线路不存在时抛出 NotFoundException', async () => {
+    prisma.line.findUnique.mockResolvedValue(null);
+    await expect(service.detail('missing')).rejects.toThrow(NotFoundException);
   });
 });

@@ -171,6 +171,18 @@ describe('normalizeInboundParams', () => {
   });
 });
 
+describe('sanitizeInboundParams', () => {
+  it('脱敏嵌套和旧版扁平 Reality 私钥', async () => {
+    const { sanitizeInboundParams } = await import('./inbound');
+    const sanitized = sanitizeInboundParams({
+      privateKey: 'legacy-private',
+      tls: { mode: 'reality', reality: { privateKey: 'nested-private', publicKey: 'public' } }
+    });
+    expect(sanitized).not.toHaveProperty('privateKey');
+    expect((sanitized.tls as { reality: Record<string, unknown> }).reality).not.toHaveProperty('privateKey');
+  });
+});
+
 describe('buildServerInbound', () => {
   const base = { tag: 'in-1', listen: '::', port: 443 };
 
@@ -236,6 +248,15 @@ describe('buildServerInbound', () => {
         key_path: '/key.pem'
       }
     });
+  });
+
+  it('HTTP 传输保留可视化配置的请求头', () => {
+    const params = normalizeInboundParams('VLESS', {
+      transport: { type: 'http', path: '/proxy', host: 'cdn.example.com', headers: { 'X-Line': 'demo' } },
+      tls: { mode: 'none' }
+    });
+    const inbound = buildServerInbound({ type: 'VLESS', ...base, params, users });
+    expect(inbound.transport).toEqual({ type: 'http', host: ['cdn.example.com'], path: '/proxy', headers: { 'X-Line': 'demo' } });
   });
 
   it('服务端组装会修复已存储的 VLESS 明文 Vision 配置', () => {

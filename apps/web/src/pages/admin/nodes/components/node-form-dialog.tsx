@@ -67,7 +67,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         {created ? (
           <>
             <DialogHeader>

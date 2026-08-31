@@ -31,10 +31,10 @@
 | **`UI-04`** | 控制台 | 重置订阅确认弹窗 | `/`（点击“重置链接”） | `apps/web/src/components/ui/alert-dialog.tsx` | AlertDialog 遮罩、警告文案、危险红色按钮、取消/确认交互 |
 | **`UI-05`** | 节点管理 | 节点管理列表 | `/admin/nodes` | `apps/web/src/pages/admin/nodes/index.tsx` | 节点数据表格、内核运行状态 Badge、CPU/内存/带宽遥测实时刷新、心跳时间 |
 | **`UI-06`** | 节点管理 | 添加节点弹窗 | `/admin/nodes`（点击“添加节点”） | `apps/web/src/pages/admin/nodes/components/node-form-dialog.tsx` | Dialog 居中、服务器地址与名称输入框、公开开关 Switch |
-| **`UI-07`** | 节点详情 | 入站协议列表 Tab | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 入站协议列表表格、Tag 徽章、监听端口显示、公开/隐藏状态 Badge |
-| **`UI-08`** | 节点详情 | 添加入站协议弹窗 | `/admin/nodes/:id`（点击“添加入站”） | `apps/web/src/pages/admin/nodes/components/inbound-form-dialog.tsx` | 协议下拉选择、IPv4 默认监听、新建时预填五位随机端口、传输层 Transport 配置、TLS/Reality 密钥对一键生成、流控设置；无专属字段的协议不显示空参数卡片 |
-| **`UI-09`** | 节点详情 | 基础信息与接入 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、Agent 接入 Token 展示与一键复制、遥测卡片 |
-| **`UI-10`** | 节点详情 | 高级模式 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | sing-box 服务端生成配置只读预览、JSON 覆盖深合并代码编辑器 |
+| **`UI-07`** | 节点详情 | 线路承载与角色列表 Tab | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 当前承载线路、协议徽章、入口/出口角色、入口/出口端口与线路状态 |
+| **`UI-08`** | 节点详情 | 派生监听端口卡片 | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 线路派生端口按角色展示、端口文本不溢出、无线路时 EmptyState |
+| **`UI-09`** | 节点详情 | 基础信息与遥测 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、Agent 接入 Token 展示与一键复制、遥测与内核状态 |
+| **`UI-10`** | 节点详情 | 高级与运维 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | Line 派生 sing-box 配置预览、JSON 覆盖深合并编辑器、重载/升级与删除危险操作 |
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | 邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选、套餐 Badge、订阅状态 Badge、流量进度条、到期日、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select、无套餐创建、套餐联动配额与有效期、永久有效 Switch 卡片与配额输入框高度/阴影一致 |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色与封禁、密码重置、套餐/无套餐/状态/配额/已用流量调整、启用账号卡片与角色 Select 高度/阴影一致、无套餐危险操作确认、Token 重置确认 |
@@ -48,7 +48,7 @@
 | **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、Token 复制/重置、取消保留权益提示、可用线路 |
 | **`UI-22`** | 节点运维 | 远程升级弹窗 | `/admin/nodes/:id`（点击“远程升级”） | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | 目标 Select、版本/URL/SHA-256 校验、下发中禁用状态、错误 Toast |
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
-| **`UI-24`** | 线路管理 | 新建/编辑线路弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 直连/中继动态表单、入口节点/随机端口提示、目标入站、默认关闭的对外覆盖开关、覆盖输入禁用/保留状态、倍率与状态开关 |
+| **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、可增删请求头、Reality 密钥生成；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
 | **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
 
 ---
@@ -114,6 +114,7 @@ flowchart TD
 ### Step 4: 检查点与视觉规范核对
 对照 [docs/FRONTEND_UI_GUIDELINES.md](FRONTEND_UI_GUIDELINES.md) 核实以下核心要素：
 - [ ] **排版与边距**：容器间距均匀，无内容溢出或非预期换行；
+- [ ] **弹窗尺寸**：普通表单宽度统一，复杂编辑弹窗保持适度宽度，移动端有两侧留白且超长内容可在弹窗内滚动；
 - [ ] **语义颜色**：文字与背景对比度合格，无硬编码 HEX 色彩或色彩失真；
 - [ ] **组件规范**：全部使用 shadcn/ui 组件，无原生裸 HTML 交互标签；
 - [ ] **无障碍与交互**：模态框遮罩层正确显示，支持 Escape 键关闭与焦点捕获；

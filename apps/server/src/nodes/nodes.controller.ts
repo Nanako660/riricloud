@@ -4,7 +4,6 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
-import { CreateInboundDto, UpdateInboundDto } from './dto/inbound.dto';
 import { ProbeNodeDto } from './dto/probe-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 import { NodesService } from './nodes.service';
@@ -62,27 +61,4 @@ export class NodesController {
     return this.nodesService.requestProbe(id, dto);
   }
 
-  @Post(':id/inbounds')
-  createInbound(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateInboundDto) {
-    return this.nodesService.createInbound(id, dto);
-  }
-
-  @Patch(':id/inbounds/:inboundId')
-  updateInbound(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('inboundId', ParseUUIDPipe) inboundId: string,
-    @Body() dto: UpdateInboundDto
-  ) {
-    return this.nodesService.updateInbound(id, inboundId, dto);
-  }
-
-  @Delete(':id/inbounds/:inboundId')
-  removeInbound(@Param('id', ParseUUIDPipe) id: string, @Param('inboundId', ParseUUIDPipe) inboundId: string) {
-    return this.nodesService.removeInbound(id, inboundId);
-  }
-
-  @Post(':id/inbounds/:inboundId/derive-line')
-  deriveLine(@Param('id', ParseUUIDPipe) id: string, @Param('inboundId', ParseUUIDPipe) inboundId: string) {
-    return this.nodesService.deriveLine(id, inboundId);
-  }
 }

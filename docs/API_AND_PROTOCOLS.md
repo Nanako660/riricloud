@@ -41,32 +41,27 @@
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
 #### 节点管理
-- `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态与入站列表摘要）。⭐
-- `GET /admin/nodes/:id`：获取单个节点详情（含完整入站列表）。⭐
-- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与一键安装命令）。⭐ 请求 `{ name?, serverHost }`；入站在详情页单独管理，创建后响应 `{ node, agentToken, installCommand }`。
+- `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。⭐
+- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色与派生端口列表）。⭐
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与一键安装命令）。⭐ 请求 `{ name?, serverHost }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand }`。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
-- `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；入站与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`。
+- `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version, url, sha256 }`；Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。
-- `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供入站表单「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
+- `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
-#### 节点入站管理（v0.3.0，多协议多入站）⭐
-入站挂在节点下独立 CRUD；每次变更后若节点在线即推送 `config_sync`。入站响应中的 `params` 已剥离 `privateKey`（深度合并更新确保脱敏回传不丢失私钥）。
-
-- `POST /admin/nodes/:id/inbounds`：创建入站。请求 `{ type(VLESS|VMESS|TROJAN|HYSTERIA2|TUIC|SHADOWSOCKS|NAIVE|SHADOWTLS|MIXED|SOCKS|HTTP|DIRECT), tag?, listen?(缺省 0.0.0.0), port?(1~65535), params?(结构见 docs/DATA_MODELS.md §3.1), sortOrder? }`。`port` 省略时由服务端在 `20000~29999` 范围随机分配五位端口；`tag` 缺省按协议前缀生成（冲突自动追加序号，显式冲突 409）；`params` 缺省值/自动生成由服务端归一化（Reality 密钥对、SS 密码自动生成）；同传输层端口冲突 409（QUIC 系 UDP 协议可与 TCP 协议同端口共存）。
-- `PATCH /admin/nodes/:id/inbounds/:inboundId`：部分更新 `{ tag?, listen?, port?, params?, sortOrder? }`；`params` 与现有值**深度合并**后重新归一化（未提供的嵌套键如私钥保持原值）。VLESS 的 `flow`（如 `xtls-rprx-vision`）仅在启用 TLS/Reality 时生效，关闭安全层时服务端自动省略该字段。
-- `DELETE /admin/nodes/:id/inbounds/:inboundId`：删除入站。
-- `POST /admin/nodes/:id/inbounds/:inboundId/derive-line`：基于入站创建一条启用的公开直连线路。⭐
+#### 节点线路承载视图
+节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/出口的角色、线路协议和派生监听端口；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
 
 #### 线路管理
-- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；`data[].targetInbound` 包含脱敏后的 `node` 目标节点摘要，`serverHost/serverPort` 为最终生效端点，`endpointOverrides` 保留原始覆盖值。⭐
-- `GET /admin/lines/:id`：查询线路详情及入口节点、目标入站关联；`targetInbound` 包含脱敏后的 `node` 目标节点摘要。⭐
-- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, type?, relayMode?, entryNodeId?, entryPort?, targetInboundId, endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`endpointOverrideEnabled` 缺省为 `false`，关闭时地址/端口复用入口节点与目标入站默认值，SNI/Host 复用目标入站传输与 TLS 设置；覆盖字段仍可保存但不生效。直连线路入口固定为目标入站所属节点；中继线路必须指定入口节点和机制，`entryPort` 省略时由服务端在 `20000~29999` 范围随机分配五位端口，入口端口与节点入站及其他中继线路冲突时返回 409。
+- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
+- `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数和端点解析结果。⭐
+- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏。直连线路入口/出口节点与端口必须一致；中继线路必须指定入口、出口和机制，端口省略时由服务端在 `20000~29999` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
 - `DELETE /admin/lines/:id`：删除线路。⭐
-- `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；中继副本随机分配新的可用五位入口端口。⭐
-- `POST /admin/lines/:id/test`：解析并返回最终对外端点、目标入站和中继信息，不建立真实连接。⭐
+- `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
+- `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/出口节点与端口，不建立真实连接。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
 
@@ -134,8 +129,8 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 ```
 
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
-当节点首次连接成功、或主控端发生用户/入站/线路变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
-`inbounds` 按节点入站数组逐条组装；承担中继入口角色的节点还会追加线路生成的中继入站，`configOverride` 顶层深合并（含 `inbounds` 则整组替换）。
+当节点首次连接成功、或主控端发生用户/线路变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
+`inbounds`、`outbounds` 与 `route` 均由该节点承担的启用 Line 自动派生；直连/协议代理线路生成协议入站，盲转发线路生成 `direct` 入站，监听地址使用 Line 的 `listen`，Tag 使用 Line 的自定义 Tag 或自动派生的稳定角色 Tag，`configOverride` 再按顶层深合并应用（含 `inbounds` 则整组替换）。历史 `NodeInbound` 不参与新配置生成。
 Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {
@@ -201,7 +196,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。
 
-中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路则生成与目标入站协议对应的入站、目标 outbound 以及 route rule。
+中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路则生成与 Line 协议对应的入口入站、出口 outbound 以及 route rule。
 ```json
 {
   "type": "direct",
@@ -212,7 +207,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   "override_port": 443
 }
 ```
-线路 CRUD、套餐/用户订阅变动和入站变动均通过现有 250ms 防抖机制触发关联在线节点的 `config_sync`。
+线路 CRUD、套餐/用户订阅变动均通过现有 250ms 防抖机制触发相关在线节点的 `config_sync`；节点上的配置来源始终是 Line 与节点级 `configOverride`。
 
 #### 3. 遥测心跳与流量上报 (`heartbeat`) —— Agent -> Master (每 5~10 秒)
 ```json
@@ -289,7 +284,7 @@ Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、
 http(s)://<master-host>/api/v1/sub/:token
 ```
 
-> **实现状态（v0.4.0）**：三种格式、自动协商与全协议线路输出均已实现 ⭐。订阅按**线路**逐条生成：仅含公开、启用且底层在线的线路；线路输出使用其最终对外地址/端口，只有启用 `endpointOverrideEnabled` 时才应用线路 SNI/Host 覆盖，否则回退到目标入站设置，并保留倍率名称（如 `[1.5x]`）。单条线路对应一个目标入站协议，重名全局去重；`nodes` 字段仅作为旧客户端兼容镜像。
+> **实现状态（v0.4.0）**：三种格式、自动协商与全协议线路输出均已实现 ⭐。订阅按**线路**逐条生成：仅含公开、启用且入口/出口节点均在线的线路；线路输出使用其最终对外地址/端口，只有启用 `endpointOverrideEnabled` 时才应用线路 SNI/Host 覆盖，否则回退到 Line 自身的 TLS/Transport 参数，并保留倍率名称（如 `[1.5x]`）。单条线路对应一个 `protocolType` + `params`，重名全局去重；`nodes` 字段仅作为旧客户端兼容镜像。
 
 ### 3.1 客户端请求头自动识别与参数适配
 - 格式协商优先级：显式 `?type=` 参数 > User-Agent 嗅探 > 默认 Base64。
@@ -297,13 +292,13 @@ http(s)://<master-host>/api/v1/sub/:token
 - `?type=sing-box` 或 User-Agent 包含 `sing-box`：输出 **Sing-box Client JSON**（`Content-Type: application/json`）。⭐ `outbounds[]`（全协议出站，解耦 `transport` 与 `tls` 配置）+ `direct` 兜底出站，tag 同样去重。
 - 默认输出经过 Base64 编码的标准 URI 列表（适配 Shadowrocket、v2rayN、v2rayNG、NekoBox 等）：⭐
   ```
-  vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#🇯🇵东京01·vless-in
-  vmess://<BASE64_JSON>#🇯🇵东京01·vmess-in
-  trojan://<PASSWORD>@<IP>:<PORT>?sni=trojan.example.com&type=ws&path=/ws#🇯🇵东京01·trojan-in
-  hy2://<PASSWORD>@<IP>:<PORT>?sni=hy.example.com&alpn=h3&insecure=1&upmbps=100&downmbps=500#🇯🇵东京01·hy2-in
-  tuic://<UUID>:<PASSWORD>@<IP>:<PORT>?congestion_control=bbr&alpn=h3&sni=…&udp_relay_mode=native#🇯🇵东京01·tuic-in
-  ss://<BASE64URL(method:password)>@<IP>:<PORT>#🇯🇵东京01·ss-in   (SIP002)
-  naive+https://<USERNAME>:<PASSWORD>@<IP>:<PORT>#🇯🇵东京01·naive-in
+  vless://<UUID>@<IP>:<PORT>?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.apple.com&fp=chrome&pbk=<PUBLIC_KEY>&sid=<SHORT_ID>&type=tcp#东京线路%20[1.5x]
+  vmess://<BASE64_JSON>#东京线路
+  trojan://<PASSWORD>@<IP>:<PORT>?sni=trojan.example.com&type=ws&path=/ws#东京线路
+  hy2://<PASSWORD>@<IP>:<PORT>?sni=hy.example.com&alpn=h3&insecure=1&upmbps=100&downmbps=500#东京线路
+  tuic://<UUID>:<PASSWORD>@<IP>:<PORT>?congestion_control=bbr&alpn=h3&sni=…&udp_relay_mode=native#东京线路
+  ss://<BASE64URL(method:password)>@<IP>:<PORT>#东京线路   (SIP002)
+  naive+https://<USERNAME>:<PASSWORD>@<IP>:<PORT>#东京线路
   ```
   凭证：hy2/trojan/tuic/naive 密码取 `User.password ?? User.uuid`；ss 为共享密码或多用户密码；vless/vmess/tuic 用户名为 `User.uuid`。
 

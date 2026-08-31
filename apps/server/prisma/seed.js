@@ -5,20 +5,43 @@ const bcrypt = require('bcryptjs');
 const { generateKeyPairSync, randomBytes, randomInt } = require('node:crypto');
 
 const prisma = new PrismaClient();
-const DEFAULT_INBOUND_LISTEN = '0.0.0.0';
 const RANDOM_SERVICE_PORT_MIN = 20000;
 const RANDOM_SERVICE_PORT_MAX = 29999;
 
-async function findAvailableServicePort(nodeId) {
+async function findAvailableServicePort(nodeId, reservedPorts = []) {
+  const reserved = new Set(reservedPorts);
   for (let attempt = 0; attempt < 64; attempt += 1) {
     const port = randomInt(RANDOM_SERVICE_PORT_MIN, RANDOM_SERVICE_PORT_MAX + 1);
-    const [inbound, line] = await Promise.all([
-      prisma.nodeInbound.findFirst({ where: { nodeId, port } }),
-      prisma.line.findFirst({ where: { entryNodeId: nodeId, entryPort: port } })
-    ]);
-    if (!inbound && !line) return port;
+    if (reserved.has(port)) continue;
+    const line = await prisma.line.findFirst({
+      where: { OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }] }
+    });
+    if (!line) return port;
   }
   throw new Error('没有可用的随机服务端口');
+}
+
+async function isServicePortAvailable(nodeId, port, excludedLineId) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  const line = await prisma.line.findFirst({
+    where: {
+      ...(excludedLineId ? { id: { not: excludedLineId } } : {}),
+      OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }]
+    }
+  });
+  return !line;
+}
+
+async function resolveServicePort(nodeId, line, preferredPort, reservedPorts = []) {
+  const reserved = new Set(reservedPorts);
+  if (
+    Number.isInteger(preferredPort) &&
+    !reserved.has(preferredPort) &&
+    await isServicePortAvailable(nodeId, preferredPort, line?.id)
+  ) {
+    return preferredPort;
+  }
+  return findAvailableServicePort(nodeId, reservedPorts);
 }
 
 function generateRealityKeypair() {
@@ -145,43 +168,27 @@ async function main() {
     });
   }
 
-  let localInbound = await prisma.nodeInbound.findFirst({ where: { nodeId: localNode.id, tag: 'local-vless-in' } });
-  if (localInbound) {
-    const existingParams = parseParams(localInbound.paramsJson);
-    localInbound = await prisma.nodeInbound.update({
-      where: { id: localInbound.id },
-      data: {
-        type: 'VLESS',
-        listen: localInbound.listen === '::' || !localInbound.listen ? DEFAULT_INBOUND_LISTEN : localInbound.listen,
-        port: localInbound.port || await findAvailableServicePort(localNode.id),
-        paramsJson: JSON.stringify(hasInvalidVlessFlow(existingParams) ? defaultLocalVlessParams() : (existingParams || defaultLocalVlessParams())),
-        sortOrder: localInbound.sortOrder ?? 0
-      }
-    });
-  } else {
-    localInbound = await prisma.nodeInbound.create({
-      data: {
-        nodeId: localNode.id,
-        type: 'VLESS',
-        tag: 'local-vless-in',
-        listen: DEFAULT_INBOUND_LISTEN,
-        port: await findAvailableServicePort(localNode.id),
-        paramsJson: JSON.stringify(defaultLocalVlessParams()),
-        sortOrder: 0
-      }
-    });
-  }
+  const existingDirectLine = await prisma.line.findFirst({ where: { name: 'Master 本机直连' } });
+  // 直连线路是本机演示端点的稳定入口；若旧盲转线路占用同端口，优先迁移盲转端口。
+  const directPort = existingDirectLine?.entryPort ?? await findAvailableServicePort(localNode.id);
+  const directParams = existingDirectLine ? parseParams(existingDirectLine.paramsJson) : null;
+  const protocolParams = directParams && !hasInvalidVlessFlow(directParams) ? directParams : defaultLocalVlessParams();
 
   const directLineData = {
     name: 'Master 本机直连',
+    tag: 'master-direct',
+    listen: '0.0.0.0',
     type: 'DIRECT',
     relayMode: null,
+    protocolType: 'VLESS',
+    paramsJson: JSON.stringify(protocolParams),
     entryNodeId: localNode.id,
-    entryPort: null,
-    targetInboundId: localInbound.id,
+    entryPort: directPort,
+    exitNodeId: localNode.id,
+    exitPort: directPort,
     endpointOverrideEnabled: false,
     serverHost: localHost,
-    serverPort: localInbound.port,
+    serverPort: directPort,
     serverName: null,
     host: null,
     trafficRate: 1,
@@ -192,13 +199,16 @@ async function main() {
     status: 'ACTIVE'
   };
   const existingRelayLine = await prisma.line.findFirst({ where: { name: 'Master 本机盲转示例' } });
-  const relayEntryPort = existingRelayLine?.entryPort ?? await findAvailableServicePort(localNode.id);
+  const relayEntryPort = await resolveServicePort(localNode.id, existingRelayLine, existingRelayLine?.entryPort, [directPort]);
+  const relayExitPort = await resolveServicePort(localNode.id, existingRelayLine, existingRelayLine?.exitPort, [directPort, relayEntryPort]);
   const relayLineData = {
     ...directLineData,
     name: 'Master 本机盲转示例',
+    tag: 'master-blind',
     type: 'RELAY',
     relayMode: 'BLIND_FORWARD',
     entryPort: relayEntryPort,
+    exitPort: relayExitPort,
     serverPort: relayEntryPort,
     tagsJson: JSON.stringify(['local', 'relay']),
     sortOrder: 1

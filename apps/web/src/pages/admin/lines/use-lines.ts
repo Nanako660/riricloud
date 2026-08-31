@@ -1,16 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, extractErrorMessage, type ApiLine, type LineStatus, type LineType, type RelayMode } from '@/lib/api';
+import { api, extractErrorMessage, type ApiLine, type LineStatus, type LineType, type ProtocolType, type RelayMode } from '@/lib/api';
 
 export type { ApiLine as AdminLine };
 
 export interface LinePayload {
   name: string;
+  tag?: string | null;
+  listen?: string;
   type: LineType;
+  protocolType: ProtocolType;
+  params: Record<string, unknown>;
   relayMode?: RelayMode | null;
-  entryNodeId?: string | null;
+  entryNodeId: string;
   entryPort?: number | null;
-  targetInboundId: string;
+  exitNodeId: string;
+  exitPort?: number | null;
   endpointOverrideEnabled?: boolean;
   serverHost?: string | null;
   serverPort?: number | null;
@@ -83,4 +88,10 @@ export function useLineMutations() {
     onError: (error: unknown) => onError(error, '调整顺序失败')
   });
   return { create, update, remove, duplicate, testResolve, batchStatus, reorder };
+}
+
+export function useRealityKeypair() {
+  return useMutation({
+    mutationFn: async () => (await api.post<{ privateKey: string; publicKey: string }>('/admin/nodes/reality-keypair')).data
+  });
 }

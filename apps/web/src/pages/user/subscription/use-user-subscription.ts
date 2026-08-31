@@ -4,7 +4,7 @@ import { api, extractErrorMessage } from '@/lib/api';
 
 export interface UserPlan { id: string; name: string; description: string | null; price: number; durationDays: number; trafficLimitBytes: number; lineMatchMode: string; }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; plan: UserPlan; }
-export interface UserLine { id: string; name: string; type: 'DIRECT' | 'RELAY'; relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null; serverHost: string; serverPort: number; serverName: string | null; host: string | null; trafficRate: number; tags: string[]; level: number; status: 'ACTIVE' | 'DISABLED'; entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null; targetInbound: { id: string; nodeId: string; type: string; tag: string; port: number; node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } }; }
+export interface UserLine { id: string; name: string; type: 'DIRECT' | 'RELAY'; relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null; protocolType: string; entryPort: number; exitPort: number; serverHost: string; serverPort: number; trafficRate: number; tags: string[]; level: number; status: 'ACTIVE' | 'DISABLED'; entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; }
 
 export function useUserSubscription() {
   return useQuery({

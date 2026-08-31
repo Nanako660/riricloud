@@ -41,12 +41,14 @@ export interface SubNode {
   inbounds: SubInbound[];
 }
 
-// 订阅编译的主输入：一条 Line 已经解析出对外端点与目标入站参数。
+// 订阅编译的主输入：Line 已经解析出对外端点与自身协议参数。
 export interface SubLine {
   id?: string;
   name: string;
   type?: 'DIRECT' | 'RELAY' | string;
   relayMode?: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | string | null;
+  protocolType?: ProtocolType;
+  params?: Record<string, unknown>;
   endpointOverrideEnabled?: boolean;
   serverHost: string;
   serverPort: number;
@@ -55,7 +57,8 @@ export interface SubLine {
   trafficRate?: number;
   tags?: string[];
   level?: number;
-  targetInbound: SubInbound;
+  // 旧版调用方兼容字段；新代码使用 protocolType + params。
+  targetInbound?: SubInbound;
 }
 
 export interface SubscriptionTemplateConfig {
@@ -122,7 +125,17 @@ interface SubEntry {
 type SubscriptionSource = SubNode | SubLine;
 
 function isSubLine(source: SubscriptionSource): source is SubLine {
-  return 'targetInbound' in source;
+  return 'protocolType' in source || 'targetInbound' in source;
+}
+
+function lineInbound(line: SubLine): SubInbound {
+  const legacy = line.targetInbound;
+  return {
+    type: line.protocolType ?? legacy?.type ?? 'VLESS',
+    tag: legacy?.tag ?? `line-${line.id ?? line.name}`,
+    port: line.serverPort,
+    params: line.params ?? legacy?.params ?? {}
+  };
 }
 
 function formatLineName(name: string, trafficRate?: number): string {
@@ -187,7 +200,7 @@ function buildClashTransportOptions(
 export function entryLabels(nodes: SubscriptionSource[]): string[] {
   return dedupeNames(
     nodes.flatMap((source) => {
-      if (isSubLine(source)) return [formatLineName(source.name, source.trafficRate)];
+    if (isSubLine(source)) return [formatLineName(source.name, source.trafficRate)];
       return source.inbounds.map((inbound) =>
         source.inbounds.length > 1 ? `${source.name}·${inbound.tag}` : source.name
       );
@@ -202,8 +215,9 @@ function entries(nodes: SubscriptionSource[]): SubEntry[] {
   let i = 0;
   for (const source of nodes) {
     if (isSubLine(source)) {
-      const node: SubNode = { name: source.name, serverHost: source.serverHost, inbounds: [source.targetInbound], tags: source.tags, level: source.level };
-      list.push({ label: labels[i], node, inbound: source.targetInbound, line: source });
+      const inbound = lineInbound(source);
+      const node: SubNode = { name: source.name, serverHost: source.serverHost, inbounds: [inbound], tags: source.tags, level: source.level };
+      list.push({ label: labels[i], node, inbound, line: source });
       i += 1;
       continue;
     }

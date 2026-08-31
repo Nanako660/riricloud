@@ -4,7 +4,7 @@
 
 RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中，SQLite 开启 **WAL (Write-Ahead Logging)** 模式，读写并发能力大幅提升。
 
-> **落地说明（v0.4.0）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式与订阅状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。节点与线路解耦已通过迁移 `20260830170000_line_and_relay_architecture` 落地。
+> **落地说明（v0.4.0）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式与订阅状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
 
 ---
 
@@ -15,7 +15,7 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中�
 - 执行 `pnpm --filter @riricloud/server exec prisma db seed`（已并入根 `pnpm setup`）。
 - 默认播种两个演示账号：`admin@riricloud.local`（ADMIN）与 `demo@riricloud.local`（USER）；邮箱与密码可通过环境变量 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` 覆盖（默认值仅用于本地演示，生产环境务必修改）。
 - 幂等性：按 email upsert，重复执行不产生重复数据；已存在账号仅补齐角色与激活状态。
-- 首次 seed 同时幂等创建 `Master-Local` 本机节点、本机 VLESS 入站、一条直连线路和一条盲转发示例线路；新建示例端口在 `20000~29999` 范围随机生成，重复 seed 保留已有端口；本机地址可由 `MASTER_LOCAL_HOST` 覆盖。
+- 首次 seed 同时幂等创建 `Master-Local` 本机节点、一条 VLESS/Reality 直连线路和一条盲转发示例线路；新建示例端口在 `20000~29999` 范围随机生成，重复 seed 保留未冲突的已有端口并自动修复冲突端口；同节点中继的入口与出口端口始终分配为不同端口。本机地址可由 `MASTER_LOCAL_HOST` 覆盖。线路协议与参数直接保存在 `Line`，不再创建新的业务入站记录。
 
 ---
 
@@ -111,9 +111,10 @@ model Node {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  // 关联
+  // 关联；NodeInbound 仅为旧数据迁移兼容表，新线路使用 entryLines/exitLines
   inbounds        NodeInbound[]
   entryLines      Line[]        @relation("LineEntryNode")
+  exitLines       Line[]        @relation("LineExitNode")
   trafficLogs     TrafficLog[]
 
   @@index([status])
@@ -121,8 +122,8 @@ model Node {
 }
 
 // ==============================
-// 2.1 节点入站实体 (NodeInbound，v0.3.0)
-// 一个节点可挂多条入站（多协议并存）；端口/tag 节点内唯一性约束见 §3.1
+// 2.1 历史节点入站实体 (NodeInbound，迁移兼容)
+// 保留旧数据以便迁移与审计；新线路创建、配置下发和管理 API 均不再依赖该表。
 // ==============================
 model NodeInbound {
   id         String   @id @default(uuid())
@@ -137,7 +138,6 @@ model NodeInbound {
   updatedAt  DateTime @updatedAt
 
   node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  targetLines Line[] @relation("LineTargetInbound")
 
   @@unique([nodeId, tag])
   @@index([nodeId])
@@ -145,16 +145,21 @@ model NodeInbound {
 
 // ==============================
 // 2.2 接入线路实体 (Line，v0.4.0)
-// Node/NodeInbound 是底座资源；Line 是面向用户订阅的独立接入端点。
+// Node 是底座资源；Line 是面向用户订阅的唯一接入端点，并拥有协议、参数与拓扑。
 // ==============================
 model Line {
   id              String   @id @default(uuid())
   name            String
+  tag             String?
+  listen          String   @default("0.0.0.0")
   type            String   @default("DIRECT") // DIRECT | RELAY
   relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY
-  entryNodeId     String?
-  entryPort       Int?
-  targetInboundId String
+  protocolType    String   @default("VLESS") // ProtocolType
+  paramsJson      String   @default("{}") // 协议专属参数 JSON
+  entryNodeId     String
+  entryPort       Int
+  exitNodeId      String
+  exitPort        Int
   endpointOverrideEnabled Boolean @default(false) // 是否启用线路对外覆盖；关闭时复用底层默认设置
   serverHost      String?
   serverPort      Int?
@@ -169,11 +174,12 @@ model Line {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  entryNode     Node?       @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
-  targetInbound NodeInbound @relation("LineTargetInbound", fields: [targetInboundId], references: [id], onDelete: Cascade)
+  entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
+  exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
 
   @@index([entryNodeId])
-  @@index([targetInboundId])
+  @@index([exitNodeId])
+  @@index([protocolType])
   @@index([type, status])
   @@index([isPublic])
   @@index([sortOrder])
@@ -294,15 +300,16 @@ model SystemSetting {
 
 ## 3. 核心字段与业务说明
 
-### 3.1 `NodeInbound.paramsJson` 协议结构（v0.3.0）
+### 3.1 `Line.paramsJson` 协议结构（v0.4.0）
 
-系统支持 Sing-box 官方全套入站协议，采用**协议 + 传输层 (Transport) + 安全层 (TLS)** 模块化解耦设计。创建/更新时由服务端统一归一化与参数校验（`apps/server/src/common/inbound.ts`）：自动填充默认值、补全缺失密钥（Reality 密钥对 / SS 密码）。**API 输出脱敏**：管理端响应自动剥离 `privateKey`（深度合并更新确保脱敏回传不丢失私钥）。
+系统支持 Sing-box 官方全套线路协议，采用**协议 + 传输层 (Transport) + 安全层 (TLS)** 模块化解耦设计。创建/更新 Line 时由服务端统一归一化与参数校验（`apps/server/src/common/inbound.ts`）：自动填充默认值、补全缺失密钥（Reality 密钥对 / SS 密码）。**API 输出脱敏**：线路响应自动剥离 `privateKey`，但服务端保留密钥用于 Agent 配置下发与后续深度合并。
 
 #### 传输层 (Transport)
 适用于 VLESS、VMESS、TROJAN 等支持多传输层的协议：
 - `tcp`：原生流传输（默认）
 - `ws`：WebSocket（`path`、`host`、`headers`、`maxEarlyData`、`earlyDataHeaderName`）
 - `grpc`：gRPC（`serviceName`）
+- `http`：HTTP（`path`、`host`、`headers`）
 - `httpupgrade`：HTTPUpgrade（`path`、`host`、`headers`）
 
 #### 安全层 (TLS / Reality / ACME)
@@ -337,7 +344,7 @@ model SystemSetting {
 | **SHADOWTLS** | v3 使用 `User.email`（name） | v3 使用用户密码；v2 使用入站密码 | v3 支持用户列表 |
 | **MIXED/SOCKS/HTTP**| `User.email`（username） | `User.password ?? User.uuid`（若启用认证） | 是 |
 
-**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；QUIC 系协议（HYSTERIA2/TUIC）可与 TCP 协议共存于同一端口。创建入站未提供端口时，服务端从 `20000~29999` 随机生成五位端口，并避开该节点已有入站和中继入口；显式端口仍按上述规则校验。编辑已有入站不会自动换端口。**tag 规则**：节点内唯一；缺省按协议前缀自动生成，冲突时自动追加递增序号。
+**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；HYSTERIA2/TUIC 视为 UDP，可与 TCP 线路共存于同一端口。Line 的入口端口和出口端口都会参与占用检查；未提供端口时，服务端从 `20000~29999` 随机生成五位端口。编辑已有 Line 会保留原端口，显式修改仍按上述规则校验。
 
 ### 3.2 `Node.configOverride` 高级模式（v0.3.0）
 
@@ -345,32 +352,37 @@ model SystemSetting {
 
 ### 3.3 `Line` 线路与 `Plan` 匹配
 
-`Node` / `NodeInbound` 只描述底层机器和内核监听；`Line` 描述用户实际连接的端点。直连线路直接指向目标入站，中继线路使用 `entryNodeId + entryPort` 接收连接，再按中继机制转发到 `targetInboundId`。
+`Node` 只描述底层机器、Agent 和遥测状态；历史 `NodeInbound` 仅用于旧数据兼容。`Line` 描述用户实际连接的端点，并直接持有协议、归一化参数、入口节点/端口与出口节点/端口。Agent 根据 Line 在相关节点自动派生 sing-box 入站、出站和路由规则。
 
 | 字段 / 规则 | 说明 |
 | :--- | :--- |
-| `type=DIRECT` | 入口节点固定为目标入站所属节点；对外地址/端口缺省继承目标节点与入站 |
-| `type=RELAY` | 必须指定入口节点和 `relayMode`；入口端口省略时从 `20000~29999` 随机生成，且不能与该节点入站或其他线路冲突 |
-| `relayMode=BLIND_FORWARD` | Agent 生成 `direct` inbound，并用 `override_address` / `override_port` 指向目标出口 |
-| `relayMode=PROTOCOL_PROXY` | Agent 生成协议入站、目标协议 outbound 与 route rule，实现协议重加密转发 |
-| `endpointOverrideEnabled=false` | 默认关闭；地址/端口复用入口节点与目标入站默认值，SNI/Host 复用目标入站 TLS/Transport 设置 |
+| `type=DIRECT` | 入口节点与出口节点相同，入口端口与出口端口相同；Agent 在该节点生成 Line 协议入站 |
+| `type=RELAY` | 必须指定入口/出口节点与 `relayMode`；入口或出口端口省略时从 `20000~29999` 随机生成，并按 TCP/UDP 传输层检查冲突 |
+| `tag` | 可选的入站 Tag 基础名；为空时使用 `line-<id>`，中继线路自动派生 `<tag>-entry` 与 `<tag>-exit`，同节点冲突返回 `409` |
+| `listen` | 线路派生入站的监听地址，默认 `0.0.0.0`；直连和中继入口/出口复用该地址 |
+| `relayMode=BLIND_FORWARD` | 入口节点生成 `direct` inbound，并用 `override_address` / `override_port` 指向出口节点的 Line 端口，保持端到端协议加密 |
+| `relayMode=PROTOCOL_PROXY` | 入口节点生成 Line 协议入站、目标协议 outbound 与 route rule；出口节点生成对应协议入站 |
+| `endpointOverrideEnabled=false` | 默认关闭；用户连接地址/端口复用入口节点与入口端口，SNI/Host 从 Line 协议 TLS/Transport 参数回退 |
 | `endpointOverrideEnabled=true` | 启用 `serverHost/serverPort/serverName/host` 覆盖；覆盖值单独保留，关闭开关不会清空 |
-| `serverHost/serverPort` | 用户端实际连接地址/端口覆盖；线路 API 的顶层字段返回最终生效值，`endpointOverrides` 返回原始值 |
-| `serverName/host` | 订阅编译与协议代理中继分别覆盖 SNI 与传输层 Host；开关关闭时回退到目标入站设置 |
+| `serverHost/serverPort` | 用户端实际连接地址/端口覆盖；线路 API 顶层字段返回最终生效值，`endpointOverrides` 返回原始值 |
+| `serverName/host` | 订阅编译与协议代理中继分别覆盖 SNI 与传输层 Host；开关关闭时回退到 `Line.paramsJson` |
+| `protocolType/paramsJson` | Line 自己拥有协议和协议参数；响应字段为 `protocolType` + 脱敏后的 `params`，管理端通过可视化分组表单编辑 |
 | `trafficRate` | 订阅展示倍率，非 1 时线路名称追加 `[Nx]` |
 | `tagsJson/level/sortOrder/isPublic/status` | 线路标签、等级、排序、公开性与启停状态；只在线且公开的启用线路可进入套餐匹配 |
+
+线路 API 为旧客户端保留只读 `targetInbound` 摘要，但它由 Line 的出口节点、出口端口和协议参数派生，不再对应 `NodeInbound` 外键。
 
 `Plan` 保存用户可订购的流量配额、有效期、价格和线路授权范围：
 
 | 字段 | 说明 |
 | :--- | :--- |
 | `trafficLimitBytes` | 套餐周期总流量，服务边界序列化为 Number |
-| `lineMatchMode=ALL` | 匹配所有目标入站所在节点在线、入口节点在线且线路公开启用的线路 |
+| `lineMatchMode=ALL` | 匹配所有入口节点与出口节点均在线、且线路公开启用的线路 |
 | `lineMatchMode=TAGS` | `lineTagsJson` 与 `Line.tagsJson` 有任一标签交集 |
 | `lineMatchMode=EXPLICIT` | 仅匹配 `lineIdsJson` 中列出的线路 |
 | `templateId` | 可选订阅模板；为空时使用全局 `isDefault=true` 模板 |
 
-节点只提供底层健康状态；线路只有 `status=ACTIVE`、`isPublic=true` 且目标入站节点与中继入口节点均在线时，才会作为套餐市场的可用线路返回。订阅详情直接返回线路倍率、等级、标签、端点覆盖和中继机制。
+节点只提供底层健康状态；线路只有 `status=ACTIVE`、`isPublic=true` 且入口节点与出口节点均在线时，才会作为套餐市场的可用线路返回。订阅详情直接返回线路协议、倍率、等级、标签、端点覆盖和中继机制。
 
 ### 3.4 `Subscription` 生命周期与兼容镜像
 

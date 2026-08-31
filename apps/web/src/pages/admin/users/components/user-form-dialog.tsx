@@ -103,7 +103,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
             <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，配额和有效期可继续微调。'}</DialogDescription>
