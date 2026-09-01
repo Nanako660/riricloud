@@ -4,6 +4,8 @@ import { IsIn, IsString, IsUrl, Matches, MinLength } from 'class-validator';
 const binaryTargets = [
   'singbox-linux-amd64',
   'singbox-linux-arm64',
+  'singbox-macos-amd64',
+  'singbox-macos-arm64',
   'singbox-windows-amd64'
 ] as const;
 

@@ -46,6 +46,8 @@ pnpm --filter @riricloud/server start:prod
 
 > 源码方式下请先在当前 shell 或 `apps/server/.env` 设置强随机 `JWT_SECRET` 与首次启动所需的 `ADMIN_EMAIL`、`ADMIN_PASSWORD`；`start:prod` 会探测并托管 `apps/web/dist`（monorepo 布局自动命中）。`prisma migrate deploy` 与 `bootstrap-admin.js` 不可省略，已有管理员时 bootstrap 会安全跳过。
 
+根目录 `pnpm build` 可一次构建三端：Server 输出保留在 `apps/server/dist/`，Web 输出保留在 `apps/web/dist/`，当前平台 Agent 输出到 `artifacts/dev/agent/<os>-<arch>/riri-agent[.exe]`。其中两个 `dist/` 是框架和运行时的约定目录，不与可分发二进制产物混放。
+
 ### 1.4 方式三：Docker Compose
 
 仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 WSL/Linux Docker 环境执行；Windows PowerShell 仅用于调用 `wsl.exe`，不承担 Docker 测试：
@@ -75,13 +77,13 @@ riricloud/agent:<version>
 riricloud/agent:latest
 ```
 
-同一次构建默认还会把镜像导出到仓库根目录 `docker-images/`：
+同一次构建默认还会把镜像导出到 `artifacts/docker/v<version>/<os>-<arch>/`：
 
 ```text
-docker-images/riricloud-master_<version>_linux_amd64.tar.gz
-docker-images/riricloud-agent_<version>_linux_amd64.tar.gz
-docker-images/riricloud-docker-images_<version>_linux_amd64.manifest.json
-docker-images/riricloud-docker-images_<version>_linux_amd64.sha256
+artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
+artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
+artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
+artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
 ```
 
 导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。
@@ -100,10 +102,10 @@ Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控�
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash
-gzip -dc docker-images/riricloud-master_<version>_linux_amd64.tar.gz | docker load
+gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
 # 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# gzip -dc docker-images/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
-(cd docker-images && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
+# gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
+(cd artifacts/docker/v<version>/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
 ```
 
 仓库另提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像。该模板不包含 `build` 配置，并设置 `pull_policy: never`，适合离线或受限网络环境：
@@ -139,32 +141,46 @@ pnpm docker:down
 
 ## 2. 节点端 (Edge Node Agent) 部署
 
-### 2.1 方式一：一键 Shell 脚本部署 (推荐)
-在主控面板点击“添加节点”后，复制对应的一键安装命令，登录节点 VPS 终端以 root 身份执行：
+### 2.1 方式一：原生 CLI 一键安装（推荐）
+在主控面板点击“添加节点”后，复制对应的原生 CLI 命令，登录节点 VPS 终端以 root 身份执行。命令先从主控下载匹配平台的 Agent，再由 Agent 自己完成安装：
 
 ```bash
-curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
-  --token=<YOUR_AGENT_TOKEN> \
-  --master=wss://<master-domain>/ws/agent
+curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
+  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
+  rm -f /tmp/riri-agent && \
+  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
 ```
 
 如果节点所在网络不支持 WebSocket Upgrade，可在安装向导切换为 HTTP 模式：
 
 ```bash
-curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
-  --token=<YOUR_AGENT_TOKEN> \
-  --master=https://<master-domain>
+curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
+  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
+  rm -f /tmp/riri-agent && \
+  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=https://<master-domain>
 ```
 
-#### 安装脚本后台执行步骤：
-1. 检测 VPS 架构（`x86_64` / `aarch64`）；当前发行包资产暂不包含 `armv7`。
-2. 从主控 `GET /api/v1/install.sh` 下载对应架构的 `riri-agent` 与 Sing-box 资产，下载请求使用 `x-agent-token` 鉴权。
-3. 写入 `/etc/riri-agent/agent.env`（权限 `0600`），配置 Token、Master 地址、通信模式和 `/var/lib/riri-agent/config.json` 数据路径；后续升级无需节点直接访问 GitHub。
-4. 写入并启动 `/etc/systemd/system/riri-agent.service`，设置为开机自启；安装目录为 `/opt/riri-agent`。
+#### CLI 安装步骤：
+1. User-Agent 使用 `riri-agent-installer/<os>-<arch>` 声明目标平台，例如 `linux-amd64`、`linux-arm64`、`macos-arm64` 或 `windows-amd64`；主控的 `GET /api/v1/downloads/agent` 据此 302 到 Agent 二进制。
+2. `riri-agent install` 将 Sing-box 优先从主控 `GET /api/v1/downloads/binaries/singbox-<os>-<arch>` 下载；主控没有该资产时，`--singbox-source auto` 回退到 GitHub Release。
+3. 默认写入 `/etc/riri-agent/config.yaml`（权限 `0600`）与 `/var/lib/riri-agent/`，配置包含 Token、Master 地址、通信模式、内核路径和日志路径。
+4. 基于 `kardianos/service` 注册并启动开机服务：Linux 使用 systemd/OpenRC/SysVinit，Windows 使用 Windows Service，macOS 使用 Launchd。
 
-安装脚本由主控的 `GET /api/v1/install.sh` 公开提供，也随主控自包含发行包以 `install-agent.sh` 文件提供。脚本支持 `--token TOKEN`、`--master URL`、`--mode ws|http`，`--master` 可传 `ws://`、`wss://`、`http://` 或 `https://` 地址。
+常用生命周期命令：
 
-> **Agent 环境变量**：`AGENT_TOKEN`（必填）；推荐使用 `MASTER_URL`（WS/WSS 地址如 `wss://<master>/ws/agent`，HTTP/HTTPS 模式可填主控根地址）；`AGENT_MODE=ws|http` 可显式指定模式，未指定时按 URL 协议前缀推导；`POLL_INTERVAL_SECS` 默认 15 秒、范围 5~300 秒；`MASTER_WS_URL` 继续兼容旧版 Agent。另有 `SINGBOX_CONFIG_PATH`（默认 `./config.json`）与 `SINGBOX_BINARY_PATH`（默认 `sing-box`）。
+```bash
+riri-agent status
+riri-agent doctor
+riri-agent logs --follow --lines 100
+riri-agent restart
+riri-agent uninstall --purge --yes
+```
+
+> **Agent 环境变量**：`AGENT_TOKEN`、`MASTER_URL`、`AGENT_MODE`、`POLL_INTERVAL_SECS`、`HEARTBEAT_SECS`、`SINGBOX_CONFIG_PATH`、`SINGBOX_BINARY_PATH` 与 `RIRICLOUD_LOG_PATH` 可覆盖 YAML 配置；`MASTER_WS_URL` 继续兼容旧版 Agent。安装后的标准配置路径为 Linux/macOS `/etc/riri-agent/config.yaml`，Windows `%ProgramData%\RiriCloud\config.yaml`。
+
+直接在连接终端中运行 `riri-agent`（不带子命令）会进入 Bubble Tea 全屏控制台 GUI/TUI：使用方向键选择菜单，Enter 执行，Esc 返回，q 退出；安装页提供 AgentToken、Master URL 和通信模式表单，长诊断/日志输出可在结果页滚动查看。脚本、服务管理器和无 TTY 环境继续使用上面的一级子命令，不依赖交互输入。
 
 ### 2.2 方式二：Docker 容器化部署
 如果节点偏好容器化环境，可直接通过 Docker 启动：
@@ -223,13 +239,24 @@ bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
 
 1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
 2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
-3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`windows/amd64`；
-4. 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建或校验启用统计服务、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站的 Sing-box，再装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/`install-agent.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
+3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`；
+4. 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建或校验启用统计服务、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站的 Sing-box，再装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
 5. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256，含主控端包）；
 6. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
-7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖三端：主控端发行包 + Agent 三平台二进制**。
+7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖主控端发行包 + Agent Linux、macOS、Windows 多平台二进制**。
 
 Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存在则在当前 main HEAD 创建附注 Tag，发布成功后推送。
+
+Release 本地工作目录为 `artifacts/releases/v<version>/`，结构如下：
+
+```text
+artifacts/releases/v<version>/
+├── agent/<os>-<arch>/       # 未压缩的 Agent 二进制
+├── master/linux-amd64/      # 未压缩的主控自包含目录
+├── packages/                # tar.gz / zip 可分发包
+├── checksums.txt
+└── release-notes.md
+```
 
 ### 3.3 节点 Agent 升级
 节点详情「升级中心」默认从主控 `/api/v1/downloads/binaries/:target` 下载对应架构版本，校验 SHA-256 后执行原子替换；主控不具备对应 Sing-box 架构时，管理员可在面板导入自定义 URL 与 SHA-256 后再下发。Agent 也可通过详情页快捷重启并保留原始启动参数。

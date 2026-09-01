@@ -7,6 +7,7 @@ dist/
 coverage/
 *.tsbuildinfo
 .vite/
+/artifacts/
 
 # 环境变量（.env.example 除外）
 .env
@@ -30,6 +31,7 @@ riri-agent.exe
 .tools/
 
 # Docker 镜像导出包（本地生成，体积较大）
+# 兼容旧版脚本或通过 DOCKER_EXPORT_DIR 指定的旧目录；默认输出已迁移至 artifacts/docker/。
 docker-images/*.tar.gz
 docker-images/*.sha256
 docker-images/*.manifest.json
@@ -38,5 +40,4 @@ docker-images/*.manifest.json
 .husky/_
 
 # 本地二进制托管目录
-binaries/
-
+/binaries/

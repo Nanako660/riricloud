@@ -119,7 +119,7 @@ graph TB
 | **前端面板 (Web)** | React 19 + Vite 6 + TypeScript | 极致加载速度与现代化开发体验 |
 | **UI 设计系统** | Tailwind CSS + shadcn/ui + Lucide | Zinc 风格暗黑模式、无障碍标准、严禁裸写原生交互标签 |
 | **前端状态与表格** | Zustand + TanStack Query & Table | 状态管理、接口缓存、五能力高级数据表格 |
-| **边缘节点 (Agent)** | Go 1.23+ (`CGO_ENABLED=0`) | 单静态二进制发布，内存开销 ≤ 30MB，支持三平台交叉编译 |
+| **边缘节点 (Agent)** | Go 1.25+ + Cobra + kardianos/service (`CGO_ENABLED=0`) | 单静态二进制发布，内置跨平台 CLI、服务生命周期和诊断能力 |
 | **节点代理内核** | Sing-box | 现代化下一代通用网络代理内核 |
 | **工程架构治理** | pnpm Monorepo + Husky + Commitlint | Conventional Commits、ESLint 9、Jest、三端自动化质量门禁 |
 
@@ -154,6 +154,19 @@ pnpm setup
 | **普通用户 (USER)** | `demo@riricloud.local` | `riri-user-demo` |
 
 本地启动后端前，请在 `apps/server/.env` 中设置至少 32 位随机 `JWT_SECRET`；首次空库的生产式初始化可设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 后执行 `node prisma/bootstrap-admin.js`，已有管理员不会被覆盖。
+
+### 2.1 构建产物目录
+
+仓库根目录统一使用 `artifacts/` 存放可分发或本地生成的二进制产物：
+
+```text
+artifacts/
+├── dev/agent/<os>-<arch>/       # pnpm build:agent 的当前平台 Agent
+├── releases/v<version>/         # scripts/release.sh 的发行包、校验和与中间装配目录
+└── docker/v<version>/<os>-<arch>/ # pnpm docker:export 的镜像导出物
+```
+
+`pnpm build` 会依次生成 `apps/server/dist/`、`apps/web/dist/` 和 `artifacts/dev/agent/<os>-<arch>/`；前两个 `dist/` 是框架运行时直接依赖的应用构建目录，因此不迁移。可通过 `RIRICLOUD_ARTIFACT_DIR` 覆盖 Agent/Release/Docker 的统一根目录，或通过 `DOCKER_EXPORT_DIR` 仅覆盖 Docker 导出目录。
 
 ### 3. 启动开发模式
 
@@ -214,7 +227,7 @@ printf '%s\n' 'new-password' | pnpm admin:reset -- --email admin@example.com --p
 
 `Master-Local` 的订阅地址优先使用 `MASTER_LOCAL_HOST`，未填写时从 `RIRICLOUD_PUBLIC_URL` 推导。Linux/WSL Compose 使用 host network，本机 Agent 的动态 TCP/UDP 线路端口直接监听宿主机；请在防火墙放行实际线路端口。远程 VPS 节点仍按“节点端 Agent”章节独立接入。
 
-`pnpm docker:build` 会构建并标记以下镜像，同时导出到仓库根目录的 `docker-images/`：
+`pnpm docker:build` 会构建并标记以下镜像，同时默认导出到 `artifacts/docker/v<version>/<os>-<arch>/`：
 
 ```text
 riricloud/master:0.2.0
@@ -223,14 +236,14 @@ riricloud/agent:0.2.0
 riricloud/agent:latest
 ```
 
-导出文件使用 `riricloud-<组件>_<版本>_<平台>.tar.gz` 命名，并附带 `.manifest.json` 版本清单和 `.sha256` 校验文件。只需要重新导出现有镜像时执行 `pnpm docker:export`；可用 `pnpm docker:tags` 查看当前标签。镜像包含 OCI 版本、Git 提交和构建时间元数据。
+导出文件使用 `riricloud-<组件>_<版本>_<平台>.tar.gz` 命名，并附带 `.manifest.json` 版本清单和 `.sha256` 校验文件。只需要重新导出现有镜像时执行 `pnpm docker:export`；可用 `pnpm docker:tags` 查看当前标签。镜像包含 OCI 版本、Git 提交和构建时间元数据。需要兼容旧流程时，可用 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖默认目录。
 
 如果使用已经导出的镜像进行离线安装，可加载镜像后使用专用 Compose 模板；该模板只使用本地镜像，不会触发构建或拉取：
 
 ```bash
-docker load -i docker-images/riricloud-master_0.2.0_linux_amd64.tar.gz
+docker load -i artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
 # 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# docker load -i docker-images/riricloud-agent_0.2.0_linux_amd64.tar.gz
+# docker load -i artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
 cp .env.image.example .env.image
 # 编辑 .env.image：确认镜像标签，并填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
@@ -252,28 +265,30 @@ printf '%s\n' 'new-password' | docker compose --env-file .env.image -f docker-co
 
 运行时使用 Distroless 镜像；2026-08-31 在 WSL Ubuntu 的 `linux/amd64` 验收结果约为 Master `376 MB`（压缩包 `87 MB`）、Agent `155 MB`（压缩包 `38 MB`）。
 
-### 2. 节点端 (Agent) 一键部署
+### 2. 节点端 (Agent) 原生 CLI 安装
 
-在主控面板点击「添加节点」后，复制对应的一键安装命令，登录目标 Linux VPS（支持 Debian / Ubuntu / CentOS / Alpine / Arch 等）以 `root` 身份执行：
+在主控面板点击「添加节点」后，复制对应的原生 CLI 安装命令，登录目标 VPS（支持 Linux、Windows、macOS）以管理员身份执行：
 
 ```bash
-curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- \
-  --token="<YOUR_AGENT_TOKEN>" \
-  --master="wss://<master-domain>/ws/agent"
+curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
+  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
+  rm -f /tmp/riri-agent && \
+  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
 ```
 
-该脚本将自动下载对应 CPU 架构（amd64 / arm64）的 `riri-agent` 单二进制与 `sing-box` 内核，并将其注册为 `systemd` 守护服务自启运行。
+`riri-agent install` 会写入 `/etc/riri-agent/config.yaml`，优先从 Master 获取 Sing-box，必要时回退 GitHub，并通过系统服务适配器注册开机启动。直接运行 `riri-agent` 会进入 Bubble Tea 全屏控制台 GUI/TUI，支持方向键菜单、安装表单、卸载确认和结果滚动；常用命令为 `riri-agent status`、`riri-agent doctor`、`riri-agent logs --follow`、`riri-agent restart` 和 `riri-agent uninstall --purge --yes`。
 
 #### 常用运维排错指令：
 ```bash
 # 查看 Agent 运行状态
-systemctl status riri-agent
+riri-agent status
 
 # 查看实时日志
-journalctl -u riri-agent -f -n 50
+riri-agent logs --follow --lines 50
 
 # 重启 Agent 服务
-systemctl restart riri-agent
+riri-agent restart
 ```
 
 ---
@@ -296,7 +311,7 @@ riricloud/
 │       └── internal/telemetry # CPU / 内存 / 网速系统遥测采集
 ├── docs/                  # 官方完整架构设计与技术实施文档库
 ├── scripts/               # 研发环境与自动化脚本（dev-env.sh / release.sh / docker-build.sh / gate-agent.sh）
-├── docker-images/         # 【gitignore】本地 Docker 镜像导出包、版本清单与校验文件
+├── artifacts/             # 【gitignore】统一的本地 Agent、Release 与 Docker 产物目录
 ├── .cache/                # 【gitignore】本地便携依赖缓存
 ├── .tools/                # 【gitignore】便携开发工具链（如免安装 Go）
 ├── AGENTS.md              # AI 代理与协作者工作规范
@@ -327,7 +342,7 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 - `docs: 更新系统架构拓扑图`
 
 ### 发布自动化
-项目使用本地发布脚本（`scripts/release.sh`），在隔离的工作区复跑三端门禁，自动完成 Agent 三平台二进制交叉编译、SHA-256 校验和打包，并通过 GitHub CLI 一键生成附带 Release Notes 的版本发布。Docker 镜像则由 `scripts/docker-build.sh` 构建、双标签标记并导出到 `docker-images/`。
+项目使用本地发布脚本（`scripts/release.sh`），在隔离的工作区复跑三端门禁，自动完成 Agent 多平台二进制交叉编译、SHA-256 校验和打包，并通过 GitHub CLI 一键生成附带 Release Notes 的版本发布。发行过程的本地文件统一位于 `artifacts/releases/v<version>/`；Docker 镜像则由 `scripts/docker-build.sh` 构建、双标签标记并导出到 `artifacts/docker/v<version>/<os>-<arch>/`。
 
 ---
 
@@ -342,7 +357,7 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 | [数据模型设计 (DATA_MODELS.md)](./docs/DATA_MODELS.md) | SQLite + Prisma ORM 实体关系、数据字典与索引设计 |
 | [接口与通信协议 (API_AND_PROTOCOLS.md)](./docs/API_AND_PROTOCOLS.md) | RESTful API 规范、WebSocket 通信协议与订阅引擎标准 |
 | [前端 UI 设计规范 (FRONTEND_UI_GUIDELINES.md)](./docs/FRONTEND_UI_GUIDELINES.md) | shadcn/ui 组件分层、暗黑模式预设与表格/表单规范 |
-| [部署与运维指南 (DEPLOYMENT_GUIDE.md)](./docs/DEPLOYMENT_GUIDE.md) | 主控端生产部署、Agent 一键脚本安装与运维排错 |
+| [部署与运维指南 (DEPLOYMENT_GUIDE.md)](./docs/DEPLOYMENT_GUIDE.md) | 主控端生产部署、Agent 原生 CLI 安装与运维排错 |
 | [实施路线图 (ROADMAP.md)](./docs/ROADMAP.md) | 迭代里程碑、模块开发步骤与各阶段验收标准 |
 | [版本管理规范 (VERSIONING.md)](./docs/VERSIONING.md) | SemVer 最小递增原则、统一版本号与发版流程 |
 | [Git 工作流规范 (GIT_WORKFLOW.md)](./docs/GIT_WORKFLOW.md) | GitHub Flow 分支模型与 Conventional Commits 规范 |
@@ -359,7 +374,7 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 - [x] **Phase 3: Go 边缘 Agent 基线** (WSS 长连接 / 指数退避重连 / 配置原子落盘 / CPU/内存/带宽遥测上报)
 - [x] **Phase 4: Web 控制面板** (用户仪表盘 / 节点监控 / TanStack Table 用户管理 / 系统设置 / 暗黑模式)
 - [ ] **Phase 5: Sing-box 内核全托管** (Agent 自动拉起与 PID 监控 / 增量用户流量统计采集 / 订阅 Clash & Sing-box 格式扩充)
-- [x] **Phase 6: 部署套件与一键脚本** (`install-agent.sh` 脚本 / Docker Compose 全套编排 / WSL Docker 验收 / 镜像双标签导出)
+- [x] **Phase 6: 部署套件与原生 CLI** (Agent 自包含安装/卸载 / Docker Compose 全套编排 / WSL Docker 验收 / 镜像双标签导出)
 
 ---
 

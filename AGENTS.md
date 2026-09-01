@@ -122,7 +122,8 @@ pnpm --filter @riricloud/server exec prisma migrate dev
 pnpm --filter @riricloud/server exec prisma db seed
 
 # 本地运行 Agent（演示联调；token 来自管理员节点页）
-cd apps/agent && AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent ./riri-agent.exe
+pnpm build:agent
+AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent ./artifacts/dev/agent/<os>-<arch>/riri-agent[.exe]
 
 # 发布版本（本地脚本：门禁复跑 → 三平台构建 → 打包校验 → gh CLI 创建 Release）
 bash scripts/release.sh

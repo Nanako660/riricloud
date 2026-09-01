@@ -184,16 +184,24 @@ else
 fi
 
 # ---------- 5. 构建并启动 Agent ----------
+AGENT_GOOS="${GOOS:-$(go env GOOS)}"
+AGENT_GOARCH="${GOARCH:-$(go env GOARCH)}"
+if [ "$AGENT_GOOS" = "windows" ]; then
+  AGENT_BIN_NAME="riri-agent.exe"
+else
+  AGENT_BIN_NAME="riri-agent"
+fi
+AGENT_BIN="${RIRICLOUD_AGENT_BINARY_PATH:-$ROOT/artifacts/dev/agent/${AGENT_GOOS}-${AGENT_GOARCH}/$AGENT_BIN_NAME}"
 say "构建 Agent…"
-(cd apps/agent && go build -o riri-agent.exe .) || die "Agent 构建失败"
+RIRICLOUD_AGENT_BINARY_PATH="$AGENT_BIN" bash scripts/build-agent.sh || die "Agent 构建失败"
 
 say "启动 Agent（内核：$(basename "$SINGBOX_BIN")，日志：$LOG_DIR/agent.log）…"
 (
-  cd apps/agent && AGENT_TOKEN="$AGENT_TOKEN" \
+  AGENT_TOKEN="$AGENT_TOKEN" \
     MASTER_WS_URL="ws://localhost:3000/ws/agent" \
     SINGBOX_BINARY_PATH="$SINGBOX_BIN" \
     SINGBOX_CONFIG_PATH="$SINGBOX_CONF_DIR/config.json" \
-    ./riri-agent.exe >"$LOG_DIR/agent.log" 2>&1
+    "$AGENT_BIN" >"$LOG_DIR/agent.log" 2>&1
 ) &
 AGENT_PID=$!
 

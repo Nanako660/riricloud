@@ -193,6 +193,7 @@ export interface AdminNode {
   exitLines: NodeLine[];
   servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: string; port: number }>;
   installCommands?: { ws: string; http: string };
+  uninstallCommand?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -202,6 +203,7 @@ export interface CreateNodeResult {
   agentToken: string;
   installCommand: string;
   installCommands?: { ws: string; http: string };
+  uninstallCommand?: string;
 }
 
 export interface NodeTaskStatus {

@@ -9,7 +9,7 @@ WORKDIR /src
 COPY apps/agent/go.mod apps/agent/go.sum ./
 RUN go mod download
 COPY apps/agent/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
     -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
     -o /out/riri-agent .
 
