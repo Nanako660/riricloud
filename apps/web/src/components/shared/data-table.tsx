@@ -49,6 +49,7 @@ interface DataTableProps<TData, TValue> {
   emptyTitle?: string;
   emptyDescription?: string;
   toolbar?: React.ReactNode;
+  tableClassName?: string;
 }
 
 export function DataTable<TData extends { id: string }, TValue>({
@@ -59,7 +60,8 @@ export function DataTable<TData extends { id: string }, TValue>({
   onSelectionChange,
   emptyTitle = '暂无数据',
   emptyDescription,
-  toolbar
+  toolbar,
+  tableClassName
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
@@ -114,8 +116,8 @@ export function DataTable<TData extends { id: string }, TValue>({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-1 items-center gap-2">{toolbar}</div>
+      <div className="flex flex-col items-stretch justify-between gap-2 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{toolbar}</div>
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="ml-auto gap-1.5">
@@ -140,8 +142,8 @@ export function DataTable<TData extends { id: string }, TValue>({
           </DropdownMenu>
       </div>
 
-      <div className="rounded-xl border">
-        <Table>
+      <div className="min-w-0 rounded-xl border">
+        <Table className={tableClassName}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

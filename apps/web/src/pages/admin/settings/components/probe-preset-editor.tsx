@@ -4,7 +4,8 @@ import { useFieldArray, useForm, useFormContext, useWatch } from 'react-hook-for
 import { Plus, Settings2, Trash2 } from 'lucide-react';
 import type { SettingsForm } from '../index';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -62,8 +63,8 @@ function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; 
         <span className="text-xs tabular-nums text-muted-foreground">{value.length} / {MAX_PROBE_PRESETS} 项</span>
         <Button type="button" variant="outline" size="sm" onClick={openEditor}><Settings2 />管理探针目标</Button>
       </div>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent size="wide">
+      <ResponsiveDialog open={open} onOpenChange={setOpen}>
+        <ResponsiveDialogContent size="wide">
           <DialogHeader>
             <DialogTitle>管理默认探针目标</DialogTitle>
             <DialogDescription>配置节点探针弹窗中的快速预设。最多 {MAX_PROBE_PRESETS} 项，取消关闭不会修改当前设置。</DialogDescription>
@@ -83,8 +84,8 @@ function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; 
               </div>
             </form>
           </Form>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </>
   );
 }

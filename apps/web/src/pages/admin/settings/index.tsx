@@ -161,15 +161,15 @@ export default function AdminSettingsPage() {
     <PageContainer>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader title="系统设置" description="统一管理站点品牌、注册策略、订阅分发与 Agent 运维参数。" />
-        <div className="flex shrink-0 gap-2">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <AlertDialog>
-            <AlertDialogTrigger asChild><Button type="button" variant="outline" disabled={resetMutation.isPending}><RotateCcw />重置默认值</Button></AlertDialogTrigger>
+            <AlertDialogTrigger asChild><Button type="button" variant="outline" className="w-full sm:w-auto" disabled={resetMutation.isPending}><RotateCcw />重置默认值</Button></AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader><AlertDialogTitle>恢复全部默认设置？</AlertDialogTitle><AlertDialogDescription>所有自定义站点、注册、订阅和运维参数都会恢复为内置安全默认值，保存后立即生效。</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetMutation.mutate()}>确认恢复</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button type="button" disabled={saveMutation.isPending} onClick={() => form.handleSubmit((values) => saveMutation.mutate(values))()}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button>
+          <Button type="button" className="w-full sm:w-auto" disabled={saveMutation.isPending} onClick={() => form.handleSubmit((values) => saveMutation.mutate(values))()}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button>
         </div>
       </div>
 
@@ -177,11 +177,11 @@ export default function AdminSettingsPage() {
         <form className="min-w-0" onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}>
           <Tabs defaultValue="branding" className="space-y-4">
             <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto p-1">
-              <TabsTrigger value="branding"><Palette className="h-4 w-4 shrink-0" />基础与品牌</TabsTrigger>
-              <TabsTrigger value="users"><UsersRound className="h-4 w-4 shrink-0" />注册与用户</TabsTrigger>
-              <TabsTrigger value="subscription"><Globe2 className="h-4 w-4 shrink-0" />订阅与分发</TabsTrigger>
-              <TabsTrigger value="agent"><Gauge className="h-4 w-4 shrink-0" />Agent 运维</TabsTrigger>
-              <TabsTrigger value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />基础与品牌</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="users"><UsersRound className="h-4 w-4 shrink-0" />注册与用户</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />订阅与分发</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />Agent 运维</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
             </TabsList>
 
             <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户仪表盘。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
@@ -229,7 +229,7 @@ export default function AdminSettingsPage() {
               <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="内容会原样挂载到 document.head，请只粘贴可信代码。" />
             </CardContent></Card></TabsContent>
           </Tabs>
-          <div className="flex justify-end pt-4"><Button type="submit" disabled={saveMutation.isPending}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button></div>
+          <div className="flex justify-end pt-4"><Button type="submit" className="w-full sm:w-auto" disabled={saveMutation.isPending}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button></div>
         </form>
       </Form>
       {publicSettings.isError ? <p className="text-xs text-muted-foreground">公开站点信息暂时不可用，保存后会自动重试同步。</p> : null}
@@ -253,7 +253,7 @@ function SettingsTextarea({ name, label, description, rows = 4, className }: { n
 
 function SettingsSwitch({ name, label, description, className }: { name: FieldPath<SettingsForm>; label: string; description: string; className?: string }) {
   const { control } = useFormContext<SettingsForm>();
-  return <FormField control={control} name={name} render={({ field }) => <FormItem className={`flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm ${className ?? ''}`}><div className="space-y-0.5"><FormLabel>{label}</FormLabel><FormDescription>{description}</FormDescription></div><FormControl><Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} /></FormControl></FormItem>} />;
+  return <FormField control={control} name={name} render={({ field }) => <FormItem className={`flex flex-row items-start justify-between gap-4 rounded-lg border p-4 shadow-sm ${className ?? ''}`}><div className="min-w-0 space-y-0.5"><FormLabel>{label}</FormLabel><FormDescription className="break-words">{description}</FormDescription></div><FormControl><Switch className="shrink-0" checked={Boolean(field.value)} onCheckedChange={field.onChange} /></FormControl></FormItem>} />;
 }
 
 function SettingsSelect({ name, label, description, options }: { name: FieldPath<SettingsForm>; label: string; description?: string; options: Array<{ value: string; label: string }> }) {
@@ -265,7 +265,7 @@ function SettingsEditor({ name, label, description, extensions }: { name: FieldP
   const { control } = useFormContext<SettingsForm>();
   const { resolvedTheme } = useTheme();
   const editorTheme = resolvedTheme === 'dark' ? 'dark' : 'light';
-  return <FormField control={control} name={name} render={({ field }) => <FormItem><FormLabel className="flex items-center gap-2"><Code2 className="h-4 w-4" />{label}</FormLabel><FormControl><div className="overflow-hidden rounded-md border bg-background shadow-sm"><CodeMirror value={String(field.value ?? '')} height="220px" theme={editorTheme} extensions={extensions} basicSetup={{ lineNumbers: true, foldGutter: true }} onChange={field.onChange} /></div></FormControl><FormDescription>{description}</FormDescription><FormMessage /></FormItem>} />;
+  return <FormField control={control} name={name} render={({ field }) => <FormItem className="min-w-0"><FormLabel className="flex items-center gap-2"><Code2 className="h-4 w-4" />{label}</FormLabel><FormControl><div className="min-w-0 overflow-hidden rounded-md border bg-background shadow-sm"><CodeMirror value={String(field.value ?? '')} height="220px" theme={editorTheme} extensions={extensions} basicSetup={{ lineNumbers: true, foldGutter: true }} onChange={field.onChange} /></div></FormControl><FormDescription>{description}</FormDescription><FormMessage /></FormItem>} />;
 }
 
 function SetOriginButton() {

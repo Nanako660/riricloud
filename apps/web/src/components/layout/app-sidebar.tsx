@@ -11,13 +11,15 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
-  SidebarMenuItem
+  SidebarMenuItem,
+  useSidebar
 } from '@/components/ui/sidebar';
 
 // 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'ADMIN';
+  const { setOpenMobile } = useSidebar();
   const publicSettings = usePublicSettings();
   const siteName = publicSettings.data?.siteName || 'RiriCloud';
   const logoUrl = publicSettings.data?.logoUrl;
@@ -68,7 +70,7 @@ export function AppSidebar() {
             <SidebarMenu className="gap-0.5">
               {group.items.map((item) => (
                 <SidebarMenuItem key={item.to}>
-                  <NavLink to={item.to} end={item.end} className="block">
+                  <NavLink to={item.to} end={item.end} className="block" onClick={() => setOpenMobile(false)}>
                     {({ isActive }) => (
                       <SidebarMenuButton asChild active={isActive} className="rounded-lg px-3 py-2 text-sm">
                         <span><item.icon className="size-4" /><span>{item.label}</span></span>

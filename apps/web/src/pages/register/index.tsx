@@ -66,7 +66,7 @@ export default function RegisterPage() {
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-3 sm:p-4">
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">

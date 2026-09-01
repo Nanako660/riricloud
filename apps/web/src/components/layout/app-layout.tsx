@@ -10,7 +10,7 @@ export function AppLayout() {
       <AppSidebar />
       <SidebarInset>
         <AppHeader />
-        <main className="flex flex-1 flex-col bg-background md:mr-2 md:mb-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm overflow-x-hidden min-w-0">
+        <main className="flex min-w-0 w-full flex-1 flex-col overflow-x-hidden bg-background md:mb-2 md:mr-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm">
           <Outlet />
         </main>
       </SidebarInset>

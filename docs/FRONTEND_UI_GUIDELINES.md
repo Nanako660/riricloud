@@ -218,6 +218,8 @@ toast.promise(reloadAgentPromise, {
 
 弹窗尺寸统一使用 `@/components/ui/dialog` 的 `DialogContent` 变体：普通数据表单使用默认 `2xl`，线路和模板等复杂编辑使用 `wide` `3xl`，确实简单的内容才使用 `compact` `lg`。所有弹窗在移动端使用视口两侧留白并限制最大高度，内容超出时在弹窗内部滚动；破坏性确认继续使用固定的 `AlertDialog` `lg` 宽度。
 
+响应式弹窗统一通过 `ResponsiveDialog` / `ResponsiveDialogContent` 承载：桌面端保持 Dialog，`767px` 及以下切换为右侧全高 Sheet，宽度占满视口并在内容区滚动。移动端导航使用 `SidebarProvider` 的 `openMobile` 状态与 Sheet 抽屉，路由切换后关闭抽屉；不得为每个业务页面重复实现媒体查询和抽屉状态。
+
 ### 6.3 加载占位 (Skeleton)
 
 页面加载与卡片数据请求中，禁止使用全屏巨型 Spinner 打断用户体验，必须使用 `Skeleton` 还原真实 UI 的骨架结构：
@@ -243,7 +245,7 @@ export function NodeCardSkeleton() {
 
 ### 7.1 全局架构与 Inset 沉浸式卡片布局
 
-1. **左侧导航栏 (`AppSidebar`)**：采用 shadcn/ui 官方 `Sidebar` (v4) `variant="inset"` 范式，无右侧贯穿硬分割线（`border-r-0`），与最外层底层底色（`bg-sidebar`）自然融为一体。顶部品牌区高度固定为 `h-14`，底部展示极简版本号。
+1. **左侧导航栏 (`AppSidebar`)**：采用 shadcn/ui 官方 `Sidebar` (v4) `variant="inset"` 范式，无右侧贯穿硬分割线（`border-r-0`），与最外层底层底色（`bg-sidebar`）自然融为一体。顶部品牌区高度固定为 `h-14`，底部展示极简版本号；移动端使用左侧 Sheet 抽屉，支持遮罩、Escape 和导航后自动关闭。
 2. **顶部全局操作栏 (`AppHeader`)**：位于主内容大卡片上方，高度为 `h-14`，与左侧品牌 Logo 水平高度严格齐平（1:1 对齐）。右侧放置紧凑的微操作按钮组：`ThemeToggle`（明暗三态图标切换）与 `UserMenu`（首字母圆形头像与个人中心下拉菜单）。移动端自动展示抽屉折叠触发器与站点名。
 3. **主工作区浮雕大卡片 (`<main>` / Inset Canvas)**：主工作区位于顶部操作栏下方，桌面端（`md:` 及以上）应用 Inset 样式（`md:mr-2 md:mb-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm md:bg-background`），页面标题（`PageHeader`）直接作为大卡片顶部内容起始点，避免卡片内部被任何多余横线切断。
 4. **明暗双模式三层阶梯景深 (Three-Tier Surface Elevation)**：
@@ -286,6 +288,8 @@ export function PageContainer({ title, description, actions, children }: PageCon
 - 底层技术：`@tanstack/react-table` + `@/components/ui/table`。
 - 必须具备：列排序（Sorting）、关键词搜索过滤（Filtering）、分页控件（Pagination）、行选择（Row Selection）与列显示切换（Column Visibility）。
 - 空数据展示：使用 `@/components/shared/empty-state.tsx` 统一插画与引导按钮。
+- 移动端保留完整字段与表格语义，表格外层使用 `overflow-x-auto`，横向滚动只允许发生在表格容器内，不得造成页面主体横向溢出；筛选工具栏在 `sm` 断点前必须允许换行。
+- 表格及标签区域使用的 `Badge` 必须保持单行（`whitespace-nowrap`），多个 Badge 可作为完整单元在父级容器中换行，禁止将 chip 文本压缩成逐字竖排。
 
 ### 8.2 数据图表 (Data Charts)
 - 底层技术：采用 shadcn/ui 官方 `Chart`（封装自 `Recharts`）。
@@ -402,7 +406,7 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 - “线路高级设置”页签使用 `Switch` 控制对外地址、端口、SNI、Host 覆盖，并配置直连/中继拓扑、出口节点/端口、倍率、标签、等级、排序和启停状态；两页共享同一份 React Hook Form 草稿，点击一次保存统一提交。
 - 线路入口端口可留空，由服务端在 `20000~29999` 范围分配五位端口；直连线路提交前应保持两端节点和端口一致。VLESS/Reality 提供密钥对生成按钮，私钥不从 API 回显。
 - 大型模板 JSON/YAML 编辑区使用等宽字体、固定最小高度和弹窗内滚动，不能撑破桌面或移动端视口。
-- 移动端列表转为单列，表单在 `sm` 断点前单列布局；操作按钮保留图标与文字的可读组合，危险操作使用 `AlertDialog`。
+- 移动端列表转为单列，表单在 `sm` 断点前单列布局；表格保留完整字段并在表格容器内横向滚动，筛选器与操作按钮允许多行排列；普通复杂编辑使用全高 `Sheet`，危险操作继续使用 `AlertDialog`。
 - 数据加载使用与真实内容相近的骨架或紧凑加载态；仪表盘、我的订阅和管理员用户列表的流量数据每 5 秒自动重新请求，以便反映 Agent 心跳扣减结果；错误和变更结果统一通过 `sonner` 呈现，不使用原生 `alert`。
 - Token 仅在已认证的用户/管理员视图显示；复制、重置后必须刷新相关 Query，避免界面继续展示旧链接。
 

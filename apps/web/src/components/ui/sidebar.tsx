@@ -3,11 +3,16 @@ import { Slot } from '@radix-ui/react-slot';
 import { PanelLeft } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
 interface SidebarContextType {
+  isMobile: boolean;
   open: boolean;
+  openMobile: boolean;
   setOpen: (open: boolean) => void;
+  setOpenMobile: (open: boolean) => void;
   toggleSidebar: () => void;
 }
 
@@ -25,12 +30,20 @@ const SidebarProvider = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & { defaultOpen?: boolean }
 >(({ className, defaultOpen = true, children, ...props }, ref) => {
+  const isMobile = useIsMobile();
   const [open, setOpen] = React.useState(defaultOpen);
-  const toggleSidebar = React.useCallback(() => setOpen((prev) => !prev), []);
+  const [openMobile, setOpenMobile] = React.useState(false);
+  const toggleSidebar = React.useCallback(() => {
+    if (isMobile) {
+      setOpenMobile((prev) => !prev);
+    } else {
+      setOpen((prev) => !prev);
+    }
+  }, [isMobile]);
 
   const value = React.useMemo(
-    () => ({ open, setOpen, toggleSidebar }),
-    [open, toggleSidebar]
+    () => ({ isMobile, open, openMobile, setOpen, setOpenMobile, toggleSidebar }),
+    [isMobile, open, openMobile, toggleSidebar]
   );
 
   return (
@@ -52,7 +65,23 @@ interface SidebarProps extends React.HTMLAttributes<HTMLElement> {
 }
 
 const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
-  ({ className, variant = 'sidebar', ...props }, ref) => {
+  ({ className, children, variant = 'sidebar', ...props }, ref) => {
+    const { isMobile, openMobile, setOpenMobile } = useSidebar();
+
+    if (isMobile) {
+      return (
+        <Sheet open={openMobile} onOpenChange={setOpenMobile}>
+          <SheetContent
+            side="left"
+            aria-label={props['aria-label']}
+            className={cn('w-[18rem] max-w-[calc(100vw-3rem)] gap-0 p-0', className)}
+          >
+            {children}
+          </SheetContent>
+        </Sheet>
+      );
+    }
+
     return (
       <aside
         ref={ref}
@@ -64,7 +93,9 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
           className
         )}
         {...props}
-      />
+      >
+        {children}
+      </aside>
     );
   }
 );

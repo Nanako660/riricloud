@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -102,8 +103,8 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+      <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+        <ResponsiveDialogContent>
           <DialogHeader>
             <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
             <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，配额和有效期可继续微调。'}</DialogDescription>
@@ -139,8 +140,8 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
               </form>
             </Form>
           )}
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
       <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>重置订阅链接？</AlertDialogTitle><AlertDialogDescription>旧链接会立即失效，用户需要重新导入订阅。</AlertDialogDescription></AlertDialogHeader>

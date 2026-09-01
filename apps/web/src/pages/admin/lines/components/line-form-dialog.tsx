@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -108,8 +109,8 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, pending, onSub
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="wide">
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent size="wide">
         <DialogHeader>
           <DialogTitle>{line ? '编辑线路' : '新建线路'}</DialogTitle>
         </DialogHeader>
@@ -132,7 +133,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, pending, onSub
             </DialogFooter>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

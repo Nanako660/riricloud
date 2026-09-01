@@ -30,8 +30,8 @@ export default function AdminNodesPage() {
 
   return <PageContainer>
     <PageHeader title="节点管理" description="纳管状态、机器遥测与线路承载端口" />
-    <div className="flex items-center gap-2"><Button size="sm" className="gap-1.5" onClick={() => setFormOpen(true)}><Plus className="h-4 w-4" />添加节点</Button></div>
-     <Card><CardContent className="p-0">{(nodes ?? []).length ? <Table><TableHeader><TableRow><TableHead>节点</TableHead><TableHead>地址</TableHead><TableHead>承载线路</TableHead><TableHead>端口</TableHead><TableHead>内核</TableHead><TableHead>通信状态</TableHead><TableHead>CPU</TableHead><TableHead>内存</TableHead><TableHead>带宽</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{(nodes ?? []).map((node) => <TableRow key={node.id}>
+    <div className="flex flex-wrap items-center gap-2"><Button size="sm" className="w-full gap-1.5 sm:w-auto" onClick={() => setFormOpen(true)}><Plus className="h-4 w-4" />添加节点</Button></div>
+     <Card><CardContent className="min-w-0 p-0">{(nodes ?? []).length ? <Table className="min-w-[980px]"><TableHeader><TableRow><TableHead>节点</TableHead><TableHead>地址</TableHead><TableHead>承载线路</TableHead><TableHead>端口</TableHead><TableHead>内核</TableHead><TableHead>通信状态</TableHead><TableHead>CPU</TableHead><TableHead>内存</TableHead><TableHead>带宽</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{(nodes ?? []).map((node) => <TableRow key={node.id}>
       <TableCell className="font-medium"><Link to={`/admin/nodes/${node.id}`} className="hover:underline">{node.name}</Link></TableCell>
       <TableCell className="text-muted-foreground">{node.serverHost}</TableCell>
       <TableCell>{node.lines.length ? <div className="flex max-w-52 flex-wrap gap-1">{node.lines.slice(0, 4).map((line) => <Badge key={line.id} variant="outline">{line.protocolType}</Badge>)}{node.lines.length > 4 && <Badge variant="secondary">+{node.lines.length - 4}</Badge>}</div> : <span className="text-xs text-muted-foreground">未承载线路</span>}</TableCell>

@@ -98,11 +98,11 @@ export default function DashboardPage() {
           {data.plan ? (
             <div className="space-y-3">
               <p className="text-sm">当前套餐：<strong>{data.plan.name}</strong></p>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
                 <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">{subscriptionUrl}</code>
                 <CopyButton value={subscriptionUrl} />
                 <AlertDialog>
-                  <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={resetSub.isPending}>{resetSub.isPending ? '重置中…' : '重置链接'}</Button></AlertDialogTrigger>
+                  <AlertDialogTrigger asChild><Button variant="outline" size="sm" className="w-full sm:w-auto" disabled={resetSub.isPending}>{resetSub.isPending ? '重置中…' : '重置链接'}</Button></AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader><AlertDialogTitle>重置订阅链接？</AlertDialogTitle><AlertDialogDescription>重置后旧链接立即失效，所有客户端都需要重新导入。建议仅在怀疑链接泄漏时使用。</AlertDialogDescription></AlertDialogHeader>
                     <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetSub.mutate()}>确认重置</AlertDialogAction></AlertDialogFooter>

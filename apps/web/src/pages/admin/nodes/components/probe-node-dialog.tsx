@@ -8,7 +8,8 @@ import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -91,8 +92,8 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
     if (selected) form.reset(selected.probe);
   };
 
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent size="compact">
+  return <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialogContent size="compact">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2"><Network className="h-4 w-4" />网络探针诊断</DialogTitle>
         <DialogDescription>从该 Agent 所在节点执行 TCP、DNS 或 ICMP 检测，结果会保存到节点详情。</DialogDescription>
@@ -109,6 +110,6 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
         </Form>
         {snapshot && <div className="space-y-3 border-t pt-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">最近一次结果</p><span className="text-xs text-muted-foreground">{new Date(snapshot.completedAt).toLocaleString('zh-CN')}</span></div><div className="space-y-2">{snapshot.results.map((result, index) => <ProbeResultCard key={`${result.type}-${result.target}-${index}`} result={result} />)}</div></div>}
       </div>
-    </DialogContent>
-  </Dialog>;
+    </ResponsiveDialogContent>
+  </ResponsiveDialog>;
 }

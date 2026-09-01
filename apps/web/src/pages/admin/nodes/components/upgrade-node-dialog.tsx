@@ -4,7 +4,8 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -60,8 +61,8 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node
     ...(values.source === 'custom' ? { url: values.url?.trim(), sha256: values.sha256?.trim().toLowerCase() } : {})
   });
 
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent size="compact">
+  return <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialogContent size="compact">
       <DialogHeader>
         <DialogTitle>节点升级中心</DialogTitle>
         <DialogDescription>默认从主控内置分发中心下载并校验，适合无法稳定访问外部站点的节点。</DialogDescription>
@@ -92,6 +93,6 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node
         </>}
         <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>{source === 'custom' && <Button type="button" variant="secondary" disabled={importing || target !== 'singbox'} onClick={() => void form.handleSubmit((values) => values.version && values.url && values.sha256 && onImport({ target: `singbox-${platform || 'linux-amd64'}`, version: values.version.trim(), url: values.url.trim(), sha256: values.sha256.trim().toLowerCase() }))()}>{importing ? '导入中…' : '导入到主控'}</Button>}<Button type="submit" disabled={pending || (source === 'master' && !builtIn?.available)}>{pending ? '下发中…' : '下发升级任务'}</Button></DialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>;
+    </ResponsiveDialogContent>
+  </ResponsiveDialog>;
 }

@@ -2,7 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -82,7 +83,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
     }
   };
   const busy = create.isPending || update.isPending;
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><DialogHeader><DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle><DialogDescription>配置配额、有效期和线路匹配范围。</DialogDescription></DialogHeader><form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
+  return <ResponsiveDialog open={open} onOpenChange={onOpenChange}><ResponsiveDialogContent><DialogHeader><DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle><DialogDescription>配置配额、有效期和线路匹配范围。</DialogDescription></DialogHeader><form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-name">套餐名称</Label><Input id="plan-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-description">描述</Label><Input id="plan-description" {...form.register('description')} /></div>
     <div className="space-y-2"><Label htmlFor="plan-price">价格</Label><Input id="plan-price" type="number" min="0" {...form.register('price')} /></div>
@@ -95,5 +96,5 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
     <div className="space-y-2 sm:col-span-2"><Label>订阅模板</Label><Controller control={form.control} name="templateId" render={({ field }) => <Select value={field.value || 'none'} onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}><SelectTrigger><SelectValue placeholder="选择模板" /></SelectTrigger><SelectContent><SelectItem value="none">使用默认模板</SelectItem>{templateOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>} /></div>
     <div className="flex items-center gap-3 sm:col-span-2"><Controller control={form.control} name="isPublic" render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} />} /><Label>公开售卖</Label></div>
     <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存套餐'}</Button></DialogFooter>
-  </form></DialogContent></Dialog>;
+  </form></ResponsiveDialogContent></ResponsiveDialog>;
 }
