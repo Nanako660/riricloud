@@ -5,12 +5,38 @@ set -euo pipefail
 RIRI_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$RIRI_ROOT"
 
+COMMAND="${1:-build}"
+
+case "$COMMAND" in
+  build|export|up|down|tags) ;;
+  *)
+    echo "用法：$0 {build|export|up|down|tags} [docker compose options]" >&2
+    exit 2
+    ;;
+esac
+
 die() {
   echo "Docker 操作失败：$*" >&2
   exit 1
 }
 
-command -v docker >/dev/null 2>&1 || die "docker is required"
+require_linux_docker_environment() {
+  local shell_name
+  local docker_os
+
+  shell_name="$(uname -s 2>/dev/null || true)"
+  [ "$shell_name" = "Linux" ] || die "Docker 构建、导出与 Compose 操作只能在 Linux/WSL shell 中执行；Windows PowerShell/Git Bash 请从 WSL 调用"
+  command -v docker >/dev/null 2>&1 || die "缺少 docker，请确认 WSL 已启用 Docker Desktop 集成"
+  docker_os="$(docker info --format '{{.OSType}}' 2>/dev/null || true)"
+  [ "$docker_os" = "linux" ] || die "Docker daemon 必须运行在 Linux containers 模式，当前为：${docker_os:-unavailable}"
+}
+
+case "$COMMAND" in
+  build|export|up|down)
+    require_linux_docker_environment
+    ;;
+esac
+
 if command -v node >/dev/null 2>&1; then
   NODE_BIN="node"
 elif command -v node.exe >/dev/null 2>&1; then
@@ -38,8 +64,11 @@ ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 
 if [ -n "${DOCKER_PLATFORM:-}" ]; then
   DOCKER_PLATFORM_VALUE="$DOCKER_PLATFORM"
-else
+elif [ "$COMMAND" = "build" ] || [ "$COMMAND" = "export" ]; then
   DOCKER_PLATFORM_VALUE="$(docker info --format '{{.OSType}}/{{.Architecture}}')"
+else
+  # tags/up/down 不需要解析 Docker daemon 平台；构建/导出时会在上方强制校验。
+  DOCKER_PLATFORM_VALUE="${RIRICLOUD_DOCKER_PLATFORM:-linux/amd64}"
 fi
 
 platform_filename() {
@@ -211,7 +240,7 @@ compose() {
   docker compose "$@"
 }
 
-case "${1:-build}" in
+case "$COMMAND" in
   build)
     build_images
     case "${DOCKER_EXPORT:-true}" in
@@ -235,7 +264,6 @@ case "${1:-build}" in
     printf '%s\n' "$MASTER_VERSION_IMAGE" "$MASTER_LATEST_IMAGE" "$AGENT_VERSION_IMAGE" "$AGENT_LATEST_IMAGE"
     ;;
   *)
-    echo "用法：$0 {build|export|up|down|tags} [docker compose options]" >&2
-    exit 2
+    die "未知 Docker 操作：$COMMAND"
     ;;
 esac

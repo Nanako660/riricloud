@@ -23,6 +23,7 @@
     "dev:web": "pnpm --filter @riricloud/web dev",
     "build": "pnpm --filter @riricloud/server build && pnpm --filter @riricloud/web build && bash scripts/build-agent.sh",
     "build:agent": "bash scripts/build-agent.sh",
+    "build:agent:all": "bash scripts/build-agent.sh --all",
     "bump": "node scripts/version-governance.mjs bump",
     "bump:patch": "node scripts/version-governance.mjs bump patch",
     "bump:minor": "node scripts/version-governance.mjs bump minor",
