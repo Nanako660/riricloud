@@ -79,10 +79,11 @@ apps/web/src/
 │   │   ├── copy-button.tsx      # 订阅链接一键复制按钮
 │   │   └── traffic-badge.tsx    # 流量单位格式化与状态胶囊
 │   └── layout/             # 【全局框架布局】
-│       ├── app-layout.tsx       # 主控端侧边栏 + 顶部导航总布局
-│       ├── app-sidebar.tsx      # 左侧菜单导航
-│       ├── app-header.tsx       # 顶部面包屑与快捷操作栏
-│       └── theme-toggle.tsx     # 明暗主题三态切换（浅色/深色/跟随系统）
+│       ├── app-layout.tsx       # 主控端侧边栏 + 主内容区 Inset 总布局
+│       ├── app-sidebar.tsx      # 左侧菜单导航与品牌头部 (h-14)
+│       ├── app-header.tsx       # 顶部全局微操作栏 (h-14，位于主大卡片上方)
+│       ├── user-menu.tsx        # 顶栏独立小巧用户头像与退出菜单
+│       └── theme-toggle.tsx     # 顶栏小巧明暗主题三态切换（浅色/深色/跟随系统）
 ├── pages/                  # 【页面级视图组件】仅负责数据获取、状态编排与子组件组装
 │   ├── dashboard/
 │   ├── nodes/
@@ -240,11 +241,16 @@ export function NodeCardSkeleton() {
 
 ## 7. 布局结构与页面容器标准 (Layout & Container)
 
-### 7.1 全局架构
+### 7.1 全局架构与 Inset 沉浸式卡片布局
 
-1. **左侧导航栏**：采用 shadcn/ui 官方 `Sidebar` (v4)，支持折叠至窄条图标栏模式（Rail），移动端自动转换为遮罩式 `Sheet` 抽屉。
-2. **顶部 Header**：包含折叠开关（`SidebarTrigger`）、动态面包屑（`Breadcrumb`）、快捷搜索（Command Menu）与个人中心/主题切换。
-3. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
+1. **左侧导航栏 (`AppSidebar`)**：采用 shadcn/ui 官方 `Sidebar` (v4) `variant="inset"` 范式，无右侧贯穿硬分割线（`border-r-0`），与最外层底层底色（`bg-sidebar`）自然融为一体。顶部品牌区高度固定为 `h-14`，底部展示极简版本号。
+2. **顶部全局操作栏 (`AppHeader`)**：位于主内容大卡片上方，高度为 `h-14`，与左侧品牌 Logo 水平高度严格齐平（1:1 对齐）。右侧放置紧凑的微操作按钮组：`ThemeToggle`（明暗三态图标切换）与 `UserMenu`（首字母圆形头像与个人中心下拉菜单）。移动端自动展示抽屉折叠触发器与站点名。
+3. **主工作区浮雕大卡片 (`<main>` / Inset Canvas)**：主工作区位于顶部操作栏下方，桌面端（`md:` 及以上）应用 Inset 样式（`md:mr-2 md:mb-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm md:bg-background`），页面标题（`PageHeader`）直接作为大卡片顶部内容起始点，避免卡片内部被任何多余横线切断。
+4. **明暗双模式三层阶梯景深 (Three-Tier Surface Elevation)**：
+   - **L0 底层画框**：`bg-sidebar`（浅色 `zinc-100/60` / 深色 `zinc-950`），顶栏与侧边栏沉浸于底层；
+   - **L1 主画布容器**：`main` 浮雕大卡片（浅色纯白 `bg-background` / 深色 `zinc-900`）；
+   - **L2 业务内容卡片**：页面内 `Card`、表格、表单（`bg-card`，深色模式微提亮为 `zinc-850/60`），呈现细腻的浮雕凸起质感。
+5. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
 
 管理员侧边栏固定为 6 项：**用户管理、节点管理、线路管理、系统设置、套餐管理、订阅模板**。订阅履约操作属于用户管理的综合弹窗；旧地址 `/admin/subscriptions` 仅作为兼容入口重定向至 `/admin/users`，不得再次作为平级菜单展示。
 
