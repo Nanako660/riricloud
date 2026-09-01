@@ -48,6 +48,7 @@ Monorepo 中的 `apps/web`、`apps/server`、`apps/agent` **共用同一个版�
 | 事项 | 约定 |
 | :--- | :--- |
 | **唯一版本源** | 根目录 `package.json` 的 `version` 字段，子包 `package.json` 与 `apps/agent` 一律不得私自维护版本号 |
+| **README 徽标** | 根目录 `README.md` 顶部的 Version 徽标由 `pnpm bump` 自动同步，并由 `pnpm gate:version` 强校验一致性 |
 | **Agent 注入** | Go 构建时通过 `-ldflags "-X main.Version=$(node -p "require('./package.json').version")"` 注入，运行时随心跳上报 |
 | **Server 暴露** | NestJS 提供只读的 `GET /api/v1/system/version`，返回统一版本号（打包时从根 `package.json` 读取） |
 | **Web 展示** | 前端构建时由 Vite `define` 注入，在管理台"系统信息"中展示 |
@@ -106,13 +107,13 @@ flowchart TD
 ### 6.2 工具链与三重防线
 
 - **辅助命令**：
-  - `pnpm bump`：默认自增 PATCH（`0.4.0` → `0.4.1`）；
+  - `pnpm bump`：默认自增 PATCH（`0.4.0` → `0.4.1`），原子性同步更新 `package.json`、`CHANGELOG.md` 与 `README.md` 徽标；
   - `pnpm bump minor`：自增 MINOR（`0.4.0` → `0.5.0`）；
   - `pnpm bump major`：自增 MAJOR（`0.4.0` → `1.0.0`）。
 - **三重防线**：
-  1. **本地质量门禁**：`pnpm gate` 纳入 `pnpm gate:version`（`scripts/version-governance.mjs check`）；
+  1. **本地质量门禁**：`pnpm gate` 纳入 `pnpm gate:version`（`scripts/version-governance.mjs check`，三向校验 `package.json`、`CHANGELOG.md` 与 `README.md` 徽标）；
   2. **Git 钩子拦截**：`.husky/pre-push` 在推送特性分支前执行轻量校验；
-  3. **CI 门禁阻断**：`.github/workflows/ci.yml` 在 PR 阶段强制比对基准分支，核心代码变更但未升版本时直接阻断 PR 合并。
+  3. **CI 门禁阻断**：`.github/workflows/ci.yml` 在 PR 阶段强制比对基准分支，核心代码变更但未升版本或三处版本脱节时直接阻断 PR 合并。
 
 ### 6.3 正式发布 (Release)
 
