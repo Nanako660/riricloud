@@ -50,6 +50,10 @@
 - [x] ⭐ 扩展 `upgrade_task` / `upgrade_result` 与 `probe_task` / `probe_result` 消息，Master 对上行消息进行运行时校验。
 - [x] ⭐ 实现安全流式下载、SHA-256 校验、原子替换、Sing-box 启动失败回滚、Agent 自更新重启与 TCP/DNS/ICMP 探针。
 - [x] ⭐ 实现升级窗口 supervisor 抑制，避免替换期间重新拉起旧 Sing-box 二进制。
+- [x] ⭐ Agent 现代化 CLI：Cobra 一级命令、YAML 配置分层、前台 `run` 与环境变量兼容。
+- [x] ⭐ 跨平台服务生命周期：基于 `kardianos/service` 支持 Linux、Windows Service 和 macOS Launchd 的安装、注销、启停、重启和状态查询。
+- [x] ⭐ Agent 自包含安装与卸载：从 Master 下载 Sing-box，失败时可回退 GitHub；`uninstall --purge` 清理服务、配置、运行时目录和托管进程。
+- [x] ⭐ Agent 全屏 TUI、Doctor 与日志查看器：无参数进入 Bubble Tea 控制台 GUI，支持方向键菜单、安装表单、卸载确认、异步操作、结果滚动、Master/网络/内核/端口诊断、彩色日志和跟踪输出。
 
 ### Phase 4: 前端 Web 控制面板开发 (`apps/web`)
 - [x] ⭐ 初始化 Vite + React + TypeScript + Tailwind CSS + shadcn/ui。
@@ -81,11 +85,12 @@
 - [x] ⭐ 节点详情运维面板新增探针快照、错误日志格式化、软硬件画像与升级/探针交互反馈。
 - [x] ⭐ 发布脚本与主控发行包装配多架构 Agent，并保留 Sing-box 多架构资产导入入口。
 - [x] ⭐ 完成 Server / Web / Agent / 文档门禁与 WS / HTTP 本地真实联调验收。
+- [x] ⭐ Agent 下载端点升级为 `GET /api/v1/downloads/agent`：按安装器 User-Agent 选择平台并 302 到受 AgentToken 保护的二进制资产。
 
 ### Phase 5: 部署自动化与端到端联调验收
-- [x] ⭐ 编写节点一键安装脚本 `scripts/install-agent.sh`，由主控 `GET /api/v1/install.sh` 公开分发并注册 systemd。
+- [x] ⭐ 移除旧节点安装脚本与 `GET /api/v1/install.sh`，改为面板生成的原生 CLI 下载/安装命令；Agent 自己注册跨平台系统服务。
 - [x] ⭐ 编写主控端与 Agent 的多阶段 Dockerfile 及 `docker-compose.yml`，SQLite 使用持久化卷。
-- [x] ⭐ WSL Docker 验收主控容器：迁移、幂等播种、Web 健康检查与安装脚本端点均通过；Agent 镜像内置静态 Agent 与官方 sing-box。
+- [x] ⭐ WSL Docker 验收主控容器：迁移、幂等播种、Web 健康检查与二进制分发均通过；Agent 镜像内置静态 Agent 与官方 sing-box。
 
 ---
 

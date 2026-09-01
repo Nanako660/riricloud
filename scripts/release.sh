@@ -43,7 +43,8 @@ fi
 
 # ---------- 在 Tag 提交上执行门禁与构建（worktree 隔离） ----------
 WORKTREE="$RIRI_ROOT/.cache/release-worktree"
-DIST="$RIRI_ROOT/.cache/release"
+ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
+DIST="$ARTIFACT_ROOT/releases/v${VERSION}"
 rm -rf "$WORKTREE" "$DIST"
 
 [ "$NEW_TAG" = 1 ] && git tag -a "$TAG" -m "release $TAG" HEAD
@@ -63,22 +64,22 @@ pnpm --filter @riricloud/web lint
 pnpm --filter @riricloud/web build
 bash scripts/gate-agent.sh
 
-echo "[3/8] 交叉编译 Agent 三平台产物（CGO=0，版本号 ldflags 注入）"
-mkdir -p "$DIST"
+echo "[3/8] 交叉编译 Agent 多平台产物（CGO=0，版本号 ldflags 注入）"
+mkdir -p "$DIST/agent" "$DIST/master/linux-amd64" "$DIST/packages"
 cd "$WORKTREE/apps/agent"
-for platform in "linux amd64 riri-agent" "linux arm64 riri-agent" "windows amd64 riri-agent.exe"; do
+for platform in "linux amd64 riri-agent" "linux arm64 riri-agent" "windows amd64 riri-agent.exe" "darwin amd64 riri-agent" "darwin arm64 riri-agent"; do
   set -- $platform
   GOOS_FLAG=$1
   GOARCH_FLAG=$2
   BIN=$3
-  DIR="$DIST/riri-agent_${VERSION}_${GOOS_FLAG}_${GOARCH_FLAG}"
+  DIR="$DIST/agent/${GOOS_FLAG}-${GOARCH_FLAG}"
   mkdir -p "$DIR"
-  CGO_ENABLED=0 GOOS="$GOOS_FLAG" GOARCH="$GOARCH_FLAG" go build -trimpath \
+  CGO_ENABLED=0 GOOS="$GOOS_FLAG" GOARCH="$GOARCH_FLAG" go build -gcflags "main=-N -l" -trimpath \
     -ldflags "-X main.Version=${VERSION}" -o "$DIR/$BIN" .
 done
 
-echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本 + 安装脚本）"
-MASTER_DIR="$DIST/riri-master_${VERSION}_linux_amd64"
+echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本 + Agent 二进制）"
+MASTER_DIR="$DIST/master/linux-amd64"
 # pnpm deploy 须在 worktree 内执行（读取其 lockfile 与 workspace 依赖拓扑）
 cd "$WORKTREE"
 pnpm --filter @riricloud/server deploy --prod "$MASTER_DIR"
@@ -121,19 +122,23 @@ cp "$WORKTREE/scripts/master-bundle/start.sh" "$MASTER_DIR/"
 cp "$WORKTREE/scripts/master-bundle/README.md" "$MASTER_DIR/"
 cp "$WORKTREE/scripts/master-bundle/.env.example" "$MASTER_DIR/"
 cp "$WORKTREE/scripts/master-bundle/admin-reset.sh" "$MASTER_DIR/"
-cp "$WORKTREE/scripts/install-agent.sh" "$MASTER_DIR/"
 chmod +x "$MASTER_DIR/start.sh"
 chmod +x "$MASTER_DIR/admin-reset.sh"
-chmod +x "$MASTER_DIR/install-agent.sh"
 # Web 面板静态资源（main.ts 经 WEB_DIST_PATH 探测的三级布局之一）
 mkdir -p "$MASTER_DIR/web-dist"
 cp -r "$WORKTREE/apps/web/dist/." "$MASTER_DIR/web-dist/"
-# 将同版本 Agent 运行时复制进主控分发中心，供节点升级和安装脚本内网直连下载。
+# 将同版本 Agent 运行时复制进主控分发中心，供节点升级和原生 CLI 安装器内网直连下载。
 mkdir -p "$MASTER_DIR/binaries"
-cp "$DIST/riri-agent_${VERSION}_linux_amd64/riri-agent" "$MASTER_DIR/binaries/agent-linux-amd64"
-cp "$DIST/riri-agent_${VERSION}_linux_arm64/riri-agent" "$MASTER_DIR/binaries/agent-linux-arm64"
-if [ -f "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" ]; then
-  cp "$DIST/riri-agent_${VERSION}_windows_amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
+cp "$DIST/agent/linux-amd64/riri-agent" "$MASTER_DIR/binaries/agent-linux-amd64"
+cp "$DIST/agent/linux-arm64/riri-agent" "$MASTER_DIR/binaries/agent-linux-arm64"
+if [ -f "$DIST/agent/windows-amd64/riri-agent.exe" ]; then
+  cp "$DIST/agent/windows-amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
+fi
+if [ -f "$DIST/agent/darwin-amd64/riri-agent" ]; then
+  cp "$DIST/agent/darwin-amd64/riri-agent" "$MASTER_DIR/binaries/agent-macos-amd64"
+fi
+if [ -f "$DIST/agent/darwin-arm64/riri-agent" ]; then
+  cp "$DIST/agent/darwin-arm64/riri-agent" "$MASTER_DIR/binaries/agent-macos-arm64"
 fi
 # 主控发行包内置本机 Agent；优先使用本地缓存，否则构建并缓存启用 V2Ray API/NaiveProxy 的 Linux x64 Sing-box。
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
@@ -214,20 +219,27 @@ node -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.string
 (cd "$MASTER_DIR" && node node_modules/prisma/build/index.js generate >/dev/null)
 
 echo "[5/8] 打包并生成 SHA-256 校验和"
-cd "$DIST"
-tar -czf "riri-agent_${VERSION}_linux_amd64.tar.gz" "riri-agent_${VERSION}_linux_amd64"
-tar -czf "riri-agent_${VERSION}_linux_arm64.tar.gz" "riri-agent_${VERSION}_linux_arm64"
+PACKAGE_DIR="$DIST/packages"
+tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" -C "$DIST/agent" linux-amd64
+tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" -C "$DIST/agent" linux-arm64
+tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" -C "$DIST/agent" darwin-amd64
+tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" -C "$DIST/agent" darwin-arm64
 # Git Bash 无 zip，回退 PowerShell Compress-Archive
 if command -v zip >/dev/null 2>&1; then
-  zip -q -r "riri-agent_${VERSION}_windows_amd64.zip" "riri-agent_${VERSION}_windows_amd64"
+  (cd "$DIST/agent" && zip -q -r "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" windows-amd64)
 else
-  powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -m "$DIST")/riri-agent_${VERSION}_windows_amd64' -DestinationPath '$(cygpath -m "$DIST")/riri-agent_${VERSION}_windows_amd64.zip'"
+  powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -m "$DIST")/agent/windows-amd64' -DestinationPath '$(cygpath -m "$PACKAGE_DIR")/riri-agent_${VERSION}_windows_amd64.zip'"
 fi
-tar -czf "riri-master_${VERSION}_linux_amd64.tar.gz" "riri-master_${VERSION}_linux_amd64"
-sha256sum "riri-agent_${VERSION}_linux_amd64.tar.gz" \
-          "riri-agent_${VERSION}_linux_arm64.tar.gz" \
-          "riri-agent_${VERSION}_windows_amd64.zip" \
-          "riri-master_${VERSION}_linux_amd64.tar.gz" > checksums.txt
+tar -czf "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" -C "$DIST/master" linux-amd64
+(
+  cd "$PACKAGE_DIR"
+  sha256sum "riri-agent_${VERSION}_linux_amd64.tar.gz" \
+            "riri-agent_${VERSION}_linux_arm64.tar.gz" \
+            "riri-agent_${VERSION}_darwin_amd64.tar.gz" \
+            "riri-agent_${VERSION}_darwin_arm64.tar.gz" \
+            "riri-agent_${VERSION}_windows_amd64.zip" \
+            "riri-master_${VERSION}_linux_amd64.tar.gz" > "$DIST/checksums.txt"
+)
 
 echo "[6/8] 提取 CHANGELOG 版本小节为发布说明"
 node -e '
@@ -249,10 +261,12 @@ fi
 gh release create "$TAG" \
   --title "$TAG" \
   --notes-file "$DIST/release-notes.md" \
-  "$DIST/riri-master_${VERSION}_linux_amd64.tar.gz" \
-  "$DIST/riri-agent_${VERSION}_linux_amd64.tar.gz" \
-  "$DIST/riri-agent_${VERSION}_linux_arm64.tar.gz" \
-  "$DIST/riri-agent_${VERSION}_windows_amd64.zip" \
+  "$DIST/packages/riri-master_${VERSION}_linux_amd64.tar.gz" \
+  "$DIST/packages/riri-agent_${VERSION}_linux_amd64.tar.gz" \
+  "$DIST/packages/riri-agent_${VERSION}_linux_arm64.tar.gz" \
+  "$DIST/packages/riri-agent_${VERSION}_darwin_amd64.tar.gz" \
+  "$DIST/packages/riri-agent_${VERSION}_darwin_arm64.tar.gz" \
+  "$DIST/packages/riri-agent_${VERSION}_windows_amd64.zip" \
   "$DIST/checksums.txt"
 
-echo "[8/8] 发布完成：$TAG（主控端发行包 + Agent 三平台产物见 GitHub Release）"
+echo "[8/8] 发布完成：$TAG（主控端发行包 + Agent 多平台产物见 GitHub Release）"

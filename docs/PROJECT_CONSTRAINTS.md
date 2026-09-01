@@ -15,7 +15,7 @@
 | 主控后端 | NestJS + TypeScript |
 | 持久化 | SQLite (WAL) + Prisma ORM |
 | 实时通信 | `@nestjs/websockets` + `ws`（WSS） |
-| 边缘节点 | Go ≥ 1.22（`CGO_ENABLED=0` 单静态二进制） |
+| 边缘节点 | Go ≥ 1.25（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI 与系统服务适配） |
 | 代理内核 | Sing-box |
 | Node.js / pnpm 版本 | Node ≥ 20，pnpm ≥ 9 |
 
@@ -118,4 +118,3 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 1. **单仓唯一版本源**：根 `package.json` 的 `version` 字段为全局唯一真实源，子包（`apps/server`、`apps/web`）与 `apps/agent` 一律不得私自维护版本号。
 2. **核心代码变更强制递增**：凡涉及 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 等核心代码修改的 PR，在合入 `main` 前分支上必须执行 `pnpm bump [patch|minor|major]` 递增版本号，并在 [CHANGELOG.md](../CHANGELOG.md) 顶部的对应版本小节中记录改动。纯文档、脚本或配置改动允许免增版本。
 3. **三重防线机械阻断**：`pnpm gate:version`、CI 流水线及 `.husky/pre-push` 构成三重防线，自动校验版本号大小、CHANGELOG 格式与 Git 变更差分，杜绝未升版本的核心代码变更合入主干。
-

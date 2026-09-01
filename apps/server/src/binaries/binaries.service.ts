@@ -10,9 +10,13 @@ const MAX_BINARY_SIZE = 100 * 1024 * 1024;
 const TARGETS = [
   { target: 'agent-linux-amd64', kind: 'agent', os: 'linux', arch: 'amd64', filename: 'riri-agent' },
   { target: 'agent-linux-arm64', kind: 'agent', os: 'linux', arch: 'arm64', filename: 'riri-agent' },
+  { target: 'agent-macos-amd64', kind: 'agent', os: 'macos', arch: 'amd64', filename: 'riri-agent' },
+  { target: 'agent-macos-arm64', kind: 'agent', os: 'macos', arch: 'arm64', filename: 'riri-agent' },
   { target: 'agent-windows-amd64', kind: 'agent', os: 'windows', arch: 'amd64', filename: 'riri-agent.exe' },
   { target: 'singbox-linux-amd64', kind: 'singbox', os: 'linux', arch: 'amd64', filename: 'sing-box' },
   { target: 'singbox-linux-arm64', kind: 'singbox', os: 'linux', arch: 'arm64', filename: 'sing-box' },
+  { target: 'singbox-macos-amd64', kind: 'singbox', os: 'macos', arch: 'amd64', filename: 'sing-box' },
+  { target: 'singbox-macos-arm64', kind: 'singbox', os: 'macos', arch: 'arm64', filename: 'sing-box' },
   { target: 'singbox-windows-amd64', kind: 'singbox', os: 'windows', arch: 'amd64', filename: 'sing-box.exe' }
 ] as const;
 
@@ -88,26 +92,15 @@ export class BinariesService implements OnModuleInit {
     return asset;
   }
 
-  getInstallScript(): string {
-    const configured = process.env.RIRICLOUD_INSTALL_SCRIPT_PATH;
-    const candidates = configured
-      ? [configured]
-      : [
-          resolve(process.cwd(), 'install-agent.sh'),
-          resolve(process.cwd(), 'scripts', 'install-agent.sh'),
-          resolve(process.cwd(), '..', '..', 'scripts', 'install-agent.sh'),
-          resolve(process.cwd(), '..', '..', '..', 'scripts', 'install-agent.sh')
-        ];
-
-    for (const candidate of candidates) {
-      try {
-        const script = readFileSync(candidate, 'utf8');
-        if (script.startsWith('#!/bin/sh')) return script;
-      } catch {
-        // Try the next source layout.
-      }
+  resolveAgentTarget(userAgent: string | undefined): BinaryTarget {
+    const value = (userAgent ?? '').toLowerCase();
+    const os = value.includes('windows') ? 'windows' : value.includes('darwin') || value.includes('macos') ? 'macos' : 'linux';
+    const arch = value.includes('aarch64') || value.includes('arm64') ? 'arm64' : value.includes('armv7') ? 'armv7' : 'amd64';
+    const target = `agent-${os}-${arch}` as BinaryTarget;
+    if (!TARGETS.some((definition) => definition.target === target)) {
+      throw new NotFoundException(`主控未找到 ${os}/${arch} 的 Agent 二进制`);
     }
-    throw new NotFoundException('主控未找到 Agent 安装脚本');
+    return target;
   }
 
   async authorizeDownload(token: string | undefined): Promise<void> {

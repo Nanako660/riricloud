@@ -34,7 +34,7 @@ AGENT_VERSION_IMAGE="${AGENT_IMAGE:-${AGENT_REPOSITORY}:${IMAGE_VERSION}}"
 MASTER_LATEST_IMAGE="${MASTER_LATEST_IMAGE:-${MASTER_REPOSITORY}:latest}"
 AGENT_LATEST_IMAGE="${AGENT_LATEST_IMAGE:-${AGENT_REPOSITORY}:latest}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
-EXPORT_DIR="${DOCKER_EXPORT_DIR:-$RIRI_ROOT/docker-images}"
+ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 
 if [ -n "${DOCKER_PLATFORM:-}" ]; then
   DOCKER_PLATFORM_VALUE="$DOCKER_PLATFORM"
@@ -56,6 +56,7 @@ platform_filename() {
 }
 
 PLATFORM_NAME="$(platform_filename "$DOCKER_PLATFORM_VALUE")"
+PLATFORM_DIR="${PLATFORM_NAME//_/-}"
 NORMALIZED_PLATFORM="${PLATFORM_NAME//_//}"
 VCS_REF="${RIRICLOUD_VCS_REF:-$(git rev-parse HEAD 2>/dev/null || printf 'unknown')}"
 BUILD_DATE="${RIRICLOUD_BUILD_DATE:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
@@ -108,7 +109,10 @@ image_label() {
 
 export_images() {
   require_image_tags
-  mkdir -p "$EXPORT_DIR"
+
+  local output_dir="${DOCKER_EXPORT_DIR:-$ARTIFACT_ROOT/docker/v${IMAGE_VERSION}/${PLATFORM_DIR}}"
+  mkdir -p "$output_dir"
+  EXPORT_DIR="$output_dir"
 
   local master_archive="$EXPORT_DIR/riricloud-master_${IMAGE_VERSION}_${PLATFORM_NAME}.tar.gz"
   local agent_archive="$EXPORT_DIR/riricloud-agent_${IMAGE_VERSION}_${PLATFORM_NAME}.tar.gz"

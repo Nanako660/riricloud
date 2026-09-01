@@ -1,6 +1,6 @@
 {
   "name": "riricloud",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "private": true,
   "description": "RiriCloud — 多节点 VPN/代理管理系统（NestJS 主控 + React 面板 + Go 边缘 Agent）",
   "license": "GPL-3.0-only",
@@ -21,6 +21,8 @@
     "setup": "pnpm install && pnpm --filter @riricloud/server exec prisma migrate dev && pnpm --filter @riricloud/server exec prisma db seed",
     "dev:server": "pnpm --filter @riricloud/server start:dev",
     "dev:web": "pnpm --filter @riricloud/web dev",
+    "build": "pnpm --filter @riricloud/server build && pnpm --filter @riricloud/web build && bash scripts/build-agent.sh",
+    "build:agent": "bash scripts/build-agent.sh",
     "bump": "node scripts/version-governance.mjs bump",
     "bump:patch": "node scripts/version-governance.mjs bump patch",
     "bump:minor": "node scripts/version-governance.mjs bump minor",

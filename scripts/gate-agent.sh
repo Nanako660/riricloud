@@ -8,8 +8,6 @@ if [ -f "$RIRI_ROOT/scripts/dev-env.sh" ]; then
   # shellcheck source=scripts/dev-env.sh
   . "$RIRI_ROOT/scripts/dev-env.sh"
 fi
-cd "$RIRI_ROOT/apps/agent"
-
 GO_BIN="go"
 GOFMT_BIN="gofmt"
 if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then
@@ -21,6 +19,7 @@ fi
 command -v "$GO_BIN" >/dev/null 2>&1 || { echo "缺少 Go 工具链（go 或 go.exe）" >&2; exit 1; }
 command -v "$GOFMT_BIN" >/dev/null 2>&1 || { echo "缺少 gofmt 工具链（gofmt 或 gofmt.exe）" >&2; exit 1; }
 
+cd "$RIRI_ROOT/apps/agent"
 "$GO_BIN" vet ./...
 UNFORMATTED="$("$GOFMT_BIN" -l .)"
 if [ -n "$UNFORMATTED" ]; then
@@ -30,10 +29,6 @@ if [ -n "$UNFORMATTED" ]; then
 fi
 "$GO_BIN" test ./...
 
-# Windows 本地产物带 .exe 后缀，CI/Linux 产物名 riri-agent
-case "$(uname -s)" in
-  MINGW* | MSYS* | CYGWIN*) BIN="riri-agent.exe" ;;
-  *) BIN="riri-agent" ;;
-esac
-CGO_ENABLED=0 "$GO_BIN" build -o "$BIN" .
+cd "$RIRI_ROOT"
+bash "$RIRI_ROOT/scripts/build-agent.sh"
 echo "agent 门禁通过"

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AgentService } from '../agent-gateway/agent.service';
-import { BinariesService } from '../binaries/binaries.service';
+import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
@@ -37,9 +37,10 @@ export class NodesService {
       node: {
         ...this.sanitize(node),
         installCommands: {
-          ws: this.buildInstallCommand(node.agentToken, 'WS'),
-          http: this.buildInstallCommand(node.agentToken, 'HTTP')
-        }
+          ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch),
+          http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch)
+        },
+        uninstallCommand: this.buildUninstallCommand()
       }
     };
   }
@@ -62,7 +63,8 @@ export class NodesService {
       installCommands: {
         ws: this.buildInstallCommand(node.agentToken, 'WS'),
         http: this.buildInstallCommand(node.agentToken, 'HTTP')
-      }
+      },
+      uninstallCommand: this.buildUninstallCommand()
     };
   }
 
@@ -170,9 +172,15 @@ export class NodesService {
     return raw;
   }
 
-  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP') {
-    const master = mode === 'HTTP' ? 'http://<master-domain>' : 'wss://<master-domain>/ws/agent';
-    return `curl -fsSL https://<master-domain>/api/v1/install.sh | bash -s -- --token=${token} --master=${master}`;
+  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP', osArch?: string | null) {
+    const platform = normalizeOsArch(osArch) ?? 'linux-amd64';
+    const master = mode === 'HTTP' ? 'https://<master-domain>' : 'wss://<master-domain>/ws/agent';
+    const temp = `/tmp/riri-agent-${token.slice(0, 12)}`;
+    return `curl -fsSL --location -A 'riri-agent-installer/${platform}' 'https://<master-domain>/api/v1/downloads/agent?token=${token}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token=${token} --master=${master}`;
+  }
+
+  private buildUninstallCommand() {
+    return 'sudo /usr/local/bin/riri-agent uninstall --purge --yes';
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {

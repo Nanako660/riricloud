@@ -13,13 +13,18 @@ export class BinariesController {
   constructor(private readonly binaries: BinariesService) {}
 
   @Public()
-  @Get('install.sh')
-  install(@Res({ passthrough: true }) response: Response) {
-    const script = this.binaries.getInstallScript();
-    response.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    response.setHeader('Content-Length', Buffer.byteLength(script, 'utf8'));
-    response.setHeader('Content-Disposition', 'inline; filename="install-agent.sh"');
-    return script;
+  @Get('downloads/agent')
+  async downloadAgent(
+    @Headers('user-agent') userAgent: string | undefined,
+    @Query('token') token: string | undefined,
+    @Headers('x-agent-token') headerToken: string | undefined,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const credential = token ?? headerToken;
+    await this.binaries.authorizeDownload(credential);
+    if (!credential) throw new Error('缺少 AgentToken');
+    const target = this.binaries.resolveAgentTarget(userAgent);
+    response.redirect(302, this.binaries.buildDownloadUrl(target, credential));
   }
 
   @Public()

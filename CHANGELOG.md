@@ -9,6 +9,80 @@
 变更类型说明：`Added` 新增 · `Changed` 变更 · `Fixed` 修复 · `Removed` 移除 · `Security` 安全 · `Deprecated` 弃用。
 约定：每个包含核心代码变更的 PR 在合入 main 前必须递增版本号并在本文件对应版本小节中记录条目；发布时按版本小节打 `vX.Y.Z` Tag。
 
+## [0.4.5] - 2026-09-01
+
+### Added
+
+- Agent TUI 顶部信息栏恢复语义化版本显示，例如 `Edge Agent  ·  v0.4.5`。
+
+### Changed
+
+- 本地 Agent 构建和门禁默认从根 `package.json` 注入版本号，不再把正式构建显示为 `dev`。
+
+### Fixed
+
+- 统一处理带 `v` 和不带 `v` 的版本输入，避免顶部版本号重复前缀。
+
+## [0.4.4] - 2026-09-01
+
+### Added
+
+- 新增根级 `pnpm build` 与 `pnpm build:agent`，统一输出 Agent 本地构建产物。
+
+### Changed
+
+- 统一二进制产物目录：本地 Agent 使用 `artifacts/dev/agent/`，Docker 导出物使用 `artifacts/docker/`，Release 使用 `artifacts/releases/`。
+- 保留 `apps/server/dist/` 与 `apps/web/dist/` 作为框架运行时约定目录，避免破坏静态资源托管和容器构建。
+
+### Fixed
+
+- 修正构建、联调、门禁和发布脚本中的旧产物路径，并同步离线部署文档与仓库忽略规则。
+
+## [0.4.3] - 2026-09-01
+
+### Added
+
+- 暂无新增条目。
+
+### Changed
+
+- 精简 Agent TUI 首页层级，移除重复的控制台标题和操作说明文案。
+
+### Fixed
+
+- 优化首页首屏信息密度，保留底部快捷键提示和核心菜单内容。
+
+## [0.4.2] - 2026-09-01
+
+### Added
+
+- Agent 无参数启动改为 Bubble Tea 全屏控制台 GUI/TUI，支持 raw-mode 方向键即时导航、Enter 执行和 Esc 返回。
+- Agent TUI 新增安装配置表单、卸载二次确认、异步操作状态页与长输出滚动查看。
+
+### Changed
+
+- TUI 操作输出改为内存捕获后在结果页展示，保留 `install`、`status`、`doctor`、`logs` 等非交互命令供脚本使用。
+
+### Fixed
+
+- 修复旧按行输入菜单无法可靠解析终端方向键转义序列的问题。
+
+## [0.4.1] - 2026-09-01
+
+### Added
+
+- Agent 内置 Cobra 一级命令、lipgloss 交互式 TUI、Doctor 诊断和彩色日志查看器；支持 `install`、`uninstall`、`start`、`stop`、`restart`、`status`、`logs`、`run` 与 `version`。
+- Agent 使用 `/etc/riri-agent/config.yaml` 与 `/var/lib/riri-agent/` 标准目录，支持从 Master 获取 Sing-box、GitHub 回退、原子配置写入和跨平台服务注册。
+- 主控新增 `GET /api/v1/downloads/agent`，按 `riri-agent-installer/<os>-<arch>` User-Agent 选择 Agent 二进制并返回受 AgentToken 保护的 302。
+
+### Changed
+
+- 节点详情安装命令改为原生 CLI 引导，面板同时展示 WS、HTTP 和 `uninstall --purge` 命令；发布流程新增 macOS Agent 产物。
+
+### Fixed
+
+- 移除旧 `scripts/install-agent.sh`、`GET /api/v1/install.sh` 及 Docker/主控发行包中的脚本复制逻辑，避免安装行为与 Agent 实现分叉。
+
 ## [0.4.0] - 2026-09-01
 
 ### Fixed

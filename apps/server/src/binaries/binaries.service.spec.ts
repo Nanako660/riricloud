@@ -1,7 +1,4 @@
 import { NotFoundException } from '@nestjs/common';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { BinariesService, normalizeOsArch } from './binaries.service';
 
 describe('BinariesService', () => {
@@ -10,12 +7,7 @@ describe('BinariesService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.RIRICLOUD_INSTALL_SCRIPT_PATH;
     service = new BinariesService(prisma as never);
-  });
-
-  afterEach(() => {
-    delete process.env.RIRICLOUD_INSTALL_SCRIPT_PATH;
   });
 
   it('规范化常见系统架构标识', () => {
@@ -42,21 +34,11 @@ describe('BinariesService', () => {
     expect(() => service.getAsset('unknown-target')).toThrow(NotFoundException);
   });
 
-  it('从显式路径读取 Agent 安装脚本', () => {
-    const root = mkdtempSync(join(tmpdir(), 'riri-install-script-'));
-    const path = join(root, 'install-agent.sh');
-    const script = '#!/bin/sh\necho ok\n';
-    writeFileSync(path, script);
-    process.env.RIRICLOUD_INSTALL_SCRIPT_PATH = path;
-
-    expect(service.getInstallScript()).toBe(script);
-
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it('找不到安装脚本时返回 NotFoundException', () => {
-    process.env.RIRICLOUD_INSTALL_SCRIPT_PATH = join(tmpdir(), 'riri-install-script-missing.sh');
-    expect(() => service.getInstallScript()).toThrow(NotFoundException);
+  it('按 User-Agent 选择 Agent 下载目标', () => {
+    expect(service.resolveAgentTarget('riri-agent-installer/linux-x86_64')).toBe('agent-linux-amd64');
+    expect(service.resolveAgentTarget('riri-agent-installer/darwin-arm64')).toBe('agent-macos-arm64');
+    expect(service.resolveAgentTarget('riri-agent-installer/windows-amd64')).toBe('agent-windows-amd64');
+    expect(service.resolveAgentTarget(undefined)).toBe('agent-linux-amd64');
   });
 
   it('下载鉴权拒绝缺失或无效凭证', async () => {

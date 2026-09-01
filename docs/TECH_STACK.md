@@ -13,7 +13,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 | **持久化与 ORM** | **SQLite + Prisma ORM (WAL 模式)** | 单文件数据库零外部依赖，Prisma 提供端到端类型安全与自动迁移 |
 | **主从通信网关** | **`@nestjs/websockets` + `ws`** | 高性能双向长连接，低延迟全双工推送心跳与配置 |
 | **认证与密码** | **JWT (Passport) + bcryptjs** | 无状态 Bearer Token 鉴权；bcryptjs 为 bcrypt 算法的纯 JS 实现（成本因子 ≥ 10），哈希产物与原生 bcrypt 兼容，免去 Windows/交叉编译环境的原生依赖问题 |
-| **边缘节点 Agent** | **Go (Golang 1.22+)** | 单一静态无依赖二进制，内存占用低（约 10~20MB），启动飞快 |
+| **边缘节点 Agent** | **Go (Golang 1.25+) + Cobra + Bubble Tea + Lip Gloss + kardianos/service** | 单一静态二进制，内置跨平台 CLI、全屏控制台 GUI/TUI、服务生命周期和前台运行模式 |
 | **代理协议内核** | **Sing-box** | 新一代全协议通用核心（VLESS-Reality / Hysteria2 / Shadowsocks / TUIC） |
 
 ---
@@ -70,6 +70,11 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - `github.com/shirou/gopsutil/v3`：跨平台采集 Linux / Darwin / Windows 的 CPU、Memory、Disk、Net IO 指标。
 - `github.com/sirupsen/logrus` 或 `go.uber.org/zap`：结构化日志输出。
 - `google.golang.org/grpc` + `google.golang.org/protobuf`：访问 Sing-box `experimental.v2ray_api` 的本地 StatsService；仅携带最小生成客户端代码，不引入 V2Ray/Sing-box Go 运行时。
+- `github.com/spf13/cobra`：扁平一级子命令（`install`、`uninstall`、`start`、`stop`、`restart`、`status`、`doctor`、`logs`、`run`、`version`）。
+- `github.com/charmbracelet/bubbletea`：提供 raw mode、方向键事件、全屏备用缓冲区和异步命令消息循环；无参数运行时的 TUI 不依赖按行输入或数字菜单。
+- `github.com/kardianos/service`：封装 Linux systemd/OpenRC/SysVinit、Windows Service 和 macOS Launchd 的注册与控制。
+- `github.com/charmbracelet/lipgloss`：全屏 TUI 的 Banner、表单、状态卡片、结果页和诊断颜色。
+- `gopkg.in/yaml.v3`：读写 `/etc/riri-agent/config.yaml`（Windows 使用 `%ProgramData%\RiriCloud\config.yaml`），并以环境变量覆盖容器运行时配置。
 
 Docker 与发行包中的 Sing-box 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建标签，以启用按用户流量统计、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站；Agent 仍保持 `CGO_ENABLED=0` 静态构建。
 

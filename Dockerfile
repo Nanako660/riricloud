@@ -9,7 +9,7 @@ WORKDIR /src
 COPY apps/agent/go.mod apps/agent/go.sum ./
 RUN go mod download
 COPY apps/agent/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
     -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
     -o /out/riri-agent .
 
@@ -87,8 +87,7 @@ ENV NODE_ENV=production \
     MASTER_AGENT_ENABLED=true \
     MASTER_AGENT_BINARY_PATH=/usr/local/bin/riri-agent \
     SINGBOX_BINARY_PATH=/usr/local/bin/sing-box \
-    MASTER_AGENT_CONFIG_PATH=/app/data/master-agent/config.json \
-    RIRICLOUD_INSTALL_SCRIPT_PATH=/app/install-agent.sh
+    MASTER_AGENT_CONFIG_PATH=/app/data/master-agent/config.json
 
 ARG RIRICLOUD_VERSION=dev
 ARG RIRICLOUD_VCS_REF=unknown
@@ -109,7 +108,6 @@ COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
-COPY scripts/install-agent.sh ./install-agent.sh
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 0
