@@ -277,6 +277,26 @@ describe('buildServerInbound', () => {
     });
   });
 
+  it('标准 TLS 支持以内嵌 PEM 数组下发，且不再要求 Agent 本地路径', () => {
+    const params = normalizeInboundParams('VLESS', {
+      tls: {
+        mode: 'tls',
+        serverName: 'inline.example.com',
+        certificate: ['-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----'],
+        key: ['-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----']
+      }
+    });
+    const inbound = buildServerInbound({ type: 'VLESS', ...base, params, users });
+    expect(inbound).toMatchObject({
+      tls: {
+        enabled: true,
+        server_name: 'inline.example.com',
+        certificate: ['-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----'],
+        key: ['-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----']
+      }
+    });
+  });
+
   it('HTTP 传输保留可视化配置的请求头', () => {
     const params = normalizeInboundParams('VLESS', {
       transport: { type: 'http', path: '/proxy', host: 'cdn.example.com', headers: { 'X-Line': 'demo' } },

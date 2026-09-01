@@ -6,15 +6,16 @@ import { hasProtocolSpecificFields } from './line-protocol-capabilities';
 import { LineSecurityFields } from './line-security-fields';
 import { LineTransportFields } from './line-transport-fields';
 import { PROTOCOL_LABELS, PROTOCOL_TYPES, type LineFormValues } from './line-form-schema';
-import type { ProtocolType } from '@/lib/api';
+import type { ApiCertificate, ProtocolType } from '@/lib/api';
 import type { AdminNode } from '../../nodes/use-nodes';
 
-export function LineInboundFields({ form, nodes, onProtocolChange, onGenerateKeys, keyPending }: {
+export function LineInboundFields({ form, nodes, certificates, onProtocolChange, onGenerateKeys, keyPending }: {
   form: UseFormReturn<LineFormValues>;
   nodes: AdminNode[];
   onProtocolChange: (protocol: ProtocolType) => void;
   onGenerateKeys: () => void;
   keyPending: boolean;
+  certificates: ApiCertificate[];
 }) {
   const protocol = form.watch('protocolType');
   const supportsTransport = ['VLESS', 'VMESS', 'TROJAN'].includes(protocol);
@@ -51,7 +52,7 @@ export function LineInboundFields({ form, nodes, onProtocolChange, onGenerateKey
         <section className="space-y-3">
           <h3 className="text-sm font-medium">安全层 TLS / Reality / ACME</h3>
           <Separator />
-          <LineSecurityFields form={form} onGenerateKeys={onGenerateKeys} keyPending={keyPending} />
+          <LineSecurityFields form={form} onGenerateKeys={onGenerateKeys} keyPending={keyPending} certificates={certificates} />
         </section>
       </>}
 

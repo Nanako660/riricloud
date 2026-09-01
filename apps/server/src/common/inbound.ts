@@ -44,6 +44,8 @@ export interface InboundTlsConfig {
   serverName?: string;
   certificatePath?: string;
   keyPath?: string;
+  certificate?: string[];
+  key?: string[];
   acme?: InboundAcmeConfig;
   reality?: InboundRealityConfig;
   alpn?: string[];
@@ -301,6 +303,13 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none'): Inboun
   const alpn = asStringArray(tls.alpn, ['h3', 'h2', 'http/1.1']);
   const insecure = tls.insecure === true;
   const serverName = typeof tls.serverName === 'string' ? tls.serverName.trim() : undefined;
+  const certificate = Array.isArray(tls.certificate) ? asStringArray(tls.certificate, []) : undefined;
+  const key = Array.isArray(tls.key) ? asStringArray(tls.key, []) : undefined;
+  if ((certificate?.length ?? 0) !== 0 || (key?.length ?? 0) !== 0) {
+    if (!certificate?.length || !key?.length) {
+      throw new BadRequestException('内嵌 TLS 证书与私钥必须成对提供');
+    }
+  }
 
   if (mode === 'reality') {
     const rawReality = (tls.reality ?? {}) as Record<string, unknown>;
@@ -360,8 +369,12 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none'): Inboun
     enabled: true,
     mode: 'tls',
     serverName: serverName ? serverName : undefined,
-    certificatePath: asNonEmptyString(tls.certificatePath, 'tls.certificatePath（Agent 本地路径）'),
-    keyPath: asNonEmptyString(tls.keyPath, 'tls.keyPath（Agent 本地路径）'),
+    ...(certificate?.length && key?.length
+      ? { certificate, key }
+      : {
+          certificatePath: asNonEmptyString(tls.certificatePath, 'tls.certificatePath（Agent 本地路径）'),
+          keyPath: asNonEmptyString(tls.keyPath, 'tls.keyPath（Agent 本地路径）')
+        }),
     alpn,
     insecure
   };
@@ -552,8 +565,10 @@ export function sanitizeInboundParams(params: Record<string, unknown>): Record<s
   const clone = JSON.parse(JSON.stringify(params)) as Record<string, unknown>;
   // 兼容迁移前的扁平 Reality 参数，避免旧存量配置泄露私钥。
   delete clone.privateKey;
+  delete clone.key;
   if (clone.tls && typeof clone.tls === 'object') {
     const tls = clone.tls as Record<string, unknown>;
+    delete tls.key;
     if (tls.reality && typeof tls.reality === 'object') {
       const reality = tls.reality as Record<string, unknown>;
       delete reality.privateKey;
@@ -703,6 +718,16 @@ function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undef
         email: tls.acme.email,
         ...(tls.acme.provider ? { provider: tls.acme.provider } : {})
       },
+      ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {})
+    };
+  }
+
+  if (tls.certificate?.length && tls.key?.length) {
+    return {
+      enabled: true,
+      ...(tls.serverName ? { server_name: tls.serverName } : {}),
+      certificate: tls.certificate,
+      key: tls.key,
       ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {})
     };
   }

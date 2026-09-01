@@ -28,8 +28,9 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [RiriCloud 全站移动端适配](./archive/2026-09-02-web-mobile-adaptation.md) | `v0.4.15` | 2026-09-01 | — |
-| [开发脚本整理与 Docker WSL 约束](./archive/2026-09-01-dev-scripts.md) | `脚本治理` | 2026-09-01 | — |
+| [证书管理中心与 Docker 本地持久化路径改造](./archive/2026-09-01-certificate-management-and-docker-persistence.md) | `v0.4.15` | 2026-09-01 | — |
 | [系统设置全参数可配置化与现代化管理面板](./archive/2026-09-01-system-settings-full-config.md) | `v0.4.8` | 2026-09-01 | — |
+| [开发脚本整理与 Docker WSL 约束](./archive/2026-09-01-dev-scripts.md) | `脚本治理` | 2026-09-01 | — |
 | [Agent 现代化交互式 CLI 与全生命周期管理架构（破坏性重构）](./archive/2026-09-01-agent-interactive-cli-architecture.md) | `v0.4.1` | 2026-09-01 | — |
 | [v0.3.0 订阅架构与极简 Agent 远程升级重构](./archive/2026-08-31-v0.3.0-architecture-refactor.md) | `v0.3.0` | 2026-08-31 | PR #3 (squash commit 2c87b14) |
 | [部署打包实施方案（Release 二进制分发 + 本地 Docker 分发）](./archive/2026-08-31-packaging-and-deployment.md) | `v0.4.0` | 2026-08-31 | — |

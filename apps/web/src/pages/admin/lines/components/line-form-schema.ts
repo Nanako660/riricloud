@@ -13,6 +13,8 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
   HTTP: 'HTTP', DIRECT: 'Direct'
 };
 
+export const MANUAL_CERTIFICATE_ID = '__node_local__';
+
 const optionalPort = z.preprocess(
   (value) => value === '' || value === null || value === undefined ? undefined : value,
   z.coerce.number().int().min(1).max(65535).optional()
@@ -36,6 +38,7 @@ export const lineFormSchema = z.object({
   entryPort: optionalPort,
   exitNodeId: z.string().optional(),
   exitPort: optionalPort,
+  certificateId: z.string(),
 
   transportType: z.enum(['tcp', 'ws', 'grpc', 'http', 'httpupgrade']),
   wsPath: z.string(),
@@ -110,8 +113,9 @@ export const lineFormSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['tlsMode'], message: '该协议必须启用 TLS' });
   }
   if (value.tlsMode === 'tls') {
-    if (!value.tlsCertPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsCertPath'], message: '请输入证书路径' });
-    if (!value.tlsKeyPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsKeyPath'], message: '请输入私钥路径' });
+    const usesManagedCertificate = value.certificateId !== MANUAL_CERTIFICATE_ID;
+    if (!usesManagedCertificate && !value.tlsCertPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsCertPath'], message: '请选择证书或输入证书路径' });
+    if (!usesManagedCertificate && !value.tlsKeyPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsKeyPath'], message: '请选择证书或输入私钥路径' });
   }
   if (value.tlsMode === 'acme') {
     if (!value.acmeDomain.trim()) ctx.addIssue({ code: 'custom', path: ['acmeDomain'], message: '请输入 ACME 域名' });
@@ -167,6 +171,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
   return {
     name: '', tag: '', listen: '0.0.0.0', type: 'DIRECT', protocolType, relayMode: 'BLIND_FORWARD',
     entryNodeId: '', entryPort: undefined, exitNodeId: '', exitPort: undefined,
+    certificateId: MANUAL_CERTIFICATE_ID,
     transportType: 'tcp', wsPath: '/ws', wsHost: '', wsHeaders: [], wsMaxEarlyData: undefined,
     wsEarlyDataHeaderName: '', grpcServiceName: 'grpc', httpPath: '/http', httpHost: '', httpHeaders: [],
     tlsMode, tlsServerName: '', tlsCertPath: '', tlsKeyPath: '', tlsAlpn: isQuic ? 'h3' : 'h2,http/1.1',
@@ -227,6 +232,7 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     entryPort: line.entryPort,
     exitNodeId: line.exitNodeId,
     exitPort: line.exitPort,
+    certificateId: line.certificateId ?? MANUAL_CERTIFICATE_ID,
     transportType,
     wsPath: asString(rawTransport.path, defaults.wsPath),
     wsHost: asString(rawTransport.host),
@@ -320,8 +326,10 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       insecure: values.tlsInsecure
     };
     if (values.tlsMode === 'tls') {
-      tls.certificatePath = values.tlsCertPath.trim();
-      tls.keyPath = values.tlsKeyPath.trim();
+      if (values.certificateId === MANUAL_CERTIFICATE_ID) {
+        tls.certificatePath = values.tlsCertPath.trim();
+        tls.keyPath = values.tlsKeyPath.trim();
+      }
     }
     if (values.tlsMode === 'reality') {
       const reality: Record<string, unknown> = {
@@ -409,6 +417,7 @@ export function toLinePayload(values: LineFormValues) {
     entryPort: values.entryPort,
     exitNodeId,
     exitPort: values.type === 'DIRECT' ? values.entryPort : values.exitPort,
+    certificateId: values.tlsMode === 'tls' && values.certificateId !== MANUAL_CERTIFICATE_ID ? values.certificateId : null,
     endpointOverrideEnabled: values.endpointOverrideEnabled,
     serverHost: values.serverHost.trim() || null,
     serverPort: values.serverPort ?? null,

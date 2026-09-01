@@ -389,6 +389,7 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 | 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | 内嵌默认模板显示“内嵌”标记，只保留编辑操作；普通模板删除使用 AlertDialog；JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
 | 用户管理 | `/admin/users` | 用户、角色、账号状态、当前套餐、订阅状态、流量进度与到期日 | 创建用户可选择初始套餐或暂不绑定；编辑用户通过双 Tab 管理账号安全与订阅，可用“无套餐”彻底移除订阅 |
 | 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、当前/推荐版本、主控内置来源、自定义 URL、SHA-256 与主控导入 | 默认使用主控内置版本；自定义来源必须校验 URL/SHA-256；导入或下发中禁用对应按钮 |
+| 证书管理 | `/admin/certificates` | TLS 证书列表、SAN 标签、签发者、有效期状态、关联线路与证书操作 | 证书列表使用表格快速扫描有效期与关联数；新建/编辑弹窗支持 PEM 粘贴或上传、解析预览与私钥查看；证书被线路引用时删除需明确拦截 |
 
 ### 12.1 用户管理综合弹窗
 
@@ -422,4 +423,4 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 
 ### 12.4 视觉验证登记
 
-新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-25。视觉验证仍按需执行，不能接入 CI 或 Git Hook。
+新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-26。视觉验证仍按需执行，不能接入 CI 或 Git Hook。

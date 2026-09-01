@@ -63,15 +63,23 @@
 节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/出口的角色、线路协议和派生监听端口；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
 
 #### 线路管理
-- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
-- `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数和端点解析结果。⭐
-- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏。直连线路入口/出口节点与端口必须一致；中继线路必须指定入口、出口和机制，端口省略时由服务端在 `20000~29999` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
+- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
+- `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数、证书简要信息和端点解析结果。⭐
+- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏。直连线路入口/出口节点与端口必须一致；中继线路必须指定入口、出口和机制，端口省略时由服务端在 `20000~29999` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
 - `DELETE /admin/lines/:id`：删除线路。⭐
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
 - `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/出口节点与端口，不建立真实连接。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
+
+#### 证书管理
+- `GET /admin/certificates?page&pageSize&search`：分页查询证书，支持按名称、主题、签发者和 SAN 搜索；响应为 `{ data, total, page, pageSize }`，返回 SAN、签发者、有效期、状态（`VALID`/`EXPIRING`/`EXPIRED`/`NOT_YET_VALID`）和关联线路数，不返回 PEM 私钥。⭐
+- `GET /admin/certificates/:id`：查询证书详情，除列表字段外返回 `certificatePem` 与 `privateKeyPem` 明文，必须由管理员鉴权。⭐
+- `POST /admin/certificates/parse`：前端预解析 PEM 证书。请求 `{ certificatePem, privateKeyPem? }`；使用 Node.js 原生 `crypto.X509Certificate` 提取 subject、issuer、serialNumber、SAN、有效期，并在提供私钥时校验公私钥匹配。⭐
+- `POST /admin/certificates`：创建证书。请求 `{ name, certificatePem, privateKeyPem }`；仅接受包含 SAN 的 X.509 叶子证书和未加密 PEM 私钥，证书与私钥不匹配返回 `400`。⭐
+- `PATCH /admin/certificates/:id`：更新证书名称或 PEM 内容；省略 `privateKeyPem` 时保留现有私钥。保存后自动查找关联线路的入口/出口节点并推送 `config_sync`，响应附带 `affectedNodeIds` 与 `syncedNodeIds`。⭐
+- `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
 - `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段。

@@ -80,6 +80,28 @@ describe('AgentGatewayService', () => {
     ]));
   });
 
+  it('配置同步读取证书关联中的最新 PEM 并以内嵌数组下发', async () => {
+    const managed = line({
+      id: 'managed-tls',
+      protocolType: 'HYSTERIA2',
+      entryPort: 24447,
+      exitPort: 24447,
+      paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'example.com' } }),
+      certificate: { certificatePem: 'CERTIFICATE PEM', privateKeyPem: 'PRIVATE KEY PEM' }
+    });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [managed], exitLines: [] });
+    prisma.user.findMany.mockResolvedValue([user]);
+
+    const { singboxConfig } = await service.buildConfigSync('node-1');
+    const managedInbound = (singboxConfig.inbounds as Array<Record<string, unknown>>).find((inbound) => inbound.tag === 'line-managed-tls');
+    expect(managedInbound?.tls).toEqual({
+      enabled: true,
+      server_name: 'example.com',
+      certificate: ['CERTIFICATE PEM'],
+      key: ['PRIVATE KEY PEM']
+    });
+  });
+
   it('使用线路自定义监听地址和直连 Tag', async () => {
     const custom = line({ id: 'custom', tag: 'public-vless', listen: '127.0.0.1' });
     prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [custom], exitLines: [] });
