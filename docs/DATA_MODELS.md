@@ -433,3 +433,5 @@ model SystemSetting {
 ### 3.5 `SubscriptionTemplate` 模板数据
 
 `proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，并按节点名称或入站 tag 正则过滤线路。
+
+完整演示 seed 使用 `apps/server/prisma/default-template.js` 内嵌的「默认通用全能分流模板」作为默认模板，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。执行 `prisma db seed` 或启用 `AUTO_SEED=true` 时会幂等更新现有默认模板；生产环境默认不自动执行完整演示 seed。
