@@ -182,7 +182,8 @@ async function main() {
   if (!fs.existsSync(agentPath)) throw new Error(`内置 Agent 不存在：${agentPath}`);
   if (!fs.existsSync(singboxPath)) throw new Error(`内置 sing-box 不存在：${singboxPath}`);
 
-  const agent = trackChild(spawn(agentPath, [], {
+  // 内置 Agent 必须走守护进程模式，避免继承容器终端后误入交互式 TUI。
+  const agent = trackChild(spawn(agentPath, ['run'], {
     cwd: '/app/data/master-agent',
     env: {
       ...process.env,

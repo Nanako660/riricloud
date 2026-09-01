@@ -118,7 +118,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 })();
 NODE
 
-"$MASTER_AGENT_BINARY_PATH" &
+# 内置 Agent 必须走守护进程模式，避免继承启动终端后误入交互式 TUI。
+"$MASTER_AGENT_BINARY_PATH" run &
 AGENT_PID=$!
 
 set +e
