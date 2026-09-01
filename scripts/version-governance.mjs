@@ -20,6 +20,7 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PKG_PATH = path.resolve(ROOT_DIR, 'package.json');
 const CHANGELOG_PATH = path.resolve(ROOT_DIR, 'CHANGELOG.md');
+const README_PATH = path.resolve(ROOT_DIR, 'README.md');
 
 // 核心代码路径前缀（这些路径下的改动要求必须递增版本号）
 const CORE_CODE_PREFIXES = [
@@ -200,6 +201,19 @@ function cmdBump(args) {
     logWarn(`未找到 CHANGELOG.md，跳过日志更新`);
   }
 
+  // 3. 更新 README.md 中的 Version 徽标
+  if (fs.existsSync(README_PATH)) {
+    let readme = fs.readFileSync(README_PATH, 'utf-8');
+    const badgeRegex = /https:\/\/img\.shields\.io\/badge\/version-[^-\s)]+-blue\.svg/g;
+    if (badgeRegex.test(readme)) {
+      readme = readme.replace(badgeRegex, `https://img.shields.io/badge/version-${nextVersion}-blue.svg`);
+      fs.writeFileSync(README_PATH, readme, 'utf-8');
+      logSuccess(`README.md 顶部 Version 徽标已同步更新为 ${colors.green}[${nextVersion}]${colors.reset}`);
+    } else {
+      logWarn(`README.md 中未匹配到 Version 徽标 (img.shields.io/badge/version-...)，跳过徽标更新`);
+    }
+  }
+
   console.log('');
   logInfo(`下一步：请在 CHANGELOG.md 的 ## [${nextVersion}] 小节中记录本次变更内容，并自查 pnpm gate 后提交。`);
 }
@@ -345,7 +359,30 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 4. Git 变更与版本递增约束校验 ----------
+  // ---------- 4. README.md 顶部 Version 徽标一致性校验 ----------
+  if (!fs.existsSync(README_PATH)) {
+    warnings.push(`未找到根目录 README.md`);
+  } else {
+    const readme = fs.readFileSync(README_PATH, 'utf-8');
+    const badgeRegex = /https:\/\/img\.shields\.io\/badge\/version-([^-\s)]+)-blue\.svg/;
+    const match = readme.match(badgeRegex);
+
+    if (!match) {
+      errors.push(`README.md 未找到 Version 徽标（格式应包含 https://img.shields.io/badge/version-X.Y.Z-blue.svg）`);
+    } else {
+      const readmeVersion = match[1].trim();
+      if (readmeVersion !== currentVersion) {
+        errors.push(
+          `README.md 顶部的 Version 徽标 [${readmeVersion}] 与 package.json 版本 [${currentVersion}] 不一致！` +
+          `请运行 pnpm bump 或手动同步。`
+        );
+      } else {
+        logSuccess(`README.md Version 徽标与 package.json 版本一致: ${colors.green}[${readmeVersion}]${colors.reset}`);
+      }
+    }
+  }
+
+  // ---------- 5. Git 变更与版本递增约束校验 ----------
   const baseInfo = getGitBaseRef();
   if (baseInfo) {
     const baseRefName = typeof baseInfo === 'object' ? baseInfo.ref : baseInfo;

@@ -9,6 +9,16 @@
 变更类型说明：`Added` 新增 · `Changed` 变更 · `Fixed` 修复 · `Removed` 移除 · `Security` 安全 · `Deprecated` 弃用。
 约定：每个包含核心代码变更的 PR 在合入 main 前必须递增版本号并在本文件对应版本小节中记录条目；发布时按版本小节打 `vX.Y.Z` Tag。
 
+## [0.4.7] - 2026-09-01
+
+### Added
+
+- **README 徽标自动同步与三向一致性校验**：版本管理工具（`pnpm bump`）在递增版本时自动同步更新根目录 `README.md` 顶部的 Version 徽标；`pnpm gate:version` 门禁新增对 `README.md` 徽标的强一致性机械校验，确保 `package.json`、`CHANGELOG.md` 与 `README.md` 徽标三位一体零偏差。
+
+### Changed
+
+- 完善版本管理规范（`docs/VERSIONING.md`）与代码审查门禁清单（`docs/CODE_REVIEW.md`）。
+
 ## [0.4.6] - 2026-09-01
 
 ### Added
