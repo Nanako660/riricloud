@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AgentService } from '../agent-gateway/agent.service';
 import { normalizeInboundParams, sanitizeInboundParams } from '../common/inbound';
@@ -19,6 +19,7 @@ import { CreateLineDto } from './dto/create-line.dto';
 import { QueryLineDto } from './dto/query-line.dto';
 import { ReorderLinesDto } from './dto/reorder-lines.dto';
 import { UpdateLineDto } from './dto/update-line.dto';
+import { SettingsService } from '../system/settings.service';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary } as const;
@@ -55,7 +56,8 @@ const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
 export class LinesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly agentGateway: AgentService
+    private readonly agentGateway: AgentService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
   async list(query: QueryLineDto) {
@@ -151,6 +153,8 @@ export class LinesService {
   }
 
   async getAvailableForPlan(plan: { lineMatchMode: string; lineTagsJson: string; lineIdsJson: string }) {
+    const settings = await this.settingsService?.getSettings();
+    if (settings?.publicLinesEnabled === false) return [];
     const rows = await this.prisma.line.findMany({
       where: { isPublic: true, status: 'ACTIVE' },
       include: lineInclude,

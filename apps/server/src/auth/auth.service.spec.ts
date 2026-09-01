@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -17,6 +18,7 @@ describe('AuthService', () => {
   };
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
+  const subscriptionService = { subscribe: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -25,7 +27,8 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: { sign: jest.fn().mockReturnValue('token') } },
         { provide: AgentGatewayService, useValue: agentGateway },
-        { provide: SettingsService, useValue: settingsService }
+        { provide: SettingsService, useValue: settingsService },
+        { provide: SubscriptionService, useValue: subscriptionService }
       ]
     }).compile();
     service = moduleRef.get(AuthService);
@@ -127,6 +130,30 @@ describe('AuthService', () => {
         })
       });
       expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('按系统设置限制密码最小长度', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, passwordMinLength: 12 });
+      await expect(service.register({ email: 'short@example.com', password: 'password1' })).rejects.toThrow('密码至少 12 位');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('按系统设置执行邮箱域名白名单和黑名单过滤', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailDomainMode: 'whitelist', emailDomainList: ['example.com'] });
+      await expect(service.register({ email: 'new@blocked.com', password: 'password123' })).rejects.toThrow('不在允许注册范围');
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailDomainMode: 'blacklist', emailDomainList: ['blocked.com'] });
+      await expect(service.register({ email: 'new@blocked.com', password: 'password123' })).rejects.toThrow('已被禁止注册');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('配置默认套餐时注册后自动激活订阅', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, defaultPlanId: 'plan-1' });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'u-default-plan', email: 'plan@example.com', role: 'USER' });
+      subscriptionService.subscribe.mockResolvedValue({ id: 'sub-1' });
+      await service.register({ email: 'plan@example.com', password: 'password123' });
+      expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1');
+      expect(agentGateway.pushConfigToAll).not.toHaveBeenCalled();
     });
   });
 });

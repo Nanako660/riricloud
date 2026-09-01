@@ -8,7 +8,7 @@
 #   NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 自定义独立节点端口
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
-# 环境变量：SERVER_URL / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL
+# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > .tools/sing-box/ > tools/ > PATH
 set -euo pipefail
 
@@ -17,6 +17,7 @@ cd "$ROOT"
 # 开发环境缓存/便携工具链（go、pnpm store），失败不致命（系统已装 go 时可直接用）
 source scripts/dev-env.sh >/dev/null 2>&1 || true
 
+SERVER_URL_OVERRIDE="${SERVER_URL:-}"
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
 ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-admin@riricloud.local}"
@@ -25,6 +26,20 @@ NODE_NAME="${NODE_NAME:-local-e2e}"
 NODE_HOST="${NODE_HOST:-127.0.0.1}"
 NODE_PORT="${NODE_PORT:-8443}"
 USE_MASTER_LOCAL="${USE_MASTER_LOCAL:-1}"
+SERVER_PORT_SCAN_LIMIT="${SERVER_PORT_SCAN_LIMIT:-1000}"
+SERVER_PORT_OVERRIDE="${SERVER_PORT:-${PORT:-}}"
+STATS_API_LISTEN_OVERRIDE="${STATS_API_LISTEN:-}"
+if [ -z "$SERVER_PORT_OVERRIDE" ] && [ -n "$SERVER_URL_OVERRIDE" ]; then
+  SERVER_PORT_OVERRIDE="$(node -e 'try { const url = new URL(process.argv[1]); console.log(url.port || "3000") } catch { console.log("3000") }' "$SERVER_URL")"
+fi
+SERVER_PORT="${SERVER_PORT_OVERRIDE:-3000}"
+if [ -n "$SERVER_PORT_OVERRIDE" ] && [ -z "$SERVER_URL_OVERRIDE" ]; then
+  SERVER_URL="http://localhost:$SERVER_PORT"
+fi
+if [ -z "${JWT_SECRET:-}" ]; then
+  JWT_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+fi
+export JWT_SECRET
 
 LOG_DIR="$ROOT/.cache/logs"
 SINGBOX_CONF_DIR="$ROOT/.cache/agent"
@@ -57,6 +72,22 @@ jsonquote() {
 server_up() { curl -fsS --max-time 2 "$SERVER_URL/api/v1/system/version" >/dev/null 2>&1; }
 web_up() { curl -fsS --max-time 2 "$WEB_URL" >/dev/null 2>&1; }
 
+port_available() {
+  node -e 'const net = require("net"); const port = Number(process.argv[1]); const server = net.createServer(); server.once("error", () => process.exit(1)); server.listen(port, "127.0.0.1", () => server.close(() => process.exit(0)));' "$1" >/dev/null 2>&1
+}
+
+pick_server_port() {
+  local port="$1"
+  for _ in $(seq 1 "$SERVER_PORT_SCAN_LIMIT"); do
+    if port_available "$port"; then
+      printf '%s' "$port"
+      return 0
+    fi
+    port=$((port + 1))
+  done
+  return 1
+}
+
 find_singbox() {
   local candidates=(
     "${SINGBOX_BINARY_PATH:-}"
@@ -71,18 +102,102 @@ find_singbox() {
   command -v sing-box || return 1
 }
 
+singbox_has_required_features() {
+  local version_output="$1"
+  local feature
+  for feature in with_v2ray_api with_utls with_quic with_naive_outbound; do
+    printf '%s\n' "$version_output" | grep -q "$feature" || return 1
+  done
+}
+
+resolve_go() {
+  GO_BIN="${GO_BIN:-go}"
+  if ! command -v "$GO_BIN" >/dev/null 2>&1; then
+    if command -v go.exe >/dev/null 2>&1; then
+      GO_BIN="go.exe"
+    elif [ -x "$ROOT/.tools/go/bin/go.exe" ]; then
+      GO_BIN="$ROOT/.tools/go/bin/go.exe"
+    else
+      die "缺少 Go 工具链：无法构建带 V2Ray API 的 Sing-box，请安装 Go 或准备 .tools/go/"
+    fi
+  fi
+}
+
+build_singbox_for_dev() {
+  resolve_go
+  command -v curl >/dev/null 2>&1 || command -v curl.exe >/dev/null 2>&1 \
+    || die "缺少 curl：无法获取 Sing-box 源码"
+  command -v tar >/dev/null 2>&1 || command -v tar.exe >/dev/null 2>&1 \
+    || die "缺少 tar：无法解压 Sing-box 源码"
+
+  local curl_bin="curl"
+  local tar_bin="tar"
+  command -v "$curl_bin" >/dev/null 2>&1 || curl_bin="curl.exe"
+  command -v "$tar_bin" >/dev/null 2>&1 || tar_bin="tar.exe"
+  local version="${SINGBOX_VERSION:-1.14.0}"
+  local cache_dir="$ROOT/.cache/sing-box-v2ray-api/$version"
+  local source_dir="$cache_dir/sing-box-$version"
+  local goos
+  local goarch
+  local output_dir
+  local output_path
+  local go_output_path
+
+  goos="$($GO_BIN env GOOS)"
+  goarch="$($GO_BIN env GOARCH)"
+  output_dir="$cache_dir/$goos-$goarch"
+  output_path="$output_dir/sing-box"
+  [ "$goos" = "windows" ] && output_path="$output_path.exe"
+  mkdir -p "$output_dir"
+
+  if [ ! -d "$source_dir" ]; then
+    say "获取开发联调所需的 Sing-box v$version 源码…"
+    local archive_path="$cache_dir/sing-box.tar.gz"
+    mkdir -p "$cache_dir"
+    "$curl_bin" --fail --silent --show-error --location \
+      "https://github.com/SagerNet/sing-box/archive/refs/tags/v$version.tar.gz" \
+      --output "$archive_path"
+    "$tar_bin" -xzf "$archive_path" -C "$cache_dir"
+  fi
+
+  if [ ! -f "$output_path" ]; then
+    say "构建开发联调所需的 Sing-box v$version（with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego）…"
+    go_output_path="$output_path"
+    case "$GO_BIN" in
+      *.exe)
+        command -v cygpath >/dev/null 2>&1 && go_output_path="$(cygpath -w "$output_path")"
+        ;;
+    esac
+    (
+      cd "$source_dir"
+      CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" "$GO_BIN" build -trimpath \
+        -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+        -ldflags "-s -w" -o "$go_output_path" ./cmd/sing-box
+    )
+  fi
+
+  SINGBOX_BIN="$output_path"
+}
+
 # ---------- 1. sing-box 内核 ----------
-SINGBOX_BIN="$(find_singbox)" || die "未找到 sing-box 内核：请放入 .tools/sing-box/ 或用 SINGBOX_BINARY_PATH 指定"
-say "sing-box 内核：$SINGBOX_BIN"
-SINGBOX_VERSION_OUTPUT="$($SINGBOX_BIN version)"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
-  || die "当前 sing-box 未启用 with_v2ray_api，无法进行按用户流量联调"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
-  || die "当前 sing-box 未启用 with_utls，无法进行 VLESS Reality 联调"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
-  || die "当前 sing-box 未启用 with_quic，无法进行 Hysteria2/TUIC 联调"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
-  || die "当前 sing-box 未启用 with_naive_outbound，无法进行 NaiveProxy 联调"
+SINGBOX_BIN="$(find_singbox || true)"
+if [ -n "$SINGBOX_BIN" ]; then
+  say "sing-box 内核：$SINGBOX_BIN"
+  SINGBOX_VERSION_OUTPUT="$($SINGBOX_BIN version)"
+else
+  SINGBOX_VERSION_OUTPUT=""
+fi
+if ! singbox_has_required_features "$SINGBOX_VERSION_OUTPUT"; then
+  if [ -n "${SINGBOX_BINARY_PATH:-}" ]; then
+    die "SINGBOX_BINARY_PATH 指定的 sing-box 未启用 with_v2ray_api/with_utls/with_quic/with_naive_outbound，请改用带这些构建标签的内核"
+  fi
+  [ -n "$SINGBOX_BIN" ] && say "当前缓存的 Sing-box 缺少联调所需构建标签，准备构建兼容版本…"
+  build_singbox_for_dev
+  say "sing-box 内核：$SINGBOX_BIN"
+  SINGBOX_VERSION_OUTPUT="$($SINGBOX_BIN version)"
+  singbox_has_required_features "$SINGBOX_VERSION_OUTPUT" \
+    || die "自动构建的 Sing-box 仍缺少联调所需构建标签，请检查 SINGBOX_VERSION 或 Go 工具链"
+fi
 
 # ---------- 2. 主控端（已在跑则复用） ----------
 DB_WAS_PRESENT=0
@@ -99,14 +214,33 @@ fi
 if server_up; then
   say "主控端已在 $SERVER_URL 运行，直接复用"
 else
+  if [ -z "$SERVER_PORT_OVERRIDE" ]; then
+    SERVER_PORT_START="$SERVER_PORT"
+    SERVER_PORT="$(pick_server_port "$SERVER_PORT_START")" \
+      || die "未找到可用的主控端口（已从 $SERVER_PORT_START 开始探测 $SERVER_PORT_SCAN_LIMIT 个端口）；可通过 SERVER_PORT=xxxx 或 PORT=xxxx 指定"
+    SERVER_URL="http://localhost:$SERVER_PORT"
+    say "主控端默认端口不可用，改用 $SERVER_URL"
+  fi
+  if [ -z "$STATS_API_LISTEN_OVERRIDE" ]; then
+    STATS_API_PORT_START="${STATS_API_PORT_START:-10085}"
+    STATS_API_PORT="$(pick_server_port "$STATS_API_PORT_START")" \
+      || die "未找到可用的 StatsService 端口（已从 $STATS_API_PORT_START 开始探测 $SERVER_PORT_SCAN_LIMIT 个端口）；可通过 STATS_API_LISTEN=127.0.0.1:xxxx 指定"
+    STATS_API_LISTEN="127.0.0.1:$STATS_API_PORT"
+    say "StatsService 默认端口不可用，改用 $STATS_API_LISTEN"
+  fi
   say "启动主控端（日志：$LOG_DIR/server.log）…"
-  pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
+  PORT="$SERVER_PORT" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
   SERVER_PID=$!
   SERVER_READY=0
   for i in $(seq 1 60); do
     if server_up; then
       SERVER_READY=1
       break
+    fi
+    if grep -q 'Error:' "$LOG_DIR/server.log" 2>/dev/null; then
+      say "主控端启动失败，最近日志：" >&2
+      tail -n 40 "$LOG_DIR/server.log" >&2 || true
+      die "主控端进程启动后立即退出"
     fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
       say "主控端进程已退出，最近日志：" >&2
@@ -126,7 +260,7 @@ elif web_up; then
   say "Web 面板已在 $WEB_URL 运行，直接复用"
 else
   say "启动 Web 面板（日志：$LOG_DIR/web.log）…"
-  pnpm dev:web >"$LOG_DIR/web.log" 2>&1 &
+  VITE_API_PROXY_TARGET="$SERVER_URL" pnpm dev:web >"$LOG_DIR/web.log" 2>&1 &
   WEB_PID=$!
 fi
 
@@ -195,10 +329,12 @@ AGENT_BIN="${RIRICLOUD_AGENT_BINARY_PATH:-$ROOT/artifacts/dev/agent/${AGENT_GOOS
 say "构建 Agent…"
 RIRICLOUD_AGENT_BINARY_PATH="$AGENT_BIN" bash scripts/build-agent.sh || die "Agent 构建失败"
 
+MASTER_WS_URL="$(node -e 'const url = new URL("/ws/agent", process.argv[1]); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; console.log(url.toString())' "$SERVER_URL")"
 say "启动 Agent（内核：$(basename "$SINGBOX_BIN")，日志：$LOG_DIR/agent.log）…"
 (
+  RIRICLOUD_NON_INTERACTIVE=1 \
   AGENT_TOKEN="$AGENT_TOKEN" \
-    MASTER_WS_URL="ws://localhost:3000/ws/agent" \
+    MASTER_WS_URL="$MASTER_WS_URL" \
     SINGBOX_BINARY_PATH="$SINGBOX_BIN" \
     SINGBOX_CONFIG_PATH="$SINGBOX_CONF_DIR/config.json" \
     "$AGENT_BIN" >"$LOG_DIR/agent.log" 2>&1

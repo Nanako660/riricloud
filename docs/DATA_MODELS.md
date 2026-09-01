@@ -294,21 +294,45 @@ model TrafficLog {
 // ==============================
 model SystemSetting {
   key         String   @id
-  value       String   // 存储站点名称、默认配额、注册开关等 JSON 或纯文本
+  value       String   // 存储系统设置的 JSON、布尔、数字或纯文本值
   description String?
   updatedAt   DateTime @updatedAt
 }
 ```
 
-**已启用键定义（v0.2.0）**：
+**已启用键定义（v0.4.8）**：
 
 | 键 | value 格式 | 缺省默认 | 用途 |
 | :--- | :--- | :--- | :--- |
 | `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
+| `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
+| `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
+| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户仪表盘公告横幅 |
+| `footerCopyright` | 纯文本 | `""` | 页脚版权文案 |
+| `supportTelegramUrl` / `supportDiscordUrl` / `supportCustomUrl` | URL 或空字符串 | `""` | 客服、群组与自定义支持入口 |
+| `supportEmail` | 邮箱或空字符串 | `""` | 客服邮箱入口 |
 | `registrationEnabled` | `"true"` / `"false"` | `"false"` | 注册开关，控制 `POST /auth/register` 与前端注册入口 |
+| `defaultPlanId` | UUID 或空字符串 | `""` | 注册时自动激活的公开套餐 |
 | `defaultTrafficLimitBytes` | 十进制字符串（字节，>0） | `"107374182400"`（100 GiB） | 新建/注册用户的初始流量配额 |
+| `defaultValidityDays` | 十进制整数（0~3650） | `"0"` | 未绑定默认套餐的新用户有效天数，0 为永久 |
+| `emailDomainMode` | `none` / `whitelist` / `blacklist` | `"none"` | 注册邮箱域名过滤模式 |
+| `emailDomainList` | JSON 字符串数组 | `[]` | 注册邮箱域名过滤列表 |
+| `passwordMinLength` | 十进制整数（8~64） | `"8"` | 注册密码最小长度 |
+| `subscriptionBaseUrl` | URL 或空字符串 | `""` | 用户端拼装订阅链接的基准地址 |
+| `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
+| `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板 |
+| `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
+| `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |
+| `heartbeatTimeoutSecs` | 十进制整数（5~3600） | `"15"` | Agent 离线判定基础超时 |
+| `configSyncDebounceMs` | 十进制整数（0~10000） | `"250"` | 全量配置推送防抖延迟 |
+| `defaultPollIntervalSecs` | 十进制整数（5~300） | `"15"` | 新节点与 HTTP 轮询的默认周期 |
+| `binaryDownloadBaseUrl` | URL 或空字符串 | `""` | 内置 Agent/内核二进制下载基准地址 |
+| `probePresetTargets` | 探针目标 JSON 数组 | TCP Apple 443 + DNS Cloudflare | 管理端探针预设目标 |
+| `jwtSessionDays` | 十进制整数（1~30） | `"1"` | 新签发 JWT 的会话有效天数 |
+| `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
+| `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走 upsert（`PUT /admin/settings`，接受任意子集，见 `docs/API_AND_PROTOCOLS.md` §1.3）。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准和前端运行时样式字段。
 
 ---
 

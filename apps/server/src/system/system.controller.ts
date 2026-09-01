@@ -19,11 +19,10 @@ export class SystemController {
     return this.systemService.getVersion();
   }
 
-  // 登录页公开信息：站点名与注册开关（不含任何敏感设置）
+  // 登录页和前端外壳公开信息：仅返回品牌、公告、客服和订阅基准地址。
   @Public()
   @Get('public-info')
   async getPublicInfo() {
-    const settings = await this.settingsService.getSettings();
-    return { siteName: settings.siteName, registrationEnabled: settings.registrationEnabled };
+    return this.settingsService.getPublicSettings();
   }
 }

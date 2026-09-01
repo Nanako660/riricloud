@@ -27,6 +27,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [系统设置全参数可配置化与现代化管理面板](./archive/2026-09-01-system-settings-full-config.md) | `v0.4.8` | 2026-09-01 | — |
 | [Agent 现代化交互式 CLI 与全生命周期管理架构（破坏性重构）](./archive/2026-09-01-agent-interactive-cli-architecture.md) | `v0.4.1` | 2026-09-01 | — |
 | [v0.3.0 订阅架构与极简 Agent 远程升级重构](./archive/2026-08-31-v0.3.0-architecture-refactor.md) | `v0.3.0` | 2026-08-31 | PR #3 (squash commit 2c87b14) |
 | [部署打包实施方案（Release 二进制分发 + 本地 Docker 分发）](./archive/2026-08-31-packaging-and-deployment.md) | `v0.4.0` | 2026-08-31 | — |

@@ -9,6 +9,8 @@ import { ProbeNodeDto } from './dto/probe-node.dto';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
+import { SettingsService } from '../system/settings.service';
+import { Optional } from '@nestjs/common';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
@@ -22,7 +24,8 @@ export class NodesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentGateway: AgentService,
-    private readonly binaries: BinariesService
+    private readonly binaries: BinariesService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
   async list() {
@@ -47,12 +50,14 @@ export class NodesService {
 
   async create(dto: CreateNodeDto, _operatorId: string) {
     const communicationMode = dto.communicationMode ?? 'WS';
+    const settings = await this.settingsService?.getSettings();
     const node = await this.prisma.node.create({
       data: {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
         serverHost: dto.serverHost.trim(),
         agentToken: generateAgentToken(),
-        communicationMode
+        communicationMode,
+        pollIntervalSecs: settings?.defaultPollIntervalSecs ?? 15
       },
       include: nodeLinesInclude
     });

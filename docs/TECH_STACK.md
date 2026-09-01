@@ -32,7 +32,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - **React Hook Form + Zod**：强类型端到端表单状态管理与 Schema 校验。
 - **Sonner**：现代化轻量全局 Toast 提示。
 - **TanStack Table (React Table v8)**：复杂数据表格（节点列表、用户列表、审计日志）的核心驱动。
-- **CodeMirror 6（`@uiw/react-codemirror` + `@codemirror/lang-json`）**：节点详情页高级模式的 sing-box 覆盖配置（`configOverride`）JSON 编辑器，带语法高亮与行号；`@uiw/react-codemirror` 为官方推荐的 React 封装，按路由懒加载分包。
+- **CodeMirror 6（`@uiw/react-codemirror` + `@codemirror/lang-json` / `@codemirror/lang-css` / `@codemirror/lang-html`）**：节点详情页高级模式和系统设置页 CSS、HTML/JS 编辑器，带语法高亮与行号；`@uiw/react-codemirror` 为官方推荐的 React 封装，按路由懒加载分包。
 - **Recharts (via shadcn/ui Chart)**：用于呈现用户流量消耗趋势与节点负载（CPU/内存/带宽）可视化图表。
 - **next-themes**：暗黑/明亮主题平滑切换与系统偏好监听。
 

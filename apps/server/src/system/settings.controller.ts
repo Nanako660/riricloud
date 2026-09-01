@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Put } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../common/roles.decorator';
 import { SettingsService } from './settings.service';
-import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { ResetSettingsDto, UpdateSettingsDto } from './dto/update-settings.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -19,5 +19,10 @@ export class SettingsController {
   @Put()
   updateSettings(@Body() dto: UpdateSettingsDto) {
     return this.settingsService.updateSettings(dto);
+  }
+
+  @Post('reset')
+  resetSettings(@Body() dto: ResetSettingsDto) {
+    return this.settingsService.resetToDefaults(dto.keys);
   }
 }

@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { parse as parseYaml } from 'yaml';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeShadowsocksPassword } from '../common/inbound';
+import { SettingsService } from '../system/settings.service';
 import { resolveFormat, SubscriptionService } from './subscription.service';
 
 describe('SubscriptionService', () => {
@@ -10,14 +11,16 @@ describe('SubscriptionService', () => {
   const prisma = {
     user: { findUnique: jest.fn() },
     node: { findMany: jest.fn() },
-    subscriptionTemplate: { findFirst: jest.fn() }
+    subscriptionTemplate: { findFirst: jest.fn(), findUnique: jest.fn() }
   };
+  const settingsService = { getSettings: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         SubscriptionService,
-        { provide: PrismaService, useValue: prisma }
+        { provide: PrismaService, useValue: prisma },
+        { provide: SettingsService, useValue: settingsService }
       ]
     }).compile();
     service = moduleRef.get(SubscriptionService);
@@ -191,6 +194,31 @@ describe('SubscriptionService', () => {
       expect(parseYaml(result.body)['proxy-groups']).toEqual([
         { name: '默认策略', type: 'select', proxies: ['东京节点 01'] }
       ]);
+    });
+
+    it('动态读取订阅更新周期并可关闭用量响应头', async () => {
+      settingsService.getSettings.mockResolvedValue({ subscriptionUpdateIntervalHours: 6, includeUsageHeaders: false });
+      prisma.user.findUnique.mockResolvedValue(activeUser);
+      prisma.node.findMany.mockResolvedValue([node({ inbounds: [inbound({})] })]);
+      const result = await service.getSubscription('tok-1');
+      expect(result.updateIntervalHours).toBe(6);
+      expect(result.userInfoHeader).toBeUndefined();
+    });
+
+    it('优先使用系统设置指定的默认模板', async () => {
+      settingsService.getSettings.mockResolvedValue({ defaultTemplateId: 'template-1' });
+      prisma.user.findUnique.mockResolvedValue(activeUser);
+      prisma.node.findMany.mockResolvedValue([node({ inbounds: [inbound({})] })]);
+      prisma.subscriptionTemplate.findUnique.mockResolvedValue({
+        proxyGroupsJson: JSON.stringify([{ name: '指定策略', type: 'select', proxies: 'all' }]),
+        ruleSetsJson: '[]',
+        dnsConfigJson: '{}'
+      });
+      const result = await service.getSubscription('tok-1', { type: 'clash' });
+      expect(parseYaml(result.body)['proxy-groups']).toEqual([
+        { name: '指定策略', type: 'select', proxies: ['东京节点 01'] }
+      ]);
+      expect(prisma.subscriptionTemplate.findUnique).toHaveBeenCalledWith({ where: { id: 'template-1' } });
     });
 
     it('用户未设置密码时 hy2 凭证回退 uuid', async () => {
