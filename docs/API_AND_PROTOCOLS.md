@@ -2,7 +2,7 @@
 
 所有 HTTP 接口基于 `http(s)://<master-host>/api/v1` 前缀。
 
-> **实现状态（v0.4.0）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.4.5）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
 >

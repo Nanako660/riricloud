@@ -7,7 +7,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 | 分层 / 领域 | 选用技术 / 框架 | 核心定位与价值 |
 | :--- | :--- | :--- |
 | **工程架构** | **pnpm Workspace (Monorepo)** | 统一包管理，前后端代码同仓维护，统一构建脚本与类型定义 |
-| **前端框架** | **React 18/19 + TypeScript + Vite** | 快速热更新开发体验，强类型保障，现代 Web 生态 |
+| **前端框架** | **React 19 + TypeScript + Vite 6** | 快速热更新开发体验，强类型保障，现代 Web 生态 |
 | **前端样式与组件库** | **Tailwind CSS + shadcn/ui + Lucide Icons** | 极简现代化无边框风格设计，高可定制性，开箱即用高质量组件 |
 | **主控后端框架** | **NestJS + TypeScript** | 企业级 IoC/DI 依赖注入架构，模块化清晰，代码组织规范 |
 | **持久化与 ORM** | **SQLite + Prisma ORM (WAL 模式)** | 单文件数据库零外部依赖，Prisma 提供端到端类型安全与自动迁移 |

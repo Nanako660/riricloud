@@ -8,7 +8,7 @@
 - Node.js >= 20.0.0
 - pnpm >= 9.0.0
 - Linux / macOS / Windows Server
-### 1.2 方式一：自包含发行包部署（推荐，v0.2.0 起）
+### 1.2 方式一：自包含发行包部署（推荐）
 
 从 GitHub Release 下载 `riri-master_<version>_linux_amd64.tar.gz`（内置后端、Web 面板静态资源、Linux x64 本机 Agent、Sing-box 与全部生产依赖，目标机只需 Node.js >= 20）：
 
@@ -112,7 +112,7 @@ gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linu
 
 ```bash
 cp .env.image.example .env.image
-# 编辑 .env.image：默认固定使用 0.2.0，可改为 latest；填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD
+# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
 docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```

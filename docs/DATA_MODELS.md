@@ -4,7 +4,7 @@
 
 RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中，SQLite 开启 **WAL (Write-Ahead Logging)** 模式，读写并发能力大幅提升。
 
-> **落地说明（v0.4.0）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式与订阅状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
+> **落地说明（v0.4.5）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式与订阅状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
 
 ---
 
@@ -21,7 +21,7 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中�
 
 ---
 
-## 2. Prisma Schema 完整定义
+## 3. Prisma Schema 完整定义
 
 文件路径：`apps/server/prisma/schema.prisma`
 

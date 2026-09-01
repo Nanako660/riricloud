@@ -20,6 +20,7 @@
 | [Git 版本管理规范 (GIT_WORKFLOW.md)](./GIT_WORKFLOW.md) | GitHub Flow 分支模型、Conventional Commits 提交规范与合并策略 |
 | [代码审查与架构约束 (CODE_REVIEW.md)](./CODE_REVIEW.md) | 质量门禁、NestJS / React / Go 分层硬约束与审查清单 |
 | [项目全局硬约束 (PROJECT_CONSTRAINTS.md)](./PROJECT_CONSTRAINTS.md) | 技术栈锁定、零外部依赖、资源与安全红线、文档同步约束 |
+| [UI 视觉验证索引台账 (VISUAL_VERIFICATION.md)](./VISUAL_VERIFICATION.md) | 前端页面与模态框视觉基线索引、按需验证流程与台账规范 |
 
 仓库根目录另有 [README.md](../README.md)（项目主文档）、[AGENTS.md](../AGENTS.md)（AI 代理与协作者的入口规范）与 [CHANGELOG.md](../CHANGELOG.md)（变更日志）。
 
