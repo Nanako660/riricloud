@@ -88,12 +88,12 @@
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
-- `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量。⭐
+- `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐
 - `POST /admin/subscription-templates`：创建模板。⭐ 请求含 `proxyGroups?`、`ruleSets?`、`dnsConfig?`、`customInjectYaml?`、`customInjectJson?`、`isDefault?`。
 - `PATCH /admin/subscription-templates/:id`：部分更新模板；YAML/JSON 覆写在服务端校验语法。⭐
-- `DELETE /admin/subscription-templates/:id`：删除非默认且未被套餐使用的模板。⭐
+- `DELETE /admin/subscription-templates/:id`：删除非默认、非内嵌且未被套餐使用的模板；内嵌默认模板只能通过 `PATCH` 修改，删除返回 `409`。⭐
 
 #### 订阅管控
 - `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐ 保留为兼容接口；管理端主入口已融合至 `/admin/users`。

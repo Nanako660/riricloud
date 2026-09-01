@@ -5,7 +5,7 @@
 **多节点 VPN / 代理管理系统**  
 *Master-Agent 分布式架构 · SQLite WAL 本地存储 · WSS/HTTP 双模式通信 · 多协议内核托管 · 多格式订阅输出*
 
-[![Version](https://img.shields.io/badge/version-0.4.13-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.14-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8.svg?logo=go)](https://go.dev)
@@ -160,7 +160,7 @@ AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run 
 ```bash
 # 在 Linux / WSL Docker 环境中执行
 cp .env.example .env
-# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false（内嵌默认模板仍会自动创建）
 pnpm docker:build
 pnpm docker:up
 ```
@@ -353,4 +353,3 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台构建
 ## 📄 开源协议
 
 本项目源码遵循 [GNU General Public License v3.0 (GPL-3.0)](./LICENSE) 协议开源。
-

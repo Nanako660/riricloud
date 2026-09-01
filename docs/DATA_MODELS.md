@@ -14,8 +14,8 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中�
 
 - 启动入口先执行 `apps/server/prisma/bootstrap-admin.js`。数据库没有 `role=ADMIN` 时，按 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 创建首个管理员；兼容 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`，优先级为正式配置高于旧配置。已有管理员时完全跳过，不改密码，也不因邮箱配置变化创建重复账号。
 - 空数据库没有管理员且未提供凭据时启动失败；管理员邮箱沿用 `class-validator` 的 `IsEmail` 规则，密码长度必须为 `8-64` 位。
-- `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、套餐、模板和线路。
-- `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、默认模板、VLESS/Reality 直连线路和盲转发示例线路；本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
+- `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员、确保内嵌默认订阅模板存在，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、体验套餐和线路。
+- `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、VLESS/Reality 直连线路和盲转发示例线路；默认模板由通用 bootstrap 负责，完整 seed 会将其同步为内嵌模板定义，不会重复创建。本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
 - `Master-Local` 使用 `Node.isLocal=true` 标记，是 Master 内置 Agent 的固定数据库身份。启动时复用已有 `agentToken` 与节点配置；管理端删除接口对该节点返回 `409`，防止误删内置 Agent 身份。
 - 管理员密码不能通过启动环境变量隐式修改；使用 `pnpm admin:reset -- --email <email>` 或发行包 `./admin-reset.sh` 显式重置，目标账号必须已存在且角色为 `ADMIN`。
 
@@ -232,6 +232,7 @@ model SubscriptionTemplate {
   name             String
   description      String?
   isDefault        Boolean  @default(false)
+  isBuiltin        Boolean  @default(false)
   proxyGroupsJson  String   @default("[]")
   ruleSetsJson     String   @default("[]")
   dnsConfigJson    String   @default("{}")
@@ -434,4 +435,4 @@ model SystemSetting {
 
 `proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，并按节点名称或入站 tag 正则过滤线路。
 
-完整演示 seed 使用 `apps/server/prisma/default-template.js` 内嵌的「默认通用全能分流模板」作为默认模板，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。执行 `prisma db seed` 或启用 `AUTO_SEED=true` 时会幂等更新现有默认模板；生产环境默认不自动执行完整演示 seed。
+`apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。

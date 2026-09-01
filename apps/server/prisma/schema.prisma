@@ -137,6 +137,7 @@ model SubscriptionTemplate {
   name             String
   description      String?
   isDefault        Boolean  @default(false)
+  isBuiltin        Boolean  @default(false)
   proxyGroupsJson  String   @default("[]")
   ruleSetsJson     String   @default("[]")
   dnsConfigJson    String   @default("{}")

@@ -37,4 +37,10 @@ describe('TemplatesService', () => {
     prisma.subscriptionTemplate.findUnique.mockResolvedValue({ isDefault: true, _count: { plans: 0 } });
     await expect(service.remove('t1')).rejects.toThrow(ConflictException);
   });
+
+  it('内嵌默认模板不能删除', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue({ isDefault: false, isBuiltin: true, _count: { plans: 0 } });
+    await expect(service.remove('builtin-template')).rejects.toThrow('内嵌默认模板不能删除，只能修改');
+    expect(prisma.subscriptionTemplate.delete).not.toHaveBeenCalled();
+  });
 });

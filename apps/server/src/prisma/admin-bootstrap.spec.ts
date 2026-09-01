@@ -23,6 +23,12 @@ const { ensureMasterAgentNode, resolveMasterLocalHost } = require('../../prisma/
   resolveMasterLocalHost: (env: NodeJS.ProcessEnv) => string;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ensureDefaultTemplate, buildDefaultTemplateData } = require('../../prisma/default-template') as {
+  ensureDefaultTemplate: (prisma: MockPrisma) => Promise<{ template: Record<string, unknown>; created: boolean }>;
+  buildDefaultTemplateData: (isDefault?: boolean) => Record<string, unknown>;
+};
+
 type User = { id: string; email: string; role: string; passwordHash?: string };
 type MockPrisma = {
   user: {
@@ -33,6 +39,11 @@ type MockPrisma = {
   node: {
     findFirst: jest.Mock;
     create: jest.Mock;
+  };
+  subscriptionTemplate: {
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
   };
 };
 
@@ -52,6 +63,11 @@ describe('管理员 bootstrap', () => {
       node: {
         findFirst: jest.fn(),
         create: jest.fn()
+      },
+      subscriptionTemplate: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn()
       }
     };
     delete process.env.ADMIN_EMAIL;
@@ -166,5 +182,32 @@ describe('管理员 bootstrap', () => {
   it('从公网 URL 推导新本机节点的订阅地址', () => {
     expect(resolveMasterLocalHost({ RIRICLOUD_PUBLIC_URL: 'https://master.example.com:8443/panel' })).toBe('master.example.com');
     expect(resolveMasterLocalHost({})).toBe('127.0.0.1');
+  });
+
+  it('生产 bootstrap 在没有模板时创建内嵌默认模板', async () => {
+    prisma.subscriptionTemplate.findFirst.mockResolvedValue(null);
+    prisma.subscriptionTemplate.create.mockResolvedValue({ id: 'template-1', name: '默认通用全能分流模板' });
+
+    const result = await ensureDefaultTemplate(prisma);
+
+    expect(result).toEqual({ template: { id: 'template-1', name: '默认通用全能分流模板' }, created: true });
+    expect(prisma.subscriptionTemplate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        ...buildDefaultTemplateData(true),
+        isBuiltin: true,
+        isDefault: true
+      })
+    });
+  });
+
+  it('生产 bootstrap 已有内嵌模板时不覆盖管理员修改', async () => {
+    const existing = { id: 'template-1', name: '管理员自定义默认模板', isBuiltin: true, isDefault: true };
+    prisma.subscriptionTemplate.findFirst.mockResolvedValue(existing);
+
+    const result = await ensureDefaultTemplate(prisma);
+
+    expect(result).toEqual({ template: existing, created: false });
+    expect(prisma.subscriptionTemplate.update).not.toHaveBeenCalled();
+    expect(prisma.subscriptionTemplate.create).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { generateKeyPairSync, randomInt } = require('node:crypto');
 const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
-const { DEFAULT_TEMPLATE } = require('./default-template');
+const { buildDefaultTemplateData } = require('./default-template');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -100,16 +100,7 @@ async function main() {
   // 完整 seed 仍保留本地演示默认值；生产启动入口只调用无默认值的 bootstrap。
   const { admin } = await ensureAdmin(prisma, { allowDemoDefaults: true });
 
-  const templateData = {
-    name: DEFAULT_TEMPLATE.name,
-    description: DEFAULT_TEMPLATE.description,
-    isDefault: DEFAULT_TEMPLATE.isDefault,
-    proxyGroupsJson: JSON.stringify(DEFAULT_TEMPLATE.proxyGroups),
-    ruleSetsJson: JSON.stringify(DEFAULT_TEMPLATE.ruleSets),
-    dnsConfigJson: JSON.stringify(DEFAULT_TEMPLATE.dnsConfig),
-    customInjectYaml: DEFAULT_TEMPLATE.customInjectYaml,
-    customInjectJson: DEFAULT_TEMPLATE.customInjectJson
-  };
+  const templateData = buildDefaultTemplateData(true);
 
   let template = await prisma.subscriptionTemplate.findFirst({ where: { isDefault: true } });
   if (!template) {

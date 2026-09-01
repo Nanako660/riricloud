@@ -1,4 +1,4 @@
-// 内嵌默认订阅分流模板；完整 seed 会幂等写入数据库默认模板。
+// 内嵌默认订阅分流模板；生产 bootstrap 与完整 seed 共用这份定义。
 const DEFAULT_TEMPLATE = {
   "name": "默认通用全能分流模板",
   "description": "通用开箱即用模板，包含常用地区分流、AI 工具、流媒体、国内外 DNS 与广告拦截",
@@ -284,5 +284,46 @@ const DEFAULT_TEMPLATE = {
   "customInjectJson": "{\n  \"log\": {\n    \"level\": \"info\"\n  },\n  \"experimental\": {\n    \"clash_api\": {\n      \"external_controller\": \"127.0.0.1:9090\",\n      \"secret\": \"\"\n    }\n  }\n}"
 };
 
-module.exports = { DEFAULT_TEMPLATE };
+function buildDefaultTemplateData(isDefault = true) {
+  return {
+    name: DEFAULT_TEMPLATE.name,
+    description: DEFAULT_TEMPLATE.description,
+    isDefault,
+    isBuiltin: true,
+    proxyGroupsJson: JSON.stringify(DEFAULT_TEMPLATE.proxyGroups),
+    ruleSetsJson: JSON.stringify(DEFAULT_TEMPLATE.ruleSets),
+    dnsConfigJson: JSON.stringify(DEFAULT_TEMPLATE.dnsConfig),
+    customInjectYaml: DEFAULT_TEMPLATE.customInjectYaml,
+    customInjectJson: DEFAULT_TEMPLATE.customInjectJson
+  };
+}
 
+async function ensureDefaultTemplate(prisma) {
+  const builtin = await prisma.subscriptionTemplate.findFirst({
+    where: { isBuiltin: true },
+    orderBy: [{ createdAt: 'asc' }]
+  });
+  if (builtin) return { template: builtin, created: false };
+
+  const existingDefault = await prisma.subscriptionTemplate.findFirst({
+    where: { isDefault: true },
+    orderBy: [{ createdAt: 'asc' }]
+  });
+  const legacy = await prisma.subscriptionTemplate.findFirst({
+    where: { name: { in: [DEFAULT_TEMPLATE.name, '默认分流模板'] } },
+    orderBy: [{ createdAt: 'asc' }]
+  });
+  if (legacy) {
+    const template = await prisma.subscriptionTemplate.update({
+      where: { id: legacy.id },
+      data: { isBuiltin: true, ...(existingDefault ? {} : { isDefault: true }) }
+    });
+    return { template, created: false };
+  }
+
+  const template = await prisma.subscriptionTemplate.create({ data: buildDefaultTemplateData(!existingDefault) });
+  console.log(`default template bootstrap: created ${template.name}`);
+  return { template, created: true };
+}
+
+module.exports = { DEFAULT_TEMPLATE, buildDefaultTemplateData, ensureDefaultTemplate };
