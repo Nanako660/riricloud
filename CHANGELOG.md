@@ -7,9 +7,9 @@
 [docs/VERSIONING.md](docs/VERSIONING.md)（最小递增原则、统一版本号、Tag 与本文件一一对应）。
 
 变更类型说明：`Added` 新增 · `Changed` 变更 · `Fixed` 修复 · `Removed` 移除 · `Security` 安全 · `Deprecated` 弃用。
-约定：功能/修复合入 main 时在 `[Unreleased]` 追加条目；发布时整理为版本小节并打 `vX.Y.Z` Tag。
+约定：每个包含核心代码变更的 PR 在合入 main 前必须递增版本号并在本文件对应版本小节中记录条目；发布时按版本小节打 `vX.Y.Z` Tag。
 
-## [Unreleased]
+## [0.4.0] - 2026-09-01
 
 ### Fixed
 
@@ -70,6 +70,10 @@
 
 ### Added
 
+- 统一版本管理与自动化门禁治理体系：
+  - 规范化 PR 级连续版本递增机制：严格约束每个包含核心代码修改的 PR 在合入 main 前必须递增版本号，并在 CHANGELOG.md 中同步完成版本小节维护；纯文档、脚本或配置变更允许免增版本。
+  - 落地零依赖版本治理工具链 `scripts/version-governance.mjs`：提供 `pnpm bump [patch|minor|major]`（一键递增 `package.json` 版本号并同步在 CHANGELOG.md 顶部建立版本小节）与 `pnpm gate:version`（校验 SemVer 合法性、单仓唯一版本源、CHANGELOG 格式与 Git 分支代码变更递增约束）。
+  - 建立三重质量防线：在本地全局门禁 `pnpm gate`、GitHub Actions CI 流水线（`.github/workflows/ci.yml`）与 Git 钩子（`.husky/pre-push`）中全链路接入版本约束拦截，并在 `AGENTS.md`、`docs/VERSIONING.md`、`docs/GIT_WORKFLOW.md` 与 `docs/PROJECT_CONSTRAINTS.md` 中固化执行 SOP。
 - 文档治理与规划归档机械约束体系：
   - 规范化规划与归档目录分层：新增 `docs/plans/`（进行中规划台账）与 `docs/plans/archive/`（历史归档），制定标准 YAML Frontmatter 元数据与 `YYYY-MM-DD-*.md` 归档命名规范。
   - 落地零依赖治理工具链 `scripts/doc-governance.mjs`：提供 `pnpm gate:docs`（根目录白名单、Frontmatter 校验、100% 完成阻断、归档规范检查）、`pnpm plan:archive`（一键完成打标、重命名与归档）、`pnpm plan:new`（一键生成标准模板）与 `pnpm plan:sync`（台账自动同步）。

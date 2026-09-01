@@ -18,11 +18,13 @@ RiriCloud 分三个应用：`apps/server`（NestJS）、`apps/web`（React）、
 
 任何 PR 合入 `main` 前必须全绿（工具链在 Phase 1 落地，见 [ROADMAP.md](./ROADMAP.md)）：
 
-| 应用 | 门禁命令 |
+| 应用 / 领域 | 门禁命令 |
 | :--- | :--- |
-| `apps/server` | `tsc --noEmit` · ESLint · 单元测试 · `nest build` |
-| `apps/web` | `tsc --noEmit` · ESLint · `vite build` |
-| `apps/agent` | `go vet ./...` · `gofmt -l .`（输出须为空）· `go test ./...` · `go build` |
+| **版本与日志治理** | `pnpm gate:version`（SemVer 合规、单仓唯一版本源、PR 核心代码递增校验） |
+| **文档与规划治理** | `pnpm gate:docs`（根目录白名单、规划 Frontmatter、100% 完成归档阻断） |
+| `apps/server` | `pnpm gate:server`（`tsc --noEmit` · ESLint · 单元测试） |
+| `apps/web` | `pnpm gate:web`（`tsc --noEmit` · ESLint · `vite build`） |
+| `apps/agent` | `pnpm gate:agent`（`go vet ./...` · `gofmt -l .` · `go test ./...` · `go build`） |
 | 跨端协议变更 | 必须附 WS 消息或 REST 契约的前后对照说明 |
 
 CI 未全绿禁止合并；本地提交前应先跑过同套命令。单人开发时**代码审查以自审 + 门禁代替**：合入前对照本文 §6 清单逐项自查，并在 PR 描述中留自查记录。

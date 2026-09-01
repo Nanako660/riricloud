@@ -75,7 +75,7 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 | 规范与红线本身 | 本文档 / [VERSIONING.md](./VERSIONING.md) / [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) / [CODE_REVIEW.md](./CODE_REVIEW.md) |
 | 里程碑进度 | [ROADMAP.md](./ROADMAP.md)（完成的条目打勾） |
 
-`feat` / `fix` 类变更还须在 [CHANGELOG.md](../CHANGELOG.md) 的 `[Unreleased]` 追加条目（详见 [VERSIONING.md](./VERSIONING.md) §5）。
+`feat` / `fix` 等核心代码变更必须执行 `pnpm bump` 并在 [CHANGELOG.md](../CHANGELOG.md) 顶部的对应版本小节中记录条目（详见 [VERSIONING.md](./VERSIONING.md) §5/§6）。
 
 ---
 
@@ -112,3 +112,10 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 1. **统一收敛**：所有中短期任务清单、架构重构计划等必须存放于 `docs/plans/`；严禁在 `docs/` 根目录随意堆放散落的 TODO / 计划文件（门禁脚本白名单强制校验）。
 2. **机械阻断**：进行中规划（`docs/plans/`）内所有任务复选框 100% 勾选完成时，`pnpm gate:docs` 门禁将强制阻断报错，防止陈旧完成项滞留在活跃目录。
 3. **规范归档**：必须通过 `pnpm plan:archive <file>` 或符合 `YYYY-MM-DD-*.md` 规范将已完结任务移入 `docs/plans/archive/`，并同步刷新 [plans/README.md](./plans/README.md) 台账。
+
+## 10. 统一版本管理与 PR 级连续递增约束
+
+1. **单仓唯一版本源**：根 `package.json` 的 `version` 字段为全局唯一真实源，子包（`apps/server`、`apps/web`）与 `apps/agent` 一律不得私自维护版本号。
+2. **核心代码变更强制递增**：凡涉及 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 等核心代码修改的 PR，在合入 `main` 前分支上必须执行 `pnpm bump [patch|minor|major]` 递增版本号，并在 [CHANGELOG.md](../CHANGELOG.md) 顶部的对应版本小节中记录改动。纯文档、脚本或配置改动允许免增版本。
+3. **三重防线机械阻断**：`pnpm gate:version`、CI 流水线及 `.husky/pre-push` 构成三重防线，自动校验版本号大小、CHANGELOG 格式与 Git 变更差分，杜绝未升版本的核心代码变更合入主干。
+

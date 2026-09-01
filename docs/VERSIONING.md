@@ -72,33 +72,50 @@ Monorepo 中的 `apps/web`、`apps/server`、`apps/agent` **共用同一个版�
 
 ## 5. Git Tag 与 CHANGELOG 规范
 
-1. **Tag 格式**：`v{version}`（如 `v0.1.0`、`v1.2.3`），采用附注 Tag（`git tag -a`），仅在 `main` 分支上打。
-2. **Tag 与 CHANGELOG 一一对应**：每个版本 Tag 必须对应 [CHANGELOG.md](../CHANGELOG.md) 中的一个版本小节；反之每个版本小节发布时必须打 Tag。两者任一缺失视为发布流程不完整。
+1. **Tag 格式**：`v{version}`（如 `v0.4.0`、`v1.2.3`），采用附注 Tag（`git tag -a`），仅在 `main` 分支上打。
+2. **Tag 与 CHANGELOG 一一对应**：每个版本 Tag 必须对应 [CHANGELOG.md](../CHANGELOG.md) 中的一个版本小节；反之每个版本小节发布时打 Tag。两者任一缺失视为发布流程不完整。
 3. **CHANGELOG 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)**，变更归类为 `Added` / `Changed` / `Fixed` / `Removed` / `Security` / `Deprecated`。
-4. **条目随 PR 写入**：功能或修复合并进 `main` 时，作者同步在该文件的 `[Unreleased]` 小节追加条目（发布流程详见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) §4）。
+4. **条目随 PR 写入并定稿版本**：每个包含核心代码变更的 PR 分支必须执行 `pnpm bump` 递增版本号并在 `CHANGELOG.md` 顶部的对应版本小节中记录条目，避免在 `[Unreleased]` 中长期无序堆积。
 5. 一个版本小节内的条目按"对用户的重要性"排序，而非时间顺序。
 
 ---
 
-## 6. 发布流程 (Release Process)
+## 6. PR 级连续版本管理与发布流程
 
-GitHub Flow 之下不设 release 分支，发布即"打 Tag + 出变更日志"：
+GitHub Flow 之下 `main` 随时处于已定稿与可发布状态：
 
 ```mermaid
-flowchart LR
-    A["变更合入 main"] -->|同步追加| B["CHANGELOG<br/>[Unreleased]"]
-    B --> C{"触发发布?"}
-    C -->|否| A
-    C -->|是| D["确定最小递增版本位"]
-    D --> E["[Unreleased] 改为版本号+日期<br/>新建空 [Unreleased]"]
-    E --> F["chore(repo): 发布 vX.Y.Z"]
-    F --> G["打附注 Tag vX.Y.Z 并推送"]
-    G --> H["按需构建发布物<br/>(镜像 / 二进制)"]
+flowchart TD
+    A["特性分支开发完成"] --> B["修改核心代码时执行<br/>pnpm bump [patch|minor|major]"]
+    B --> C["package.json 版本递增<br/>CHANGELOG 生成对应版本小节"]
+    C --> D["在 CHANGELOG 中整理变更内容"]
+    D --> E{"本地 pnpm gate<br/>(含 gate:version)"}
+    E -->|未升版本 / 格式不符| F["❌ 本地门禁阻断"]
+    E -->|通过| G["提交并推送特性分支，提 PR"]
+    G --> H{"GitHub Actions CI<br/>PR 门禁验证"}
+    H -->|门禁全绿| I["Squash Merge 合入 main"]
+    I --> J["触发发布时执行<br/>bash scripts/release.sh"]
+    J --> K["打附注 Tag vX.Y.Z<br/>构建三端产物并发布 GitHub Release"]
 ```
 
-要点：
+### 6.1 核心代码判定与免增规则
 
-- **触发时机**：积累了足够的用户可感知变更，或存在需要尽快送达的修复（含安全修复）。没有固定周期，避免为凑版本而发布。
-- **发布提交**：`chore(repo): 发布 vX.Y.Z`，内容为 CHANGELOG 版本小节整理。
-- **回滚**：优先前滚（`fix` + PATCH）；确需回退时删除 Tag 重新发布，并在 CHANGELOG 中记录 `Removed`/`Fixed` 说明。
-- **自动化（已落地，本地执行）**：发布由本地脚本 `scripts/release.sh` 完成——校验 Tag 与根 `package.json` 版本一致、在 Tag 提交上复跑三端门禁、交叉编译 Agent 多平台产物（附 SHA-256 校验和）、提取 CHANGELOG 版本小节为 Release Notes，并通过 `gh` CLI 创建 GitHub Release（详见 [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) §3.2）。执行发布前必须已完成「CHANGELOG 定稿 + 发布提交」，否则脚本在对应校验步骤直接失败。
+- **强制递增**：修改了 `apps/server/`、`apps/web/`、`apps/agent/` 或 `prisma/` 下的代码时，PR 必须递增版本号。
+- **免增放行**：纯文档（`docs/`）、开发脚本（`scripts/`）、本地配置微调且不包含运行时代码变更时，`pnpm gate:version` 允许保持版本不变放行。
+
+### 6.2 工具链与三重防线
+
+- **辅助命令**：
+  - `pnpm bump`：默认自增 PATCH（`0.4.0` → `0.4.1`）；
+  - `pnpm bump minor`：自增 MINOR（`0.4.0` → `0.5.0`）；
+  - `pnpm bump major`：自增 MAJOR（`0.4.0` → `1.0.0`）。
+- **三重防线**：
+  1. **本地质量门禁**：`pnpm gate` 纳入 `pnpm gate:version`（`scripts/version-governance.mjs check`）；
+  2. **Git 钩子拦截**：`.husky/pre-push` 在推送特性分支前执行轻量校验；
+  3. **CI 门禁阻断**：`.github/workflows/ci.yml` 在 PR 阶段强制比对基准分支，核心代码变更但未升版本时直接阻断 PR 合并。
+
+### 6.3 正式发布 (Release)
+
+- **触发时机**：当 `main` 上的版本已积累完成并需要对外发版时，在 `main` 分支执行 `bash scripts/release.sh`。
+- **自动化**：`scripts/release.sh` 会自动校验当前 `package.json` 版本与 `CHANGELOG.md` 一致性、创建附注 Tag `vX.Y.Z`、复跑三端门禁、交叉编译 Agent 与主控发行包，并通过 `gh` CLI 创建 GitHub Release。
+

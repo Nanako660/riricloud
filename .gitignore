@@ -36,3 +36,7 @@ docker-images/*.manifest.json
 
 # husky 运行时目录
 .husky/_
+
+# 本地二进制托管目录
+binaries/
+

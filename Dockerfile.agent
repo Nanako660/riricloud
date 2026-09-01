@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.23-bookworm AS agent-build
+FROM golang:1.25-bookworm AS agent-build
 
 ARG TARGETARCH=amd64
 ARG RIRICLOUD_VERSION=dev
