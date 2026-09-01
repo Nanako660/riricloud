@@ -66,16 +66,22 @@ bash scripts/gate-agent.sh
 
 echo "[3/8] 交叉编译 Agent 多平台产物（CGO=0，版本号 ldflags 注入）"
 mkdir -p "$DIST/agent" "$DIST/master/linux-amd64" "$DIST/packages"
-cd "$WORKTREE/apps/agent"
-for platform in "linux amd64 riri-agent" "linux arm64 riri-agent" "windows amd64 riri-agent.exe" "darwin amd64 riri-agent" "darwin arm64 riri-agent"; do
-  set -- $platform
-  GOOS_FLAG=$1
-  GOARCH_FLAG=$2
-  BIN=$3
+cd "$WORKTREE"
+for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+  GOOS_FLAG="${target%%/*}"
+  GOARCH_FLAG="${target#*/}"
+  if [ "$GOOS_FLAG" = "windows" ]; then
+    BIN="riri-agent.exe"
+  else
+    BIN="riri-agent"
+  fi
   DIR="$DIST/agent/${GOOS_FLAG}-${GOARCH_FLAG}"
   mkdir -p "$DIR"
-  CGO_ENABLED=0 GOOS="$GOOS_FLAG" GOARCH="$GOARCH_FLAG" go build -gcflags "main=-N -l" -trimpath \
-    -ldflags "-X main.Version=${VERSION}" -o "$DIR/$BIN" .
+  bash scripts/build-agent.sh \
+    --target "$target" \
+    --output "$DIR/$BIN" \
+    --version "$VERSION" \
+    --release
 done
 
 echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本 + Agent 二进制）"

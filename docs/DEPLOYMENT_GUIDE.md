@@ -48,9 +48,19 @@ pnpm --filter @riricloud/server start:prod
 
 根目录 `pnpm build` 可一次构建三端：Server 输出保留在 `apps/server/dist/`，Web 输出保留在 `apps/web/dist/`，当前平台 Agent 输出到 `artifacts/dev/agent/<os>-<arch>/riri-agent[.exe]`。其中两个 `dist/` 是框架和运行时的约定目录，不与可分发二进制产物混放。
 
+Agent 编译统一由 `scripts/build-agent.sh` 负责：
+
+```bash
+pnpm build:agent                                    # 当前平台，开发模式
+pnpm build:agent:all                                # Linux/macOS/Windows 五个平台
+pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模式
+```
+
+发布脚本也复用同一入口，发布模式会启用 `-s -w` 去除符号和调试信息；所有构建仍强制 `CGO_ENABLED=0`，并通过 `-ldflags` 注入根 `package.json` 的统一版本号。
+
 ### 1.4 方式三：Docker Compose
 
-仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 WSL/Linux Docker 环境执行；Windows PowerShell 仅用于调用 `wsl.exe`，不承担 Docker 测试：
+仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL，PowerShell/Git Bash 不直接承担 Docker 操作：
 
 ```bash
 cp .env.example .env  # 或手动创建 .env
@@ -58,6 +68,14 @@ cp .env.example .env  # 或手动创建 .env
 pnpm docker:build
 pnpm docker:up
 ```
+
+Windows 开发机可从 PowerShell 调用 WSL，但实际命令必须在 WSL 内执行：
+
+```powershell
+wsl.exe -d Ubuntu -- bash -lc "cd /path/to/riricloud && pnpm docker:build"
+```
+
+`scripts/docker-build.sh` 会拒绝 `MSYS` / `MINGW` 等原生 Windows shell，并检查 Docker daemon 是否为 Linux containers。`pnpm docker:tags` 只输出当前版本对应的完整镜像标签，不需要连接 Docker daemon。
 
 若 WSL 仅能调用 Windows `node.exe`、尚未安装 Linux Node.js/pnpm，可直接使用同一脚本：
 

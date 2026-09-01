@@ -145,6 +145,12 @@ pnpm dev:web
 # 编译当前平台 Agent
 pnpm build:agent
 
+# 编译发布支持的全部 Agent 平台
+pnpm build:agent:all
+
+# 指定目标平台并生成发布模式二进制
+pnpm build:agent -- --target linux/amd64 --release
+
 # 启动 Agent 连接本地主控（Token 从管理员「节点管理」复制）
 AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run apps/agent/main.go run
 ```
@@ -158,12 +164,20 @@ AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run 
 主控镜像内置 Node.js 运行时、Prisma、Linux x64 本机 Agent 及 Sing-box 内核。
 
 ```bash
-# 在 Linux / WSL Docker 环境中执行
+# 在 Linux / WSL shell 中执行；Windows 环境必须从 WSL 调用
 cp .env.example .env
 # 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false（内嵌默认模板仍会自动创建）
 pnpm docker:build
 pnpm docker:up
 ```
+
+Docker 构建、导出和 Compose 操作不接受 Windows PowerShell 或 Git Bash 作为执行 shell。Windows 开发机请先进入 WSL，再在仓库目录执行上述命令，例如：
+
+```powershell
+wsl.exe -d Ubuntu -- bash -lc "cd /path/to/riricloud && pnpm docker:build"
+```
+
+脚本会同时检查 Docker daemon 是否处于 Linux containers 模式；`pnpm docker:tags` 只读取版本和标签，不要求启动 Docker daemon。
 
 - **首管理员引导**：空库首次启动时，主控会使用 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 创建首个管理员账号；已有管理员时不会被环境变量覆盖。
 - **内置本机节点**：主控启动时会自动注册 `Master-Local` 节点并启动内置 Agent 进程。
