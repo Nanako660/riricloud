@@ -68,18 +68,19 @@ riricloud/
 
 ---
 
-## 改了什么 → 必须更新什么
+## 改了什么 → 必须更新什么（机械门禁强制校验）
 
-| 变更内容 | 必须同一 PR 更新 |
+以下映射规则由 `pnpm gate:docs`（`scripts/doc-governance.mjs`）在本地自查与 CI 中强制阻断；纯内部微调且未改变外部契约时可在 commit message 附带 `[skip-doc-sync]` 声明豁免：
+
+| 变更内容 (触发路径) | 必须同一 PR 更新 (目标文档) |
 | :--- | :--- |
-| REST / WS / 订阅格式 | `docs/API_AND_PROTOCOLS.md` |
-| Prisma 模型或迁移 | `docs/DATA_MODELS.md` |
-| 组件、通信链路、时序 | `docs/ARCHITECTURE.md` |
-| 前端 UI 规范、主题、组件层级 | `docs/FRONTEND_UI_GUIDELINES.md` |
-| 前端 UI 页面 / 模态框 / 样式 | `docs/FRONTEND_UI_GUIDELINES.md`、`docs/VISUAL_VERIFICATION.md` |
+| Prisma 模型或迁移 (`apps/server/prisma/**`) | `docs/DATA_MODELS.md` |
+| REST / WS / 订阅格式 (`apps/server/src/**/*.controller.ts` 等) | `docs/API_AND_PROTOCOLS.md` |
+| 部署方式、Docker 或脚本 (`Dockerfile*`、`scripts/docker-*.sh` 等) | `docs/DEPLOYMENT_GUIDE.md` |
+| 选型或依赖库增删 (`package.json` 依赖、`go.mod`) | `docs/TECH_STACK.md` |
+| 前端 UI 页面 / 模态框 / 样式 (`apps/web/src/pages/**`) | `docs/FRONTEND_UI_GUIDELINES.md` 或 `docs/VISUAL_VERIFICATION.md` |
 | 任务规划与细粒度待办 | `docs/plans/`（进行中）/ 完成后必须 `pnpm plan:archive` 归档 |
-| 选型或依赖库增删 | `docs/TECH_STACK.md` |
-| 部署方式或脚本行为 | `docs/DEPLOYMENT_GUIDE.md` |
+| 组件、通信链路、时序 | `docs/ARCHITECTURE.md` |
 | 规范与红线本身 | `docs/VERSIONING.md` / `GIT_WORKFLOW.md` / `CODE_REVIEW.md` / `PROJECT_CONSTRAINTS.md` |
 | 里程碑完成 | `docs/ROADMAP.md` 勾选 |
 | 用户可感知的功能/修复/核心代码 | `package.json`（`pnpm bump`）与 `CHANGELOG.md` 对应版本小节 |

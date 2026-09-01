@@ -11,6 +11,7 @@
  * 4. sync: 自动扫描并同步 docs/plans/README.md 的进行中与归档表格
  */
 
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -318,6 +319,9 @@ function runCheck() {
     errors.push(`[索引缺失] docs/plans/README.md 索引台账不存在，请运行 pnpm plan:sync 生成。`);
   }
 
+  // 5. 校验代码-文档联动同步规则 (Coupled Doc-Code Governance)
+  checkDocCodeCoupling(errors, warnings);
+
   // 输出警告
   for (const w of warnings) {
     console.warn(`⚠️  ${w}`);
@@ -332,7 +336,197 @@ function runCheck() {
     process.exit(1);
   }
 
-  console.log('✅ [doc-governance] 文档治理门禁校验全绿！所有规划与归档符合规范。');
+  console.log('✅ [doc-governance] 文档治理门禁校验全绿！所有规划、归档与代码文档联动符合规范。');
+}
+
+/**
+ * 代码-文档联动规则配置
+ */
+const COUPLED_RULES = [
+  {
+    name: 'Prisma 数据库模型与迁移',
+    description: '修改了 Prisma Schema 或数据库迁移脚本',
+    triggers: [
+      /^apps\/server\/prisma\/schema\.prisma$/,
+      /^apps\/server\/prisma\/migrations\//,
+      /^prisma\/schema\.prisma$/,
+    ],
+    requiredDocs: ['docs/DATA_MODELS.md'],
+  },
+  {
+    name: 'API 控制器与通信网关',
+    description: '修改了 REST 控制器、WebSocket 网关、订阅编译器或 Agent WS 模块',
+    triggers: [
+      /^apps\/server\/src\/.*\.controller\.ts$/,
+      /^apps\/server\/src\/agent-gateway\//,
+      /^apps\/server\/src\/subscription\/builders\./,
+      /^apps\/agent\/internal\/ws\//,
+    ],
+    requiredDocs: ['docs/API_AND_PROTOCOLS.md'],
+  },
+  {
+    name: '系统部署与容器化发布',
+    description: '修改了 Dockerfile、docker-compose、打包部署脚本或发行包模板',
+    triggers: [
+      /^Dockerfile(\..*)?$/,
+      /^docker-compose(\..*)?\.ya?ml$/,
+      /^scripts\/docker-.*\.sh$/,
+      /^scripts\/release\.sh$/,
+      /^scripts\/master-bundle\//,
+    ],
+    requiredDocs: ['docs/DEPLOYMENT_GUIDE.md'],
+  },
+  {
+    name: '技术栈与核心依赖',
+    description: '修改了依赖配置 (package.json 依赖部分 / go.mod)',
+    customCheck: (changedFiles, baseRef) => {
+      const hasGoMod = changedFiles.some(f => f === 'apps/agent/go.mod' || f === 'apps/agent/go.sum');
+      if (hasGoMod) return ['apps/agent/go.mod'];
+
+      const hasPkg = changedFiles.some(f => f === 'package.json' || f === 'apps/server/package.json' || f === 'apps/web/package.json');
+      if (!hasPkg) return [];
+
+      try {
+        const diffTarget = baseRef ? (typeof baseRef === 'object' ? baseRef.mergeBase : baseRef) : 'HEAD';
+        const pkgDiff = execSync(`git diff ${diffTarget} -- package.json apps/server/package.json apps/web/package.json`, { encoding: 'utf-8', cwd: ROOT_DIR });
+        if (/(?:dependencies|devDependencies|peerDependencies|engines|packageManager)/i.test(pkgDiff)) {
+          return changedFiles.filter(f => f === 'package.json' || f.endsWith('package.json'));
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    },
+    requiredDocs: ['docs/TECH_STACK.md'],
+  },
+  {
+    name: '前端 UI 页面与视图交互',
+    description: '修改了前端业务页面或核心视图组件',
+    triggers: [
+      /^apps\/web\/src\/pages\//,
+    ],
+    requiredDocs: ['docs/FRONTEND_UI_GUIDELINES.md', 'docs/VISUAL_VERIFICATION.md'],
+  },
+];
+
+const EXEMPTION_KEYWORDS = ['[skip-doc-sync]', '[skip-docs-sync]', 'docs-exempt', 'skip-doc-sync'];
+
+/**
+ * 查找 git 基准 commit / 分支
+ */
+function getGitBaseRef() {
+  try {
+    if (process.env.GITHUB_BASE_REF) {
+      return `origin/${process.env.GITHUB_BASE_REF}`;
+    }
+
+    const candidates = ['origin/main', 'main', 'master'];
+    for (const ref of candidates) {
+      try {
+        execSync(`git rev-parse --verify ${ref}`, { stdio: 'ignore', cwd: ROOT_DIR });
+        const mergeBase = execSync(`git merge-base HEAD ${ref}`, { encoding: 'utf-8', cwd: ROOT_DIR }).trim();
+        if (mergeBase) {
+          return { ref, mergeBase };
+        }
+      } catch {
+        // 继续尝试下一个候选
+      }
+    }
+  } catch {
+    // Git 命令不可用
+  }
+  return null;
+}
+
+/**
+ * 获取变更文件列表（包含暂存区与未暂存工作区改动）
+ */
+function getChangedFiles(baseRef) {
+  const filesSet = new Set();
+  try {
+    if (baseRef) {
+      const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
+      const output = execSync(`git diff --name-only ${diffTarget} HEAD`, { encoding: 'utf-8', cwd: ROOT_DIR });
+      output.split(/\r?\n/).map(s => s.trim()).filter(Boolean).forEach(f => filesSet.add(f));
+    }
+
+    // 包含工作区未提交的文件（staged + unstaged + untracked）
+    const statusOutput = execSync(`git status --porcelain`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    statusOutput.split(/\r?\n/).filter(Boolean).forEach(line => {
+      const rawPath = line.slice(2).trim();
+      if (rawPath) {
+        const finalPath = rawPath.includes(' -> ') ? rawPath.split(' -> ')[1].trim() : rawPath;
+        filesSet.add(finalPath);
+      }
+    });
+  } catch {
+    // 忽略 Git 错误
+  }
+  return Array.from(filesSet);
+}
+
+/**
+ * 获取提交历史中的 Commit Messages（用于检测豁免标记）
+ */
+function getCommitMessages(baseRef) {
+  try {
+    let messages = '';
+    if (baseRef) {
+      const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
+      messages = execSync(`git log ${diffTarget}..HEAD --pretty=format:"%B"`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    } else {
+      messages = execSync(`git log -n 5 --pretty=format:"%B"`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    }
+    return messages;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 校验代码与文档的联动同步规则
+ */
+function checkDocCodeCoupling(errors, warnings) {
+  const baseRef = getGitBaseRef();
+  const changedFiles = getChangedFiles(baseRef).map(f => f.replace(/\\/g, '/'));
+
+  if (changedFiles.length === 0) {
+    return;
+  }
+
+  // 检查是否有显式豁免标记
+  if (process.env.SKIP_DOC_SYNC === '1' || process.env.SKIP_DOC_SYNC === 'true') {
+    warnings.push('[doc-sync 豁免] 检测到环境变量 SKIP_DOC_SYNC，已跳过代码-文档联动规则校验。');
+    return;
+  }
+
+  const commitMessages = getCommitMessages(baseRef);
+  const isExempted = EXEMPTION_KEYWORDS.some(kw => commitMessages.toLowerCase().includes(kw.toLowerCase()));
+  if (isExempted) {
+    warnings.push('[doc-sync 豁免] 提交信息中检测到 [skip-doc-sync] / docs-exempt 豁免标记，已跳过代码-文档联动规则校验。');
+    return;
+  }
+
+  for (const rule of COUPLED_RULES) {
+    let triggeredFiles = [];
+    if (rule.customCheck) {
+      triggeredFiles = rule.customCheck(changedFiles, baseRef);
+    } else if (rule.triggers) {
+      triggeredFiles = changedFiles.filter(f => rule.triggers.some(re => re.test(f)));
+    }
+
+    if (triggeredFiles.length > 0) {
+      const hasRequiredDoc = rule.requiredDocs.some(doc => changedFiles.includes(doc));
+      if (!hasRequiredDoc) {
+        errors.push(
+          `[代码-文档联动违规] ${rule.name}\n` +
+          `  触发代码变更: ${triggeredFiles.slice(0, 3).join(', ')}${triggeredFiles.length > 3 ? ` 等共 ${triggeredFiles.length} 个文件` : ''}\n` +
+          `  必须同步修改: ${rule.requiredDocs.join(' 或 ')}\n` +
+          `  👉 若本次变更纯属内部微调且未改变外部契约，可在 commit message 中添加 [skip-doc-sync] 声明豁免。`
+        );
+      }
+    }
+  }
 }
 
 /**
