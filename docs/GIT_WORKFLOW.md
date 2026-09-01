@@ -124,9 +124,10 @@ Master 拒绝。Agent 侧需同步升级到本版本。
 | 环节 | 约定 |
 | :--- | :--- |
 | **合并方式** | 统一 **squash merge**：分支上的多个原子提交压成 main 上的一个提交，提交信息取 PR 标题——因此 PR 标题必须符合 [§3](#3-提交信息规范-conventional-commits) 的格式（PR 标题不规范 = 合并产物不规范） |
-| **合并前门禁** | CI 通过 typecheck / lint / test / build 全绿（Go 侧 `go vet` + `gofmt`），详见 [CODE_REVIEW.md](./CODE_REVIEW.md) §2 |
+| **版本递增要求** | 涉及核心代码变更的 PR 在合入 main 前，分支上必须执行 `pnpm bump` 递增版本号并维护 CHANGELOG；门禁 `pnpm gate:version` 自动校验阻断未升版本的 PR |
+| **合并前门禁** | CI 通过 五端门禁（`gate:version` + `gate:docs` + `gate:server` + `gate:web` + `gate:agent`）全绿，详见 [CODE_REVIEW.md](./CODE_REVIEW.md) §2 |
 | **冲突处理** | 在功能分支上 `git merge main`（或 rebase 后强推功能分支——仅功能分支允许 force push） |
-| **发布** | 在 main 上打附注 Tag `vX.Y.Z`，同步整理 CHANGELOG 的 `[Unreleased]` 小节为版本小节，提交信息 `chore(repo): 发布 vX.Y.Z`（完整流程见 [VERSIONING.md](./VERSIONING.md) §6） |
+| **发布** | 在 main 分支随时执行 `bash scripts/release.sh`，脚本直接读取当前 `package.json` 版本与 CHANGELOG 对应版本小节完成构建并发布 GitHub Release（完整流程见 [VERSIONING.md](./VERSIONING.md) §6） |
 
 ---
 
@@ -134,8 +135,9 @@ Master 拒绝。Agent 侧需同步升级到本版本。
 
 1. **严禁在 `main` / `master` 分支直接提交（commit）代码**：动代码前必须先切出特性分支。
 2. **严禁直接向 `main` / `master` 分支执行 push 或 force push**：所有变更必须经 PR 由 GitHub Actions 门禁验证后合并。
-3. **严禁使用 `--no-verify`** 绕过本地 Husky 的 `pre-commit` 与 `pre-push` 安全检查。
-4. 禁止在提交信息或 diff 中携带任何密钥、Token、证书私钥（含 `.env` 实文件——`.env.example` 除外）。
-5. 禁止合并非绿 CI 的 PR；紧急回滚场景先 `revert` 再修复，不在 main 上"补丁式"直接修改。
-6. 禁止一版多义：一个提交同时含 `feat` 与 `fix` 时拆分提交。
+3. **严禁修改核心代码却未递增版本号**：任何修改了 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 的 PR 必须执行 `pnpm bump` 并在 CHANGELOG 中记录版本小节，未递增将被门禁物理阻断。
+4. **严禁使用 `--no-verify`** 绕过本地 Husky 的 `pre-commit` 与 `pre-push` 安全检查。
+5. 禁止在提交信息或 diff 中携带任何密钥、Token、证书私钥（含 `.env` 实文件——`.env.example` 除外）。
+6. 禁止合并非绿 CI 的 PR；紧急回滚场景先 `revert` 再修复，不在 main 上"补丁式"直接修改。
+7. 禁止一版多义：一个提交同时含 `feat` 与 `fix` 时拆分提交。
 

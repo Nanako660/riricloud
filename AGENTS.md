@@ -53,7 +53,7 @@ riricloud/
 ## 硬性规则摘要（违反即返工）
 
 1. **技术栈锁定**：只用 [docs/TECH_STACK.md](docs/TECH_STACK.md) 选定的技术；禁止引入外部数据库/Redis/MQ（零依赖红线）。
-2. **版本最小递增**：能 PATCH 不 MINOR，能 MINOR 不 MAJOR；三应用共用根 `package.json` 的统一版本号，不私设版本（[docs/VERSIONING.md](docs/VERSIONING.md)）。
+2. **版本最小递增与 PR 级连续约束**：能 PATCH 不 MINOR，能 MINOR 不 MAJOR；三应用共用根 `package.json` 的统一版本号，不私设版本；每个包含核心代码变更的 PR 在合入 main 前必须执行 `pnpm bump` 递增版本号并同步完成 CHANGELOG 维护（[docs/VERSIONING.md](docs/VERSIONING.md)）。
 3. **提交规范**：Conventional Commits，英文 type + 中文描述（`feat(server): 实现用户登录`）；原子提交；破坏性变更标 `!` + `BREAKING CHANGE`（[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)）。
 4. **分支模型与 main 绝对保护（零容忍红线）**：GitHub Flow；main 绝对受保护，**严禁在 main 分支直接修改、提交（commit）或推送（push）**；AI Agent 动代码前**第一步必须执行 `git branch --show-current` 并切出独立特性分支**；严禁使用 `--no-verify` 绕过拦截；一切变更无例外 100% 走 PR 合并。
 5. **分层约束**：Controller 不碰 Prisma；WS Gateway 复用 Service；前端请求只走统一 API 客户端；前端 UI 强制遵循 [docs/FRONTEND_UI_GUIDELINES.md](docs/FRONTEND_UI_GUIDELINES.md) 与 shadcn/ui 规范（禁裸 HTML 交互标签）；Go 禁 CGO、goroutine 必须可退出（[docs/CODE_REVIEW.md](docs/CODE_REVIEW.md) §3）。
@@ -81,7 +81,7 @@ riricloud/
 | 部署方式或脚本行为 | `docs/DEPLOYMENT_GUIDE.md` |
 | 规范与红线本身 | `docs/VERSIONING.md` / `GIT_WORKFLOW.md` / `CODE_REVIEW.md` / `PROJECT_CONSTRAINTS.md` |
 | 里程碑完成 | `docs/ROADMAP.md` 勾选 |
-| 用户可感知的功能/修复 | `CHANGELOG.md` 的 `[Unreleased]` 段 |
+| 用户可感知的功能/修复/核心代码 | `package.json`（`pnpm bump`）与 `CHANGELOG.md` 对应版本小节 |
 
 ---
 
@@ -100,16 +100,22 @@ pnpm install
 pnpm dev:server    # NestJS 主控（http://localhost:3000，API 文档 /api/docs）
 pnpm dev:web       # Vite 前端（http://localhost:5173，代理 /api → 3000）
 
+# 版本自增与版本门禁
+pnpm bump                  # 递增 PATCH 版本（如 0.4.0 → 0.4.1）并自动建立 CHANGELOG 小节
+pnpm bump minor            # 递增 MINOR 版本（如 0.4.0 → 0.5.0）
+pnpm bump major            # 递增 MAJOR 版本（如 0.4.0 → 1.0.0）
+
 # 规划与任务管理
 pnpm plan:new <name>       # 创建新规划模板（放入 docs/plans/）
 pnpm plan:archive <file>   # 一键归档已完成规划（移入 docs/plans/archive/ 并刷新台账）
 
-# 质量门禁（提交前本地自查，四端一次全跑用 pnpm gate）
+# 质量门禁（提交前本地自查，五门禁一次全跑用 pnpm gate）
+pnpm gate:version  # 版本号合规、单仓一致性与 PR 递增约束校验
 pnpm gate:docs     # 文档治理与规划归档机械约束校验
 pnpm gate:server   # tsc --noEmit + eslint + jest
 pnpm gate:web      # tsc --noEmit + eslint + vite build
 pnpm gate:agent    # go vet + gofmt + go test + go build（经 scripts/gate-agent.sh）
-pnpm gate          # gate:docs + gate:server + gate:web + gate:agent 全跑
+pnpm gate          # gate:version + gate:docs + gate:server + gate:web + gate:agent 全跑
 
 # 数据库迁移与种子（server）
 pnpm --filter @riricloud/server exec prisma migrate dev
@@ -125,11 +131,12 @@ bash scripts/release.sh
 ### 标准 Git 分支与 PR 工作流（强制执行 SOP）
 
 1. **动代码前必先切分支**：执行 `git checkout -b <type>/<scope>-<desc>`（严禁在 main 分支编辑/暂存/提交）
-2. **本地门禁自查**：`pnpm gate:server` / `pnpm gate:web` / `pnpm gate:agent` 全绿
-3. **原子提交**：`git add <files>` → `git commit -m "<type>(<scope>): <中文描述>"`（严禁 `--no-verify`）
-4. **推送并提 PR**：`git push -u origin <branch>` → `gh pr create --title "<type>(<scope>): <中文描述>" --body "..."`
-5. **等待 CI 并合并**：等待 GitHub Actions 门禁通过 → `gh pr merge --squash --delete-branch`
-6. **切回主分支同步**：`git checkout main && git pull origin main`
+2. **完成特性开发与版本递增**：修改核心代码时执行 `pnpm bump [patch|minor|major]`，并在 `CHANGELOG.md` 对应版本小节记录条目
+3. **本地门禁自查**：`pnpm gate`（含 `gate:version` / `gate:docs` / `gate:server` / `gate:web` / `gate:agent`）全绿
+4. **原子提交**：`git add <files>` → `git commit -m "<type>(<scope>): <中文描述>"`（严禁 `--no-verify`）
+5. **推送并提 PR**：`git push -u origin <branch>` → `gh pr create --title "<type>(<scope>): <中文描述>" --body "..."`
+6. **等待 CI 并合并**：等待 GitHub Actions 门禁通过 → `gh pr merge --squash --delete-branch`
+7. **切回主分支同步**：`git checkout main && git pull origin main`
 
 ---
 

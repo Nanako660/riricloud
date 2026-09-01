@@ -19,7 +19,7 @@
 
 | 规划名称 | 目标版本 | 创建日期 | 任务进度 |
 | :--- | :--- | :--- | :--- |
-| *(暂无进行中规划，使用 `pnpm plan:new <name>` 创建)* | — | — | — |
+| [Agent 现代化交互式 CLI 与全生命周期管理架构（破坏性重构）](./agent-interactive-cli-architecture.md) | `v0.4.0` | 2026-09-01 | 0/29 (0%) |
 
 ---
 
@@ -27,11 +27,11 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
-| [Master 内置本机 Agent](./archive/2026-08-31-master-embedded-agent.md) | `v0.4.0` | 2026-08-31 | — |
 | [v0.3.0 订阅架构与极简 Agent 远程升级重构](./archive/2026-08-31-v0.3.0-architecture-refactor.md) | `v0.3.0` | 2026-08-31 | PR #3 (squash commit 2c87b14) |
 | [部署打包实施方案（Release 二进制分发 + 本地 Docker 分发）](./archive/2026-08-31-packaging-and-deployment.md) | `v0.4.0` | 2026-08-31 | — |
 | [节点与线路解耦、链式代理中继与主控本机节点架构重构](./archive/2026-08-31-node-line-separation-and-relay.md) | `v0.4.0` | 2026-08-31 | — |
 | [node-detail-ops-and-master-upgrades](./archive/2026-08-31-node-detail-ops-and-master-upgrades.md) | `v0.3.0` | 2026-08-31 | — |
+| [Master 内置本机 Agent](./archive/2026-08-31-master-embedded-agent.md) | `v0.4.0` | 2026-08-31 | — |
 | [恢复线路管理完整可视化编辑](./archive/2026-08-31-line-visual-editor-restoration.md) | `v0.4.0` | 2026-08-31 | — |
 | [线路顶层编排与出入站生命周期重构 (Line-Centric Pipeline Architecture)](./archive/2026-08-31-line-centric-pipeline.md) | `v0.4.0` | 2026-08-31 | — |
 | [agent-dual-mode-communication](./archive/2026-08-31-agent-dual-mode-communication.md) | `v0.3.0` | 2026-08-31 | — |

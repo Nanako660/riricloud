@@ -12,4 +12,8 @@ while read local_ref local_sha remote_ref remote_sha; do
   fi
 done
 
+# 运行版本管理与 CHANGELOG 门禁校验
+node scripts/version-governance.mjs check || exit 1
+
 exit 0
+

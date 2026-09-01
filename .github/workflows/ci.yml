@@ -12,6 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  governance:
+    name: 治理门禁（版本 / CHANGELOG / 文档）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 版本管理与 CHANGELOG 门禁
+        run: pnpm gate:version
+      - name: 文档治理门禁
+        run: pnpm gate:docs
+
   server:
     name: Server 门禁（tsc / lint / test / build）
     runs-on: ubuntu-latest
