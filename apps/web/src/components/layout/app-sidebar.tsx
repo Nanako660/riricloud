@@ -1,8 +1,18 @@
 import { NavLink } from 'react-router-dom';
 import { Cloud, Gauge, GitBranch, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem
+} from '@/components/ui/sidebar';
 
 // 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
@@ -40,43 +50,36 @@ export function AppSidebar() {
   ];
 
   return (
-    <aside className="bg-background hidden w-60 flex-col border-r md:flex">
-      <div className="flex h-14 items-center gap-2 border-b px-5">
-        {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-5 w-5" />}
-        <span className="truncate font-semibold">{siteName}</span>
-      </div>
-      <nav className="flex flex-1 flex-col gap-4 p-3 overflow-y-auto">
+    <Sidebar aria-label="主导航">
+      <SidebarHeader>
+        <div className="flex items-center gap-2">
+          {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-5 w-5" />}
+          <span className="truncate font-semibold">{siteName}</span>
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
         {groups.map((group) => (
-          <div key={group.label} className="space-y-1">
-            <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.label}
-            </div>
-            <div className="space-y-1">
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
               {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-secondary text-secondary-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                    )
-                  }
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </NavLink>
+                <SidebarMenuItem key={item.to}>
+                  <NavLink to={item.to} end={item.end} className="block">
+                    {({ isActive }) => (
+                      <SidebarMenuButton asChild active={isActive}>
+                        <span><item.icon /><span>{item.label}</span></span>
+                      </SidebarMenuButton>
+                    )}
+                  </NavLink>
+                </SidebarMenuItem>
               ))}
-            </div>
-          </div>
+            </SidebarMenu>
+          </SidebarGroup>
         ))}
-      </nav>
-      <div className="border-t p-3">
-        <p className="text-muted-foreground px-3 text-xs">v{__APP_VERSION__}</p>
-      </div>
-    </aside>
+      </SidebarContent>
+      <SidebarFooter>
+        <p className="text-sidebar-foreground/55 px-3 text-xs">v{__APP_VERSION__}</p>
+      </SidebarFooter>
+    </Sidebar>
   );
 }

@@ -26,7 +26,7 @@ export function AppHeader() {
   };
 
   return (
-    <header className="bg-background sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b px-4 md:px-6">
+    <header className="bg-background sticky top-0 z-10 flex h-14 items-center justify-between gap-4 px-4 md:px-6">
       <div />
       <div className="flex items-center gap-2">
         <ThemeToggle />

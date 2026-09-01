@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import CodeMirror from '@uiw/react-codemirror';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
+import { useTheme } from 'next-themes';
 import { z } from 'zod';
 import { Code2, Gauge, Globe2, Link2, Palette, RotateCcw, Save, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
@@ -13,6 +14,8 @@ import { api, extractErrorMessage } from '@/lib/api';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAdminPlans } from '@/pages/admin/plans/use-plans';
 import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
+import { ProbePresetEditor } from './components/probe-preset-editor';
+import { probePresetTargetsSchema, toProbePresetFormValue, toProbePresetTarget, type ProbePresetTarget } from './components/probe-preset-schema';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,7 +65,7 @@ interface SystemSettings {
   configSyncDebounceMs: number;
   defaultPollIntervalSecs: number;
   binaryDownloadBaseUrl: string;
-  probePresetTargets: Array<{ type: 'tcp' | 'dns' | 'icmp'; target: string; port?: number; timeoutMs?: number }>;
+  probePresetTargets: ProbePresetTarget[];
   jwtSessionDays: number;
   customCss: string;
   customHeadHtml: string;
@@ -95,13 +98,13 @@ const settingsSchema = z.object({
   configSyncDebounceMs: z.coerce.number().int().min(0).max(10000),
   defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
   binaryDownloadBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的二进制分发 URL'),
-  probePresetTargetsText: z.string().refine(isProbeJson, '请输入合法的探针目标 JSON 数组'),
+  probePresetTargets: probePresetTargetsSchema,
   jwtSessionDays: z.coerce.number().int().min(1).max(30),
   customCss: z.string().max(50000),
   customHeadHtml: z.string().max(20000)
 });
 
-type SettingsForm = z.infer<typeof settingsSchema>;
+export type SettingsForm = z.infer<typeof settingsSchema>;
 
 export default function AdminSettingsPage() {
   const queryClient = useQueryClient();
@@ -217,11 +220,11 @@ export default function AdminSettingsPage() {
               <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
               <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL" placeholder="https://downloads.example.com/riricloud" description="留空时优先使用 RIRICLOUD_PUBLIC_URL。" />
-              <SettingsTextarea name="probePresetTargetsText" label="默认探针目标 JSON" rows={10} className="font-mono text-xs md:col-span-2" description="数组元素格式：{ type, target, port?, timeoutMs? }。" />
+              <ProbePresetEditor />
             </CardContent></Card></TabsContent>
 
             <TabsContent value="advanced"><Card><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="space-y-6">
-              <div className="grid gap-5 md:grid-cols-2"><SettingsInput name="jwtSessionDays" label="JWT 会话有效天数" type="number" min={1} max={30} /><div className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground"><div className="flex items-center gap-2 font-medium text-foreground"><ShieldCheck className="h-4 w-4" />安全提示</div><p className="mt-1">缩短会话周期可以降低长期凭据泄漏风险，修改后新登录会使用新周期。</p></div></div>
+              <div className="max-w-2xl"><SettingsInput name="jwtSessionDays" label="JWT 会话有效天数" type="number" min={1} max={30} description="安全提示：缩短会话周期可以降低长期凭据泄漏风险，修改后新登录会使用新周期。" /></div>
               <SettingsEditor name="customCss" label="自定义 CSS" extensions={[css()]} description="样式只注入当前面板页面，适合覆盖主题变量或品牌细节。" />
               <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="内容会原样挂载到 document.head，请只粘贴可信代码。" />
             </CardContent></Card></TabsContent>
@@ -260,7 +263,9 @@ function SettingsSelect({ name, label, description, options }: { name: FieldPath
 
 function SettingsEditor({ name, label, description, extensions }: { name: FieldPath<SettingsForm>; label: string; description: string; extensions: Extension[] }) {
   const { control } = useFormContext<SettingsForm>();
-  return <FormField control={control} name={name} render={({ field }) => <FormItem><FormLabel className="flex items-center gap-2"><Code2 className="h-4 w-4" />{label}</FormLabel><FormControl><div className="overflow-hidden rounded-md border shadow-sm"><CodeMirror value={String(field.value ?? '')} height="220px" extensions={extensions} basicSetup={{ lineNumbers: true, foldGutter: true }} onChange={field.onChange} /></div></FormControl><FormDescription>{description}</FormDescription><FormMessage /></FormItem>} />;
+  const { resolvedTheme } = useTheme();
+  const editorTheme = resolvedTheme === 'dark' ? 'dark' : 'light';
+  return <FormField control={control} name={name} render={({ field }) => <FormItem><FormLabel className="flex items-center gap-2"><Code2 className="h-4 w-4" />{label}</FormLabel><FormControl><div className="overflow-hidden rounded-md border bg-background shadow-sm"><CodeMirror value={String(field.value ?? '')} height="220px" theme={editorTheme} extensions={extensions} basicSetup={{ lineNumbers: true, foldGutter: true }} onChange={field.onChange} /></div></FormControl><FormDescription>{description}</FormDescription><FormMessage /></FormItem>} />;
 }
 
 function SetOriginButton() {
@@ -296,7 +301,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     configSyncDebounceMs: settings.configSyncDebounceMs,
     defaultPollIntervalSecs: settings.defaultPollIntervalSecs,
     binaryDownloadBaseUrl: settings.binaryDownloadBaseUrl,
-    probePresetTargetsText: JSON.stringify(settings.probePresetTargets, null, 2),
+    probePresetTargets: settings.probePresetTargets.map(toProbePresetFormValue),
     jwtSessionDays: settings.jwtSessionDays,
     customCss: settings.customCss,
     customHeadHtml: settings.customHeadHtml
@@ -304,8 +309,6 @@ function toForm(settings: SystemSettings): SettingsForm {
 }
 
 function toPayload(values: SettingsForm) {
-  let probePresetTargets: SystemSettings['probePresetTargets'] = [];
-  try { probePresetTargets = JSON.parse(values.probePresetTargetsText) as SystemSettings['probePresetTargets']; } catch { /* schema 已负责提示 */ }
   return {
     siteName: values.siteName,
     siteDescription: values.siteDescription,
@@ -333,7 +336,7 @@ function toPayload(values: SettingsForm) {
     configSyncDebounceMs: values.configSyncDebounceMs,
     defaultPollIntervalSecs: values.defaultPollIntervalSecs,
     binaryDownloadBaseUrl: values.binaryDownloadBaseUrl,
-    probePresetTargets,
+    probePresetTargets: values.probePresetTargets.map(toProbePresetTarget),
     jwtSessionDays: values.jwtSessionDays,
     customCss: values.customCss,
     customHeadHtml: values.customHeadHtml
@@ -342,13 +345,4 @@ function toPayload(values: SettingsForm) {
 
 function isBlankOrUrl(value: string) {
   return !value || /^https?:\/\//i.test(value);
-}
-
-function isProbeJson(value: string) {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) && parsed.every((item) => item && typeof item === 'object' && ['tcp', 'dns', 'icmp'].includes((item as { type?: unknown }).type as string) && typeof (item as { target?: unknown }).target === 'string');
-  } catch {
-    return false;
-  }
 }

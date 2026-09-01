@@ -3,6 +3,7 @@ import { AppSidebar } from './app-sidebar';
 import { AppHeader } from './app-header';
 import { usePublicSettings } from '@/lib/public-settings';
 import { ExternalLink, Mail } from 'lucide-react';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 
 // 应用外壳：侧边栏 + 顶栏 + 内容区
 export function AppLayout() {
@@ -16,14 +17,14 @@ export function AppLayout() {
   ].filter(Boolean) as Array<{ href: string; label: string; icon?: typeof ExternalLink }>;
 
   return (
-    <div className="flex min-h-screen w-full">
+    <SidebarProvider>
       <AppSidebar />
-      <div className="flex flex-1 flex-col">
+      <SidebarInset>
         <AppHeader />
         <main className="flex flex-1 flex-col">
           <Outlet />
         </main>
-        <footer className="flex flex-col gap-2 border-t px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between md:px-6">
+        <footer className="flex flex-col gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between md:px-6">
           <span>{settings?.footerCopyright || `© ${new Date().getFullYear()} ${settings?.siteName || 'RiriCloud'}`}</span>
           {supportLinks.length ? (
             <nav className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="客服支持">
@@ -36,7 +37,7 @@ export function AppLayout() {
             </nav>
           ) : null}
         </footer>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
