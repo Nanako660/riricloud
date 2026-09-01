@@ -124,10 +124,10 @@ Master 拒绝。Agent 侧需同步升级到本版本。
 | 环节 | 约定 |
 | :--- | :--- |
 | **合并方式** | 统一 **squash merge**：分支上的多个原子提交压成 main 上的一个提交，提交信息取 PR 标题——因此 PR 标题必须符合 [§3](#3-提交信息规范-conventional-commits) 的格式（PR 标题不规范 = 合并产物不规范） |
-| **版本递增要求** | 涉及核心代码变更的 PR 在合入 main 前，分支上必须执行 `pnpm bump` 递增版本号并维护 CHANGELOG；门禁 `pnpm gate:version` 自动校验阻断未升版本的 PR |
+| **版本与日志要求** | 涉及核心代码变更的日常 PR 必须在 `CHANGELOG.md` 顶部的 `[Unreleased]` 中记录条目；发版时通过 Release PR 执行 `pnpm bump` 固化版本小节；门禁 `pnpm gate:version` 自动校验日志与发版一致性 |
 | **合并前门禁** | CI 通过 五端门禁（`gate:version` + `gate:docs` + `gate:server` + `gate:web` + `gate:agent`）全绿，详见 [CODE_REVIEW.md](./CODE_REVIEW.md) §2 |
 | **冲突处理** | 在功能分支上 `git merge main`（或 rebase 后强推功能分支——仅功能分支允许 force push） |
-| **发布** | 在 main 分支随时执行 `bash scripts/release.sh`，脚本直接读取当前 `package.json` 版本与 CHANGELOG 对应版本小节完成构建并发布 GitHub Release（完整流程见 [VERSIONING.md](./VERSIONING.md) §6） |
+| **发布** | 发版 PR 合入 main 后，在 main 分支执行 `bash scripts/release.sh`，脚本直接读取当前 `package.json` 版本与 CHANGELOG 对应版本小节完成构建并发布 GitHub Release（完整流程见 [VERSIONING.md](./VERSIONING.md) §6） |
 
 ---
 
@@ -135,7 +135,7 @@ Master 拒绝。Agent 侧需同步升级到本版本。
 
 1. **严禁在 `main` / `master` 分支直接提交（commit）代码**：动代码前必须先切出特性分支。
 2. **严禁直接向 `main` / `master` 分支执行 push 或 force push**：所有变更必须经 PR 由 GitHub Actions 门禁验证后合并。
-3. **严禁修改核心代码却未递增版本号**：任何修改了 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 的 PR 必须执行 `pnpm bump` 并在 CHANGELOG 中记录版本小节，未递增将被门禁物理阻断。
+3. **严禁修改核心代码却未维护更新日志**：任何修改了 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 的 PR 必须在 `CHANGELOG.md` 的 `[Unreleased]` 缓冲区中记录变更，未记录将被门禁物理阻断。
 4. **严禁使用 `--no-verify`** 绕过本地 Husky 的 `pre-commit` 与 `pre-push` 安全检查。
 5. 禁止在提交信息或 diff 中携带任何密钥、Token、证书私钥（含 `.env` 实文件——`.env.example` 除外）。
 6. 禁止合并非绿 CI 的 PR；紧急回滚场景先 `revert` 再修复，不在 main 上"补丁式"直接修改。

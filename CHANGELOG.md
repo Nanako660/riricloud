@@ -7,7 +7,31 @@
 [docs/VERSIONING.md](docs/VERSIONING.md)（最小递增原则、统一版本号、Tag 与本文件一一对应）。
 
 变更类型说明：`Added` 新增 · `Changed` 变更 · `Fixed` 修复 · `Removed` 移除 · `Security` 安全 · `Deprecated` 弃用。
-约定：每个包含核心代码变更的 PR 在合入 main 前必须递增版本号并在本文件对应版本小节中记录条目；发布时按版本小节打 `vX.Y.Z` Tag。
+约定：日常特性与修复 PR 在 `[Unreleased]` 中维护更新条目；正式发版时运行 `pnpm bump` 固化为版本小节并按小节打 `vX.Y.Z` Tag。
+
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.4.13] - 2026-09-01
+
+### Added
+
+- 内嵌新的「默认通用全能分流模板」，包含地区节点、AI、流媒体、Telegram、广告拦截、国内直连、DNS/Fake-IP 和客户端覆写配置。
+
+### Changed
+
+
+
+### Fixed
+
+
 
 ## [0.4.12] - 2026-09-01
 

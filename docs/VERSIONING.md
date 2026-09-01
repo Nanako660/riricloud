@@ -76,47 +76,53 @@ Monorepo 中的 `apps/web`、`apps/server`、`apps/agent` **共用同一个版�
 1. **Tag 格式**：`v{version}`（如 `v0.4.0`、`v1.2.3`），采用附注 Tag（`git tag -a`），仅在 `main` 分支上打。
 2. **Tag 与 CHANGELOG 一一对应**：每个版本 Tag 必须对应 [CHANGELOG.md](../CHANGELOG.md) 中的一个版本小节；反之每个版本小节发布时打 Tag。两者任一缺失视为发布流程不完整。
 3. **CHANGELOG 遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)**，变更归类为 `Added` / `Changed` / `Fixed` / `Removed` / `Security` / `Deprecated`。
-4. **条目随 PR 写入并定稿版本**：每个包含核心代码变更的 PR 分支必须执行 `pnpm bump` 递增版本号并在 `CHANGELOG.md` 顶部的对应版本小节中记录条目，避免在 `[Unreleased]` 中长期无序堆积。
-5. 一个版本小节内的条目按"对用户的重要性"排序，而非时间顺序。
+4. **日常 PR 维护 `[Unreleased]` 缓冲区**：每个包含核心代码变更的 PR 在开发分支中仅向 `CHANGELOG.md` 顶部的 `## [Unreleased]` 缓冲区追加条目，保持 `package.json` 版本不变。
+5. **发版时统一 Bump 固化**：发版前拉出 `release/vX.Y.Z` 分支执行 `pnpm bump`，自动将 `[Unreleased]` 中的条目固化为定稿版本小节，并在顶部重置新的空 `[Unreleased]` 模板。
+6. 一个版本小节内的条目按"对用户的重要性"排序，而非时间顺序。
 
 ---
 
-## 6. PR 级连续版本管理与发布流程
+## 6. 版本累积管理与发布流程
 
-GitHub Flow 之下 `main` 随时处于已定稿与可发布状态：
+采用标准的 **`[Unreleased]` 缓冲累积 + Release PR 统一发版** 工作流：
 
 ```mermaid
 flowchart TD
-    A["特性分支开发完成"] --> B["修改核心代码时执行<br/>pnpm bump [patch|minor|major]"]
-    B --> C["package.json 版本递增<br/>CHANGELOG 生成对应版本小节"]
-    C --> D["在 CHANGELOG 中整理变更内容"]
-    D --> E{"本地 pnpm gate<br/>(含 gate:version)"}
-    E -->|未升版本 / 格式不符| F["❌ 本地门禁阻断"]
-    E -->|通过| G["提交并推送特性分支，提 PR"]
-    G --> H{"GitHub Actions CI<br/>PR 门禁验证"}
-    H -->|门禁全绿| I["Squash Merge 合入 main"]
-    I --> J["触发发布时执行<br/>bash scripts/release.sh"]
-    J --> K["打附注 Tag vX.Y.Z<br/>构建三端产物并发布 GitHub Release"]
+    subgraph 日常开发流 ["日常开发（特性 / 修复 PR）"]
+        A["特性分支开发完成"] --> B["修改核心代码时向<br/>CHANGELOG.md [Unreleased] 追加条目"]
+        B --> C["保持 package.json 版本不变"]
+        C --> D{"本地 pnpm gate<br/>(含 gate:version)"}
+        D -->|未记日志 / 格式不符| E["❌ 门禁阻断"]
+        D -->|通过| F["提 PR 经 CI 验证后<br/>Squash 合入 main"]
+    end
+
+    subgraph 发版发布流 ["发版流程（Release PR & GitHub Release）"]
+        G["准备对外发版"] --> H["切出 release/vX.Y.Z 分支<br/>执行 pnpm bump [patch|minor|major]"]
+        H --> I["Unreleased 自动转换为版本小节<br/>更新 package.json 与 README 徽标<br/>重置顶部空 Unreleased 模板"]
+        I --> J["提 Release PR 合入 main"]
+        J --> K["在 main 分支执行<br/>bash scripts/release.sh"]
+        K --> L["创建附注 Tag vX.Y.Z<br/>构建三端产物并发布 GitHub Release"]
+    end
 ```
 
 ### 6.1 核心代码判定与免增规则
 
-- **强制递增**：修改了 `apps/server/`、`apps/web/`、`apps/agent/` 或 `prisma/` 下的代码时，PR 必须递增版本号。
-- **免增放行**：纯文档（`docs/`）、开发脚本（`scripts/`）、本地配置微调且不包含运行时代码变更时，`pnpm gate:version` 允许保持版本不变放行。
+- **日常 PR 日志约束**：修改了 `apps/server/`、`apps/web/`、`apps/agent/` 或 `prisma/` 下的代码时，PR 必须在 `CHANGELOG.md` 的 `[Unreleased]` 缓冲区中记录变更。
+- **免增放行**：纯文档（`docs/`）、开发脚本（`scripts/`）、本地配置微调且不包含运行时代码变更时，`pnpm gate:version` 允许免增 CHANGELOG 放行。
 
 ### 6.2 工具链与三重防线
 
 - **辅助命令**：
-  - `pnpm bump`：默认自增 PATCH（`0.4.0` → `0.4.1`），原子性同步更新 `package.json`、`CHANGELOG.md` 与 `README.md` 徽标；
-  - `pnpm bump minor`：自增 MINOR（`0.4.0` → `0.5.0`）；
-  - `pnpm bump major`：自增 MAJOR（`0.4.0` → `1.0.0`）。
+  - `pnpm bump`：默认自增 PATCH（如 `0.4.13` → `0.4.14`），将 `[Unreleased]` 转化为版本小节并同步更新 `package.json`、`README.md` 徽标与顶部新 `[Unreleased]` 模板；
+  - `pnpm bump minor`：自增 MINOR（如 `0.4.13` → `0.5.0`）；
+  - `pnpm bump major`：自增 MAJOR（如 `0.4.13` → `1.0.0`）。
 - **三重防线**：
-  1. **本地质量门禁**：`pnpm gate` 纳入 `pnpm gate:version`（`scripts/version-governance.mjs check`，三向校验 `package.json`、`CHANGELOG.md` 与 `README.md` 徽标）；
+  1. **本地质量门禁**：`pnpm gate` 纳入 `pnpm gate:version`（`scripts/version-governance.mjs check`，校验 `package.json`、`CHANGELOG.md` 结构与 PR 阶段的 `[Unreleased]` 维护情况）；
   2. **Git 钩子拦截**：`.husky/pre-push` 在推送特性分支前执行轻量校验；
-  3. **CI 门禁阻断**：`.github/workflows/ci.yml` 在 PR 阶段强制比对基准分支，核心代码变更但未升版本或三处版本脱节时直接阻断 PR 合并。
+  3. **CI 门禁阻断**：`.github/workflows/ci.yml` 在 PR 阶段强制比对基准分支，核心代码变更未维护 `[Unreleased]` 日志或发版版本脱节时直接阻断 PR 合并。
 
 ### 6.3 正式发布 (Release)
 
-- **触发时机**：当 `main` 上的版本已积累完成并需要对外发版时，在 `main` 分支执行 `bash scripts/release.sh`。
+- **触发时机**：当 `main` 上的 `[Unreleased]` 功能已积累完成并通过 Release PR 固化版本后，在 `main` 分支执行 `bash scripts/release.sh`。
 - **自动化**：`scripts/release.sh` 会自动校验当前 `package.json` 版本与 `CHANGELOG.md` 一致性、创建附注 Tag `vX.Y.Z`、复跑三端门禁、交叉编译 Agent 与主控发行包，并通过 `gh` CLI 创建 GitHub Release。
 
