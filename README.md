@@ -166,7 +166,7 @@ AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run 
 ```bash
 # 在 Linux / WSL shell 中执行；Windows 环境必须从 WSL 调用
 cp .env.example .env
-# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false（内嵌默认模板仍会自动创建）
+# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；可选设置 MASTER_DATA_PATH / AGENT_DATA_PATH 指定宿主机持久化目录；生产环境保持 AUTO_SEED=false（内嵌默认模板仍会自动创建）
 pnpm docker:build
 pnpm docker:up
 ```

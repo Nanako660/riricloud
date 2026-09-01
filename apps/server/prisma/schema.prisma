@@ -107,6 +107,7 @@ model Line {
   entryPort       Int
   exitNodeId      String
   exitPort        Int
+  certificateId   String?
   endpointOverrideEnabled Boolean  @default(false)
   serverHost      String?
   serverPort      Int?
@@ -123,13 +124,34 @@ model Line {
 
   entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
   exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
 
   @@index([entryNodeId])
   @@index([exitNodeId])
+  @@index([certificateId])
   @@index([protocolType])
   @@index([type, status])
   @@index([isPublic])
   @@index([sortOrder])
+}
+
+model Certificate {
+  id             String   @id @default(uuid())
+  name           String
+  certificatePem String
+  privateKeyPem  String
+  subject        String
+  issuer         String
+  serialNumber   String
+  sansJson       String   @default("[]")
+  validFrom      DateTime
+  validTo        DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lines Line[]
+
+  @@index([validTo])
 }
 
 model SubscriptionTemplate {

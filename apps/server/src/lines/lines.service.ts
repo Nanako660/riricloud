@@ -22,7 +22,10 @@ import { UpdateLineDto } from './dto/update-line.dto';
 import { SettingsService } from '../system/settings.service';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
-const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary } as const;
+const certificateSummary = {
+  select: { id: true, name: true, subject: true, issuer: true, sansJson: true, validFrom: true, validTo: true }
+} as const;
+const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary, certificate: certificateSummary } as const;
 type LineWithRelations = Prisma.LineGetPayload<{ include: typeof lineInclude }>;
 
 type LineInput = {
@@ -37,6 +40,7 @@ type LineInput = {
   entryPort?: number | null;
   exitNodeId?: string | null;
   exitPort?: number | null;
+  certificateId?: string | null;
   endpointOverrideEnabled?: boolean;
   serverHost?: string | null;
   serverPort?: number | null;
@@ -112,6 +116,7 @@ export class LinesService {
       type: current.type as LineType,
       protocolType: current.protocolType as ProtocolType,
       params: this.parseObject(current.paramsJson),
+      certificateId: current.certificateId,
       relayMode: current.relayMode as RelayMode | null,
       entryNodeId: current.entryNodeId,
       exitNodeId: current.exitNodeId,
@@ -185,7 +190,27 @@ export class LinesService {
     const protocolType = input.protocolType ?? (current?.protocolType as ProtocolType | undefined) ?? 'VLESS';
     if (!PROTOCOL_TYPES.includes(protocolType)) throw new BadRequestException('线路协议无效');
     const existingParams = current ? this.parseObject(current.paramsJson) : {};
-    const params = normalizeInboundParams(protocolType, this.deepMerge(existingParams, input.params ?? {}));
+    const certificateId = input.certificateId !== undefined ? input.certificateId : current?.certificateId ?? null;
+    const certificate = certificateId
+      ? await this.prisma.certificate.findUnique({ where: { id: certificateId } })
+      : null;
+    if (certificateId && !certificate) throw new NotFoundException('证书不存在');
+    const mergedParams = this.deepMerge(existingParams, input.params ?? {});
+    if (certificate) {
+      mergedParams.tls = {
+        ...this.parseObjectValue(mergedParams.tls),
+        certificate: [certificate.certificatePem],
+        key: [certificate.privateKeyPem]
+      };
+    }
+    const params = normalizeInboundParams(protocolType, mergedParams);
+    if (certificateId && (params.tls as { mode?: string } | undefined)?.mode !== 'tls') {
+      throw new BadRequestException('证书只能关联标准 TLS 安全模式');
+    }
+    if (certificateId && params.tls && typeof params.tls === 'object') {
+      delete (params.tls as Record<string, unknown>).certificate;
+      delete (params.tls as Record<string, unknown>).key;
+    }
 
     let entryNodeId = input.entryNodeId !== undefined ? input.entryNodeId : current?.entryNodeId;
     let exitNodeId = input.exitNodeId !== undefined ? input.exitNodeId : current?.exitNodeId;
@@ -266,6 +291,7 @@ export class LinesService {
       entryPort,
       exitNodeId,
       exitPort,
+      certificateId,
       endpointOverrideEnabled: input.endpointOverrideEnabled ?? current?.endpointOverrideEnabled ?? false,
       serverHost: optionalText(input.serverHost, current?.serverHost),
       serverPort: input.serverPort !== undefined ? input.serverPort : current?.serverPort,
@@ -353,6 +379,10 @@ export class LinesService {
     }
   }
 
+  private parseObjectValue(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  }
+
   private parseTags(value: string) {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -413,6 +443,15 @@ export class LinesService {
         params,
         node: line.exitNode
       },
+      certificate: line.certificate ? {
+        id: line.certificate.id,
+        name: line.certificate.name,
+        subject: line.certificate.subject,
+        issuer: line.certificate.issuer,
+        sans: this.parseTags(line.certificate.sansJson),
+        validFrom: line.certificate.validFrom,
+        validTo: line.certificate.validTo
+      } : null,
       tagsJson: undefined,
       paramsJson: undefined
     };

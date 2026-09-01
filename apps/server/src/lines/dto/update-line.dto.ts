@@ -70,6 +70,11 @@ export class UpdateLineDto {
   @IsOptional()
   exitPort?: number | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '标准 TLS 证书 ID；传 null 清除关联' })
+  @IsUUID()
+  @IsOptional()
+  certificateId?: string | null;
+
   @ApiPropertyOptional()
   @IsBoolean()
   @IsOptional()

@@ -174,6 +174,7 @@ model Line {
   entryPort       Int
   exitNodeId      String
   exitPort        Int
+  certificateId   String? // 关联标准 TLS 证书；为空时使用 Agent 本地路径
   endpointOverrideEnabled Boolean @default(false) // 是否启用线路对外覆盖；关闭时复用底层默认设置
   serverHost      String?
   serverPort      Int?
@@ -190,13 +191,38 @@ model Line {
 
   entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
   exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
 
   @@index([entryNodeId])
   @@index([exitNodeId])
+  @@index([certificateId])
   @@index([protocolType])
   @@index([type, status])
   @@index([isPublic])
   @@index([sortOrder])
+}
+
+// ==============================
+// 2.2.1 TLS 证书实体 (Certificate，v0.4.15)
+// PEM 私钥仅由管理员接口明文回显；普通列表与线路响应不返回私钥。
+// ==============================
+model Certificate {
+  id             String   @id @default(uuid())
+  name           String
+  certificatePem String   // X.509 叶子证书 PEM
+  privateKeyPem  String   // 未加密私钥 PEM
+  subject        String
+  issuer         String
+  serialNumber   String
+  sansJson       String   @default("[]")
+  validFrom      DateTime
+  validTo        DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lines Line[]
+
+  @@index([validTo])
 }
 
 // 2.3 套餐实体 (Plan，v0.4.0)
@@ -353,7 +379,7 @@ model SystemSetting {
 
 #### 安全层 (TLS / Reality / ACME)
 - `none`：无加密明文直连
-- `tls`：标准 TLS（`serverName`、`certificatePath`、`keyPath`、`alpn`、`insecure`；证书为 Agent 机本地路径）
+- `tls`：标准 TLS（`serverName`、`certificatePath`、`keyPath`、`certificate`、`key`、`alpn`、`insecure`）。线路关联 `Certificate` 时，服务端在生成 `config_sync` 的临时参数中以内嵌文本数组 `certificate: ["-----BEGIN CERTIFICATE-----..."]` 与 `key: ["-----BEGIN PRIVATE KEY-----..."]` 下发；未关联证书时继续使用 Agent 机本地路径。
 - `reality`：VLESS Reality 伪装（`dest`、`serverNames`、`privateKey`、`publicKey`、`shortIds`）
 - `acme`：Sing-box 内置 ACME 自动申请证书（`domain`、`email`、`provider`）
 

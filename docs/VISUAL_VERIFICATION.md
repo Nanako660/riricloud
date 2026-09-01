@@ -53,6 +53,7 @@
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
 | **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
 | **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
+| **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、有效期状态、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
 
 ---
 
@@ -75,7 +76,7 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-25]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-26]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
     PathCheck -->|控制台模块\npages/dashboard/*| Dash[精准走查: UI-03, UI-04]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
@@ -87,14 +88,15 @@ flowchart TD
     PathCheck -->|节点升级\npages/admin/nodes/components/upgrade-node-dialog.tsx| Upgrade[精准走查: UI-22]
     PathCheck -->|线路管理\npages/admin/lines/*| Lines[精准走查: UI-23 ~ UI-24]
     PathCheck -->|用户线路\npages/user/lines/*| UserLines[精准走查: UI-25]
+    PathCheck -->|证书管理\npages/admin/certificates/*| Certificates[精准走查: UI-26]
 ```
 
 ### 映射规则表
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-25`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-25`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-26`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-26`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
 | `apps/web/src/pages/dashboard/**` | `UI-03`, `UI-04` | **增量** |
@@ -108,6 +110,7 @@ flowchart TD
 | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | `UI-22` | **增量** |
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
 | `apps/web/src/pages/user/lines/**` | `UI-25` | **增量** |
+| `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 
 ---
 

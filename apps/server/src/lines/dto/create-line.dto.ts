@@ -69,6 +69,11 @@ export class CreateLineDto {
   @IsOptional()
   exitPort?: number;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '标准 TLS 证书 ID；关联后由 Master 将 PEM 内嵌下发至 Agent' })
+  @IsUUID()
+  @IsOptional()
+  certificateId?: string | null;
+
   @ApiPropertyOptional({ default: false })
   @IsBoolean()
   @IsOptional()

@@ -292,12 +292,12 @@ export class AgentService implements OnModuleDestroy {
         entryLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: { exitNode: true }
+          include: { exitNode: true, certificate: true }
         },
         exitLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: { entryNode: true }
+          include: { entryNode: true, certificate: true }
         }
       }
     });
@@ -347,6 +347,7 @@ export class AgentService implements OnModuleDestroy {
       exitNodeId: string;
       exitPort: number;
       exitNode: { serverHost: string };
+      certificate: { certificatePem: string; privateKeyPem: string } | null;
     };
     const lines = new Map<string, ConfigLine>();
     for (const line of node.entryLines ?? []) lines.set(line.id, line);
@@ -361,7 +362,7 @@ export class AgentService implements OnModuleDestroy {
     const relayRules: Array<Record<string, unknown>> = [];
     for (const line of lines.values()) {
       const protocolType = line.protocolType as ProtocolType;
-      const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
+      const params = this.buildLineParams(line);
       const lineTags = resolveLineTags(line);
       const isEntry = line.entryNodeId === nodeId;
       const isExit = line.exitNodeId === nodeId;
@@ -439,6 +440,24 @@ export class AgentService implements OnModuleDestroy {
       singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
     }
     return { version: ++this.configVersion, singboxConfig };
+  }
+
+  private buildLineParams(line: {
+    paramsJson: string;
+    certificate?: { certificatePem: string; privateKeyPem: string } | null;
+  }): Record<string, unknown> {
+    const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
+    if (!line.certificate) return params;
+    const tls = params.tls;
+    if (!tls || typeof tls !== 'object' || Array.isArray(tls)) return params;
+    return {
+      ...params,
+      tls: {
+        ...(tls as Record<string, unknown>),
+        certificate: [line.certificate.certificatePem],
+        key: [line.certificate.privateKeyPem]
+      }
+    };
   }
 
   private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {

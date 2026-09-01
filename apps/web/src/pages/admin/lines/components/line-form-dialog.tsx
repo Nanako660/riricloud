@@ -13,18 +13,19 @@ import { useRealityKeypair } from '../use-lines';
 import { LineAdvancedFields } from './line-advanced-fields';
 import { LineInboundFields } from './line-inbound-fields';
 import { defaultLineFormValues, lineFormSchema, lineToFormValues, newLineFormValues, toLinePayload, type LineFormValues } from './line-form-schema';
-import type { ProtocolType } from '@/lib/api';
+import type { ApiCertificate, ProtocolType } from '@/lib/api';
 
 interface LineFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   line: AdminLine | null;
   nodes: AdminNode[];
+  certificates: ApiCertificate[];
   pending: boolean;
   onSubmit: (payload: LinePayload) => void;
 }
 
-export function LineFormDialog({ open, onOpenChange, line, nodes, pending, onSubmit }: LineFormDialogProps) {
+export function LineFormDialog({ open, onOpenChange, line, nodes, certificates, pending, onSubmit }: LineFormDialogProps) {
   const [tab, setTab] = useState('inbound');
   const form = useForm<LineFormValues>({
     resolver: zodResolver(lineFormSchema),
@@ -66,6 +67,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, pending, onSub
       entryPort: current.entryPort,
       exitNodeId: current.exitNodeId,
       exitPort: current.exitPort,
+      certificateId: current.certificateId,
       endpointOverrideEnabled: current.endpointOverrideEnabled,
       serverHost: current.serverHost,
       serverPort: current.serverPort,
@@ -124,7 +126,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, pending, onSub
                 <TabsTrigger value="inbound">入站配置</TabsTrigger>
                 <TabsTrigger value="advanced">线路高级设置</TabsTrigger>
               </TabsList>
-              <TabsContent value="inbound" className="mt-4"><LineInboundFields form={form} nodes={nodes} onProtocolChange={changeProtocol} onGenerateKeys={generateKeys} keyPending={realityKeypair.isPending} /></TabsContent>
+              <TabsContent value="inbound" className="mt-4"><LineInboundFields form={form} nodes={nodes} certificates={certificates} onProtocolChange={changeProtocol} onGenerateKeys={generateKeys} keyPending={realityKeypair.isPending} /></TabsContent>
               <TabsContent value="advanced" className="mt-4"><LineAdvancedFields form={form} nodes={nodes} onTypeChange={changeType} /></TabsContent>
             </Tabs>
             <DialogFooter>

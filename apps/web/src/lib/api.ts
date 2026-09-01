@@ -61,6 +61,7 @@ export interface ApiLine {
   entryPort: number;
   exitNodeId: string;
   exitPort: number;
+  certificateId: string | null;
   endpointOverrideEnabled: boolean;
   serverHost: string;
   serverPort: number;
@@ -80,8 +81,35 @@ export interface ApiLine {
   status: LineStatus;
   entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
   exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  certificate: {
+    id: string;
+    name: string;
+    subject: string;
+    issuer: string;
+    sans: string[];
+    validFrom: string;
+    validTo: string;
+  } | null;
   topology: {
     entry: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
     exit: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
   };
+}
+
+export type CertificateStatus = 'VALID' | 'EXPIRING' | 'EXPIRED' | 'NOT_YET_VALID';
+
+export interface ApiCertificate {
+  id: string;
+  name: string;
+  subject: string;
+  issuer: string;
+  serialNumber: string;
+  sans: string[];
+  validFrom: string;
+  validTo: string;
+  status: CertificateStatus;
+  daysUntilExpiry: number;
+  lineCount: number;
+  createdAt: string;
+  updatedAt: string;
 }

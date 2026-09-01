@@ -14,8 +14,11 @@
 
 ### Added
 
+- 新增主控端 TLS 证书管理中心，支持 PEM 证书/私钥解析、公私钥匹配校验、SAN 与有效期展示、线路关联及内嵌证书下发。
+
 ### Changed
 
+- Docker Compose 数据持久化改为宿主机路径绑定，支持通过 `MASTER_DATA_PATH` 与 `AGENT_DATA_PATH` 自定义 Master 和远程 Agent 数据目录。
 - 整理 Docker 镜像构建/导出与 Agent 二进制编译入口：发布脚本复用统一的 Agent 编译参数，新增目标平台、全平台矩阵和发布模式选项。
 - Docker 构建、导出与 Compose 操作明确限制在 Linux/WSL shell，并校验 Docker daemon 使用 Linux containers；`docker:tags` 可脱离 Docker daemon 查询标签。
 - 升级主控面板布局为 shadcn/ui 官方 Inset 沉浸式卡片架构（`variant="inset"`），移除全屏贯穿 1px 硬分割线，建立明暗双模式三层阶梯景深系统（L0 底层画框 / L1 主画布卡片 / L2 内容卡片）。

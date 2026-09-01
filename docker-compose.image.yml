@@ -21,7 +21,7 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       RIRICLOUD_PUBLIC_URL: ${RIRICLOUD_PUBLIC_URL:-}
     volumes:
-      - master-data:/app/data
+      - ${MASTER_DATA_PATH:-./data}:/app/data
     healthcheck:
       test:
         - CMD
@@ -48,8 +48,4 @@ services:
       AGENT_MODE: ${AGENT_MODE:-ws}
       POLL_INTERVAL_SECS: ${POLL_INTERVAL_SECS:-15}
     volumes:
-      - agent-data:/var/lib/riri-agent
-
-volumes:
-  master-data:
-  agent-data:
+      - ${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent

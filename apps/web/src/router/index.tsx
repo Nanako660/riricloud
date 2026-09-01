@@ -50,6 +50,12 @@ export const router = createBrowserRouter([
                 })
               },
               {
+                path: '/admin/certificates',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/certificates')).default
+                })
+              },
+              {
                 path: '/admin/users',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/users')).default

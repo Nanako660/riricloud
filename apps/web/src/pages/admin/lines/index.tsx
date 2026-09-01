@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { type LineStatus, type LineType } from '@/lib/api';
 import { useAdminNodes } from '../nodes/use-nodes';
+import { useAdminCertificates } from '../certificates/use-certificates';
 import { LineFormDialog } from './components/line-form-dialog';
 import { useAdminLines, useLineMutations, type AdminLine } from './use-lines';
 
@@ -35,6 +36,7 @@ export default function AdminLinesPage() {
   }), [search, status, tag, type]);
   const { data, isPending, isError } = useAdminLines(query);
   const { data: nodes } = useAdminNodes();
+  const { data: certificates } = useAdminCertificates();
   const { create, update, remove, duplicate, testResolve, batchStatus, reorder } = useLineMutations();
   const lines = data?.data ?? [];
   const allSelected = lines.length > 0 && lines.every((line) => selected.has(line.id));
@@ -101,7 +103,7 @@ export default function AdminLinesPage() {
           </Table> : <EmptyState title="暂无线路" description="创建直连线路或中继线路后，套餐即可按线路匹配。" className="border-0" />}
         </CardContent>
       </Card>
-      <LineFormDialog open={formOpen} onOpenChange={setFormOpen} line={editing} nodes={nodes ?? []} pending={busy} onSubmit={(payload) => editing ? update.mutate({ id: editing.id, ...payload }, { onSuccess: () => setFormOpen(false) }) : create.mutate(payload, { onSuccess: () => setFormOpen(false) })} />
+      <LineFormDialog open={formOpen} onOpenChange={setFormOpen} line={editing} nodes={nodes ?? []} certificates={certificates?.data ?? []} pending={busy} onSubmit={(payload) => editing ? update.mutate({ id: editing.id, ...payload }, { onSuccess: () => setFormOpen(false) }) : create.mutate(payload, { onSuccess: () => setFormOpen(false) })} />
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除线路「{deleting?.name}」？</AlertDialogTitle><AlertDialogDescription>删除后该线路不会再参与套餐匹配，已导入的订阅将在下次刷新时移除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleting && remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <div className="flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="h-3.5 w-3.5" />直连线路直接连接目标入站；中继线路由入口节点承接用户连接后转发至目标出口。</div>
     </PageContainer>

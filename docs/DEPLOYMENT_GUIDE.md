@@ -108,7 +108,7 @@ artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_
 
 运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。
 
-主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据持久化到 Compose 命名卷 `master-data`；启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
+主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
 
 ```bash
 docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com
@@ -141,7 +141,7 @@ Master 本机 Agent 会随 `master` 服务自动启动，无需启用独立 Agen
 docker compose --env-file .env.image -f docker-compose.image.yml --profile agent up -d --no-build
 ```
 
-该模板与标准 `docker-compose.yml` 使用相同的 `master-data` 和 `agent-data` 命名卷，切换部署模板时不会改变数据库持久化位置。停止服务使用 `docker compose ... down`，不要使用 `down -v`，否则会删除数据库卷。
+该模板与标准 `docker-compose.yml` 使用相同的宿主机绑定路径：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，远程 Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent`。可在 `.env` 或 `.env.image` 中指定绝对路径；相对路径以 Compose 文件所在目录为基准。停止服务使用 `docker compose ... down`，宿主机数据目录不会因停止或删除容器而被删除。
 
 远程节点容器使用 `--network host` 语义，内置静态 `riri-agent` 与启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建的 Sing-box `1.14.0`，默认不自动启动以避免空 AgentToken 容器反复重启。Master 本机 Agent 不使用该服务；创建远程节点并取得 Token 后，在 `.env` 中设置 `AGENT_TOKEN`，再执行：
 

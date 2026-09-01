@@ -13,6 +13,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.image.example
 
 # 本地数据库与运行数据
 *.db

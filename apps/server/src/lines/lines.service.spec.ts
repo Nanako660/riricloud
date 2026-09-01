@@ -12,6 +12,7 @@ describe('LinesService', () => {
     line: {
       findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), updateMany: jest.fn()
     },
+    certificate: { findUnique: jest.fn() },
     node: { findUnique: jest.fn() },
     $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations as Promise<unknown>[]))
   };
@@ -25,6 +26,7 @@ describe('LinesService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.line.findMany.mockResolvedValue([]);
+    prisma.certificate.findUnique.mockResolvedValue(null);
     prisma.node.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => where.id === entryNode.id ? entryNode : where.id === exitNode.id ? exitNode : null);
   });
 
@@ -32,6 +34,7 @@ describe('LinesService', () => {
     id: 'line-1', name: '东京 VLESS', tag: 'tokyo-vless', listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS',
     paramsJson: JSON.stringify({ flow: 'xtls-rprx-vision', transport: { type: 'tcp' }, tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], privateKey: 'private', publicKey: 'public', shortIds: ['sid'] } } }),
     entryNodeId: entryNode.id, entryPort: 24443, exitNodeId: entryNode.id, exitPort: 24443,
+    certificateId: null, certificate: null,
     endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null, trafficRate: 1, tagsJson: '["premium"]', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date(), entryNode, exitNode: entryNode
   };
 
@@ -51,6 +54,25 @@ describe('LinesService', () => {
     expect(result.line.topology.entry.port).toBe(25001);
     expect(result.line.topology.exit.port).toBe(25002);
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
+  });
+
+  it('关联证书时仅保存 certificateId，并允许标准 TLS 省略节点本地路径', async () => {
+    prisma.certificate.findUnique.mockResolvedValue({
+      id: 'certificate-1', certificatePem: 'CERTIFICATE PEM', privateKeyPem: 'PRIVATE KEY PEM'
+    });
+    prisma.line.create.mockResolvedValue({ ...rawLine, certificateId: 'certificate-1' });
+    const result = await service.create({
+      name: '带证书线路',
+      protocolType: 'HYSTERIA2',
+      entryNodeId: entryNode.id,
+      entryPort: 24445,
+      certificateId: 'certificate-1',
+      params: { tls: { mode: 'tls', serverName: 'example.com' } }
+    });
+    const createCall = prisma.line.create.mock.calls[0][0] as { data: { certificateId: string; paramsJson: string } };
+    expect(createCall.data.certificateId).toBe('certificate-1');
+    expect(createCall.data.paramsJson).not.toContain('PRIVATE KEY PEM');
+    expect(result.line.certificateId).toBe('certificate-1');
   });
 
   it('端口被同传输层线路占用时拒绝创建', async () => {
