@@ -3,8 +3,10 @@ import { AgentGateway } from './agent.gateway';
 import { AgentService } from './agent.service';
 import { AgentSweepService } from './agent-sweep.service';
 import { AgentPollController } from './agent-poll.controller';
+import { SystemModule } from '../system/system.module';
 
 @Module({
+  imports: [SystemModule],
   controllers: [AgentPollController],
   providers: [AgentGateway, AgentService, AgentSweepService],
   exports: [AgentService]

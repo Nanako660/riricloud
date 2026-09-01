@@ -6,6 +6,7 @@ import { RouterProvider } from 'react-router-dom';
 import { router } from '@/router';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { SiteRuntime } from '@/components/layout/site-runtime';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={200}>
+          <SiteRuntime />
           <RouterProvider router={router} />
           <Toaster />
         </TooltipProvider>

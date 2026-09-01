@@ -3,6 +3,10 @@ import { randomInt } from 'node:crypto';
 export const DEFAULT_INBOUND_LISTEN = '0.0.0.0';
 export const DEFAULT_STATS_API_LISTEN = '127.0.0.1:10085';
 
+export function getStatsApiListen(): string {
+  return process.env.STATS_API_LISTEN?.trim() || DEFAULT_STATS_API_LISTEN;
+}
+
 // 选用 20000~29999：保持五位数，并避开常见服务端口与 Linux 常用临时端口范围。
 export const RANDOM_SERVICE_PORT_MIN = 20000;
 export const RANDOM_SERVICE_PORT_MAX = 29999;

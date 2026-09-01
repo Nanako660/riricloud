@@ -5,8 +5,8 @@
  * @description RiriCloud 统一版本管理与自动化门禁治理脚本
  * 
  * 功能：
- * 1. bump [patch|minor|major|<version>]: 自动计算新 SemVer 版本、更新根 package.json、在 CHANGELOG.md 生成/转换版本小节
- * 2. check: 校验版本号合法性、子包无私有版本、CHANGELOG 顶部版本与 package.json 一致性、核心代码变更时的版本递增约束
+ * 1. bump [patch|minor|major|<version>]: 将 CHANGELOG.md 中的 [Unreleased] 转化为定稿版本小节、更新 package.json、同步 README.md 徽标并在顶部生成新 [Unreleased] 模板
+ * 2. check: 校验版本号合法性、子包无私有版本、CHANGELOG 顶部 [Unreleased] 与首版本小节一致性、核心代码变更时的 [Unreleased] 维护约束
  */
 
 import { execSync } from 'node:child_process';
@@ -22,13 +22,23 @@ const PKG_PATH = path.resolve(ROOT_DIR, 'package.json');
 const CHANGELOG_PATH = path.resolve(ROOT_DIR, 'CHANGELOG.md');
 const README_PATH = path.resolve(ROOT_DIR, 'README.md');
 
-// 核心代码路径前缀（这些路径下的改动要求必须递增版本号）
+// 核心代码路径前缀（这些路径下的改动要求必须在 CHANGELOG.md 的 [Unreleased] 中维护记录）
 const CORE_CODE_PREFIXES = [
   'apps/server/',
   'apps/web/',
   'apps/agent/',
   'prisma/',
 ];
+
+const UNRELEASED_TEMPLATE = `## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+`;
 
 /**
  * 终端颜色工具
@@ -145,6 +155,22 @@ function bumpSemVer(currentVersion, bumpType) {
 }
 
 /**
+ * 提取并清理 Unreleased 小节内容
+ */
+function extractUnreleasedContent(changelog) {
+  const unreleasedMatch = changelog.match(/^##\s*\[Unreleased\]\r?\n([\s\S]*?)(?=^##\s*\[|$)/m);
+  if (!unreleasedMatch) {
+    return { hasUnreleased: false, content: '' };
+  }
+
+  const rawContent = unreleasedMatch[1] || '';
+  return {
+    hasUnreleased: true,
+    content: rawContent.trim(),
+  };
+}
+
+/**
  * 执行版本自增 (pnpm bump [patch|minor|major])
  */
 function cmdBump(args) {
@@ -176,26 +202,38 @@ function cmdBump(args) {
   // 2. 更新 CHANGELOG.md
   if (fs.existsSync(CHANGELOG_PATH)) {
     let changelog = fs.readFileSync(CHANGELOG_PATH, 'utf-8');
-    const unreleasedRegex = /^##\s*\[Unreleased\]\r?\n/m;
-    const hasUnreleased = unreleasedRegex.test(changelog);
+    const { hasUnreleased, content: unreleasedContent } = extractUnreleasedContent(changelog);
+
+    // 判断 Unreleased 内容是否有实际条目（除空分类标题外有条目）
+    const lines = unreleasedContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const hasMeaningfulContent = lines.some(l => l.startsWith('- ') || l.startsWith('* '));
+
+    let newVersionSection = '';
+    if (hasMeaningfulContent) {
+      newVersionSection = `## [${nextVersion}] - ${today}\n\n${unreleasedContent}\n\n`;
+    } else {
+      newVersionSection = `## [${nextVersion}] - ${today}\n\n### Added\n\n- \n\n### Changed\n\n- \n\n### Fixed\n\n- \n\n`;
+    }
 
     if (hasUnreleased) {
-      changelog = changelog.replace(unreleasedRegex, `## [${nextVersion}] - ${today}\n`);
+      // 替换旧的 ## [Unreleased]... 为新的 ## [Unreleased] 模板 + 定稿版本小节
+      const unreleasedFullRegex = /^##\s*\[Unreleased\]\r?\n([\s\S]*?)(?=^##\s*\[|$)/m;
+      changelog = changelog.replace(unreleasedFullRegex, `${UNRELEASED_TEMPLATE}\n${newVersionSection}`);
       fs.writeFileSync(CHANGELOG_PATH, changelog, 'utf-8');
-      logSuccess(`CHANGELOG.md [Unreleased] 小节已转换为 ## [${nextVersion}] - ${today}`);
+      logSuccess(`CHANGELOG.md 已将 [Unreleased] 转换为 ## [${nextVersion}] - ${today}，并重置顶部 [Unreleased] 模板`);
     } else {
-      // 在第一个版本小节前插入新版本模板
+      // 在第一个具体版本小节前插入 [Unreleased] 模板与新版本小节
       const firstVersionRegex = /^##\s*\[(\d+\.\d+\.\d+)\]/m;
       const match = changelog.match(firstVersionRegex);
-      const newSection = `## [${nextVersion}] - ${today}\n\n### Added\n\n- \n\n### Changed\n\n- \n\n### Fixed\n\n- \n\n`;
+      const combined = `${UNRELEASED_TEMPLATE}\n${newVersionSection}`;
 
       if (match && match.index !== undefined) {
-        changelog = changelog.slice(0, match.index) + newSection + changelog.slice(match.index);
+        changelog = changelog.slice(0, match.index) + combined + changelog.slice(match.index);
       } else {
-        changelog += `\n${newSection}`;
+        changelog += `\n${combined}`;
       }
       fs.writeFileSync(CHANGELOG_PATH, changelog, 'utf-8');
-      logSuccess(`CHANGELOG.md 已插入新的版本小节 ## [${nextVersion}] - ${today}`);
+      logSuccess(`CHANGELOG.md 已插入新的版本小节 ## [${nextVersion}] - ${today} 与顶部 [Unreleased] 模板`);
     }
   } else {
     logWarn(`未找到 CHANGELOG.md，跳过日志更新`);
@@ -215,7 +253,7 @@ function cmdBump(args) {
   }
 
   console.log('');
-  logInfo(`下一步：请在 CHANGELOG.md 的 ## [${nextVersion}] 小节中记录本次变更内容，并自查 pnpm gate 后提交。`);
+  logInfo(`下一步：请检查 CHANGELOG.md 中的 ## [${nextVersion}] 版本说明，自查 pnpm gate 后提 Release PR。`);
 }
 
 /**
@@ -279,6 +317,25 @@ function getBasePackageVersion(baseRef) {
 }
 
 /**
+ * 校验 CHANGELOG.md 是否有有效新增条目
+ */
+function hasChangelogAdditions(baseRef) {
+  try {
+    const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
+    const diffOutput = execSync(`git diff ${diffTarget} HEAD -- CHANGELOG.md`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    const addedLines = diffOutput
+      .split(/\r?\n/)
+      .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+      .map(line => line.substring(1).trim())
+      .filter(line => line.length > 0 && !line.startsWith('## ') && !line.startsWith('### '));
+
+    return addedLines.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 执行版本门禁检查 (pnpm gate:version)
  */
 function cmdCheck() {
@@ -315,14 +372,22 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 3. CHANGELOG.md 一致性校验 ----------
+  // ---------- 3. CHANGELOG.md 结构与一致性校验 ----------
   if (!fs.existsSync(CHANGELOG_PATH)) {
     errors.push(`未找到 CHANGELOG.md`);
   } else {
     const changelog = fs.readFileSync(CHANGELOG_PATH, 'utf-8');
 
-    // 匹配所有版本标题 ## [X.Y.Z] - YYYY-MM-DD
-    const versionHeaderRegex = /^##\s*\[([^\]]+)\](?:\s*-\s*([^\r\n]+))?/gm;
+    // 匹配顶部是否有 [Unreleased]
+    const hasUnreleased = /^##\s*\[Unreleased\]/m.test(changelog);
+    if (!hasUnreleased) {
+      warnings.push(`CHANGELOG.md 顶部缺少 ## [Unreleased] 缓冲区（遵循 Keep a Changelog 规范），建议补充`);
+    } else {
+      logSuccess(`CHANGELOG.md 顶部已配置 [Unreleased] 缓冲区`);
+    }
+
+    // 匹配所有具体版本标题 ## [X.Y.Z] - YYYY-MM-DD
+    const versionHeaderRegex = /^##\s*\[(\d+\.\d+\.\d+)\](?:\s*-\s*([^\r\n]+))?/gm;
     const matches = [];
     let match;
     while ((match = versionHeaderRegex.exec(changelog)) !== null) {
@@ -335,26 +400,22 @@ function cmdCheck() {
     }
 
     if (matches.length === 0) {
-      errors.push(`CHANGELOG.md 未找到任何版本小节（格式应为 ## [X.Y.Z] - YYYY-MM-DD）`);
+      errors.push(`CHANGELOG.md 未找到任何具体版本小节（格式应为 ## [X.Y.Z] - YYYY-MM-DD）`);
     } else {
-      const firstSection = matches[0];
+      const firstConcrete = matches[0];
 
-      if (firstSection.version.toLowerCase() === 'unreleased') {
-        warnings.push(`CHANGELOG.md 顶部仍存在 [Unreleased] 小节。PR 合并前建议运行 pnpm bump 归档为具体版本号。`);
+      if (firstConcrete.version !== currentVersion) {
+        errors.push(
+          `CHANGELOG.md 首个具体版本小节 [${firstConcrete.version}] 与 package.json 版本 [${currentVersion}] 不一致！` +
+          `请保持两者完全同步。`
+        );
       } else {
-        if (firstSection.version !== currentVersion) {
-          errors.push(
-            `CHANGELOG.md 顶部的最新版本小节 [${firstSection.version}] 与 package.json 版本 [${currentVersion}] 不一致！` +
-            `请保持两者完全同步。`
-          );
-        } else {
-          logSuccess(`CHANGELOG.md 最新小节与 package.json 版本一致: ${colors.green}[${firstSection.version}]${colors.reset}`);
-        }
+        logSuccess(`CHANGELOG.md 最新定稿版本小节与 package.json 版本一致: ${colors.green}[${firstConcrete.version}]${colors.reset}`);
+      }
 
-        // 校验日期格式 YYYY-MM-DD
-        if (firstSection.date && !/^\d{4}-\d{2}-\d{2}$/.test(firstSection.date)) {
-          errors.push(`CHANGELOG.md 版本小节 [${firstSection.version}] 的日期格式不合法 ("${firstSection.date}")，必须为 YYYY-MM-DD`);
-        }
+      // 校验日期格式 YYYY-MM-DD
+      if (firstConcrete.date && !/^\d{4}-\d{2}-\d{2}$/.test(firstConcrete.date)) {
+        errors.push(`CHANGELOG.md 版本小节 [${firstConcrete.version}] 的日期格式不合法 ("${firstConcrete.date}")，必须为 YYYY-MM-DD`);
       }
     }
   }
@@ -382,7 +443,7 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 5. Git 变更与版本递增约束校验 ----------
+  // ---------- 5. Git 变更与版本 / CHANGELOG 维护约束校验 ----------
   const baseInfo = getGitBaseRef();
   if (baseInfo) {
     const baseRefName = typeof baseInfo === 'object' ? baseInfo.ref : baseInfo;
@@ -399,8 +460,13 @@ function cmdCheck() {
         errors.push(
           `当前分支版本 (v${currentVersion}) 低于基准分支 ${baseRefName} 的版本 (v${baseVersion})，禁止降级版本！`
         );
-      } else if (cmp === 0) {
-        // 当前分支在 main 分支自身时跳过核心代码递增强制拦截
+      } else if (cmp > 0) {
+        // 发版 PR 场景：版本号已自增
+        logSuccess(
+          `发版模式：检测到版本号已递增 ${colors.yellow}v${baseVersion}${colors.reset} → ${colors.green}v${currentVersion}${colors.reset}（对比 ${baseRefName}）`
+        );
+      } else {
+        // cmp === 0：日常特性 / 修复 PR 场景
         let isMainBranch = false;
         try {
           const curBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: ROOT_DIR }).trim();
@@ -410,18 +476,19 @@ function cmdCheck() {
         }
 
         if (!isMainBranch && coreChanges.length > 0) {
-          errors.push(
-            `检测到核心代码发生变更（${coreChanges.length} 个文件变动，如 ${coreChanges.slice(0, 3).join(', ')}${coreChanges.length > 3 ? ' 等' : ''}），` +
-            `但版本号未递增（仍为 v${currentVersion}，基准分支为 v${baseVersion}）。\n` +
-            `👉 解决方式：请执行 pnpm bump [patch|minor|major] 递增版本号，并在 CHANGELOG.md 中记录改动。`
-          );
+          const hasAdditions = hasChangelogAdditions(baseInfo);
+          if (!hasAdditions) {
+            errors.push(
+              `检测到核心代码发生变更（${coreChanges.length} 个文件变动，如 ${coreChanges.slice(0, 3).join(', ')}${coreChanges.length > 3 ? ' 等' : ''}），` +
+              `但 CHANGELOG.md 的 [Unreleased] 缓冲区未检测到新增日志记录！\n` +
+              `👉 解决方式：请在 CHANGELOG.md 顶部的 ## [Unreleased] 下记录本次变更（按 Added/Changed/Fixed 分类）。`
+            );
+          } else {
+            logSuccess(`检测到核心代码变更，CHANGELOG.md [Unreleased] 缓冲区已同步维护变更条目（当前版本保持 v${currentVersion}）`);
+          }
         } else if (!isMainBranch && changedFiles.length > 0) {
-          logInfo(`检测到仅有非核心代码变动（文档/脚本/配置），允许免增版本号（当前版本: v${currentVersion}）`);
+          logInfo(`检测到仅有非核心代码变动（文档/脚本/配置），允许免增 CHANGELOG（当前版本: v${currentVersion}）`);
         }
-      } else {
-        logSuccess(
-          `版本号已正确递增: ${colors.yellow}v${baseVersion}${colors.reset} → ${colors.green}v${currentVersion}${colors.reset}（对比 ${baseRefName}）`
-        );
       }
     }
   } else {
@@ -469,8 +536,8 @@ if (command === 'bump') {
 ${colors.bold}RiriCloud 版本管理与门禁工具${colors.reset}
 
 用法：
-  pnpm bump [patch|minor|major|<version>]   递增版本号并更新 package.json 与 CHANGELOG.md (默认 patch)
-  pnpm gate:version                         校验当前分支版本号、CHANGELOG 格式与递增约束
+  pnpm bump [patch|minor|major|<version>]   将 [Unreleased] 转化为定稿版本小节并更新 package.json 与 README.md
+  pnpm gate:version                         校验当前分支版本号、CHANGELOG 格式与 [Unreleased] 维护约束
 `);
   process.exit(1);
 }

@@ -22,7 +22,7 @@ cp .env.example .env
 
 首次启动空数据库时，bootstrap 会根据 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 创建首个管理员。兼容旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD`，但不再提供生产默认凭据。
 
-生产环境默认 `AUTO_SEED=false`，初始化管理员和不可删除的 `Master-Local`，不创建演示用户、套餐、模板和线路。开发或演示环境明确设置 `AUTO_SEED=true` 后，才会额外执行完整 seed：
+生产环境默认 `AUTO_SEED=false`，初始化管理员、内嵌默认订阅模板和不可删除的 `Master-Local`，不创建演示用户、套餐和线路。内嵌模板允许管理员修改但不能删除。开发或演示环境明确设置 `AUTO_SEED=true` 后，才会额外执行完整 seed：
 ```bash
 AUTO_SEED=true ./start.sh
 ```

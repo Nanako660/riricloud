@@ -71,22 +71,22 @@ export default function AdminLinesPage() {
   return (
     <PageContainer>
       <PageHeader title="线路管理" description="管理用户可见的直连与中继接入线路。" />
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative min-w-52 flex-1 sm:max-w-xs">
+          <div className="relative w-full min-w-0 flex-1 sm:min-w-52 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称或地址" className="pl-9" />
           </div>
-          <Input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="标签筛选" className="w-32" />
-          <Select value={type} onValueChange={(value) => setType(value as 'ALL' | LineType)}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部类型</SelectItem><SelectItem value="DIRECT">直连</SelectItem><SelectItem value="RELAY">中继</SelectItem></SelectContent></Select>
-          <Select value={status} onValueChange={(value) => setStatus(value as 'ALL' | LineStatus)}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部状态</SelectItem><SelectItem value="ACTIVE">已启用</SelectItem><SelectItem value="DISABLED">已禁用</SelectItem></SelectContent></Select>
+          <Input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="标签筛选" className="w-full sm:w-32" />
+          <Select value={type} onValueChange={(value) => setType(value as 'ALL' | LineType)}><SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部类型</SelectItem><SelectItem value="DIRECT">直连</SelectItem><SelectItem value="RELAY">中继</SelectItem></SelectContent></Select>
+          <Select value={status} onValueChange={(value) => setStatus(value as 'ALL' | LineStatus)}><SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部状态</SelectItem><SelectItem value="ACTIVE">已启用</SelectItem><SelectItem value="DISABLED">已禁用</SelectItem></SelectContent></Select>
         </div>
-        <Button onClick={openCreate}><Plus />新建线路</Button>
+        <Button className="w-full lg:w-auto" onClick={openCreate}><Plus />新建线路</Button>
       </div>
       {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm"><span>已选 {selected.size} 条</span><Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'ACTIVE' }, { onSuccess: () => setSelected(new Set()) })}>批量启用</Button><Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'DISABLED' }, { onSuccess: () => setSelected(new Set()) })}>批量禁用</Button></div>}
       <Card>
         <CardContent className="p-0">
-          {lines.length ? <Table>
+          {lines.length ? <Table className="min-w-[980px]">
             <TableHeader><TableRow><TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead><TableHead>线路</TableHead><TableHead>类型</TableHead><TableHead>接入端点</TableHead><TableHead>目标入站</TableHead><TableHead>标签 / 倍率</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
             <TableBody>{lines.map((line, index) => <TableRow key={line.id}>
               <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>

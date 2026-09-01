@@ -26,6 +26,7 @@ import type { AdminUpdateSubDto } from './dto/admin-update-subscription.dto';
 import type { QuerySubscriptionDto } from './dto/query-subscription.dto';
 import type { Prisma } from '@prisma/client';
 import type { SubscriptionTemplateConfig } from './builders';
+import { SettingsService } from '../system/settings.service';
 
 type SubscriptionPlan = {
   id: string;
@@ -104,7 +105,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly agentGateway?: AgentService,
-    @Optional() private readonly linesService?: LinesService
+    @Optional() private readonly linesService?: LinesService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
   onModuleInit() {
@@ -166,10 +168,12 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
     const template = await this.resolveTemplate(subscription?.plan?.template);
+    const settings = await this.settingsService?.getSettings();
     return {
       body: this.render(format, subscriptionSources, subUser, template),
       contentType: SUBSCRIPTION_CONTENT_TYPES[format],
-      userInfoHeader: this.buildUserInfoHeader(subscription ?? user)
+      userInfoHeader: settings?.includeUsageHeaders === false ? undefined : this.buildUserInfoHeader(subscription ?? user),
+      updateIntervalHours: settings?.subscriptionUpdateIntervalHours ?? 24
     };
   }
 
@@ -456,10 +460,18 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private async resolveTemplate(template?: SubscriptionTemplateConfig | null) {
     if (template) return template;
     const templateDelegate = (this.prisma as unknown as {
-      subscriptionTemplate?: { findFirst: (args: Record<string, unknown>) => Promise<SubscriptionTemplateConfig | null> };
+      subscriptionTemplate?: {
+        findUnique?: (args: Record<string, unknown>) => Promise<SubscriptionTemplateConfig | null>;
+        findFirst?: (args: Record<string, unknown>) => Promise<SubscriptionTemplateConfig | null>;
+      };
     }).subscriptionTemplate;
     if (!templateDelegate) return undefined;
-    return (await templateDelegate.findFirst({ where: { isDefault: true } })) ?? undefined;
+    const settings = await this.settingsService?.getSettings();
+    if (settings?.defaultTemplateId && templateDelegate.findUnique) {
+      const configured = await templateDelegate.findUnique({ where: { id: settings.defaultTemplateId } });
+      if (configured) return configured;
+    }
+    return (templateDelegate.findFirst ? await templateDelegate.findFirst({ where: { isDefault: true } }) : null) ?? undefined;
   }
 
   private subscriptionDelegate(): SubscriptionDelegate | undefined {

@@ -9,6 +9,7 @@ type TemplateViewInput = {
   name: string;
   description: string | null;
   isDefault: boolean;
+  isBuiltin: boolean;
   proxyGroupsJson: string;
   ruleSetsJson: string;
   dnsConfigJson: string;
@@ -73,6 +74,7 @@ export class TemplatesService {
       include: { _count: { select: { plans: true } } }
     });
     if (!template) throw new NotFoundException('订阅模板不存在');
+    if (template.isBuiltin) throw new ConflictException('内嵌默认模板不能删除，只能修改');
     if (template.isDefault) throw new ConflictException('默认模板不能删除，请先指定其他默认模板');
     if (template._count.plans > 0) throw new ConflictException('套餐仍在使用该模板');
     await this.prisma.subscriptionTemplate.delete({ where: { id } });

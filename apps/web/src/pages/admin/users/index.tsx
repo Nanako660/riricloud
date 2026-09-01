@@ -246,6 +246,7 @@ export default function AdminUsersPage() {
           data={users}
           total={data?.total}
           onSelectionChange={setSelected}
+          tableClassName="min-w-[1040px]"
           emptyTitle="暂无用户"
           emptyDescription="点击右上角「创建用户」添加"
           toolbar={
@@ -255,27 +256,27 @@ export default function AdminUsersPage() {
                 <Input className="pl-8" placeholder="搜索邮箱…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as typeof roleFilter)}>
-                <SelectTrigger className="w-[120px]"><SelectValue placeholder="角色" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="角色" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">全部角色</SelectItem><SelectItem value="USER">用户</SelectItem><SelectItem value="ADMIN">管理员</SelectItem></SelectContent>
               </Select>
               <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as typeof activeFilter)}>
-                <SelectTrigger className="w-[120px]"><SelectValue placeholder="账号状态" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="账号状态" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">全部账号</SelectItem><SelectItem value="true">已激活</SelectItem><SelectItem value="false">已封禁</SelectItem></SelectContent>
               </Select>
               <Select value={subscriptionFilter} onValueChange={(value) => setSubscriptionFilter(value as typeof subscriptionFilter)}>
-                <SelectTrigger className="w-[130px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[130px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">全部订阅</SelectItem>{Object.keys(subscriptionStatusLabels).map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={planFilter} onValueChange={setPlanFilter}>
-                <SelectTrigger className="w-[150px]"><SelectValue placeholder="套餐" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="套餐" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">全部套餐</SelectItem>{(plans ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent>
               </Select>
-              <Button size="sm" className="gap-1.5" onClick={() => { setEditing(null); setFormOpen(true); }}>
+              <Button size="sm" className="w-full gap-1.5 sm:w-auto" onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" />
                 创建用户
               </Button>
               {selected.length > 0 ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
                   <Button size="sm" variant="outline" className="gap-1.5" disabled={bulkActive.isPending} onClick={() => void onBulkBan(false)}>
                     <ShieldOff className="h-4 w-4" />
                     批量封禁（{selected.length}）

@@ -3,12 +3,14 @@
 const { PrismaClient } = require('@prisma/client');
 const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
+const { ensureDefaultTemplate } = require('./default-template');
 
 const prisma = new PrismaClient();
 
 async function main() {
   await ensureAdmin(prisma);
   await ensureMasterAgentNode(prisma);
+  await ensureDefaultTemplate(prisma);
 }
 
 main()

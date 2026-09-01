@@ -14,8 +14,8 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中�
 
 - 启动入口先执行 `apps/server/prisma/bootstrap-admin.js`。数据库没有 `role=ADMIN` 时，按 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 创建首个管理员；兼容 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`，优先级为正式配置高于旧配置。已有管理员时完全跳过，不改密码，也不因邮箱配置变化创建重复账号。
 - 空数据库没有管理员且未提供凭据时启动失败；管理员邮箱沿用 `class-validator` 的 `IsEmail` 规则，密码长度必须为 `8-64` 位。
-- `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、套餐、模板和线路。
-- `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、默认模板、VLESS/Reality 直连线路和盲转发示例线路；本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
+- `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员、确保内嵌默认订阅模板存在，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、体验套餐和线路。
+- `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、VLESS/Reality 直连线路和盲转发示例线路；默认模板由通用 bootstrap 负责，完整 seed 会将其同步为内嵌模板定义，不会重复创建。本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
 - `Master-Local` 使用 `Node.isLocal=true` 标记，是 Master 内置 Agent 的固定数据库身份。启动时复用已有 `agentToken` 与节点配置；管理端删除接口对该节点返回 `409`，防止误删内置 Agent 身份。
 - 管理员密码不能通过启动环境变量隐式修改；使用 `pnpm admin:reset -- --email <email>` 或发行包 `./admin-reset.sh` 显式重置，目标账号必须已存在且角色为 `ADMIN`。
 
@@ -232,6 +232,7 @@ model SubscriptionTemplate {
   name             String
   description      String?
   isDefault        Boolean  @default(false)
+  isBuiltin        Boolean  @default(false)
   proxyGroupsJson  String   @default("[]")
   ruleSetsJson     String   @default("[]")
   dnsConfigJson    String   @default("{}")
@@ -294,21 +295,45 @@ model TrafficLog {
 // ==============================
 model SystemSetting {
   key         String   @id
-  value       String   // 存储站点名称、默认配额、注册开关等 JSON 或纯文本
+  value       String   // 存储系统设置的 JSON、布尔、数字或纯文本值
   description String?
   updatedAt   DateTime @updatedAt
 }
 ```
 
-**已启用键定义（v0.2.0）**：
+**已启用键定义（v0.4.8）**：
 
 | 键 | value 格式 | 缺省默认 | 用途 |
 | :--- | :--- | :--- | :--- |
 | `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
+| `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
+| `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
+| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户仪表盘公告横幅 |
+| `footerCopyright` | 纯文本 | `""` | 页脚版权文案 |
+| `supportTelegramUrl` / `supportDiscordUrl` / `supportCustomUrl` | URL 或空字符串 | `""` | 客服、群组与自定义支持入口 |
+| `supportEmail` | 邮箱或空字符串 | `""` | 客服邮箱入口 |
 | `registrationEnabled` | `"true"` / `"false"` | `"false"` | 注册开关，控制 `POST /auth/register` 与前端注册入口 |
+| `defaultPlanId` | UUID 或空字符串 | `""` | 注册时自动激活的公开套餐 |
 | `defaultTrafficLimitBytes` | 十进制字符串（字节，>0） | `"107374182400"`（100 GiB） | 新建/注册用户的初始流量配额 |
+| `defaultValidityDays` | 十进制整数（0~3650） | `"0"` | 未绑定默认套餐的新用户有效天数，0 为永久 |
+| `emailDomainMode` | `none` / `whitelist` / `blacklist` | `"none"` | 注册邮箱域名过滤模式 |
+| `emailDomainList` | JSON 字符串数组 | `[]` | 注册邮箱域名过滤列表 |
+| `passwordMinLength` | 十进制整数（8~64） | `"8"` | 注册密码最小长度 |
+| `subscriptionBaseUrl` | URL 或空字符串 | `""` | 用户端拼装订阅链接的基准地址 |
+| `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
+| `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板 |
+| `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
+| `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |
+| `heartbeatTimeoutSecs` | 十进制整数（5~3600） | `"15"` | Agent 离线判定基础超时 |
+| `configSyncDebounceMs` | 十进制整数（0~10000） | `"250"` | 全量配置推送防抖延迟 |
+| `defaultPollIntervalSecs` | 十进制整数（5~300） | `"15"` | 新节点与 HTTP 轮询的默认周期 |
+| `binaryDownloadBaseUrl` | URL 或空字符串 | `""` | 内置 Agent/内核二进制下载基准地址 |
+| `probePresetTargets` | 探针目标 JSON 数组 | TCP Apple 443 + DNS Cloudflare | 管理端探针预设目标 |
+| `jwtSessionDays` | 十进制整数（1~30） | `"1"` | 新签发 JWT 的会话有效天数 |
+| `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
+| `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走 upsert（`PUT /admin/settings`，接受任意子集，见 `docs/API_AND_PROTOCOLS.md` §1.3）。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准和前端运行时样式字段。
 
 ---
 
@@ -409,3 +434,5 @@ model SystemSetting {
 ### 3.5 `SubscriptionTemplate` 模板数据
 
 `proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，并按节点名称或入站 tag 正则过滤线路。
+
+`apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。

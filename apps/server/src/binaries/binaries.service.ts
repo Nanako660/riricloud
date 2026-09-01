@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import { access, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ImportBinaryDto } from './dto/import-binary.dto';
+import { SettingsService } from '../system/settings.service';
 
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
 const TARGETS = [
@@ -44,7 +45,10 @@ export class BinariesService implements OnModuleInit {
   private readonly customDir = resolve(process.env.RIRICLOUD_BINARY_DIR ?? join(process.cwd(), 'binaries'), 'custom');
   private refreshedAt: string | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly settingsService?: SettingsService
+  ) {}
 
   async onModuleInit() {
     await this.refresh();
@@ -110,7 +114,16 @@ export class BinariesService implements OnModuleInit {
   }
 
   buildDownloadUrl(target: BinaryTarget, token: string): string {
-    const base = (process.env.RIRICLOUD_PUBLIC_URL?.trim() || `http://localhost:${process.env.PORT ?? '3000'}`).replace(/\/$/, '');
+    return this.buildDownloadUrlFromBase(target, token, process.env.RIRICLOUD_PUBLIC_URL?.trim());
+  }
+
+  async buildConfiguredDownloadUrl(target: BinaryTarget, token: string): Promise<string> {
+    const settings = await this.settingsService?.getSettings();
+    return this.buildDownloadUrlFromBase(target, token, settings?.binaryDownloadBaseUrl?.trim() || process.env.RIRICLOUD_PUBLIC_URL?.trim());
+  }
+
+  private buildDownloadUrlFromBase(target: BinaryTarget, token: string, configuredBase?: string): string {
+    const base = (configuredBase || `http://localhost:${process.env.PORT ?? '3000'}`).replace(/\/$/, '');
     return `${base}/api/v1/downloads/binaries/${target}?token=${encodeURIComponent(token)}`;
   }
 
@@ -126,7 +139,7 @@ export class BinariesService implements OnModuleInit {
     return {
       version: asset.version,
       sha256: asset.sha256,
-      url: this.buildDownloadUrl(asset.target, token)
+      url: await this.buildConfiguredDownloadUrl(asset.target, token)
     };
   }
 

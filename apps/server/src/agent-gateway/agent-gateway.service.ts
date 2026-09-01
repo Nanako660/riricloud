@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
@@ -11,7 +11,7 @@ import {
   type InboundUserCredential
 } from '../common/inbound';
 import { resolveLineTags } from '../common/line-tags';
-import { DEFAULT_INBOUND_LISTEN, DEFAULT_STATS_API_LISTEN } from '../common/ports';
+import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
 import { type ProtocolType } from '../common/constants';
 import type {
   AuthResultData,
@@ -28,6 +28,7 @@ import type {
   UpgradeTarget
 } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
+import { SettingsService } from '../system/settings.service';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -77,7 +78,10 @@ export class AgentService implements OnModuleDestroy {
   private configPushTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly settingsService?: SettingsService
+  ) {}
 
   // 握手鉴权：校验 agentToken，返回鉴权结果与节点
   async authenticate(token: string | undefined): Promise<
@@ -198,11 +202,12 @@ export class AgentService implements OnModuleDestroy {
     }
 
     const desired = await this.getDesiredConfigSync(auth.nodeId);
+    const settings = await this.settingsService?.getSettings();
     const node = await this.prisma.node.findUnique({
       where: { id: auth.nodeId },
       select: { pollIntervalSecs: true }
     });
-    const nextPollSecs = Math.max(5, Math.min(300, node?.pollIntervalSecs ?? 15));
+    const nextPollSecs = Math.max(5, Math.min(300, node?.pollIntervalSecs ?? settings?.defaultPollIntervalSecs ?? 15));
     const needUpdate = data.appliedConfigVersion !== desired.version;
     return {
       needUpdate,
@@ -421,7 +426,7 @@ export class AgentService implements OnModuleDestroy {
       outbounds,
       experimental: {
         v2ray_api: {
-          listen: DEFAULT_STATS_API_LISTEN,
+          listen: getStatsApiListen(),
           stats: {
             enabled: true,
             users: [...new Set(users.map((user) => user.email).filter(Boolean))]
@@ -557,6 +562,8 @@ export class AgentService implements OnModuleDestroy {
   // 用户增删/资格变动时向全部在线节点推送（协议约定见 docs/API_AND_PROTOCOLS.md §2.2）
   async pushConfigToAll(): Promise<number> {
     this.configCache.clear();
+    const settings = await this.settingsService?.getSettings();
+    const debounceMs = settings?.configSyncDebounceMs ?? 250;
     return new Promise((resolve) => {
       this.configPushWaiters.push(resolve);
       if (this.configPushTimer) clearTimeout(this.configPushTimer);
@@ -566,7 +573,7 @@ export class AgentService implements OnModuleDestroy {
           const waiters = this.configPushWaiters.splice(0);
           waiters.forEach((waiter) => waiter(count));
         });
-      }, 250);
+      }, debounceMs);
     });
   }
 
@@ -699,6 +706,8 @@ export class AgentService implements OnModuleDestroy {
 
   // 心跳超时扫描：超过阈值未心跳的在线节点置离线
   async sweepStaleNodes(): Promise<void> {
+    const settings = await this.settingsService?.getSettings();
+    const heartbeatTimeoutMs = (settings?.heartbeatTimeoutSecs ?? 15) * 1000;
     const nodes = await this.prisma.node.findMany({
       where: { status: 'ONLINE' },
       select: { id: true, communicationMode: true, pollIntervalSecs: true, lastSeenAt: true }
@@ -708,8 +717,8 @@ export class AgentService implements OnModuleDestroy {
       .filter((node) => {
         if (!node.lastSeenAt) return true;
         const thresholdMs = node.communicationMode === 'HTTP'
-          ? Math.max(15_000, node.pollIntervalSecs * 3_000)
-          : 15_000;
+          ? Math.max(heartbeatTimeoutMs, node.pollIntervalSecs * 3_000)
+          : heartbeatTimeoutMs;
         return now - node.lastSeenAt.getTime() > thresholdMs;
       })
       .map((node) => node.id);

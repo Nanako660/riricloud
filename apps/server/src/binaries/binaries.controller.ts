@@ -24,7 +24,13 @@ export class BinariesController {
     await this.binaries.authorizeDownload(credential);
     if (!credential) throw new Error('缺少 AgentToken');
     const target = this.binaries.resolveAgentTarget(userAgent);
-    response.redirect(302, this.binaries.buildDownloadUrl(target, credential));
+    const configuredBuilder = (this.binaries as BinariesService & {
+      buildConfiguredDownloadUrl?: (assetTarget: typeof target, agentToken: string) => Promise<string>;
+    }).buildConfiguredDownloadUrl;
+    const url = configuredBuilder
+      ? await configuredBuilder.call(this.binaries, target, credential)
+      : this.binaries.buildDownloadUrl(target, credential);
+    response.redirect(302, url);
   }
 
   @Public()

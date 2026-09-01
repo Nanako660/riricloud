@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { generateKeyPairSync, randomInt } = require('node:crypto');
 const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
+const { buildDefaultTemplateData } = require('./default-template');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -99,27 +100,7 @@ async function main() {
   // 完整 seed 仍保留本地演示默认值；生产启动入口只调用无默认值的 bootstrap。
   const { admin } = await ensureAdmin(prisma, { allowDemoDefaults: true });
 
-  const templateData = {
-    name: '默认分流模板',
-    description: '开箱即用的常见流媒体、AI、广告与国内直连分流模板',
-    isDefault: true,
-    proxyGroupsJson: JSON.stringify([
-      { name: '节点选择', type: 'select', proxies: 'all' },
-      { name: '自动测速', type: 'url-test', interval: 300, tolerance: 50, proxies: 'all' }
-    ]),
-    ruleSetsJson: JSON.stringify([
-      { name: 'OpenAI', type: 'domain-suffix', rules: ['openai.com', 'chatgpt.com'], target: '节点选择', enabled: true },
-      { name: '流媒体', type: 'domain-suffix', rules: ['netflix.com', 'youtube.com'], target: '节点选择', enabled: true },
-      { name: '广告拦截', type: 'domain-suffix', rules: ['doubleclick.net', 'ads.google.com'], target: 'REJECT', enabled: true },
-      { name: '国内直连', type: 'geosite', rules: ['cn'], target: 'DIRECT', enabled: true },
-      { name: 'Final', type: 'match', rules: [], target: '节点选择', enabled: true }
-    ]),
-    dnsConfigJson: JSON.stringify({
-      enable: true,
-      enhancedMode: 'fake-ip',
-      nameserver: ['https://1.1.1.1/dns-query', 'https://dns.google/dns-query']
-    })
-  };
+  const templateData = buildDefaultTemplateData(true);
 
   let template = await prisma.subscriptionTemplate.findFirst({ where: { isDefault: true } });
   if (!template) {

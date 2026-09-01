@@ -7,13 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/shared/copy-button';
 import {
-  Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import {
   Form,
   FormControl,
@@ -71,8 +70,8 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent>
         {created ? (
           <>
             <DialogHeader>
@@ -179,7 +178,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
             </Form>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

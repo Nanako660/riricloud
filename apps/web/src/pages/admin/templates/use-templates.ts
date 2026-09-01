@@ -7,6 +7,7 @@ export interface SubscriptionTemplate {
   name: string;
   description: string | null;
   isDefault: boolean;
+  isBuiltin: boolean;
   proxyGroups: unknown[];
   ruleSets: unknown[];
   dnsConfig: Record<string, unknown>;

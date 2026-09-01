@@ -26,8 +26,13 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`切换主题（当前：${active.label}）`}>
-          <ActiveIcon />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-lg text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          aria-label={`切换主题（当前：${active.label}）`}
+        >
+          <ActiveIcon className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

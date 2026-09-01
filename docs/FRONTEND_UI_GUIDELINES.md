@@ -79,10 +79,11 @@ apps/web/src/
 │   │   ├── copy-button.tsx      # 订阅链接一键复制按钮
 │   │   └── traffic-badge.tsx    # 流量单位格式化与状态胶囊
 │   └── layout/             # 【全局框架布局】
-│       ├── app-layout.tsx       # 主控端侧边栏 + 顶部导航总布局
-│       ├── app-sidebar.tsx      # 左侧菜单导航
-│       ├── app-header.tsx       # 顶部面包屑与快捷操作栏
-│       └── theme-toggle.tsx     # 明暗主题三态切换（浅色/深色/跟随系统）
+│       ├── app-layout.tsx       # 主控端侧边栏 + 主内容区 Inset 总布局
+│       ├── app-sidebar.tsx      # 左侧菜单导航与品牌头部 (h-14)
+│       ├── app-header.tsx       # 顶部全局微操作栏 (h-14，位于主大卡片上方)
+│       ├── user-menu.tsx        # 顶栏独立小巧用户头像与退出菜单
+│       └── theme-toggle.tsx     # 顶栏小巧明暗主题三态切换（浅色/深色/跟随系统）
 ├── pages/                  # 【页面级视图组件】仅负责数据获取、状态编排与子组件组装
 │   ├── dashboard/
 │   ├── nodes/
@@ -217,6 +218,8 @@ toast.promise(reloadAgentPromise, {
 
 弹窗尺寸统一使用 `@/components/ui/dialog` 的 `DialogContent` 变体：普通数据表单使用默认 `2xl`，线路和模板等复杂编辑使用 `wide` `3xl`，确实简单的内容才使用 `compact` `lg`。所有弹窗在移动端使用视口两侧留白并限制最大高度，内容超出时在弹窗内部滚动；破坏性确认继续使用固定的 `AlertDialog` `lg` 宽度。
 
+响应式弹窗统一通过 `ResponsiveDialog` / `ResponsiveDialogContent` 承载：桌面端保持 Dialog，`767px` 及以下切换为右侧全高 Sheet，宽度占满视口并在内容区滚动。移动端导航使用 `SidebarProvider` 的 `openMobile` 状态与 Sheet 抽屉，路由切换后关闭抽屉；不得为每个业务页面重复实现媒体查询和抽屉状态。
+
 ### 6.3 加载占位 (Skeleton)
 
 页面加载与卡片数据请求中，禁止使用全屏巨型 Spinner 打断用户体验，必须使用 `Skeleton` 还原真实 UI 的骨架结构：
@@ -240,11 +243,16 @@ export function NodeCardSkeleton() {
 
 ## 7. 布局结构与页面容器标准 (Layout & Container)
 
-### 7.1 全局架构
+### 7.1 全局架构与 Inset 沉浸式卡片布局
 
-1. **左侧导航栏**：采用 shadcn/ui 官方 `Sidebar` (v4)，支持折叠至窄条图标栏模式（Rail），移动端自动转换为遮罩式 `Sheet` 抽屉。
-2. **顶部 Header**：包含折叠开关（`SidebarTrigger`）、动态面包屑（`Breadcrumb`）、快捷搜索（Command Menu）与个人中心/主题切换。
-3. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
+1. **左侧导航栏 (`AppSidebar`)**：采用 shadcn/ui 官方 `Sidebar` (v4) `variant="inset"` 范式，无右侧贯穿硬分割线（`border-r-0`），与最外层底层底色（`bg-sidebar`）自然融为一体。顶部品牌区高度固定为 `h-14`，底部展示极简版本号；移动端使用左侧 Sheet 抽屉，支持遮罩、Escape 和导航后自动关闭。
+2. **顶部全局操作栏 (`AppHeader`)**：位于主内容大卡片上方，高度为 `h-14`，与左侧品牌 Logo 水平高度严格齐平（1:1 对齐）。右侧放置紧凑的微操作按钮组：`ThemeToggle`（明暗三态图标切换）与 `UserMenu`（首字母圆形头像与个人中心下拉菜单）。移动端自动展示抽屉折叠触发器与站点名。
+3. **主工作区浮雕大卡片 (`<main>` / Inset Canvas)**：主工作区位于顶部操作栏下方，桌面端（`md:` 及以上）应用 Inset 样式（`md:mr-2 md:mb-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm md:bg-background`），页面标题（`PageHeader`）直接作为大卡片顶部内容起始点，避免卡片内部被任何多余横线切断。
+4. **明暗双模式三层阶梯景深 (Three-Tier Surface Elevation)**：
+   - **L0 底层画框**：`bg-sidebar`（浅色 `zinc-100/60` / 深色 `zinc-950`），顶栏与侧边栏沉浸于底层；
+   - **L1 主画布容器**：`main` 浮雕大卡片（浅色纯白 `bg-background` / 深色 `zinc-900`）；
+   - **L2 业务内容卡片**：页面内 `Card`、表格、表单（`bg-card`，深色模式微提亮为 `zinc-850/60`），呈现细腻的浮雕凸起质感。
+5. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
 
 管理员侧边栏固定为 6 项：**用户管理、节点管理、线路管理、系统设置、套餐管理、订阅模板**。订阅履约操作属于用户管理的综合弹窗；旧地址 `/admin/subscriptions` 仅作为兼容入口重定向至 `/admin/users`，不得再次作为平级菜单展示。
 
@@ -280,6 +288,8 @@ export function PageContainer({ title, description, actions, children }: PageCon
 - 底层技术：`@tanstack/react-table` + `@/components/ui/table`。
 - 必须具备：列排序（Sorting）、关键词搜索过滤（Filtering）、分页控件（Pagination）、行选择（Row Selection）与列显示切换（Column Visibility）。
 - 空数据展示：使用 `@/components/shared/empty-state.tsx` 统一插画与引导按钮。
+- 移动端保留完整字段与表格语义，表格外层使用 `overflow-x-auto`，横向滚动只允许发生在表格容器内，不得造成页面主体横向溢出；筛选工具栏在 `sm` 断点前必须允许换行。
+- 表格及标签区域使用的 `Badge` 必须保持单行（`whitespace-nowrap`），多个 Badge 可作为完整单元在父级容器中换行，禁止将 chip 文本压缩成逐字竖排。
 
 ### 8.2 数据图表 (Data Charts)
 - 底层技术：采用 shadcn/ui 官方 `Chart`（封装自 `Recharts`）。
@@ -376,7 +386,7 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 | 套餐管理 | `/admin/plans` | 套餐卡片、上下架状态、匹配模式、模板关联 | 删除使用中的套餐只显示服务端错误并建议下架 |
 | 线路管理 | `/admin/lines` | 直连/中继线路表格、类型/状态/标签筛选、排序、批量启停、复制、解析测试 | 删除使用 AlertDialog；中继表单必须校验入口节点/端口/机制 |
 | 线路编辑弹窗 | `/admin/lines`（点击新建/编辑） | 默认打开的“入站配置”页签与“线路高级设置”页签；入站页集中配置协议、入口节点、监听地址/端口、Transport、TLS/Reality/ACME 与协议专属参数，高级页配置出口拓扑、对外覆盖、倍率与线路属性 | 使用 Tabs 切换；页签内容全部平面展开，以分区标题和 Separator 区分层级，不使用 Accordion 或嵌套卡片；两页共享草稿并统一保存；覆盖开关默认关闭且保留已填值；协议切换清理不适用字段；Reality 私钥留空表示保留服务端密钥；提交使用 React Hook Form + Zod |
-| 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
+| 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | 内嵌默认模板显示“内嵌”标记，只保留编辑操作；普通模板删除使用 AlertDialog；JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
 | 用户管理 | `/admin/users` | 用户、角色、账号状态、当前套餐、订阅状态、流量进度与到期日 | 创建用户可选择初始套餐或暂不绑定；编辑用户通过双 Tab 管理账号安全与订阅，可用“无套餐”彻底移除订阅 |
 | 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、当前/推荐版本、主控内置来源、自定义 URL、SHA-256 与主控导入 | 默认使用主控内置版本；自定义来源必须校验 URL/SHA-256；导入或下发中禁用对应按钮 |
 
@@ -396,10 +406,20 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 - “线路高级设置”页签使用 `Switch` 控制对外地址、端口、SNI、Host 覆盖，并配置直连/中继拓扑、出口节点/端口、倍率、标签、等级、排序和启停状态；两页共享同一份 React Hook Form 草稿，点击一次保存统一提交。
 - 线路入口端口可留空，由服务端在 `20000~29999` 范围分配五位端口；直连线路提交前应保持两端节点和端口一致。VLESS/Reality 提供密钥对生成按钮，私钥不从 API 回显。
 - 大型模板 JSON/YAML 编辑区使用等宽字体、固定最小高度和弹窗内滚动，不能撑破桌面或移动端视口。
-- 移动端列表转为单列，表单在 `sm` 断点前单列布局；操作按钮保留图标与文字的可读组合，危险操作使用 `AlertDialog`。
+- 移动端列表转为单列，表单在 `sm` 断点前单列布局；表格保留完整字段并在表格容器内横向滚动，筛选器与操作按钮允许多行排列；普通复杂编辑使用全高 `Sheet`，危险操作继续使用 `AlertDialog`。
 - 数据加载使用与真实内容相近的骨架或紧凑加载态；仪表盘、我的订阅和管理员用户列表的流量数据每 5 秒自动重新请求，以便反映 Agent 心跳扣减结果；错误和变更结果统一通过 `sonner` 呈现，不使用原生 `alert`。
 - Token 仅在已认证的用户/管理员视图显示；复制、重置后必须刷新相关 Query，避免界面继续展示旧链接。
 
-### 12.3 视觉验证登记
+### 12.3 系统设置与全局品牌
+
+- 系统设置页固定使用「基础与品牌 / 注册与用户 / 订阅与分发 / Agent 运维 / 安全与高级」五个 `Tabs`，Tab 图标统一固定为 `16px`，所有字段由 React Hook Form + Zod 管理，保存和重置操作使用 Sonner 提示结果。
+- Logo、Favicon、站点名、公告、页脚和客服入口通过公开站点信息动态感知；登录页、已认证外壳和用户仪表盘共享同一 Query 缓存，不在页面内硬编码品牌文案。
+- 公告横幅使用安全的 Markdown 子集渲染，支持本地收起记忆；订阅链接优先使用配置的 `subscriptionBaseUrl`，没有有效订阅时必须引导进入套餐市场。
+- CSS 与 HTML/JS 头部代码编辑器使用 CodeMirror，代码区域保持固定高度和等宽字体；头部注入仅接受管理员配置，文案需提示只粘贴可信代码。
+- CSS 与 HTML/JS 头部代码编辑器必须读取 `next-themes` 的 `resolvedTheme`，在浅色/深色模式下分别传入 CodeMirror 的 `light` / `dark` 主题，禁止依赖默认浅色主题造成深色页面出现白色编辑区；编辑器外层使用语义化背景与边框 Token。
+- JWT 会话有效期的安全说明属于字段辅助信息，应直接使用 shadcn/ui 的 `FormDescription` 放在对应输入框下方，不应在外层设置卡片内再嵌套等宽提示卡片。
+- 默认探针目标使用“摘要入口 + 独立 Dialog”提供可视化增删编辑；Dialog 内使用本地 React Hook Form 草稿，点击“应用”后才回填外层设置表单，取消关闭不得污染父表单。每项使用 `Select`、`Input`、`FormMessage` 等原子组件，TCP 才显示端口，最多 32 项，保存顺序与节点探针快速预设顺序一致。列表保持平面表单结构，项之间使用 `Separator`，不得额外套用卡片、列表边框或控件自定义颜色/尺寸。
+
+### 12.4 视觉验证登记
 
 新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-25。视觉验证仍按需执行，不能接入 CI 或 Git Hook。

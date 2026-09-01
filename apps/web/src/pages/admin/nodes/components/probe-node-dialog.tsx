@@ -1,12 +1,15 @@
 import * as React from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
+import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { CheckCircle2, CircleAlert, Clock3, Network } from 'lucide-react';
+import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -51,26 +54,52 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
   snapshot: ProbeSnapshot | null;
   onSubmit: (values: { probes: Values[] }) => void;
 }) {
+  const settingsQuery = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: async () => (await api.get<{ probePresetTargets: Array<{ type: Values['type']; target: string; port?: number; timeoutMs?: number }> }>('/admin/settings')).data,
+    enabled: open,
+    staleTime: 60_000
+  });
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: presets[0].probe
   });
   const [preset, setPreset] = React.useState('cloudflare');
+  const availablePresets = React.useMemo(() => {
+    const configured = settingsQuery.data?.probePresetTargets ?? [];
+    if (!configured.length) return presets;
+    return [
+      ...configured.map((item, index) => ({
+        value: `configured-${index}`,
+        label: `${item.target} · ${item.type.toUpperCase()}`,
+        probe: { type: item.type, target: item.target, port: item.port, timeoutMs: item.timeoutMs ?? 3000 } as Values
+      })),
+      presets[presets.length - 1]
+    ];
+  }, [settingsQuery.data?.probePresetTargets]);
+
+  React.useEffect(() => {
+    const first = availablePresets[0];
+    if (open && first && !availablePresets.some((item) => item.value === preset)) {
+      setPreset(first.value);
+      form.reset(first.probe);
+    }
+  }, [availablePresets, form, open, preset]);
 
   const applyPreset = (value: string) => {
     setPreset(value);
-    const selected = presets.find((item) => item.value === value);
+    const selected = availablePresets.find((item) => item.value === value);
     if (selected) form.reset(selected.probe);
   };
 
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent size="compact">
+  return <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialogContent size="compact">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2"><Network className="h-4 w-4" />网络探针诊断</DialogTitle>
         <DialogDescription>从该 Agent 所在节点执行 TCP、DNS 或 ICMP 检测，结果会保存到节点详情。</DialogDescription>
       </DialogHeader>
       <div className="space-y-4">
-        <div className="space-y-2"><Label>快速预设</Label><Select value={preset} onValueChange={applyPreset}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{presets.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+        <div className="space-y-2"><Label>快速预设</Label><Select value={preset} onValueChange={applyPreset}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{availablePresets.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit((values) => onSubmit({ probes: [values] }))}>
             <div className="grid gap-4 sm:grid-cols-2"><FormField control={form.control} name="type" render={({ field }) => <FormItem><FormLabel>探针类型</FormLabel><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="tcp">TCP 连接</SelectItem><SelectItem value="dns">DNS 解析</SelectItem><SelectItem value="icmp">ICMP Ping</SelectItem></SelectContent></Select><FormMessage /></FormItem>} /><FormField control={form.control} name="timeoutMs" render={({ field }) => <FormItem><FormLabel>超时（毫秒）</FormLabel><FormControl><Input type="number" min={100} max={10000} {...field} /></FormControl><FormMessage /></FormItem>} /></div>
@@ -81,6 +110,6 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
         </Form>
         {snapshot && <div className="space-y-3 border-t pt-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">最近一次结果</p><span className="text-xs text-muted-foreground">{new Date(snapshot.completedAt).toLocaleString('zh-CN')}</span></div><div className="space-y-2">{snapshot.results.map((result, index) => <ProbeResultCard key={`${result.type}-${result.target}-${index}`} result={result} />)}</div></div>}
       </div>
-    </DialogContent>
-  </Dialog>;
+    </ResponsiveDialogContent>
+  </ResponsiveDialog>;
 }

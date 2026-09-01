@@ -16,6 +16,9 @@
    - 任何涉及视觉走查的页面/模态组件，必须同时在 **浅色模式 (Light Mode)** 与 **深色模式 (Dark Mode)** 下进行对比验证。
 4. **标准化结果交付 (Standardized Artifact Delivery)**：
    - 每次走查完成后，必须输出结构化的 Markdown 报告 Artifact（含受影响变更项高亮、Carousel 截图对比轮播、检查点通过表）。
+5. **移动视口覆盖 (Mobile Viewport Coverage)**：
+   - 涉及全局布局、Sidebar、Sheet、Table 或页面响应式样式的变更，走查时增加 `375x812` 手机视口与 `768x1024` 平板视口。
+   - 手机视口必须确认页面主体无横向溢出；表格仅在表格容器内横向滚动，复杂表单使用全高 Sheet。
 
 ---
 
@@ -38,8 +41,8 @@
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | 邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选、套餐 Badge、订阅状态 Badge、流量进度条、到期日、流量数据自动刷新、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select、无套餐创建、套餐联动配额与有效期、永久有效 Switch 卡片与配额输入框高度/阴影一致 |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色与封禁、密码重置、套餐/无套餐/状态/配额/已用流量调整、启用账号卡片与角色 Select 高度/阴影一致、无套餐危险操作确认、Token 重置确认 |
-| **`UI-14`** | 系统设置 | 系统设置页面 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 站点名称输入框、开放注册 Switch、新用户默认配额输入框、保存按钮 |
-| **`UI-15`** | 全局框架 | 导航栏与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**` | 侧边栏高亮定位、版本号展示、主题三态切换（浅色/深色/跟随系统）、Sonner Toast 浮层 |
+| **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、品牌/注册/订阅/Agent/高级字段、套餐与模板回填、CodeMirror、保存与重置确认 |
+| **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、页脚客服入口、动态标题/Favicon/CSS、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐卡片信息密度、公开/下架 Badge、节点匹配与模板标签、删除确认 |
 | **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认模板 Badge、策略组/规则集/DNS 摘要、删除确认 |
@@ -50,6 +53,18 @@
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
 | **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
 | **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
+
+---
+
+### 2.1 移动端附加检查项
+
+所有受影响索引在 `375x812` 与 `768x1024` 下追加检查：
+
+- 页面主体、卡片和 Header 不产生非预期横向滚动。
+- 移动端 Sidebar 能打开、关闭，并在导航后自动收起。
+- 普通弹窗保留两侧留白并可在内部滚动，复杂编辑弹窗切换为全高 Sheet。
+- 表格完整保留字段，横向滚动限制在表格容器内。
+- Tabs、筛选器、批量操作和危险操作按钮不重叠、不被裁切。
 
 ---
 
@@ -86,6 +101,7 @@ flowchart TD
 | `apps/web/src/pages/admin/nodes/**` | `UI-05`, `UI-06`, `UI-07`, `UI-08`, `UI-09`, `UI-10` | **增量** |
 | `apps/web/src/pages/admin/users/**` | `UI-11`, `UI-12`, `UI-13` | **增量** |
 | `apps/web/src/pages/admin/settings/**` | `UI-14` | **增量** |
+| `apps/web/src/components/layout/site-runtime.tsx`, `apps/web/src/lib/public-settings.ts` | `UI-01` ~ `UI-03`, `UI-14`, `UI-15`, `UI-21` | **增量** |
 | `apps/web/src/pages/admin/plans/**` | `UI-16`, `UI-17` | **增量** |
 | `apps/web/src/pages/admin/templates/**` | `UI-18`, `UI-19` | **增量** |
 | `apps/web/src/pages/user/**` | `UI-20`, `UI-21` | **增量** |
@@ -104,7 +120,7 @@ flowchart TD
 2. 确保数据库已初始化并完成本地演示 seed（默认管理员账号：`admin@riricloud.local`，密码：`riri-admin-demo`）；生产环境使用 `.env` 中显式配置的管理员凭据，不依赖演示默认值。
 
 ### Step 2: 浏览器视口与会话初始化
-1. 通过 Chrome DevTools MCP 将浏览器页面视口调整至标准桌面分辨率（如 `1440x900`）；
+1. 依次将浏览器页面视口调整至 `1440x900`、`375x812` 和 `768x1024`；
 2. 导航至 `http://localhost:5173/login`，使用管理员账号登录进入主控面板。
 
 ### Step 3: 按判定范围遍历 UI 矩阵
@@ -115,6 +131,8 @@ flowchart TD
 对照 [docs/FRONTEND_UI_GUIDELINES.md](FRONTEND_UI_GUIDELINES.md) 核实以下核心要素：
 - [ ] **排版与边距**：容器间距均匀，无内容溢出或非预期换行；
 - [ ] **弹窗尺寸**：普通表单宽度统一，复杂编辑弹窗保持适度宽度，移动端有两侧留白且超长内容可在弹窗内滚动；
+- [ ] **移动端交互**：Sidebar 抽屉可开关，导航后自动收起；Sheet、Tabs、筛选器和表格在 `375x812` 下可操作；
+- [ ] **横向滚动边界**：页面主体无横向溢出，宽表格只在其自身容器内滚动；
 - [ ] **语义颜色**：文字与背景对比度合格，无硬编码 HEX 色彩或色彩失真；
 - [ ] **组件规范**：全部使用 shadcn/ui 组件，无原生裸 HTML 交互标签；
 - [ ] **无障碍与交互**：模态框遮罩层正确显示，支持 Escape 键关闭与焦点捕获；

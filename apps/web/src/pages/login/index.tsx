@@ -1,22 +1,18 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { z } from 'zod';
 import { Cloud, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { usePublicSettings } from '@/lib/public-settings';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-
-interface PublicInfo {
-  siteName: string;
-  registrationEnabled: boolean;
-}
 
 const loginSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
@@ -34,11 +30,9 @@ interface MeResponse {
 export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
-  const infoQuery = useQuery({
-    queryKey: ['system', 'public-info'],
-    queryFn: async () => (await api.get<PublicInfo>('/system/public-info')).data
-  });
+  const infoQuery = usePublicSettings();
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
+  const logoUrl = infoQuery.data?.logoUrl;
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -64,15 +58,15 @@ export default function LoginPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-3 sm:p-4">
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
-            <Cloud className="h-6 w-6" />
+            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6" />}
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
           <CardTitle>登录</CardTitle>
-          <CardDescription>输入账号信息进入控制面板</CardDescription>
+          <CardDescription>{infoQuery.data?.siteDescription || '输入账号信息进入控制面板'}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>

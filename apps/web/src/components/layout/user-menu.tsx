@@ -1,0 +1,79 @@
+import { useNavigate } from 'react-router-dom';
+import { LogOut, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/auth';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+
+// 顶栏独立小巧用户菜单（点击弹出用户信息与退出）
+export function UserMenu() {
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+
+  const onLogout = () => {
+    logout();
+    toast.success('已退出登录');
+    navigate('/login');
+  };
+
+  const userInitial = (user?.email?.[0] || 'U').toUpperCase();
+  const isAdmin = user?.role === 'ADMIN';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 rounded-full bg-primary/10 text-primary font-semibold text-xs border border-primary/20 hover:bg-primary/20 transition-colors"
+          aria-label="用户菜单"
+        >
+          {userInitial}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-lg">
+        <DropdownMenuLabel className="p-2 font-normal">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-xs border border-primary/20">
+              {userInitial}
+            </div>
+            <div className="grid flex-1 text-left text-xs leading-tight min-w-0">
+              <span className="truncate font-semibold text-foreground">
+                {user?.email || '未登录'}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground flex items-center gap-1">
+                {isAdmin ? (
+                  <>
+                    <ShieldCheck className="size-3 text-emerald-500 shrink-0" />
+                    <span>系统管理员</span>
+                  </>
+                ) : (
+                  <>
+                    <UserIcon className="size-3 shrink-0" />
+                    <span>普通用户</span>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={onLogout}
+          className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"
+        >
+          <LogOut className="mr-2 size-4" />
+          <span>退出登录</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

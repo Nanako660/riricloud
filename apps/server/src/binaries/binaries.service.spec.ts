@@ -30,6 +30,14 @@ describe('BinariesService', () => {
     delete process.env.PORT;
   });
 
+  it('配置二进制分发基准地址时优先使用系统设置', async () => {
+    const settings = { getSettings: jest.fn().mockResolvedValue({ binaryDownloadBaseUrl: 'https://cdn.example.com/riricloud' }) };
+    const configured = new BinariesService(prisma as never, settings as never);
+    await expect(configured.buildConfiguredDownloadUrl('agent-linux-amd64', 'secret-token')).resolves.toBe(
+      'https://cdn.example.com/riricloud/api/v1/downloads/binaries/agent-linux-amd64?token=secret-token'
+    );
+  });
+
   it('未知目标不会被当作可下载资产', () => {
     expect(() => service.getAsset('unknown-target')).toThrow(NotFoundException);
   });

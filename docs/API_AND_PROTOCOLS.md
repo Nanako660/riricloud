@@ -12,8 +12,8 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409。
-  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始配额取系统设置 `defaultTrafficLimitBytes`，永久有效。
+  - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。
+  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始配额取 `defaultTrafficLimitBytes`；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，否则按 `defaultValidityDays` 计算有效期，0 为永久。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色。⭐
 
@@ -74,8 +74,9 @@
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应 `{ siteName, registrationEnabled, defaultTrafficLimitBytes }`。
-- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，键约束见 `docs/DATA_MODELS.md` §SystemSetting；响应返回更新后全量。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组和探针对象；响应返回更新后全量。
+- `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 
 #### 套餐管理
 - `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
@@ -87,12 +88,12 @@
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
-- `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量。⭐
+- `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐
 - `POST /admin/subscription-templates`：创建模板。⭐ 请求含 `proxyGroups?`、`ruleSets?`、`dnsConfig?`、`customInjectYaml?`、`customInjectJson?`、`isDefault?`。
 - `PATCH /admin/subscription-templates/:id`：部分更新模板；YAML/JSON 覆写在服务端校验语法。⭐
-- `DELETE /admin/subscription-templates/:id`：删除非默认且未被套餐使用的模板。⭐
+- `DELETE /admin/subscription-templates/:id`：删除非默认、非内嵌且未被套餐使用的模板；内嵌默认模板只能通过 `PATCH` 修改，删除返回 `409`。⭐
 
 #### 订阅管控
 - `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐ 保留为兼容接口；管理端主入口已融合至 `/admin/users`。
@@ -103,7 +104,7 @@
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, registrationEnabled }`（登录/注册页展示，不含敏感设置）。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维参数。
 
 ---
 
@@ -373,7 +374,8 @@ http(s)://<master-host>/api/v1/sub/:token
 > **协议兼容约束**：VMess 入站用户字段使用 `alterId`，Sing-box VMess 出站仍使用 `alter_id`；ShadowTLS 仅支持 v3，必须配置 SS2022 内层，服务端生成 `shadowtls` 外层入站与 `127.0.0.1:0` 的回环 SS 入站并通过 `detour` 串联，不再接受 v2 或独立 ShadowTLS 密码；SS2022 在共享模式、多用户模式和 ShadowTLS 内层均输出算法要求长度的 Base64 密钥。WebSocket 的 `host` 会转换为 `headers.Host`，不会写入 sing-box transport 顶层；TUIC `zero_rtt_handshake` 默认关闭。协议代理中继仅允许目标为 VLESS、VMess、Trojan、Hysteria2、TUIC、Shadowsocks 或 NaiveProxy，避免生成无法工作的本地代理出站。
 
 ### 3.2 流量与有效期标准响应头 (UserInfo Header)
-订阅接口返回标准响应头，主流客户端会自动在首页显示流量条与过期日：
+订阅接口返回标准响应头，主流客户端会自动在首页显示流量条与过期日；`Profile-Update-Interval` 的值由 `subscriptionUpdateIntervalHours` 动态读取，`includeUsageHeaders=false` 时不返回用量头：
 ```http
 Subscription-Userinfo: upload=524288000; download=2147483648; total=107374182400; expire=1789123456
+Profile-Update-Interval: 24
 ```

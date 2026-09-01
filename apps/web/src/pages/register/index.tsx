@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, Loader2 } from 'lucide-react';
 import { api, extractErrorMessage } from '@/lib/api';
+import { usePublicSettings } from '@/lib/public-settings';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,20 +27,13 @@ const registerSchema = z
 
 type RegisterForm = z.infer<typeof registerSchema>;
 
-interface PublicInfo {
-  siteName: string;
-  registrationEnabled: boolean;
-}
-
 export default function RegisterPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
 
   // 注册开关：关闭时提示并引导回登录页
-  const infoQuery = useQuery({
-    queryKey: ['system', 'public-info'],
-    queryFn: async () => (await api.get<PublicInfo>('/system/public-info')).data
-  });
+  const infoQuery = usePublicSettings();
+  const logoUrl = infoQuery.data?.logoUrl;
 
   useEffect(() => {
     if (infoQuery.data && !infoQuery.data.registrationEnabled) {
@@ -72,15 +66,15 @@ export default function RegisterPage() {
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-3 sm:p-4">
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
-            <Cloud className="h-6 w-6" />
+            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6" />}
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
           <CardTitle>注册</CardTitle>
-          <CardDescription>创建账号即可开始使用</CardDescription>
+          <CardDescription>{infoQuery.data?.siteDescription || '创建账号即可开始使用'}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
