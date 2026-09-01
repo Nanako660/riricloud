@@ -9,6 +9,17 @@
 变更类型说明：`Added` 新增 · `Changed` 变更 · `Fixed` 修复 · `Removed` 移除 · `Security` 安全 · `Deprecated` 弃用。
 约定：每个包含核心代码变更的 PR 在合入 main 前必须递增版本号并在本文件对应版本小节中记录条目；发布时按版本小节打 `vX.Y.Z` Tag。
 
+## [0.4.6] - 2026-09-01
+
+### Added
+
+- **代码-文档联动机械门禁**：在 `scripts/doc-governance.mjs`（`pnpm gate:docs`）中集成 Git Diff 变更路径与文档关联检测，严格杜绝修改 Prisma 模型、API 控制器、部署脚本、依赖项或 UI 页面却遗漏同步文档的情况。
+- **显式文档豁免标记**：支持在 commit message 或 PR 描述中使用 `[skip-doc-sync]` 或 `docs-exempt` 显式声明纯内部逻辑重构，避免误报阻断。
+
+### Changed
+
+- 规范文档（`docs/CODE_REVIEW.md`、`docs/PROJECT_CONSTRAINTS.md`、`AGENTS.md`）同步完善联动规则映射表与门禁说明。
+
 ## [0.4.5] - 2026-09-01
 
 ### Added

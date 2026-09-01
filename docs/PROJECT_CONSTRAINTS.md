@@ -62,18 +62,20 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 
 ## 5. 文档同步约束
 
-**代码与文档不一致视为 bug。** 修改以下内容时，对应文档必须在**同一个 PR** 内更新：
+**代码与文档不一致视为 bug。** 修改以下内容时，对应文档必须在**同一个 PR** 内更新，由 `pnpm gate:docs` 进行机械化强约束拦截：
 
-| 你改了什么 | 必须同步更新 |
+| 你改了什么 (Trigger Paths) | 必须同步更新 (Required Docs) |
 | :--- | :--- |
-| REST API 端点、WS 消息、订阅输出格式 | [API_AND_PROTOCOLS.md](./API_AND_PROTOCOLS.md) |
-| Prisma 模型、字段、索引 | [DATA_MODELS.md](./DATA_MODELS.md) |
-| 组件拓扑、通信链路、时序 | [ARCHITECTURE.md](./ARCHITECTURE.md) |
-| 选型、依赖库 | [TECH_STACK.md](./TECH_STACK.md) |
-| 部署方式、安装脚本行为 | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) |
+| Prisma 模型、字段、迁移 (`apps/server/prisma/**`) | [DATA_MODELS.md](./DATA_MODELS.md) |
+| REST 控制器、WS 网关、订阅格式 (`apps/server/src/**/*.controller.ts` 等) | [API_AND_PROTOCOLS.md](./API_AND_PROTOCOLS.md) |
+| 容器化、部署与发布脚本 (`Dockerfile*`、`scripts/docker-*.sh` 等) | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) |
+| 依赖库、Go 模块 (`package.json` 依赖、`go.mod`) | [TECH_STACK.md](./TECH_STACK.md) |
+| 前端页面与交互组件 (`apps/web/src/pages/**`) | [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md) 或 [VISUAL_VERIFICATION.md](./VISUAL_VERIFICATION.md) |
 | 任务规划与细粒度待办 | [plans/README.md](./plans/README.md)（进行中放入 `docs/plans/`，完成后必须 `pnpm plan:archive` 归档） |
 | 规范与红线本身 | 本文档 / [VERSIONING.md](./VERSIONING.md) / [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) / [CODE_REVIEW.md](./CODE_REVIEW.md) |
 | 里程碑进度 | [ROADMAP.md](./ROADMAP.md)（完成的条目打勾） |
+
+> **豁免机制**：若某次改动纯属内部微调/重构且未影响外部接口与数据模型契约，可在 commit message 或 PR 描述中添加 `[skip-doc-sync]` 或 `docs-exempt` 显式豁免阻断。
 
 `feat` / `fix` 等核心代码变更必须执行 `pnpm bump` 并在 [CHANGELOG.md](../CHANGELOG.md) 顶部的对应版本小节中记录条目（详见 [VERSIONING.md](./VERSIONING.md) §5/§6）。
 

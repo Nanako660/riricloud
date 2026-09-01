@@ -21,7 +21,7 @@ RiriCloud 分三个应用：`apps/server`（NestJS）、`apps/web`（React）、
 | 应用 / 领域 | 门禁命令 |
 | :--- | :--- |
 | **版本与日志治理** | `pnpm gate:version`（SemVer 合规、单仓唯一版本源、PR 核心代码递增校验） |
-| **文档与规划治理** | `pnpm gate:docs`（根目录白名单、规划 Frontmatter、100% 完成归档阻断） |
+| **文档与规划治理** | `pnpm gate:docs`（根目录白名单、规划 Frontmatter、100% 完成归档阻断、代码-文档联动规则阻断） |
 | `apps/server` | `pnpm gate:server`（`tsc --noEmit` · ESLint · 单元测试） |
 | `apps/web` | `pnpm gate:web`（`tsc --noEmit` · ESLint · `vite build`） |
 | `apps/agent` | `pnpm gate:agent`（`go vet ./...` · `gofmt -l .` · `go test ./...` · `go build`） |
