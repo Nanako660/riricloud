@@ -15,7 +15,7 @@
 | 主控后端 | NestJS + TypeScript |
 | 持久化 | SQLite (WAL) + Prisma ORM |
 | 实时通信 | `@nestjs/websockets` + `ws`（WSS） |
-| 边缘节点 | Go ≥ 1.25（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI 与系统服务适配） |
+| 边缘节点 | Go ≥ 1.22+（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI、Bubble Tea TUI 与系统服务适配） |
 | 代理内核 | Sing-box |
 | Node.js / pnpm 版本 | Node ≥ 20，pnpm ≥ 9 |
 

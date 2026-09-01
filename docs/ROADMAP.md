@@ -6,15 +6,15 @@
 
 ## 📅 阶段任务拆解
 
-> **当前进度**：Phase 1 已完成；v0.4.0 节点与线路解耦、中继拓扑、主控本机节点和线路订阅编译闭环已完成；节点详情运维、主控自包含升级分发与部署打包闭环已完成。下方标注 ⭐ 的条目为已实现部分；按用户流量统计已通过 Sing-box V2Ray API 恢复，使用按心跳周期清零的用户增量计数。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
+> **当前进度**：Phase 1 ~ Phase 6 全部里程碑已落地（基线版本 `v0.4.5`）。节点与线路解耦、中继拓扑、Master 内置 Agent、管理员初始化/重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发闭环已全量就绪。下方标注 ⭐ 的条目为已实现部分；按用户流量统计已通过 Sing-box V2Ray API 恢复，使用按心跳周期清零的用户增量计数。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
 
 ### Phase 1: 基础设施与 Monorepo 脚手架搭建
-- [x] 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
-- [x] 创建 `apps/web`、`apps/server`、`apps/agent` 目录结构。
-- [x] 配置全局 TypeScript 与代码规范。
-- [x] 落地工程治理工具链：`commitlint`（Conventional Commits 校验）+ `husky`（pre-commit 钩子）+ `lint-staged` + `.editorconfig`，规范见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) 与 [CODE_REVIEW.md](./CODE_REVIEW.md)。
-- [x] 以 `v0.1.0` 为目标建立首次发布基线：统一版本号写入根 `package.json`，维护 [CHANGELOG.md](../CHANGELOG.md) 并按 [VERSIONING.md](./VERSIONING.md) §6 流程打 Tag。
-- [x] 开发环境缓存策略：pnpm store / Go module cache / 便携工具链等全部收进项目目录（`.cache/`、`.tools/`，见 `scripts/dev-env.sh`）。
+- [x] ⭐ 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
+- [x] ⭐ 创建 `apps/web`、`apps/server`、`apps/agent` 目录结构。
+- [x] ⭐ 配置全局 TypeScript 与代码规范。
+- [x] ⭐ 落地工程治理工具链：`commitlint`（Conventional Commits 校验）+ `husky`（pre-commit 钩子）+ `lint-staged` + `.editorconfig`，规范见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) 与 [CODE_REVIEW.md](./CODE_REVIEW.md)。
+- [x] ⭐ 以 `v0.1.0` 为目标建立首次发布基线：统一版本号写入根 `package.json`，维护 [CHANGELOG.md](../CHANGELOG.md) 并按 [VERSIONING.md](./VERSIONING.md) §6 流程打 Tag。
+- [x] ⭐ 开发环境缓存策略：pnpm store / Go module cache / 便携工具链等全部收进项目目录（`.cache/`、`.tools/`，见 `scripts/dev-env.sh`）。
 
 ### Phase 2: 主控端核心服务开发 (`apps/server`)
 - [x] ⭐ 初始化 NestJS 工程，集成 Prisma ORM。
@@ -58,25 +58,24 @@
 ### Phase 4: 前端 Web 控制面板开发 (`apps/web`)
 - [x] ⭐ 初始化 Vite + React + TypeScript + Tailwind CSS + shadcn/ui。
 - [x] ⭐ 封装 Axios API 客户端、Auth Store 与路由拦截鉴权。
-- [ ] 开发用户端界面：
+- [x] ⭐ 开发用户端界面：
   - [x] ⭐ 用户登录与注册页。（注册受系统设置开关控制）
   - [x] ⭐ 个人仪表盘（剩余流量进度条、账户有效期、一键复制/导入订阅、订阅链接重置）。
-- [x] ⭐ 可用线路列表与底层状态。（延迟展示待内核接入）
-- [ ] 开发管理员控制台：
+  - [x] ⭐ 可用线路列表与底层状态。（展示倍率、等级、标签、中继机制、端点覆盖与在线健康度）
+- [x] ⭐ 开发管理员控制台：
   - [x] ⭐ 用户与订阅一体化管理（套餐/订阅聚合列表、配额与状态调整、封禁/解封、角色设置、批量操作、Token 重置）。
   - [x] ⭐ 节点管理（节点添加/编辑/删除、AgentToken 与一键安装命令展示、实时 CPU/内存/带宽负载监控）。
   - [x] ⭐ 系统设置（注册开关、全局默认配额、站点名称）。
-- [x] ⭐ 套餐管理（套餐属性、线路匹配模式、模板绑定、公开/下架与删除保护）。
-- [x] ⭐ 订阅模板管理（策略组、规则集、DNS、YAML/JSON 高级覆写与默认模板）。
-- [x] ⭐ 订阅管控能力融合至用户管理（用户订阅列表、流量进度、状态/配额/有效期调整与 Token 重置）；原 `/admin/subscriptions` 页面入口重定向至 `/admin/users`，后端 API 保留兼容。
-- [x] ⭐ 节点远程升级入口（Sing-box/Agent 目标、版本、下载 URL、SHA-256 校验）。
+  - [x] ⭐ 套餐管理（套餐属性、线路匹配模式、模板绑定、公开/下架与删除保护）。
+  - [x] ⭐ 订阅模板管理（策略组、规则集、DNS、YAML/JSON 高级覆写与默认模板）。
+  - [x] ⭐ 节点远程升级入口（Sing-box/Agent 目标、版本、下载 URL、SHA-256 校验）。
 
 ### Phase 4.1: 用户订阅体验（v0.3.0）
 - [x] ⭐ 套餐市场：公开套餐展示、订购/升配确认与即时生效提示。
 - [x] ⭐ 唯一订阅详情：当前套餐、流量进度、到期时间、线路列表、复制/重置 Token、取消订阅。
 - [x] ⭐ 可用线路视图：展示倍率、等级、标签、中继机制、最终接入端点和底层在线状态。
 
-### Phase 4.2: 节点详情运维与主控自包含升级分发（v0.3.0）
+### Phase 4.2: 节点详情运维与主控自包含升级分发（v0.3.0 ~ v0.4.0）
 - [x] ⭐ 主控二进制分发中心：扫描多架构 Agent / Sing-box 文件，计算 SHA-256，提供受 AgentToken 保护的内部下载与管理员元数据接口。
 - [x] ⭐ 升级任务默认按节点系统架构装配主控内部 URL 与校验摘要，并支持管理员导入自定义 Sing-box 文件托管。
 - [x] ⭐ Node 模型持久化 Agent 版本、系统架构、内核版本与最近探针诊断快照。
@@ -91,6 +90,18 @@
 - [x] ⭐ 移除旧节点安装脚本与 `GET /api/v1/install.sh`，改为面板生成的原生 CLI 下载/安装命令；Agent 自己注册跨平台系统服务。
 - [x] ⭐ 编写主控端与 Agent 的多阶段 Dockerfile 及 `docker-compose.yml`，SQLite 使用持久化卷。
 - [x] ⭐ WSL Docker 验收主控容器：迁移、幂等播种、Web 健康检查与二进制分发均通过；Agent 镜像内置静态 Agent 与官方 sing-box。
+- [x] ⭐ 落地 `artifacts/` 统一产物布局与 Docker 离线镜像双标签导出（`pnpm docker:build` / `pnpm docker:export`）。
+
+### Phase 6: 工程治理与自动化门禁体系（v0.4.5）
+- [x] ⭐ 落地 PR 级统一版本管理与自动化门禁治理体系（`scripts/version-governance.mjs`）。
+- [x] ⭐ 落地文档治理与规划归档机械约束门禁（`scripts/doc-governance.mjs`）。
+- [x] ⭐ Agent Cobra CLI、Bubble Tea 全屏 TUI 控制台、CGO 禁用静态编译与多架构跨平台适配。
+
+### Phase 7: 进阶演进路线（v0.5.0+ 规划）
+- [ ] **真实客户端端到端自动化验证套件**：构建在真实网络或虚拟网络接口下的 Clash Meta / Sing-box Client 代理连通性自动化测试脚本。
+- [ ] **分流规则集生态与自更新**：引入远程 Rule-Set / Geosite / GeoIP 动态拉取、定时更新与订阅模板动态注入。
+- [ ] **多用户订阅高级管控与通知中心**：支持邮件通知（流量预警、到期提醒）、Webhook 告警推送与用户订阅用量趋势深度报表。
+- [ ] **支付网关与自动化订单流水**：集成常见支付通道、订单状态机与支付回调自动履约。
 
 ---
 
@@ -100,12 +111,14 @@
 2. **多节点无缝纳管**：在任意多台 Linux VPS 上运行 Agent，均可在主控 Web 仪表盘实时看到在线状态与负载。
 3. **主流客户端全适配**：导出的订阅链接能够在 Clash Meta (Mihomo)、Sing-box 官方客户端以及 Shadowrocket 等工具中正常加载与代理翻墙。
 
-## 🧪 v0.4.0 质量验收记录
+## 🧪 质量验收记录（v0.4.5 基线）
 
 - [x] Server：TypeScript、ESLint、Jest（14 suites / 121 tests）通过。
 - [x] Web：TypeScript、ESLint、Vite build 通过。
-- [x] Agent：`go vet`、`gofmt`、`go test`、`go build` 通过；PowerShell 下 `scripts/gate-agent.sh` 因 Bash 环境不可用，使用项目内 Go 工具链执行等价门禁。
+- [x] Agent：`go vet`、`gofmt`、`go test`、`go build` 通过；跨平台构建产物进入 `artifacts/dev/agent/`。
+- [x] 门禁治理：`pnpm gate:version` 与 `pnpm gate:docs` 全绿通过。
 - [x] Git：`git diff --check` 通过；所有变更位于独立特性分支，未直接修改、提交或推送 `main`。
 - [x] 文档：模型、API/WS、架构、前端规范、视觉台账、路线图与 CHANGELOG 已同步。
-- [ ] 视觉截图回归：按 `docs/VISUAL_VERIFICATION.md` 仅在 Antigravity 环境、收到明确视觉验证请求后执行（本次按要求跳过）。
+- [ ] 视觉截图回归：按 `docs/VISUAL_VERIFICATION.md` 仅在 Antigravity 环境、收到明确视觉验证请求后执行（按需执行）。
 - [ ] 真实代理客户端连通性：需要可用 VPS、Sing-box 内核及客户端环境，保留为部署环境验收项。
+

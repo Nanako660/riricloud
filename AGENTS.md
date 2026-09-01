@@ -8,7 +8,7 @@
 
 **RiriCloud** 是一个多节点 VPN/代理管理系统：NestJS + React + SQLite 的主控面板（Master），通过 WSS 长连接纳管运行在多台 VPS 上的 Go Agent（托管 Sing-box 内核），统一输出多格式订阅。
 
-**当前进度：最小 demo（v0.1.0 基线）已跑通全链路。** 三端脚手架与核心闭环（登录 → 建节点 → Agent 上线心跳 → 仪表盘遥测 → 订阅输出）已落地，本地验收与质量门禁全绿；完整功能（Sing-box 内核管理、多格式订阅、用户管理等）按里程碑推进，详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+**当前进度：v0.4.5 基线全链路与工程治理已落地。** 控制平面与数据平面解耦、节点与中继线路解耦、Master 内置 Agent、管理员引导与安全重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发、多格式通用订阅与五合一质量门禁已全量就绪；完整路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 > **开发环境**：所有依赖缓存与便携工具链收进项目目录（`.cache/`、`.tools/`，已 gitignore）。开发前先在 Git Bash 中 `source scripts/dev-env.sh`——它会设置 pnpm store、Prisma 缓存、Go 工具链（`.tools/go`）与 Go module cache 的项目内路径。首次搭建：pnpm 环境下执行 `pnpm setup`（install + 迁移 + 种子数据）。
 
@@ -21,8 +21,9 @@ riricloud/
 ├── apps/              # 三端应用（已落地）
 │   ├── web/           # React + Vite 前端（@riricloud/web）
 │   ├── server/        # NestJS 主控后端（@riricloud/server，含 Prisma schema）
-│   └── agent/         # Go 边缘节点守护程序
-├── scripts/           # dev-env.sh、doc-governance.mjs、gate-agent.sh 等
+│   └── agent/         # Go 边缘节点守护程序（Cobra CLI + Bubble Tea TUI）
+├── scripts/           # dev-env.sh、doc-governance.mjs、version-governance.mjs 等
+├── artifacts/         # 【gitignore】统一的本地 Agent、Release 与 Docker 产物目录
 ├── .cache/            # 【gitignore】依赖缓存（pnpm/npm/corepack/go）
 ├── .tools/            # 【gitignore】便携工具链（如本地 Go）
 ├── AGENTS.md          # 本文件

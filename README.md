@@ -1,11 +1,11 @@
-# RiriCloud (哩哩云)
+# RiriCloud
 
 <div align="center">
 
-**现代化的多节点分布式 VPN / 代理管理系统**  
-*极简架构 · 零外部依赖 · WSS 毫秒级长连接 · 现代协议支持 · 多格式订阅统一输出*
+**多节点 VPN / 代理管理系统**  
+*Master-Agent 分布式架构 · SQLite WAL 本地存储 · WSS/HTTP 双模式通信 · 多协议内核托管 · 多格式订阅输出*
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.5-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8.svg?logo=go)](https://go.dev)
@@ -14,44 +14,19 @@
 [![Prisma](https://img.shields.io/badge/Prisma-6.x-2D3748.svg?logo=prisma)](https://prisma.io)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
 
-[✨ 核心特性](#-核心特性) • [📐 系统架构](#-系统架构) • [🛠️ 技术栈](#️-技术栈) • [🚀 快速开始](#-快速开始) • [📦 生产部署](#-生产部署) • [📂 目录结构](#-目录结构) • [📚 官方文档库](#-官方设计与技术文档)
+[📖 系统概述](#-系统概述) • [📐 系统架构](#-系统架构) • [🚀 快速开始](#-快速开始) • [📦 生产部署](#-生产部署) • [🌐 开放接口与扩展](#-开放接口与扩展) • [🛠️ 技术栈](#️-技术栈) • [📂 目录结构](#-目录结构) • [📚 官方文档库](#-官方设计与技术文档) • [🗺️ 路线图](#️-路线图-roadmap)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## 📖 系统概述
 
-**RiriCloud** 是一个专为个人与团队设计的高性能、分布式代理纳管系统。告别传统面板对 MySQL/Redis 等繁重中间件的依赖，RiriCloud 采用清晰的 **Master-Agent（控制平面与数据平面解耦）** 架构设计：
+**RiriCloud** 是一个采用控制平面与数据平面解耦（Master-Agent）的多节点代理纳管系统：
 
-- **主控端 (Master Server & Web Dashboard)**：基于 **NestJS + React + SQLite (WAL 模式)** 构建，单进程开箱即用，提供极简运维与流畅的现代化管理后台。
-- **边缘节点端 (Edge Node Agent)**：基于 **Go** 编写的轻量单静态守护二进制（`riri-agent`），托管 **Sing-box** 代理内核，通过 **WebSocket over TLS (WSS)** 与主控端保持全双工长连接，实现毫秒级配置热推与实时遥测心跳上报。
-- **客户端通用订阅**：一套订阅引擎无缝输出 Clash Meta (Mihomo)、Sing-box 官方配置及通用 Base64/URI 链接，支持流量限额与到期时间自动管控。
-
----
-
-## ✨ 核心特性
-
-- 🪶 **极简部署与零中间件依赖**：主控端内置 SQLite（WAL 高并发读写模式）+ Prisma ORM，彻底摒弃 Redis、MySQL、MQ 等外部依赖，资源占用极低。
-- ⚡ **分布式 Master-Agent 架构**：控制平面与数据转发彻底分离。单个主控面板可纳管分布在全球各机房的任意多台 Linux VPS 节点。
-- 🔄 **WSS 全双工双向实时网关**：节点上线即建立安全长连接，配置变更毫秒级增量热推（Reload），系统负载（CPU/内存/带宽）与用户流量 5 秒级上报。
-- 🛡️ **现代代理协议原生支持**：
-  - **VLESS + Reality + Vision**：免自备公网证书与域名，借用大厂 TLS 握手特征，具备强抗封锁能力。
-  - **Hysteria 2 / TUIC v5 / Shadowsocks 2022**：基于 QUIC/UDP，专治恶劣弱网与高丢包环境。
-- 📊 **精细化多租户与配额控制**：每个用户拥有独立 UUID 与订阅 Token，支持流量配额限制、过期时间设定、流量消耗同事务扣减、欠费/到期自动剔除与订阅重置。
-- 📱 **多客户端一站式通用订阅**：
-  - 支持 **Clash Meta (Mihomo)** YAML 格式；
-  - 支持 **Sing-box** Client JSON 格式；
-  - 支持通用 **Base64 / vless:// 链接** 格式；
-  - 标准实现 `Subscription-Userinfo` 响应头，客户端实时显示已用/剩余流量与有效期。
-- 🎨 **现代化精致 Web 控制台**：
-  - 基于 React 19 + Vite 6 + Tailwind CSS + shadcn/ui（Zinc 灰色系 + 原生暗黑模式）；
-  - **用户端**：剩余流量进度卡片、到期时间、一键复制/导入订阅、订阅 Token 重置；
-  - **管理员端**：用户管理（基于 TanStack Table 的分页、搜索、行选择、批量启停/删除）、节点实时遥测监控与一键安装命令展示、系统全局设置（注册开关、默认配额、站点名称）。
-- 🛡️ **生产级安全与工程治理**：
-  - JWT RBAC 角色鉴权，服务端默认拒绝鉴权；
-  - 密码使用 `bcrypt` 单向哈希加盐存储，敏感 Token 与私钥严格脱敏；
-  - 严苛的 Monorepo 三端质量门禁（TypeScript / ESLint / Jest / Go Test / Vet / govulncheck / pnpm audit）。
+- **主控端 (Master Server & Web Dashboard)**：基于 NestJS 11 + React 19 + SQLite (WAL 模式) 构建。负责用户鉴权、节点纳管、中继线路编排、订阅模板编译、实时遥测收集与二进制升级分发；主控端内置本机 Agent 与 Sing-box 内核，支持单机独立开箱即用。
+- **边缘节点端 (Edge Node Agent)**：基于 Go 编写的跨平台单静态二进制守护程序（`riri-agent`），托管 Sing-box 代理内核。支持通过 WebSocket (WSS) 长连接或 HTTP 定时轮询与主控端通信，负责内核进程生命周期管理、配置原子更新、网络探针诊断与用户流量统计采集。
+- **客户端订阅引擎**：根据用户的套餐权限与模板策略，统一输出 Clash Meta (Mihomo)、Sing-box Client JSON 以及通用 Base64/URI 链接，并在响应头中返回 `Subscription-Userinfo` 流量与有效期元数据。
 
 ---
 
@@ -69,16 +44,26 @@ graph TB
         FrontendUI["Web 前端静态资源<br/>(React + Vite + shadcn/ui)"]
         APIServer["RESTful API 业务服务<br/>(NestJS + TypeScript)"]
         WSGateway["WebSocket 主从实时网关<br/>(@nestjs/websockets - ws)"]
+        AgentPollAPI["Agent HTTP 轮询适配器<br/>(POST /api/v1/agent/poll)"]
         SubscriptionEngine["通用多格式订阅生成引擎<br/>(Clash / Sing-box / Base64)"]
+        BinaryCenter["二进制分发与升级中心<br/>(Agent & Sing-box Assets)"]
         SQLiteDB[("SQLite 数据库 (WAL 模式)<br/>Prisma ORM")]
+        LocalAgent["内置本机 Agent<br/>(Master-Local)"]
+        LocalSingbox["内置本机 Sing-box 内核"]
         
         FrontendUI -->|"HTTP(S)"| APIServer
         APIServer <-->|"CRUD / 事务"| SQLiteDB
         APIServer <--> WSGateway
+        APIServer <--> AgentPollAPI
         APIServer <--> SubscriptionEngine
+        APIServer <--> BinaryCenter
+        LocalAgent <-->|"WS / 本机长连接"| WSGateway
+        LocalAgent <-->|"本地进程与配置管理"| LocalSingbox
+        LocalAgent -->|"gRPC StatsService 流量采集"| LocalSingbox
+        LocalAgent -->|"遥测指标上报"| APIServer
     end
 
-    subgraph "边缘节点 A (VPS Edge Node A)"
+    subgraph "远程边缘节点 A (VPS Edge Node A - 直连 / 入口)"
         direction TB
         AgentA["Go Node Agent 守护程序<br/>(riri-agent binary)"]
         SingboxA["Sing-box 代理内核<br/>(Inbound: VLESS-Reality / Hysteria2)"]
@@ -88,7 +73,7 @@ graph TB
         SystemMonitorA -->|"收集 CPU/内存/IO"| AgentA
     end
 
-    subgraph "边缘节点 B (VPS Edge Node B)"
+    subgraph "远程边缘节点 B (VPS Edge Node B - 落地出口)"
         direction TB
         AgentB["Go Node Agent 守护程序<br/>(riri-agent binary)"]
         SingboxB["Sing-box 代理内核<br/>(Inbound: Shadowsocks / TUIC)"]
@@ -100,28 +85,13 @@ graph TB
 
     UserBrowser -->|"HTTPS 访问管理"| FrontendUI
     VpnClients -->|"HTTP(S) 拉取订阅"| SubscriptionEngine
-    VpnClients -->|"加密代理流量"| SingboxA
-    VpnClients -->|"加密代理流量"| SingboxB
+    VpnClients -->|"直连或中继入口流量"| SingboxA
+    SingboxA -.->|"中继/转发隧道"| SingboxB
+    VpnClients -->|"直连代理流量"| SingboxB
 
-    AgentA <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
-    AgentB <-->|"WSS 安全长连接 (心跳 / 配置下发 / 流量上报)"| WSGateway
+    AgentA <-->|"WSS / HTTP 通信 (心跳 / 配置 / 遥测 / 任务)"| WSGateway
+    AgentB <-->|"WSS / HTTP 通信 (心跳 / 配置 / 遥测 / 任务)"| WSGateway
 ```
-
----
-
-## 🛠️ 技术栈
-
-| 模块 | 技术选型 | 关键说明 |
-| :--- | :--- | :--- |
-| **主控后端 (Server)** | NestJS 11 + TypeScript | 模块化架构、分层解耦、Swagger API 契约生成 |
-| **持久化与 ORM** | SQLite + Prisma ORM 6.x | 单文件轻量存储，开启 WAL 模式保障高并发 |
-| **实时通信网关** | `@nestjs/websockets` + `ws` | WebSocket over TLS (WSS) 全双工长连接 |
-| **前端面板 (Web)** | React 19 + Vite 6 + TypeScript | 极致加载速度与现代化开发体验 |
-| **UI 设计系统** | Tailwind CSS + shadcn/ui + Lucide | Zinc 风格暗黑模式、无障碍标准、严禁裸写原生交互标签 |
-| **前端状态与表格** | Zustand + TanStack Query & Table | 状态管理、接口缓存、五能力高级数据表格 |
-| **边缘节点 (Agent)** | Go 1.25+ + Cobra + kardianos/service (`CGO_ENABLED=0`) | 单静态二进制发布，内置跨平台 CLI、服务生命周期和诊断能力 |
-| **节点代理内核** | Sing-box | 现代化下一代通用网络代理内核 |
-| **工程架构治理** | pnpm Monorepo + Husky + Commitlint | Conventional Commits、ESLint 9、Jest、三端自动化质量门禁 |
 
 ---
 
@@ -133,50 +103,35 @@ graph TB
 - **pnpm**：`>= 9.0.0`
 - **Go**：`>= 1.22`（未安装系统 Go 时，可直接使用项目内置的便携工具链）
 
-> **💡 开发技巧**：项目自带缓存隔离与便携工具链配置。在终端执行 `source scripts/dev-env.sh` 即可自动配置项目内缓存路径与本地 Go 环境。
+> **开发环境提示**：在 Git Bash 中执行 `source scripts/dev-env.sh` 即可自动配置项目内隔离的依赖缓存与本地便携 Go 工具链路径。
 
-### 2. 初始化与一键搭建
+### 2. 本地初始化与演示数据播种
 
 ```bash
-# 1. 克隆仓库
+# 1. 克隆代码仓库
 git clone https://github.com/your-org/riricloud.git
 cd riricloud
 
-# 2. 一键搭建（安装依赖 + Prisma 迁移 + 本地演示数据播种）
+# 2. 安装依赖并初始化数据库
 pnpm setup
 ```
 
-`pnpm setup` 仅用于本地演示，会使用演示默认值生成账号；生产启动不会使用这些默认凭据。播种完成后：
+`pnpm setup` 用于本地开发演示，执行后会生成演示账号：
 
 | 角色 | 邮箱 | 初始密码 |
 | :--- | :--- | :--- |
 | **系统管理员 (ADMIN)** | `admin@riricloud.local` | `riri-admin-demo` |
 | **普通用户 (USER)** | `demo@riricloud.local` | `riri-user-demo` |
 
-本地启动后端前，请在 `apps/server/.env` 中设置至少 32 位随机 `JWT_SECRET`；首次空库的生产式初始化可设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 后执行 `node prisma/bootstrap-admin.js`，已有管理员不会被覆盖。
-
-### 2.1 构建产物目录
-
-仓库根目录统一使用 `artifacts/` 存放可分发或本地生成的二进制产物：
-
-```text
-artifacts/
-├── dev/agent/<os>-<arch>/       # pnpm build:agent 的当前平台 Agent
-├── releases/v<version>/         # scripts/release.sh 的发行包、校验和与中间装配目录
-└── docker/v<version>/<os>-<arch>/ # pnpm docker:export 的镜像导出物
-```
-
-`pnpm build` 会依次生成 `apps/server/dist/`、`apps/web/dist/` 和 `artifacts/dev/agent/<os>-<arch>/`；前两个 `dist/` 是框架运行时直接依赖的应用构建目录，因此不迁移。可通过 `RIRICLOUD_ARTIFACT_DIR` 覆盖 Agent/Release/Docker 的统一根目录，或通过 `DOCKER_EXPORT_DIR` 仅覆盖 Docker 导出目录。
-
 ### 3. 启动开发模式
 
-在两个独立终端窗口中分别启动主控后端和前端：
+在两个终端中分别启动后端与前端：
 
 ```bash
-# 终端 1：启动 NestJS 后端服务（默认监听端口 3000）
+# 终端 1：启动 NestJS 后端主控（监听 3000 端口）
 pnpm dev:server
 
-# 终端 2：启动 Vite 前端面板（默认端口 5173，自动代理 API 到 3000）
+# 终端 2：启动 Vite 前端面板（监听 5173 端口，API 自动代理至 3000）
 pnpm dev:web
 ```
 
@@ -184,136 +139,159 @@ pnpm dev:web
 - 🖥️ **Web 控制面板**：[http://localhost:5173](http://localhost:5173)
 - 📑 **Swagger API 交互文档**：[http://localhost:3000/api/docs](http://localhost:3000/api/docs)
 
-### 4. 运行边缘 Agent (本地联调)
-
-1. 使用管理员账号登录控制面板，在 **节点管理** 页点击「添加节点」；
-2. 复制生成的专属 `AgentToken`；
-3. 在本地启动 Agent 守护进程连接本地 Master：
+### 4. 本地联调边缘 Agent
 
 ```bash
-# 进入 Agent 目录
-cd apps/agent
+# 编译当前平台 Agent
+pnpm build:agent
 
-# 启动 Agent 建立长连接
-AGENT_TOKEN="<从面板复制的_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run main.go
+# 启动 Agent 连接本地主控（Token 从管理员「节点管理」复制）
+AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run apps/agent/main.go run
 ```
-
-观察面板上的节点状态将在毫秒级变为 **在线 (ONLINE)** 并实时刷新 CPU、内存与网络速率。
 
 ---
 
 ## 📦 生产部署
 
-### 1. 主控端 (Master) 部署
+### 1. 主控端 Docker Compose 部署（推荐）
 
-推荐在生产环境通过 Docker Compose 一键启动主控服务（仓库内 Dockerfile 与 Compose 已提供）。Compose 默认使用 `riricloud/master:latest`，构建脚本会同时生成版本标签与 `latest` 标签：
+主控镜像内置 Node.js 运行时、Prisma、Linux x64 本机 Agent 及 Sing-box 内核。
 
 ```bash
-# 在 WSL/Linux Docker 环境中执行
+# 在 Linux / WSL Docker 环境中执行
 cp .env.example .env
-# 编辑 .env，设置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
 pnpm docker:build
 pnpm docker:up
 ```
 
-空数据库首次启动时，Master 会使用 `ADMIN_EMAIL` 和 `ADMIN_PASSWORD` 创建首个管理员；已有管理员不会被环境变量覆盖。旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD` 仍兼容，但不再提供生产默认值。需要显式重置已有管理员密码时执行：
+- **首管理员引导**：空库首次启动时，主控会使用 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 创建首个管理员账号；已有管理员时不会被环境变量覆盖。
+- **内置本机节点**：主控启动时会自动注册 `Master-Local` 节点并启动内置 Agent 进程。
+- **离线镜像部署**：`pnpm docker:build` 会将镜像打包导出至 `artifacts/docker/v<version>/<os>-<arch>/`。在无网络环境的目标服务器上，可直接通过 `docker load` 导入镜像并使用 `docker-compose.image.yml` 启动：
 
 ```bash
-pnpm admin:reset -- --email admin@example.com
-printf '%s\n' 'new-password' | pnpm admin:reset -- --email admin@example.com --password-stdin
-```
-
-生产默认 `AUTO_SEED=false`，会初始化管理员和不可删除的 `Master-Local` 本机 Agent 节点，不会创建演示用户、套餐、模板和线路；仅开发/演示环境设置 `AUTO_SEED=true` 才会额外运行完整 seed。Master 镜像已经内置 Agent 与 Sing-box，不需要再启用独立的本机 Agent 服务。
-
-`Master-Local` 的订阅地址优先使用 `MASTER_LOCAL_HOST`，未填写时从 `RIRICLOUD_PUBLIC_URL` 推导。Linux/WSL Compose 使用 host network，本机 Agent 的动态 TCP/UDP 线路端口直接监听宿主机；请在防火墙放行实际线路端口。远程 VPS 节点仍按“节点端 Agent”章节独立接入。
-
-`pnpm docker:build` 会构建并标记以下镜像，同时默认导出到 `artifacts/docker/v<version>/<os>-<arch>/`：
-
-```text
-riricloud/master:0.2.0
-riricloud/master:latest
-riricloud/agent:0.2.0
-riricloud/agent:latest
-```
-
-导出文件使用 `riricloud-<组件>_<版本>_<平台>.tar.gz` 命名，并附带 `.manifest.json` 版本清单和 `.sha256` 校验文件。只需要重新导出现有镜像时执行 `pnpm docker:export`；可用 `pnpm docker:tags` 查看当前标签。镜像包含 OCI 版本、Git 提交和构建时间元数据。需要兼容旧流程时，可用 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖默认目录。
-
-如果使用已经导出的镜像进行离线安装，可加载镜像后使用专用 Compose 模板；该模板只使用本地镜像，不会触发构建或拉取：
-
-```bash
+# 导入镜像
 docker load -i artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
-# 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# docker load -i artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
+
+# 启动服务
 cp .env.image.example .env.image
-# 编辑 .env.image：确认镜像标签，并填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
-docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```
 
-Master 本机 Agent 会随 `master` 服务自动启动；不需要启用 `agent` profile。只有在同一 Compose 中联调额外的远程节点时，才创建节点并取得其 AgentToken 后启用远程 Agent profile：
+### 2. 主控端自包含发行包部署
+
+在无需 Docker 的 Linux VPS 上，直接下载 GitHub Release 的 `riri-master_<version>_linux_amd64.tar.gz`：
 
 ```bash
-docker compose --env-file .env.image -f docker-compose.image.yml --profile agent up -d --no-build
+tar -xzf riri-master_<version>_linux_amd64.tar.gz && cd riri-master_<version>_linux_amd64
+cp .env.example .env   # 编辑 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+./start.sh             # 自动完成迁移、管理员引导并启动主控与内置 Agent
 ```
 
-密码重置命令：
+### 3. 主控端源码构建部署
 
 ```bash
-printf '%s\n' 'new-password' | docker compose --env-file .env.image -f docker-compose.image.yml exec -T master \
-  /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
+pnpm install
+pnpm build
+pnpm --filter @riricloud/server exec prisma migrate deploy
+pnpm --filter @riricloud/server exec node prisma/bootstrap-admin.js
+pnpm --filter @riricloud/server start:prod
 ```
 
-运行时使用 Distroless 镜像；2026-08-31 在 WSL Ubuntu 的 `linux/amd64` 验收结果约为 Master `376 MB`（压缩包 `87 MB`）、Agent `155 MB`（压缩包 `38 MB`）。
+### 4. 节点端 Agent 部署与运维
 
-### 2. 节点端 (Agent) 原生 CLI 安装
-
-在主控面板点击「添加节点」后，复制对应的原生 CLI 安装命令，登录目标 VPS（支持 Linux、Windows、macOS）以管理员身份执行：
+在主控面板点击「添加节点」获取安装命令，在目标 VPS（Linux / macOS / Windows）上以管理员身份执行：
 
 ```bash
+# Linux amd64 原生安装示例
 curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  'https://<master-domain>/api/v1/downloads/agent?token=<AGENT_TOKEN>' \
   -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
   rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
+  /usr/local/bin/riri-agent install --token=<AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
 ```
 
-`riri-agent install` 会写入 `/etc/riri-agent/config.yaml`，优先从 Master 获取 Sing-box，必要时回退 GitHub，并通过系统服务适配器注册开机启动。直接运行 `riri-agent` 会进入 Bubble Tea 全屏控制台 GUI/TUI，支持方向键菜单、安装表单、卸载确认和结果滚动；常用命令为 `riri-agent status`、`riri-agent doctor`、`riri-agent logs --follow`、`riri-agent restart` 和 `riri-agent uninstall --purge --yes`。
+#### Bubble Tea 全屏 TUI 控制台
+直接在终端中无参数执行 `riri-agent`，即可进入基于 Bubble Tea 的全屏终端交互界面（TUI），支持方向键导航、配置表单填写、服务启停、诊断排错与日志查看。
 
-#### 常用运维排错指令：
+#### 常用 CLI 运维命令
 ```bash
-# 查看 Agent 运行状态
-riri-agent status
-
-# 查看实时日志
-riri-agent logs --follow --lines 50
-
-# 重启 Agent 服务
-riri-agent restart
+riri-agent status               # 查看服务与内核运行状态
+riri-agent doctor               # 执行连通性、网络与环境诊断
+riri-agent logs --follow        # 实时跟踪 Agent 运行日志
+riri-agent restart              # 重启 Agent 守护进程
+riri-agent uninstall --purge    # 卸载系统服务并彻底清理配置与内核文件
 ```
+
+### 5. 管理员密码重置
+
+当忘记管理员密码时，可通过命令行安全重置：
+
+```bash
+# 源码环境
+pnpm admin:reset -- --email admin@example.com
+
+# 发行包环境
+./admin-reset.sh --email admin@example.com
+
+# Docker 容器环境
+docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
+```
+
+---
+
+## 🌐 开放接口与扩展
+
+### 1. 通用多格式订阅输出
+主控订阅端点：`GET /api/v1/sub/:token`
+- **自动格式匹配**：根据 `?type=clash|singbox|base64` 参数或客户端 `User-Agent` 自动返回对应格式配置。
+- **流量与有效期响应头**：标准返回 `Subscription-Userinfo: upload=...; download=...; total=...; expire=...` 与 `Profile-Update-Interval`。
+
+### 2. OpenAPI / Swagger 接口契约
+主控端内置交互式 API 文档，启动后访问 `/api/docs` 即可查看并调试全部 RESTful 接口（认证、用户与订阅管理、节点与线路编排、套餐与模板管理、遥测与系统设置）。
+
+### 3. Agent 通信网关与任务调度
+- **双传输模式**：Agent 支持 WebSocket (WSS) 全双工长连接与 HTTP (`POST /api/v1/agent/poll`) 定时轮询两种模式。
+- **主动任务分发**：支持向在线节点下发网络探针任务（TCP/DNS/ICMP 延迟与丢包率测试）以及内核/Agent 自更新升级任务。
+
+### 4. 高级配置覆盖与内核导入
+- **高级模式覆盖 (`configOverride`)**：支持在节点层级注入自定义 Sing-box 顶层 JSON 字段，与主控合成的线路入站/出站规则进行深层合并。
+- **多架构内核资产导入**：管理员可通过 `POST /api/v1/admin/binaries/import` 导入自定义架构的 Sing-box 二进制包，由主控完成 SHA-256 校验并供 Agent 升级分发。
+
+---
+
+## 🛠️ 技术栈
+
+| 模块 | 技术选型 | 关键说明 |
+| :--- | :--- | :--- |
+| **主控后端 (Server)** | NestJS 11 + TypeScript | Controller-Service-Repository 分层架构，Swagger 接口契约 |
+| **持久化与 ORM** | SQLite + Prisma ORM 6.x | 单文件轻量存储，WAL 模式保障并发读写 |
+| **实时通信网关** | `@nestjs/websockets` + `ws` | WebSocket over TLS (WSS) 双向长连接与 HTTP 轮询支持 |
+| **前端面板 (Web)** | React 19 + Vite 6 + TypeScript | 模块化单页应用，Tailwind CSS + shadcn/ui 组件系统 |
+| **前端状态与表格** | Zustand + TanStack Query / Table | 全局状态管理、接口数据缓存与复杂数据表格 |
+| **边缘节点 (Agent)** | Go 1.25+ + Cobra + Bubble Tea + kardianos/service | 单静态二进制，`CGO_ENABLED=0`，跨平台系统服务与全屏 TUI |
+| **代理协议内核** | Sing-box | 支持 VLESS-Reality、Hysteria2、TUIC、Shadowsocks、ShadowTLS |
+| **工程架构治理** | pnpm Monorepo + Husky + Commitlint | Conventional Commits 规范，ESLint 9，Jest，五合一质量门禁 |
 
 ---
 
 ## 📂 目录结构
 
-```
+```text
 riricloud/
 ├── apps/
-│   ├── web/               # 前端项目（React 19 + Vite 6 + shadcn/ui）
-│   │   ├── src/pages/     # 页面组件（Dashboard、Admin Users、Nodes、Settings 等）
-│   │   ├── src/components/# UI 原子组件与 Data Table 封装
-│   │   └── src/stores/    # Zustand 状态管理
-│   ├── server/            # 后端主控（NestJS 11 + Prisma ORM + WSS Gateway）
-│   │   ├── prisma/        # SQLite Schema 模型定义与数据库迁移
-│   │   └── src/           # 业务模块（Auth、Users、Nodes、Subscription、System 等）
-│   └── agent/             # 边缘守护程序（Go 1.23+ 单静态二进制）
-│       ├── internal/ws/   # WebSocket 客户端、自动重连与心跳
-│       ├── internal/config# 配置落盘与原子更新
-│       └── internal/telemetry # CPU / 内存 / 网速系统遥测采集
-├── docs/                  # 官方完整架构设计与技术实施文档库
-├── scripts/               # 研发环境与自动化脚本（dev-env.sh / release.sh / docker-build.sh / gate-agent.sh）
+│   ├── web/               # React 19 前端面板（Vite 6 + shadcn/ui）
+│   ├── server/            # NestJS 11 主控后端（Prisma ORM + WSS Gateway）
+│   └── agent/             # Go 边缘节点守护程序（Cobra CLI + Bubble Tea TUI）
+├── docs/                  # 官方设计与技术规范文档库
+│   └── plans/             # 实施计划总台账与归档目录
+├── scripts/               # 环境、门禁、构建与发布脚本
 ├── artifacts/             # 【gitignore】统一的本地 Agent、Release 与 Docker 产物目录
+│   ├── dev/agent/         # 本地构建的 Agent 二进制
+│   ├── releases/          # scripts/release.sh 生成的发行包与校验和
+│   └── docker/            # scripts/docker-build.sh 导出的 Docker 离线镜像
 ├── .cache/                # 【gitignore】本地便携依赖缓存
-├── .tools/                # 【gitignore】便携开发工具链（如免安装 Go）
+├── .tools/                # 【gitignore】便携开发工具链（如本地 Go）
 ├── AGENTS.md              # AI 代理与协作者工作规范
 ├── CHANGELOG.md           # 遵循 Keep a Changelog 的版本变更日志
 └── package.json           # Monorepo 统一版本管理与全局 scripts
@@ -323,37 +301,30 @@ riricloud/
 
 ## 🛡️ 质量门禁与工程规范
 
-为保证三端代码的高标准质量与稳定性，合入代码库前必须通过质量门禁：
+代码合入前必须通过五合一质量门禁：
 
 ```bash
-# 一键运行三端全量门禁检查
+# 运行全部门禁检查
 pnpm gate
 
 # 单独检查各端
+pnpm gate:version  # 校验版本号合规性与 PR 递增约束
+pnpm gate:docs     # 校验文档治理与规划归档机械约束
 pnpm gate:server   # 后端：TypeScript 类型检查 + ESLint + Jest 单元测试
 pnpm gate:web      # 前端：TypeScript 类型检查 + ESLint + Vite 生产构建
-pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
+pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台构建
 ```
-
-### Git 提交规范
-遵循 **Conventional Commits** 规范，格式为 `type(scope): 中文描述`：
-- `feat(server): 实现用户注册与配额初始化`
-- `fix(agent): 修复 WS 断线重连退避计时器泄漏`
-- `docs: 更新系统架构拓扑图`
-
-### 发布自动化
-项目使用本地发布脚本（`scripts/release.sh`），在隔离的工作区复跑三端门禁，自动完成 Agent 多平台二进制交叉编译、SHA-256 校验和打包，并通过 GitHub CLI 一键生成附带 Release Notes 的版本发布。发行过程的本地文件统一位于 `artifacts/releases/v<version>/`；Docker 镜像则由 `scripts/docker-build.sh` 构建、双标签标记并导出到 `artifacts/docker/v<version>/<os>-<arch>/`。
 
 ---
 
 ## 📚 官方设计与技术文档
 
-项目拥有详尽的架构设计与工程规范文档，欢迎查阅 [docs/ 目录](./docs/README.md)：
+详细设计与开发规范请查阅 [docs/ 目录](./docs/README.md)：
 
 | 文档 | 描述 |
 | :--- | :--- |
 | [系统架构设计 (ARCHITECTURE.md)](./docs/ARCHITECTURE.md) | 总体拓扑、Master-Agent 分布式架构、安全模型与全双工时序 |
-| [技术选型全景 (TECH_STACK.md)](./docs/TECH_STACK.md) | 前后端、数据库、节点守护程序与代理内核选型依据 |
+| [技术选型全景 (TECH_STACK.md)](./docs/TECH_STACK.md) | 前后端、数据库、节点守护程序与代理内核选型细节 |
 | [数据模型设计 (DATA_MODELS.md)](./docs/DATA_MODELS.md) | SQLite + Prisma ORM 实体关系、数据字典与索引设计 |
 | [接口与通信协议 (API_AND_PROTOCOLS.md)](./docs/API_AND_PROTOCOLS.md) | RESTful API 规范、WebSocket 通信协议与订阅引擎标准 |
 | [前端 UI 设计规范 (FRONTEND_UI_GUIDELINES.md)](./docs/FRONTEND_UI_GUIDELINES.md) | shadcn/ui 组件分层、暗黑模式预设与表格/表单规范 |
@@ -369,15 +340,17 @@ pnpm gate:agent    # 节点：go vet + gofmt + go test + 跨平台交叉编译
 
 ## 🗺️ 路线图 (Roadmap)
 
-- [x] **Phase 1: 基础设施与 Monorepo 体系** (pnpm Workspace / ESLint / Husky / CI / 缓存隔离 / 发布自动化)
-- [x] **Phase 2: 主控端核心能力** (JWT 鉴权 / 用户管理 / 节点纳管 / WSS 网关 / SQLite 事务 / 系统设置 / Base64 订阅)
-- [x] **Phase 3: Go 边缘 Agent 基线** (WSS 长连接 / 指数退避重连 / 配置原子落盘 / CPU/内存/带宽遥测上报)
-- [x] **Phase 4: Web 控制面板** (用户仪表盘 / 节点监控 / TanStack Table 用户管理 / 系统设置 / 暗黑模式)
-- [ ] **Phase 5: Sing-box 内核全托管** (Agent 自动拉起与 PID 监控 / 增量用户流量统计采集 / 订阅 Clash & Sing-box 格式扩充)
-- [x] **Phase 6: 部署套件与原生 CLI** (Agent 自包含安装/卸载 / Docker Compose 全套编排 / WSL Docker 验收 / 镜像双标签导出)
+- [x] **Phase 1: 基础设施与 Monorepo 体系** (pnpm Workspace / ESLint / Husky / 缓存隔离 / 统一产物目录)
+- [x] **Phase 2: 主控端核心能力** (JWT 鉴权 / 用户管理 / 节点与中继线路解耦 / WSS+HTTP 网关 / SQLite WAL 事务 / 系统设置)
+- [x] **Phase 3: 订阅架构与生命周期** (套餐市场 / 订阅生命周期 / 订阅模板引擎 / Clash Meta、Sing-box、Base64 多格式输出)
+- [x] **Phase 4: Go 边缘 Agent 基线与生命周期** (WSS/HTTP 双通信 / 指数退避重连 / Sing-box 内核进程守护 / 动态配置原子落盘 / 用户流量统计采集)
+- [x] **Phase 5: Agent 现代化 CLI 与 TUI** (Cobra 命令行 / Bubble Tea 全屏控制台 TUI / 跨平台系统服务适配 / Doctor 环境诊断 / 日志跟踪)
+- [x] **Phase 6: 部署套件与升级分发** (Master Docker Compose 编排 / 离线镜像双标签导出 / 探针快照与自包含升级分发 / 管理员引导与安全重置)
+- [ ] **Phase 7: 进阶演进 (v0.5.0+)** (真实客户端自动化连通性验证套件 / 远程规则集动态订阅与自更新生态 / 高级账单与支付网关对接)
 
 ---
 
 ## 📄 开源协议
 
 本项目源码遵循 [GNU General Public License v3.0 (GPL-3.0)](./LICENSE) 协议开源。
+
