@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export const trafficRanges = ['today', '24h', '7d', '30d'] as const;
@@ -99,6 +99,7 @@ export function useTrafficOverview(range: TrafficTimeRange) {
   return useQuery({
     queryKey: ['admin', 'traffic', 'overview', range],
     queryFn: async () => (await api.get<TrafficOverviewResponse>('/admin/traffic/overview', { params: { range } })).data,
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true
   });
@@ -108,6 +109,7 @@ export function useUserTrafficDetail(userId: string | null, range: TrafficTimeRa
   return useQuery({
     queryKey: ['admin', 'traffic', 'user', userId, range],
     queryFn: async () => (await api.get<UserTrafficDetailResponse>(`/admin/traffic/users/${userId}`, { params: { range } })).data,
+    placeholderData: keepPreviousData,
     enabled: enabled && Boolean(userId),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true

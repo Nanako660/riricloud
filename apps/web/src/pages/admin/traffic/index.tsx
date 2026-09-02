@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatCard } from '@/components/shared/stat-card';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
-import { formatBytes, formatRate } from '@/lib/utils';
+import { cn, formatBytes, formatRate } from '@/lib/utils';
 import { RateTrendChart, TrafficDonutChart, TrafficTrendChart } from './components/traffic-charts';
 import { TrafficRankTable } from './components/traffic-rank-table';
 import { trafficRangeLabels, trafficRanges, useTrafficOverview, type TrafficTimeRange } from './use-traffic';
@@ -33,7 +33,7 @@ export default function AdminTrafficPage() {
   const [range, setRange] = React.useState<TrafficTimeRange>('today');
   const [search, setSearch] = React.useState('');
   const [protocolFilter, setProtocolFilter] = React.useState('ALL');
-  const { data, isPending, isError } = useTrafficOverview(range);
+  const { data, isPending, isFetching, isError } = useTrafficOverview(range);
   const summary = data?.summary;
   const protocols = Array.from(new Set((data?.lineRankings ?? []).map((item) => item.protocolType).filter((value): value is string => Boolean(value))));
   const rankings = data?.lineRankings.filter((item) =>
@@ -50,8 +50,8 @@ export default function AdminTrafficPage() {
         </Tabs>
       </div>
 
-      {isPending ? <TrafficSkeleton /> : isError || !data || !summary || !data.rate ? <EmptyState title="无法加载流量统计" description="请稍后刷新重试" /> : (
-        <div className="space-y-4">
+      {isPending && !data ? <TrafficSkeleton /> : isError || !data || !summary || !data.rate ? <EmptyState title="无法加载流量统计" description="请稍后刷新重试" /> : (
+        <div className={cn('space-y-4 transition-opacity duration-200', isFetching && 'opacity-85')}>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
             <StatCard title="总计费流量" value={formatBytes(summary.totalBilled)} hint={`物理流量 ${formatBytes(summary.totalPhysical)}`} icon={<Zap className="size-5 text-chart-3" />} />
             <StatCard title="总下行流量" value={formatBytes(summary.totalDownload)} icon={<ArrowDownToLine className="size-5 text-chart-1" />} />
