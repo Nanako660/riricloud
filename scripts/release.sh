@@ -95,7 +95,8 @@ node - "$MASTER_DIR" <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
-const root = path.resolve(process.argv[1]);
+const targetArg = process.argv.slice(1).find((arg) => arg && arg !== '-' && arg !== '[stdin]') || process.argv[1];
+const root = path.resolve(targetArg);
 let normalized = 0;
 
 function walk(directory) {
