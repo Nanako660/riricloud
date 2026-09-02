@@ -1,5 +1,15 @@
 import { Link } from 'react-router-dom';
-import { CalendarClock, ChevronRight, GitBranch, HardDrive, RefreshCw, ShoppingBag, XCircle } from 'lucide-react';
+import {
+  CalendarClock,
+  ChevronRight,
+  Gauge,
+  GitBranch,
+  HardDrive,
+  KeyRound,
+  RefreshCw,
+  ShoppingBag,
+  XCircle
+} from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { CopyButton } from '@/components/shared/copy-button';
@@ -79,154 +89,157 @@ export default function UserSubscriptionPage() {
     daysText = diffDays > 0 ? `剩余 ${diffDays} 天` : diffDays === 0 ? '今日到期' : '已过期';
     expireFormatted = expireDate.toLocaleDateString('zh-CN');
   }
-  const startedFormatted = new Date(sub.startedAt).toLocaleDateString('zh-CN');
 
   return (
     <PageContainer>
       <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与授权线路。" />
 
+      {/* 卡片 1：当前套餐与用量指标 */}
       <Card>
-        <CardHeader className="flex-col items-start justify-between gap-2 space-y-0 sm:flex-row pb-4">
-          <div className="min-w-0">
-            <CardTitle className="break-words text-xl">{sub.plan.name}</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {formatBytes(sub.trafficLimitBytes)} 配额 · {sub.plan.durationDays} 天周期 ·{' '}
+        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center pb-4">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <CardTitle className="text-lg sm:text-xl break-words">{sub.plan.name}</CardTitle>
+              <Badge variant={sub.status === 'ACTIVE' ? 'default' : 'secondary'} className="shrink-0">
+                {sub.status}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatBytes(sub.trafficLimitBytes)} 流量配额 · {sub.plan.durationDays} 天周期 ·{' '}
               {sub.plan.price === 0 ? '免费套餐' : `¥${sub.plan.price}`}
             </p>
           </div>
-          <Badge variant={sub.status === 'ACTIVE' ? 'default' : 'secondary'} className="shrink-0">
-            {sub.status}
-          </Badge>
+          <Button asChild size="sm" variant="outline" className="w-full sm:w-auto gap-1.5 shrink-0">
+            <Link to="/market">
+              <ShoppingBag className="h-4 w-4" />
+              升配或变更套餐
+            </Link>
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-6 pt-0">
-          <div className="grid min-w-0 gap-4 lg:grid-cols-12 lg:gap-6">
-            {/* 左侧：用量与核心指标画像 */}
-            <div className="min-w-0 space-y-3 lg:col-span-7">
-              {/* 核心指标双格 */}
-              <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3">
-                <div className="min-w-0 rounded-lg border bg-muted/20 p-3 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium truncate">
-                    <HardDrive className="h-3.5 w-3.5 shrink-0" />
-                    <span>剩余流量</span>
-                  </div>
-                  <p className="text-base sm:text-xl font-bold tracking-tight truncate">{formatBytes(remainingBytes)}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}
-                  </p>
-                </div>
-
-                <div className="min-w-0 rounded-lg border bg-muted/20 p-3 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium truncate">
-                    <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                    <span>账户到期</span>
-                  </div>
-                  <p className="text-base sm:text-xl font-bold tracking-tight truncate">{daysText}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    {sub.expireAt ? `到期：${expireFormatted}` : '无到期限制'}
-                  </p>
-                </div>
+        <CardContent className="space-y-4 pt-0">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {/* 指标 1：剩余流量 */}
+            <div className="rounded-lg border bg-muted/20 p-3.5 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                <HardDrive className="h-3.5 w-3.5 shrink-0" />
+                <span>剩余流量</span>
               </div>
-
-              {/* 进度条区块 */}
-              <div className="min-w-0 space-y-1.5 rounded-lg border bg-muted/10 p-3 sm:p-3.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground font-medium">流量使用率</span>
-                  <span className="font-mono text-muted-foreground font-medium">{percent.toFixed(1)}%</span>
-                </div>
-                <Progress value={percent} />
-                <div className="flex justify-between text-[11px] text-muted-foreground pt-0.5">
-                  <span className="truncate">生效于 {startedFormatted}</span>
-                  <span className="truncate shrink-0 ml-2">{sub.expireAt ? `截止 ${expireFormatted}` : '长期有效'}</span>
-                </div>
-              </div>
+              <p className="text-xl font-bold tracking-tight">{formatBytes(remainingBytes)}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}
+              </p>
             </div>
 
-            {/* 右侧：订阅凭据与操作组 */}
-            <div className="min-w-0 flex flex-col justify-between space-y-3 rounded-lg border bg-muted/20 p-3.5 sm:p-4 lg:col-span-5">
-              <div className="min-w-0 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-foreground truncate">通用多格式订阅链接</p>
-                  <span className="text-[10px] text-muted-foreground shrink-0">Clash / Sing-box</span>
+            {/* 指标 2：使用率进度 */}
+            <div className="rounded-lg border bg-muted/20 p-3.5 space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                <div className="flex items-center gap-1.5">
+                  <Gauge className="h-3.5 w-3.5 shrink-0" />
+                  <span>流量使用率</span>
                 </div>
-                <div className="flex min-w-0 items-center gap-1.5 rounded-md border bg-background/80 p-1 pl-2.5">
-                  <code className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-                    {url}
-                  </code>
-                  <CopyButton value={url} />
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  将订阅链接导入客户端，将自动获取授权节点并在套餐变更时自动热同步。
-                </p>
+                <span className="font-mono">{percent.toFixed(1)}%</span>
               </div>
+              <Progress value={percent} />
+              <p className="text-xs text-muted-foreground truncate">
+                已消耗 {percent.toFixed(1)}%
+              </p>
+            </div>
 
-              {/* 操作按钮组 */}
-              <div className="space-y-2 pt-2 border-t border-border/60">
-                <Button asChild size="sm" className="w-full gap-1.5">
-                  <Link to="/market">
-                    <ShoppingBag className="h-4 w-4" />
-                    升配或变更套餐
-                  </Link>
-                </Button>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full gap-1 text-xs" disabled={resetToken.isPending}>
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        {resetToken.isPending ? '重置中…' : '重置链接'}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>重置订阅链接？</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          重置后旧链接立即失效，所有客户端都需要重新导入。建议仅在怀疑链接泄漏时使用。
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction variant="destructive" onClick={() => resetToken.mutate()}>
-                          确认重置
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-
-                  {sub.status === 'ACTIVE' && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-1 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                        >
-                          <XCircle className="h-3.5 w-3.5" />
-                          取消订阅
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>取消当前订阅？</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            取消后状态变为 CANCELED，但在到期时间前仍可正常使用代理服务。
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>返回</AlertDialogCancel>
-                          <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>
-                            确认取消
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </div>
+            {/* 指标 3：账户到期 */}
+            <div className="rounded-lg border bg-muted/20 p-3.5 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                <span>账户到期</span>
               </div>
+              <p className="text-xl font-bold tracking-tight">{daysText}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {sub.expireAt ? `到期时间：${expireFormatted}` : '无到期限制'}
+              </p>
             </div>
           </div>
+
+          {sub.status === 'ACTIVE' && (
+            <div className="flex justify-end pt-1">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    取消当前订阅
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>取消当前订阅？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      取消后状态变为 CANCELED，但在到期时间前仍可正常使用代理服务。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>返回</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>
+                      确认取消
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </CardContent>
       </Card>
 
+      {/* 卡片 2：通用多格式订阅链接 */}
+      <Card>
+        <CardHeader className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center pb-3">
+          <div className="min-w-0 space-y-0.5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4" />
+              通用多格式订阅链接
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              支持 Clash Meta、Sing-box、Shadowrocket 等多客户端自动解析
+            </p>
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="w-full sm:w-auto gap-1 text-xs shrink-0" disabled={resetToken.isPending}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                {resetToken.isPending ? '重置中…' : '重置订阅链接'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>重置订阅链接？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  重置后旧链接立即失效，所有客户端都需要重新导入。建议仅在怀疑链接泄漏时使用。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={() => resetToken.mutate()}>
+                  确认重置
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">
+              {url}
+            </code>
+            <CopyButton value={url} />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            将该链接导入支持的代理客户端即可同步所有授权线路；套餐或线路变更时客户端将自动热更新。
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* 卡片 3：可用线路概览 */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -255,4 +268,5 @@ export default function UserSubscriptionPage() {
     </PageContainer>
   );
 }
+
 
