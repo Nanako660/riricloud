@@ -104,8 +104,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly linesService: LinesService,
     @Optional() private readonly agentGateway?: AgentService,
-    @Optional() private readonly linesService?: LinesService,
     @Optional() private readonly settingsService?: SettingsService
   ) {}
 
@@ -130,40 +130,25 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
-    let subscriptionSources: Array<SubLine | SubNode>;
-    if (this.linesService) {
-      const lines = subscription
-        ? await this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
-        : await this.linesService.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
-      subscriptionSources = lines.map((line) => ({
-          id: line.id,
-          name: line.name,
-          type: line.type,
-          relayMode: line.relayMode,
-          endpointOverrideEnabled: line.endpointOverrideEnabled,
-          serverHost: line.serverHost,
-          serverPort: line.serverPort,
-          serverName: line.serverName,
-          host: line.host,
-          trafficRate: line.trafficRate,
-          tags: line.tags,
-          level: line.level,
-          protocolType: line.protocolType as ProtocolType,
-          params: line.params,
-        }));
-    } else {
-      const nodes = subscription ? await this.getLegacyNodes() : await this.getLegacyLines();
-      subscriptionSources = nodes.map((node) => ({
-          name: node.name,
-          serverHost: node.serverHost,
-          inbounds: node.inbounds.map((inbound) => ({
-            type: inbound.type as ProtocolType,
-            tag: inbound.tag,
-            port: inbound.port,
-            params: JSON.parse(inbound.paramsJson) as Record<string, unknown>
-          }))
-        }));
-    }
+    const lines = subscription
+      ? await this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      : await this.linesService.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+    const subscriptionSources: SubLine[] = lines.map((line) => ({
+      id: line.id,
+      name: line.name,
+      type: line.type,
+      relayMode: line.relayMode,
+      endpointOverrideEnabled: line.endpointOverrideEnabled,
+      serverHost: line.serverHost,
+      serverPort: line.serverPort,
+      serverName: line.serverName,
+      host: line.host,
+      trafficRate: line.trafficRate,
+      tags: line.tags,
+      level: line.level,
+      protocolType: line.protocolType as ProtocolType,
+      params: line.params
+    }));
 
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
@@ -436,25 +421,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getLinesForSubscription(subscription: SubscriptionRecord) {
-    if (this.linesService) {
-      return this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
-    }
-    return this.getLegacyNodes();
-  }
-
-  private async getLegacyLines() {
-    return this.getLegacyNodes();
-  }
-
-  private async getLegacyNodes() {
-    const nodeDelegate = (this.prisma as unknown as {
-      node: { findMany: (args: Record<string, unknown>) => Promise<Array<{ name: string; serverHost: string; inbounds: Array<{ type: string; tag: string; port: number; paramsJson: string }> }>> };
-    }).node;
-    return nodeDelegate.findMany({
-      where: { isPublic: true, status: { not: 'DISABLED' } },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-      include: { inbounds: { where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } }
-    });
+    return this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
   }
 
   private async resolveTemplate(template?: SubscriptionTemplateConfig | null) {

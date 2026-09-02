@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
+import { LinesService } from '../lines/lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionService } from './subscription.service';
 
@@ -27,10 +28,11 @@ describe('SubscriptionService lifecycle', () => {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx))
   };
   const gateway = { pushConfigToAll: jest.fn() };
+  const linesService = { getAvailableForPlan: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }]
+      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }]
     }).compile();
     service = moduleRef.get(SubscriptionService);
   });

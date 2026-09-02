@@ -92,7 +92,7 @@ describe('normalizeInboundParams', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('HYSTERIA2 校验 TLS 必填项并填充默认 alpn', () => {
+  it('HYSTERIA2 校验 TLS 必填项并填充 h3 alpn', () => {
     const tls = { serverName: 'hy.example.com', certificatePath: '/c.pem', keyPath: '/k.pem' };
     const params = normalizeInboundParams('HYSTERIA2', { upMbps: 100, tls }) as {
       upMbps: number;
@@ -101,8 +101,30 @@ describe('normalizeInboundParams', () => {
     };
     expect(params.upMbps).toBe(100);
     expect(params.downMbps).toBe(0);
-    expect(params.tls.alpn).toEqual(['h3', 'h2', 'http/1.1']);
+    expect(params.tls.alpn).toEqual(['h3']);
     expect(params.tls.insecure).toBe(false);
+  });
+
+  it('TLS ALPN 默认值会按传输层匹配并允许显式清空', () => {
+    const websocket = normalizeInboundParams('VLESS', {
+      transport: { type: 'ws' },
+      tls: { mode: 'tls', certificatePath: '/c.pem', keyPath: '/k.pem' }
+    }) as { tls: { alpn: string[] } };
+    const grpc = normalizeInboundParams('VMESS', {
+      transport: { type: 'grpc' },
+      tls: { mode: 'tls', certificatePath: '/c.pem', keyPath: '/k.pem' }
+    }) as { tls: { alpn: string[] } };
+    const tcp = normalizeInboundParams('TROJAN', {
+      tls: { mode: 'tls', certificatePath: '/c.pem', keyPath: '/k.pem' }
+    }) as { tls: { alpn: string[] } };
+    const empty = normalizeInboundParams('TROJAN', {
+      tls: { mode: 'tls', certificatePath: '/c.pem', keyPath: '/k.pem', alpn: [] }
+    }) as { tls: { alpn: string[] } };
+
+    expect(websocket.tls.alpn).toEqual(['http/1.1']);
+    expect(grpc.tls.alpn).toEqual(['h2']);
+    expect(tcp.tls.alpn).toEqual(['h2', 'http/1.1']);
+    expect(empty.tls.alpn).toEqual([]);
   });
 
   it('HYSTERIA2 缺少证书路径抛出 BadRequest', () => {

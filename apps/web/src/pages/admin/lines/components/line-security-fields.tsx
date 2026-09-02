@@ -3,9 +3,12 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
 import type { ApiCertificate } from '@/lib/api';
 import { FieldGrid, SelectField, SwitchField, TextField } from './line-form-controls';
-import { MANUAL_CERTIFICATE_ID, type LineFormValues } from './line-form-schema';
+import { ALPN_PRESET_VALUES, getAlpnOptions, MANUAL_CERTIFICATE_ID, type LineFormValues } from './line-form-schema';
 
 const tlsOptions = [
   { value: 'none', label: '关闭 TLS' },
@@ -13,6 +16,12 @@ const tlsOptions = [
   { value: 'reality', label: 'Reality' },
   { value: 'acme', label: 'ACME 自动证书' }
 ];
+
+const alpnLabels: Record<typeof ALPN_PRESET_VALUES[number], string> = {
+  h3: 'HTTP/3（h3）',
+  h2: 'HTTP/2（h2）',
+  'http/1.1': 'HTTP/1.1'
+};
 
 export function LineSecurityFields({ form, onGenerateKeys, keyPending, certificates }: {
   form: UseFormReturn<LineFormValues>;
@@ -22,8 +31,11 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
 }) {
   const mode = form.watch('tlsMode');
   const protocolType = form.watch('protocolType');
+  const transportType = form.watch('transportType');
+  const tlsAlpn = form.watch('tlsAlpn');
   const certificateId = form.watch('certificateId');
   const selectedCertificate = certificates.find((certificate) => certificate.id === certificateId);
+  const alpnOptions = getAlpnOptions(protocolType, transportType, tlsAlpn);
 
   useEffect(() => {
     if (mode !== 'tls' && certificateId !== MANUAL_CERTIFICATE_ID) {
@@ -45,7 +57,7 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
       {mode !== 'none' && <>
         <FieldGrid>
           <TextField form={form} name="tlsServerName" label="TLS SNI" placeholder="example.com" />
-          <TextField form={form} name="tlsAlpn" label="ALPN（逗号分隔）" placeholder="h3,h2,http/1.1" />
+          {mode !== 'reality' && <AlpnField form={form} options={alpnOptions} />}
         </FieldGrid>
         <SwitchField form={form} name="tlsInsecure" label="跳过证书校验" description="仅用于自签名或证书不匹配场景。" />
       </>}
@@ -88,5 +100,41 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
         <TextField form={form} name="acmeProvider" label="ACME Provider（可选）" placeholder="letsencrypt" />
       </FieldGrid>}
     </div>
+  );
+}
+
+function AlpnField({ form, options }: {
+  form: UseFormReturn<LineFormValues>;
+  options: string[];
+}) {
+  return (
+    <FormField control={form.control} name="tlsAlpn" render={({ field }) => (
+      <FormItem>
+        <FormLabel>ALPN</FormLabel>
+        <FormDescription>按协议与传输层选择协商协议，可多选。</FormDescription>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {options.map((value) => {
+            const id = `alpn-${value.replace(/[^a-z0-9]+/gi, '-')}`;
+            return (
+              <div key={value} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <Checkbox
+                  id={id}
+                  checked={field.value.includes(value)}
+                  onCheckedChange={(nextChecked) => {
+                    const next = nextChecked === true
+                      ? [...new Set([...field.value, value])]
+                      : field.value.filter((item) => item !== value);
+                    field.onChange(next);
+                  }}
+                />
+                <Label htmlFor={id} className="cursor-pointer font-normal">{alpnLabels[value as typeof ALPN_PRESET_VALUES[number]] ?? `自定义（${value}）`}</Label>
+              </div>
+            );
+          })}
+        </div>
+        {options.length === 0 && <p className="text-xs text-muted-foreground">当前没有可用的 ALPN 预设。</p>}
+        <FormMessage />
+      </FormItem>
+    )} />
   );
 }

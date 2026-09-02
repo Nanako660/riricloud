@@ -121,6 +121,32 @@ describe('LinesService', () => {
     expect(result[0].id).toBe(rawLine.id);
   });
 
+  it('套餐线路视图会解析对外端点覆盖', async () => {
+    prisma.line.findMany.mockResolvedValue([{
+      ...rawLine,
+      endpointOverrideEnabled: true,
+      serverHost: 'edge.example.com',
+      serverPort: 8443,
+      serverName: 'tls.example.com',
+      host: 'cdn.example.com'
+    }]);
+
+    const result = await service.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+
+    expect(result[0]).toMatchObject({
+      serverHost: 'edge.example.com',
+      serverPort: 8443,
+      serverName: 'tls.example.com',
+      host: 'cdn.example.com',
+      endpointOverrides: {
+        serverHost: 'edge.example.com',
+        serverPort: 8443,
+        serverName: 'tls.example.com',
+        host: 'cdn.example.com'
+      }
+    });
+  });
+
   it('线路不存在时抛出 NotFoundException', async () => {
     prisma.line.findUnique.mockResolvedValue(null);
     await expect(service.detail('missing')).rejects.toThrow(NotFoundException);

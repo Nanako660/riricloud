@@ -15,6 +15,24 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
 
 export const MANUAL_CERTIFICATE_ID = '__node_local__';
 
+export const ALPN_PRESET_VALUES = ['h3', 'h2', 'http/1.1'] as const;
+
+export function getAlpnPresets(protocolType: ProtocolType, transportType: LineFormValues['transportType'] = 'tcp'): string[] {
+  if (protocolType === 'HYSTERIA2' || protocolType === 'TUIC') return ['h3'];
+  if (protocolType === 'NAIVE') return ['h2'];
+  if (transportType === 'grpc') return ['h2'];
+  if (transportType === 'ws' || transportType === 'httpupgrade') return ['http/1.1'];
+  return ['h2', 'http/1.1'];
+}
+
+export function getAlpnOptions(
+  protocolType: ProtocolType,
+  transportType: LineFormValues['transportType'],
+  selected: string[] = []
+) {
+  return [...new Set([...getAlpnPresets(protocolType, transportType), ...selected.filter(Boolean)])];
+}
+
 const optionalPort = z.preprocess(
   (value) => value === '' || value === null || value === undefined ? undefined : value,
   z.coerce.number().int().min(1).max(65535).optional()
@@ -55,7 +73,7 @@ export const lineFormSchema = z.object({
   tlsServerName: z.string(),
   tlsCertPath: z.string(),
   tlsKeyPath: z.string(),
-  tlsAlpn: z.string(),
+  tlsAlpn: z.array(z.string().trim().min(1)),
   tlsInsecure: z.boolean(),
   realityDest: z.string(),
   realityPrivateKey: z.string(),
@@ -145,6 +163,12 @@ function asNumber(value: unknown, fallback?: number): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function asStringArray(value: unknown, fallback: string[] = []) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim())
+    : fallback;
+}
+
 function headersToRows(value: unknown) {
   const headers = asRecord(value);
   return Object.entries(headers).map(([key, headerValue]) => ({ key, value: asString(headerValue) }));
@@ -174,7 +198,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
     certificateId: MANUAL_CERTIFICATE_ID,
     transportType: 'tcp', wsPath: '/ws', wsHost: '', wsHeaders: [], wsMaxEarlyData: undefined,
     wsEarlyDataHeaderName: '', grpcServiceName: 'grpc', httpPath: '/http', httpHost: '', httpHeaders: [],
-    tlsMode, tlsServerName: '', tlsCertPath: '', tlsKeyPath: '', tlsAlpn: isQuic ? 'h3' : 'h2,http/1.1',
+    tlsMode, tlsServerName: '', tlsCertPath: '', tlsKeyPath: '', tlsAlpn: isQuic ? ['h3'] : getAlpnPresets(protocolType),
     tlsInsecure: false, realityDest: 'www.apple.com:443', realityPrivateKey: '', realityPublicKey: '',
     realityShortIds: '0123456789abcdef', realityServerNames: 'www.apple.com', acmeDomain: '', acmeEmail: '', acmeProvider: '',
     vlessFlow: 'xtls-rprx-vision', vmessAlterId: 0, hy2UpMbps: 0, hy2DownMbps: 0,
@@ -247,7 +271,7 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     tlsServerName: asString(rawTls.serverName),
     tlsCertPath: asString(rawTls.certificatePath),
     tlsKeyPath: asString(rawTls.keyPath),
-    tlsAlpn: Array.isArray(rawTls.alpn) ? rawTls.alpn.filter((item): item is string => typeof item === 'string').join(',') : '',
+    tlsAlpn: asStringArray(rawTls.alpn, getAlpnPresets(line.protocolType, transportType)),
     tlsInsecure: rawTls.insecure === true,
     realityDest: asString(rawReality.dest, defaults.realityDest),
     realityPrivateKey: '',
@@ -322,7 +346,7 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       enabled: values.tlsMode !== 'none',
       mode: values.tlsMode,
       serverName: values.tlsServerName.trim() || undefined,
-      alpn: splitList(values.tlsAlpn),
+      ...(values.tlsMode !== 'none' && values.tlsMode !== 'reality' ? { alpn: values.tlsAlpn } : {}),
       insecure: values.tlsInsecure
     };
     if (values.tlsMode === 'tls') {
