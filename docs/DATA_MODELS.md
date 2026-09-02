@@ -489,6 +489,6 @@ model SystemSetting {
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 
-`proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，并按节点名称或入站 tag 正则过滤线路。
+`proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，支持 `all` 动态节点展开、控制项（`DIRECT` / `REJECT`）与策略组层级引用，并按节点名称或入站 tag 正则过滤线路。
 
 `apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。
