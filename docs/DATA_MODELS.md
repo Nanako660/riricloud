@@ -374,6 +374,7 @@ model SystemSetting {
 | `emailDomainList` | JSON 字符串数组 | `[]` | 注册邮箱域名过滤列表 |
 | `passwordMinLength` | 十进制整数（8~64） | `"8"` | 注册密码最小长度 |
 | `subscriptionBaseUrl` | URL 或空字符串 | `""` | 用户端拼装订阅链接的基准地址 |
+| `subscriptionShortLinksEnabled` | `"true"` / `"false"` | `"false"` | 用户端是否展示由 Nginx rewrite 提供的 UUID 伪静态订阅地址 |
 | `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
 | `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板 |
 | `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
@@ -387,7 +388,7 @@ model SystemSetting {
 | `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
 | `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准和前端运行时样式字段。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准、短链接开关和前端运行时样式字段。短链接开关不改变数据库模型，也不要求 Prisma 迁移；关闭或缺失时前端继续生成标准 `/api/v1/sub/<UUID>` 地址。
 
 ---
 

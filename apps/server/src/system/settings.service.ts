@@ -32,6 +32,7 @@ export const SETTING_KEYS = {
   EMAIL_DOMAIN_LIST: 'emailDomainList',
   PASSWORD_MIN_LENGTH: 'passwordMinLength',
   SUBSCRIPTION_BASE_URL: 'subscriptionBaseUrl',
+  SUBSCRIPTION_SHORT_LINKS_ENABLED: 'subscriptionShortLinksEnabled',
   SUBSCRIPTION_UPDATE_INTERVAL_HOURS: 'subscriptionUpdateIntervalHours',
   DEFAULT_TEMPLATE_ID: 'defaultTemplateId',
   PUBLIC_LINES_ENABLED: 'publicLinesEnabled',
@@ -65,6 +66,7 @@ export interface SystemSettings {
   emailDomainList: string[];
   passwordMinLength: number;
   subscriptionBaseUrl: string;
+  subscriptionShortLinksEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
@@ -97,6 +99,7 @@ export type PublicSystemSettings = Pick<
   | 'supportCustomUrl'
   | 'registrationEnabled'
   | 'subscriptionBaseUrl'
+  | 'subscriptionShortLinksEnabled'
   | 'customCss'
   | 'customHeadHtml'
 >;
@@ -120,6 +123,7 @@ export const DEFAULTS: SystemSettings = {
   emailDomainList: [],
   passwordMinLength: 8,
   subscriptionBaseUrl: '',
+  subscriptionShortLinksEnabled: false,
   subscriptionUpdateIntervalHours: 24,
   defaultTemplateId: null,
   publicLinesEnabled: true,
@@ -156,6 +160,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   emailDomainList: '邮箱域名过滤列表',
   passwordMinLength: '密码最小长度',
   subscriptionBaseUrl: '对外订阅基准地址',
+  subscriptionShortLinksEnabled: '是否使用 Nginx 伪静态短订阅链接',
   subscriptionUpdateIntervalHours: '客户端订阅更新周期（小时）',
   defaultTemplateId: '全局默认订阅模板',
   publicLinesEnabled: '是否公开线路列表',
@@ -198,6 +203,7 @@ export class SettingsService {
       emailDomainList: this.readStringArray(map, 'emailDomainList').map(normalizeDomain).filter(Boolean),
       passwordMinLength: this.readInteger(map, 'passwordMinLength', 8, 64),
       subscriptionBaseUrl: this.readString(map, 'subscriptionBaseUrl'),
+      subscriptionShortLinksEnabled: this.readBoolean(map, 'subscriptionShortLinksEnabled'),
       subscriptionUpdateIntervalHours: this.readInteger(map, 'subscriptionUpdateIntervalHours', 1, 168),
       defaultTemplateId: this.readNullableString(map, 'defaultTemplateId'),
       publicLinesEnabled: this.readBoolean(map, 'publicLinesEnabled'),
@@ -228,6 +234,7 @@ export class SettingsService {
       supportCustomUrl: settings.supportCustomUrl,
       registrationEnabled: settings.registrationEnabled,
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
+      subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       customCss: settings.customCss,
       customHeadHtml: settings.customHeadHtml
     };

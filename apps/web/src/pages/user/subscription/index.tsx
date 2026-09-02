@@ -32,6 +32,7 @@ import {
 import { useUserSubscription, useUserSubscriptionMutations } from './use-user-subscription';
 import { usePublicSettings } from '@/lib/public-settings';
 import { formatBytes } from '@/lib/utils';
+import { buildSubscriptionUrl } from '@/lib/subscription-url';
 
 export default function UserSubscriptionPage() {
   const { data, isPending, isError } = useUserSubscription();
@@ -76,8 +77,12 @@ export default function UserSubscriptionPage() {
   const sub = data.subscription;
   const remainingBytes = Math.max(0, sub.trafficLimitBytes - sub.trafficUsedBytes);
   const percent = sub.trafficLimitBytes ? Math.min(100, (sub.trafficUsedBytes / sub.trafficLimitBytes) * 100) : 0;
-  const baseUrl = publicSettings.data?.subscriptionBaseUrl?.trim().replace(/\/$/, '') || window.location.origin;
-  const url = `${baseUrl}/api/v1/sub/${sub.subscriptionToken}`;
+  const url = buildSubscriptionUrl({
+    baseUrl: publicSettings.data?.subscriptionBaseUrl,
+    shortLinksEnabled: publicSettings.data?.subscriptionShortLinksEnabled,
+    origin: window.location.origin,
+    token: sub.subscriptionToken
+  });
 
   // 计算剩余有效期
   let daysText = '永久有效';
@@ -268,5 +273,4 @@ export default function UserSubscriptionPage() {
     </PageContainer>
   );
 }
-
 

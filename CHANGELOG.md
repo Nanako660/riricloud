@@ -14,15 +14,19 @@
 
 ### Added
 
+- 新增 Nginx 反向代理与订阅伪静态支持：提供严格 UUID rewrite、普通 Master 代理、`/ws/agent` WebSocket Upgrade 配置示例；后端继续只维护 `/api/v1/sub/:token` 标准订阅接口。
 - 新增共享业务复合组件 `LineCard`（`apps/web/src/components/shared/line-card.tsx`），统一封装线路展示，支持 `compact` 紧凑概览与 `full` 完整拓扑双变体。
 - 新增管理员流量统计 `/admin/traffic` 与用户流量明细下钻，支持多周期时序聚合、线路倍率计费、线路排行、配额画像和响应式图表展示。
 - 新增节点实时上下行速率与全站历史速率统计：Agent 拆分网卡上/下行差分，Master 按 5 分钟聚合保留 30 天，管理端统一使用“流量统计”展示节点网络吞吐。
 
 ### Changed
 
+- 系统设置新增默认关闭的 `subscriptionShortLinksEnabled`，公开系统信息和管理员设置页同步暴露；用户仪表盘与「我的订阅」统一按配置生成标准或 Nginx 伪静态订阅地址，并明确提示需同步配置 Nginx。
 - 优化用户控制台各页面信息架构与语义分工：仪表盘聚焦全局指标与快捷指引，我的订阅聚焦套餐画像与全生命周期管理，可用线路提供完整节点拓扑与健康看板。
 - 全站统一流量字节格式化函数 `formatBytes`（收归至 `@/lib/utils.ts`），智能消除多余末尾 0 并统一通用单位标准（B / KB / MB / GB / TB）。
 - 完善仪表盘、我的订阅和可用线路在无有效订阅时的统一 `EmptyState` 空状态与套餐市场跳转引导。
+
+### Fixed
 
 - 修复流量统计大盘与用户流量明细弹窗在切换时间颗粒度（今日/24h/7d/30d）时，因 React Query 参数变化导致整页 DOM 卸载与骨架屏闪烁的问题，引入 `keepPreviousData` 与微透明过渡实现数据平滑补间。
 - 修复流量统计服务测试使用固定东八区时间导致 GitHub Actions UTC 环境跨日失败的问题。

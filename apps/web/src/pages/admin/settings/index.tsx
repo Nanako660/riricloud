@@ -57,6 +57,7 @@ interface SystemSettings {
   emailDomainList: string[];
   passwordMinLength: number;
   subscriptionBaseUrl: string;
+  subscriptionShortLinksEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
@@ -90,6 +91,7 @@ const settingsSchema = z.object({
   emailDomainListText: z.string().max(16000),
   passwordMinLength: z.coerce.number().int().min(8).max(64),
   subscriptionBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的订阅基准 URL'),
+  subscriptionShortLinksEnabled: z.boolean(),
   subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
   defaultTemplateId: z.string(),
   publicLinesEnabled: z.boolean(),
@@ -121,7 +123,7 @@ export default function AdminSettingsPage() {
       siteName: '', siteDescription: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       defaultPlanId: null, defaultTrafficLimitBytes: 100 * 1024 ** 3, defaultValidityDays: 0, emailDomainMode: 'none',
-      emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionUpdateIntervalHours: 24,
+      emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: ''
@@ -208,7 +210,8 @@ export default function AdminSettingsPage() {
             </CardContent></Card></TabsContent>
 
             <TabsContent value="subscription"><Card><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL" placeholder="https://panel.example.com" description="用于用户端拼装 /api/v1/sub/:token；留空时使用当前面板地址。" /><SetOriginButton /></div>
+              <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL" placeholder="https://panel.example.com" description="用于用户端拼装订阅链接；可包含 Nginx 对外使用的路径，留空时使用当前面板地址。" /><SetOriginButton /></div>
+              <SettingsSwitch name="subscriptionShortLinksEnabled" label="使用 Nginx 伪静态短链接" description="开启后展示 https://domain.com/<UUID>；请先在 Nginx 中配置对应 rewrite 规则。" />
               <SettingsInput name="subscriptionUpdateIntervalHours" label="客户端更新周期（小时）" type="number" min={1} max={168} />
               <SettingsSelect name="defaultTemplateId" label="全局默认订阅模板" options={[{ value: 'none', label: '不指定，回退到标记为默认的模板' }, ...(templates.data ?? []).map((template) => ({ value: template.id, label: `${template.name}${template.isDefault ? '（当前默认）' : ''}` }))]} />
               <SettingsSwitch name="publicLinesEnabled" label="公开线路列表" description="关闭后用户订阅和线路页不再返回公开线路。" />
@@ -293,6 +296,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     emailDomainListText: settings.emailDomainList.join('\n'),
     passwordMinLength: settings.passwordMinLength,
     subscriptionBaseUrl: settings.subscriptionBaseUrl,
+    subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
     subscriptionUpdateIntervalHours: settings.subscriptionUpdateIntervalHours,
     defaultTemplateId: settings.defaultTemplateId ?? 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
@@ -328,6 +332,7 @@ function toPayload(values: SettingsForm) {
     emailDomainMode: values.emailDomainMode,
     passwordMinLength: values.passwordMinLength,
     subscriptionBaseUrl: values.subscriptionBaseUrl,
+    subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
     subscriptionUpdateIntervalHours: values.subscriptionUpdateIntervalHours,
     defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,

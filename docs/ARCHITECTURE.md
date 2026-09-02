@@ -11,6 +11,8 @@ graph TB
         VpnClients["多平台代理/VPN 客户端<br/>(Clash Meta / Sing-box / Shadowrocket / v2rayN)"]
     end
 
+    EdgeProxy["Nginx 边缘代理<br/>(HTTPS / rewrite / WSS / 限流)"]
+
     subgraph "主控中心 (Master Server - Control Plane)"
         direction TB
         FrontendUI["Web 前端静态站点<br/>(React + Vite + shadcn/ui)"]
@@ -53,8 +55,12 @@ graph TB
         SystemMonitorB -->|"收集 CPU/内存/IO"| AgentB
     end
 
-    UserBrowser -->|"HTTPS 管理与访问"| FrontendUI
-    VpnClients -->|"HTTP(S) 拉取订阅"| SubscriptionEngine
+    UserBrowser -->|"HTTPS 管理与访问"| EdgeProxy
+    VpnClients -->|"HTTPS 标准或伪静态订阅"| EdgeProxy
+    EdgeProxy -->|"反向代理 HTTP / WSS"| APIServer
+    EdgeProxy -.->|"/<UUID> 内部 rewrite 到 /api/v1/sub/<UUID>"| SubscriptionEngine
+    UserBrowser -.->|"Master 托管 Web 静态资源"| FrontendUI
+    VpnClients -.->|"标准订阅业务处理"| SubscriptionEngine
     VpnClients -->|"加密代理流量"| SingboxA
     VpnClients -->|"加密代理流量"| SingboxB
 
@@ -162,6 +168,7 @@ sequenceDiagram
     autonumber
     actor User as 用户
     participant Web as Web 面板
+    participant Nginx as Nginx 边缘代理
     participant Master as Master 后端
     participant DB as SQLite
     participant Agent as 在线 Agent
@@ -173,9 +180,16 @@ sequenceDiagram
     Master->>Master: 250ms 配置推送防抖合并
     Master->>Agent: config_sync（重新计算有效用户白名单）
     Agent->>Agent: 预检、原子落盘、按需优雅重启内核
+
+    User->>Web: 复制标准或伪静态订阅 URL
+    Web-->>User: /api/v1/sub/<UUID> 或 /<UUID>
+    User->>Nginx: GET /<UUID>?type=clash
+    Nginx->>Master: 内部 rewrite 为 GET /api/v1/sub/<UUID>
+    Master-->>Nginx: Clash / Sing-box / Base64 内容与响应头
+    Nginx-->>User: 原样转发订阅响应
 ```
 
-订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开、启用且底层在线的 Line；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。
+订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开、启用且底层在线的 Line；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
 
 ### 3.5 远程升级与网络探针时序
 
@@ -222,3 +236,6 @@ sequenceDiagram
 3. **代理传输安全 (Reality / TLS)**：
    - 首推 **VLESS + Reality** 协议：无需自备域名与公网证书，通过窃用大型合法网站（如 `www.apple.com`, `gateway.icloud.com` 等）的 SNI 与 TLS 握手特征，实现极强的抗封锁能力。
    - 支持 **Hysteria2 / TUIC** 协议：基于 UDP/QUIC，具备拥塞控制与抗高丢包能力。
+4. **边缘入口安全**：
+   - 生产环境由 Nginx 终止 HTTPS/WSS，并将管理面板、标准订阅、UUID 伪静态订阅和 `/ws/agent` 统一代理到 Master；Master 不内置通用反向代理。
+   - 短链 location 只匹配严格 UUID 单段 GET 路径，避免吞掉 `/login`、`/admin`、`/api/**` 和 SPA 路由；部署者必须保持 `subscriptionBaseUrl` pathname 与 Nginx rewrite 前缀一致。
