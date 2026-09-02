@@ -14,6 +14,15 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [0.4.16] - 2026-09-02
+
+### Added
+
 - 新增 Nginx 反向代理与订阅伪静态支持：提供严格 UUID rewrite、普通 Master 代理、`/ws/agent` WebSocket Upgrade 配置示例；后端继续只维护 `/api/v1/sub/:token` 标准订阅接口。
 - 新增共享业务复合组件 `LineCard`（`apps/web/src/components/shared/line-card.tsx`），统一封装线路展示，支持 `compact` 紧凑概览与 `full` 完整拓扑双变体。
 - 新增管理员流量统计 `/admin/traffic` 与用户流量明细下钻，支持多周期时序聚合、线路倍率计费、线路排行、配额画像和响应式图表展示。
