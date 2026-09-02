@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ImportBinaryDto } from './dto/import-binary.dto';
 import { SettingsService } from '../system/settings.service';
+import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
 
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
 const TARGETS = [
@@ -113,18 +114,25 @@ export class BinariesService implements OnModuleInit {
     if (!node || node.status === 'DISABLED') throw new UnauthorizedException('无效的 AgentToken');
   }
 
-  buildDownloadUrl(target: BinaryTarget, token: string): string {
-    return this.buildDownloadUrlFromBase(target, token, process.env.RIRICLOUD_PUBLIC_URL?.trim());
+  buildDownloadUrl(target: BinaryTarget, token: string, requestBaseUrl?: string): string {
+    return this.buildDownloadUrlFromBase(target, token, resolvePublicBaseUrl({ requestBaseUrl }));
   }
 
-  async buildConfiguredDownloadUrl(target: BinaryTarget, token: string): Promise<string> {
+  async buildConfiguredDownloadUrl(target: BinaryTarget, token: string, requestBaseUrl?: string): Promise<string> {
     const settings = await this.settingsService?.getSettings();
-    return this.buildDownloadUrlFromBase(target, token, settings?.binaryDownloadBaseUrl?.trim() || process.env.RIRICLOUD_PUBLIC_URL?.trim());
+    return this.buildDownloadUrlFromBase(
+      target,
+      token,
+      resolvePublicBaseUrl({
+        configuredBaseUrl: settings?.binaryDownloadBaseUrl || settings?.publicBaseUrl,
+        requestBaseUrl
+      })
+    );
   }
 
   private buildDownloadUrlFromBase(target: BinaryTarget, token: string, configuredBase?: string): string {
-    const base = (configuredBase || `http://localhost:${process.env.PORT ?? '3000'}`).replace(/\/$/, '');
-    return `${base}/api/v1/downloads/binaries/${target}?token=${encodeURIComponent(token)}`;
+    const base = configuredBase ?? resolvePublicBaseUrl();
+    return appendPublicPath(base, `api/v1/downloads/binaries/${target}?token=${encodeURIComponent(token)}`);
   }
 
   findForNode(kind: BinaryKind, osArch: string | null | undefined): BinaryAsset | undefined {
@@ -132,14 +140,14 @@ export class BinariesService implements OnModuleInit {
     return this.assets.get(`${kind}-${normalized}` as BinaryTarget);
   }
 
-  async resolveForNode(kind: BinaryKind, osArch: string | null | undefined, token: string) {
+  async resolveForNode(kind: BinaryKind, osArch: string | null | undefined, token: string, requestBaseUrl?: string) {
     await this.refresh();
     const asset = this.findForNode(kind, osArch);
     if (!asset) throw new Error(`主控未内置 ${kind} 的 ${normalizeOsArch(osArch) ?? 'linux-amd64'} 版本`);
     return {
       version: asset.version,
       sha256: asset.sha256,
-      url: await this.buildConfiguredDownloadUrl(asset.target, token)
+      url: await this.buildConfiguredDownloadUrl(asset.target, token, requestBaseUrl)
     };
   }
 

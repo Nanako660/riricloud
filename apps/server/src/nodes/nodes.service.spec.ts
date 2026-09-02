@@ -31,12 +31,23 @@ describe('NodesService', () => {
     expect(result).not.toHaveProperty('inbounds');
   });
 
-  it('创建节点返回 AgentToken 与安装命令', async () => {
+  it('创建节点返回使用当前访问域名的 AgentToken 与安装命令', async () => {
     prisma.node.create.mockResolvedValue(nodeWithLines);
-    const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin');
+    const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
     expect(result.agentToken).toBe(baseNode.agentToken);
     expect(result.installCommand).toContain('--token=');
+    expect(result.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
+    expect(result.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
+    expect(result.installCommands.http).toContain('--master=https://panel.example.com');
+    expect(result.installCommands.ws).not.toContain('<master-domain>');
     expect(result.node).toHaveProperty('lines', []);
+  });
+
+  it('节点详情按当前请求域名生成安装命令', async () => {
+    prisma.node.findUnique.mockResolvedValue(nodeWithLines);
+    const result = await service.detail(baseNode.id, 'https://panel.example.com');
+    expect(result.node.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
+    expect(result.node.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
   });
 
   it('未提供自定义地址时使用主控内置二进制', async () => {
@@ -44,7 +55,7 @@ describe('NodesService', () => {
     binaries.resolveForNode.mockResolvedValue({ version: '0.3.0', url: 'http://master/api/v1/downloads/binaries/agent-linux-amd64?token=token', sha256: 'a'.repeat(64) });
     gateway.requestUpgrade.mockResolvedValue({ taskId: 'task-1', requested: true });
     const result = await service.requestUpgrade(baseNode.id, { target: 'agent' });
-    expect(binaries.resolveForNode).toHaveBeenCalledWith('agent', 'linux/amd64', baseNode.agentToken);
+    expect(binaries.resolveForNode).toHaveBeenCalledWith('agent', 'linux/amd64', baseNode.agentToken, undefined);
     expect(gateway.requestUpgrade).toHaveBeenCalledWith(baseNode.id, 'agent', '0.3.0', expect.stringContaining('/downloads/binaries/'), 'a'.repeat(64));
     expect(result).toEqual({ taskId: 'task-1', requested: true });
   });

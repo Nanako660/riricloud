@@ -63,6 +63,12 @@ export class UpdateSettingsDto {
   @IsOptional()
   siteDescription?: string;
 
+  @ApiPropertyOptional({ example: 'https://panel.example.com', nullable: true, description: '用于生成 Agent 安装、升级和二进制下载地址；留空时自动匹配当前访问域名' })
+  @ValidateIf((o) => o.publicBaseUrl !== undefined && o.publicBaseUrl !== null && o.publicBaseUrl !== '')
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  @IsOptional()
+  publicBaseUrl?: string | null;
+
   @ApiPropertyOptional({ example: 'https://cdn.example.com/logo.svg', nullable: true })
   @ValidateIf((o) => o.logoUrl !== undefined && o.logoUrl !== null && o.logoUrl !== '')
   @IsUrl({ require_protocol: true })

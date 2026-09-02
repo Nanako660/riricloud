@@ -50,8 +50,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
-- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐
-- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`。
+- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`，只能通过禁用内置 Agent 或停止 Master 进程使其离线。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
@@ -62,7 +62,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 二进制分发中心
-- `GET /downloads/agent?token=<AGENT_TOKEN>`：公开返回 Agent 二进制的 `302` 重定向。⭐ 安装器通过 `User-Agent: riri-agent-installer/<os>-<arch>` 声明目标平台，主控支持 Linux、macOS 和 Windows 的已装配架构；缺省目标为 `linux-amd64`。重定向目标仍由 AgentToken 保护，该端点无需 JWT。
+- `GET /downloads/agent?token=<AGENT_TOKEN>`：公开返回 Agent 二进制的 `302` 重定向。⭐ 安装器通过 `User-Agent: riri-agent-installer/<os>-<arch>` 声明目标平台，主控支持 Linux、macOS 和 Windows 的已装配架构；缺省目标为 `linux-amd64`。重定向目标仍由 AgentToken 保护，该端点无需 JWT；重定向地址优先使用 `binaryDownloadBaseUrl`，其次使用 `publicBaseUrl`、`RIRICLOUD_PUBLIC_URL` 和当前请求域名，不再默认指向 localhost。
 - `GET /admin/binaries/info`：管理员查询主控版本及各 OS/架构内置 Agent、Sing-box 二进制的版本、大小、SHA-256 和可用状态。⭐
 - `POST /admin/binaries/import`：管理员把自定义 Sing-box URL 下载到主控托管目录。⭐ 请求 `{ target: "singbox-linux-amd64"|"singbox-linux-arm64"|"singbox-macos-amd64"|"singbox-macos-arm64"|"singbox-windows-amd64", version, url, sha256 }`；服务端限制 100 MiB，并在落盘前完成 SHA-256 校验。
 - `GET /downloads/binaries/:target?token=<AGENT_TOKEN>`：Agent 内部下载端点。⭐ 仅接受有效且未禁用节点的 AgentToken，响应为二进制流；禁止匿名访问。
@@ -120,7 +120,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, subscriptionShortLinksEnabled, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, subscriptionShortLinksEnabled, customCss, customHeadHtml }`；不包含 `publicBaseUrl`、套餐、JWT、Agent、二进制和探针运维参数。
 
 ---
 

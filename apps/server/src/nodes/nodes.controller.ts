@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
+import { getRequestBaseUrl } from '../common/public-url';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { ProbeNodeDto } from './dto/probe-node.dto';
@@ -27,13 +29,13 @@ export class NodesController {
   }
 
   @Get(':id')
-  detail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.nodesService.detail(id);
+  detail(@Param('id', ParseUUIDPipe) id: string, @Req() request: Request) {
+    return this.nodesService.detail(id, getRequestBaseUrl(request));
   }
 
   @Post()
-  create(@Body() dto: CreateNodeDto, @CurrentUser() user: { id: string }) {
-    return this.nodesService.create(dto, user.id);
+  create(@Body() dto: CreateNodeDto, @CurrentUser() user: { id: string }, @Req() request: Request) {
+    return this.nodesService.create(dto, user.id, getRequestBaseUrl(request));
   }
 
   @Patch(':id')
@@ -52,8 +54,8 @@ export class NodesController {
   }
 
   @Post(':id/upgrade')
-  upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto) {
-    return this.nodesService.requestUpgrade(id, dto);
+  upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto, @Req() request: Request) {
+    return this.nodesService.requestUpgrade(id, dto, getRequestBaseUrl(request));
   }
 
   @Post(':id/probe')

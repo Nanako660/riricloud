@@ -361,6 +361,7 @@ model SystemSetting {
 | :--- | :--- | :--- | :--- |
 | `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
 | `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
+| `publicBaseUrl` | HTTP/HTTPS URL 或空字符串 | `""` | 全站对外访问基准地址；用于 Agent 安装、升级和二进制下载地址 |
 | `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
 | `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户仪表盘公告横幅 |
 | `footerCopyright` | 纯文本 | `""` | 页脚版权文案 |
@@ -388,7 +389,7 @@ model SystemSetting {
 | `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
 | `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准、短链接开关和前端运行时样式字段。短链接开关不改变数据库模型，也不要求 Prisma 迁移；关闭或缺失时前端继续生成标准 `/api/v1/sub/<UUID>` 地址。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准、短链接开关和前端运行时样式字段。`publicBaseUrl` 仅供主控生成 Agent 运维地址，不公开给普通用户。短链接开关不改变数据库模型，也不要求 Prisma 迁移；关闭或缺失时前端继续生成标准 `/api/v1/sub/<UUID>` 地址。
 
 ---
 

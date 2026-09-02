@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AgentService } from '../agent-gateway/agent.service';
 import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
@@ -10,7 +10,7 @@ import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 import { SettingsService } from '../system/settings.service';
-import { Optional } from '@nestjs/common';
+import { appendPublicPath, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../common/public-url';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
@@ -33,24 +33,33 @@ export class NodesService {
     return nodes.map((node) => this.sanitize(node));
   }
 
-  async detail(id: string) {
+  async detail(id: string, requestBaseUrl?: string) {
     const node = await this.prisma.node.findUnique({ where: { id }, include: nodeLinesInclude });
     if (!node) throw new NotFoundException('节点不存在');
+    const settings = await this.settingsService?.getSettings();
+    const publicBaseUrl = resolvePublicBaseUrl({
+      configuredBaseUrl: settings?.publicBaseUrl,
+      requestBaseUrl
+    });
     return {
       node: {
         ...this.sanitize(node),
         installCommands: {
-          ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch),
-          http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch)
+          ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch, publicBaseUrl),
+          http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch, publicBaseUrl)
         },
         uninstallCommand: this.buildUninstallCommand()
       }
     };
   }
 
-  async create(dto: CreateNodeDto, _operatorId: string) {
+  async create(dto: CreateNodeDto, _operatorId: string, requestBaseUrl?: string) {
     const communicationMode = dto.communicationMode ?? 'WS';
     const settings = await this.settingsService?.getSettings();
+    const publicBaseUrl = resolvePublicBaseUrl({
+      configuredBaseUrl: settings?.publicBaseUrl,
+      requestBaseUrl
+    });
     const node = await this.prisma.node.create({
       data: {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
@@ -64,10 +73,10 @@ export class NodesService {
     return {
       node: this.sanitize(node),
       agentToken: node.agentToken,
-      installCommand: this.buildInstallCommand(node.agentToken, communicationMode),
+      installCommand: this.buildInstallCommand(node.agentToken, communicationMode, node.osArch, publicBaseUrl),
       installCommands: {
-        ws: this.buildInstallCommand(node.agentToken, 'WS'),
-        http: this.buildInstallCommand(node.agentToken, 'HTTP')
+        ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch, publicBaseUrl),
+        http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch, publicBaseUrl)
       },
       uninstallCommand: this.buildUninstallCommand()
     };
@@ -79,7 +88,7 @@ export class NodesService {
     return { requested: pushed, nodeId: id };
   }
 
-  async requestUpgrade(id: string, dto: UpgradeNodeDto) {
+  async requestUpgrade(id: string, dto: UpgradeNodeDto, requestBaseUrl?: string) {
     const node = await this.requireNode(id);
     try {
       const hasCustomUrl = dto.url !== undefined;
@@ -89,7 +98,7 @@ export class NodesService {
       let url = dto.url?.trim() ?? '';
       let sha256 = dto.sha256?.trim().toLowerCase() ?? '';
       if (!hasCustomUrl) {
-        const asset = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken);
+        const asset = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl);
         version = version || asset.version;
         url = asset.url;
         sha256 = asset.sha256;
@@ -177,11 +186,15 @@ export class NodesService {
     return raw;
   }
 
-  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP', osArch?: string | null) {
+  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
     const platform = normalizeOsArch(osArch) ?? 'linux-amd64';
-    const master = mode === 'HTTP' ? 'https://<master-domain>' : 'wss://<master-domain>/ws/agent';
+    const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
+    const master = mode === 'HTTP'
+      ? baseUrl
+      : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent');
+    const downloadUrl = appendPublicPath(baseUrl, `api/v1/downloads/agent?token=${encodeURIComponent(token)}`);
     const temp = `/tmp/riri-agent-${token.slice(0, 12)}`;
-    return `curl -fsSL --location -A 'riri-agent-installer/${platform}' 'https://<master-domain>/api/v1/downloads/agent?token=${token}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token=${token} --master=${master}`;
+    return `curl -fsSL --location -A 'riri-agent-installer/${platform}' '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token=${token} --master=${master}`;
   }
 
   private buildUninstallCommand() {

@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
 import type { Response } from 'express';
+import type { Request } from 'express';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../common/roles.decorator';
+import { getRequestBaseUrl } from '../common/public-url';
 import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
 
@@ -18,6 +20,7 @@ export class BinariesController {
     @Headers('user-agent') userAgent: string | undefined,
     @Query('token') token: string | undefined,
     @Headers('x-agent-token') headerToken: string | undefined,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response
   ) {
     const credential = token ?? headerToken;
@@ -25,11 +28,12 @@ export class BinariesController {
     if (!credential) throw new Error('缺少 AgentToken');
     const target = this.binaries.resolveAgentTarget(userAgent);
     const configuredBuilder = (this.binaries as BinariesService & {
-      buildConfiguredDownloadUrl?: (assetTarget: typeof target, agentToken: string) => Promise<string>;
+      buildConfiguredDownloadUrl?: (assetTarget: typeof target, agentToken: string, requestBaseUrl?: string) => Promise<string>;
     }).buildConfiguredDownloadUrl;
+    const requestBaseUrl = getRequestBaseUrl(request);
     const url = configuredBuilder
-      ? await configuredBuilder.call(this.binaries, target, credential)
-      : this.binaries.buildDownloadUrl(target, credential);
+      ? await configuredBuilder.call(this.binaries, target, credential, requestBaseUrl)
+      : this.binaries.buildDownloadUrl(target, credential, requestBaseUrl);
     response.redirect(302, url);
   }
 
