@@ -19,7 +19,7 @@ usage() {
   cat <<'EOF'
 用法：bash scripts/build-agent.sh [选项]
 
-默认构建当前 Go 平台，输出到 artifacts/dev/agent/<os>-<arch>/。
+默认构建当前 Go 平台，输出到 artifacts/binaries/agent/<os>-<arch>/。
 
 选项：
   -t, --target <os>/<arch>  指定目标，例如 linux/amd64、windows/amd64
@@ -104,7 +104,7 @@ build_target() {
   if [ -n "$OUTPUT_OVERRIDE" ]; then
     output_path="$OUTPUT_OVERRIDE"
   else
-    output_path="$ARTIFACT_ROOT/dev/agent/${TARGET_OS}-${TARGET_ARCH}/$bin_name"
+    output_path="$ARTIFACT_ROOT/binaries/agent/${TARGET_OS}-${TARGET_ARCH}/$bin_name"
     if [ -n "${RIRICLOUD_AGENT_BINARY_PATH:-}" ]; then
       output_path="$RIRICLOUD_AGENT_BINARY_PATH"
     fi

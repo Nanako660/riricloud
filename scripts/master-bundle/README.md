@@ -53,9 +53,9 @@ printf '%s\n' 'new-password' | ./admin-reset.sh --email admin@example.com --pass
 
 下载新版本发行包 → 停服 → 解压新包替换本目录 → 把旧目录的 `.env` 与 `prisma/data/` 拷回 → `./start.sh`（迁移自动执行）。
 
-节点详情的「升级中心」默认使用主控 `binaries/` 目录中的 Agent 多架构版本；管理员可在后台导入并托管自定义 Sing-box 文件。下载端点使用节点 AgentToken 鉴权，不需要节点直接访问 GitHub。
+主控支持双层二进制分发仓：持久仓 `data/binaries/`（可挂载持久卷，支持后台导入与热更新）与内置仓 `binaries/`。节点详情的「升级中心」优先使用主控分发仓中的架构版本；管理员也可在后台导入并托管自定义 Sing-box 文件。下载端点使用节点 AgentToken 鉴权，不需要节点直接访问 GitHub。
 
 ## 运行时说明
 
 - 出厂包在 Linux x64（glibc）上验证；其他平台需自行确认 Prisma 引擎兼容性
-- 主控包内 `binaries/agent-linux-amd64` 与 `binaries/singbox-linux-amd64` 由 `start.sh` 默认启动为本机 Agent；其他 `agent-*` 和 `singbox-*` 资产用于远程节点升级。远程 Agent 仍可按仓库 `docs/DEPLOYMENT_GUIDE.md` §2 独立部署。
+- 主控包内 `binaries/agent-linux-amd64` 与 `binaries/singbox-linux-amd64` 由 `start.sh` 默认启动为本机 Agent，仅精准包含匹配当前宿主架构的二进制；其他架构资产用于远程节点升级时可通过 `data/binaries/` 挂载或管理端按需导入。远程 Agent 仍可按仓库 `docs/DEPLOYMENT_GUIDE.md` §2 独立部署。
