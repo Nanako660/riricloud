@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const maxDownloadSize int64 = 100 * 1024 * 1024
@@ -110,6 +111,38 @@ func CleanupStaleBackup(target string) error {
 	return CommitBackup(target + ".riri-old")
 }
 
+func renameWithRetry(source, target string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		err = os.Rename(source, target)
+		if err == nil {
+			return nil
+		}
+		if runtime.GOOS == "windows" {
+			time.Sleep(25 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return err
+}
+
+func removeWithRetry(path string) error {
+	var err error
+	for i := 0; i < 20; i++ {
+		err = os.Remove(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if runtime.GOOS == "windows" {
+			time.Sleep(25 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return err
+}
+
 // AtomicReplaceWithBackup 替换二进制但保留旧文件备份，供调用方在启动新进程失败时回滚。
 func AtomicReplaceWithBackup(source, target string) (string, error) {
 	if source == "" || target == "" {
@@ -123,18 +156,18 @@ func AtomicReplaceWithBackup(source, target string) (string, error) {
 	}
 
 	backup := target + ".riri-old"
-	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
+	if err := removeWithRetry(backup); err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("remove stale backup: %w", err)
 	}
 	movedOld := false
-	if err := os.Rename(target, backup); err == nil {
+	if err := renameWithRetry(target, backup); err == nil {
 		movedOld = true
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("move existing binary: %w", err)
 	}
-	if err := os.Rename(source, target); err != nil {
+	if err := renameWithRetry(source, target); err != nil {
 		if movedOld {
-			if restoreErr := os.Rename(backup, target); restoreErr != nil {
+			if restoreErr := renameWithRetry(backup, target); restoreErr != nil {
 				return "", fmt.Errorf("replace binary failed: %w; restore failed: %v", err, restoreErr)
 			}
 		}
@@ -151,7 +184,7 @@ func CommitBackup(backup string) error {
 	if backup == "" {
 		return nil
 	}
-	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
+	if err := removeWithRetry(backup); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove old binary backup: %w", err)
 	}
 	return nil
@@ -175,19 +208,19 @@ func RestoreBackup(target, backup string) error {
 		return fmt.Errorf("target and backup are required")
 	}
 	failed := target + ".riri-failed"
-	if err := os.Remove(failed); err != nil && !os.IsNotExist(err) {
+	if err := removeWithRetry(failed); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove stale failed binary: %w", err)
 	}
-	if err := os.Rename(target, failed); err != nil && !os.IsNotExist(err) {
+	if err := renameWithRetry(target, failed); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("move failed binary: %w", err)
 	}
-	if err := os.Rename(backup, target); err != nil {
-		if restoreErr := os.Rename(failed, target); restoreErr != nil {
+	if err := renameWithRetry(backup, target); err != nil {
+		if restoreErr := renameWithRetry(failed, target); restoreErr != nil {
 			return fmt.Errorf("restore old binary failed: %w; restore new binary failed: %v", err, restoreErr)
 		}
 		return fmt.Errorf("restore old binary: %w", err)
 	}
-	if err := os.Remove(failed); err != nil && !os.IsNotExist(err) {
+	if err := removeWithRetry(failed); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove failed binary: %w", err)
 	}
 	return nil
