@@ -29,6 +29,17 @@ to_os_path() {
   fi
 }
 
+remove_dir_safe() {
+  local dir="$1"
+  [ -d "$dir" ] || return 0
+  if command -v cmd.exe >/dev/null 2>&1; then
+    cmd.exe /c "if exist \"$(to_os_path "$dir")\" rmdir /s /q \"$(to_os_path "$dir")\"" >/dev/null 2>&1 || true
+  fi
+  if [ -d "$dir" ]; then
+    rm -rf "$dir" 2>/dev/null || true
+  fi
+}
+
 DRY_RUN=0
 SKIP_BUILD=0
 TAG_PARAM=""
@@ -116,7 +127,8 @@ cleanup() {
   if [ -d "$WORKTREE" ]; then
     echo "清理临时 release-worktree..."
     git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
-    rm -rf "$WORKTREE"
+    git -C "$RIRI_ROOT" worktree prune >/dev/null 2>&1 || true
+    remove_dir_safe "$WORKTREE"
   fi
   if [ "$DRY_RUN" = "1" ] && [ "$NEW_TAG" = "1" ]; then
     git tag -d "$TAG" >/dev/null 2>&1 || true
@@ -129,8 +141,9 @@ if [ "$SKIP_BUILD" = "0" ]; then
 
   # ---------- Worktree 隔离 ----------
   echo "[2/7] 准备独立构建工作区（git worktree）"
-  rm -rf "$WORKTREE"
-  git worktree prune >/dev/null 2>&1 || true
+  git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+  git -C "$RIRI_ROOT" worktree prune >/dev/null 2>&1 || true
+  remove_dir_safe "$WORKTREE"
   git worktree add --detach "$WORKTREE" HEAD >/dev/null
 
   echo "[3/7] 在工作区中执行三端质量门禁"
