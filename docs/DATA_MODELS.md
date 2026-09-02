@@ -113,6 +113,8 @@ model Node {
   cpuUsage        Float         @default(0)             // CPU 使用率 (0~100)
   memoryUsage     Float         @default(0)             // 内存使用率 (0~100)
   bandwidthRate   Float         @default(0)             // 实时网络速率 (bytes/s)
+  uploadRate      Float?                                // 当前上行速率 (bytes/s)，旧版 Agent 未上报时为空
+  downloadRate    Float?                                // 当前下行速率 (bytes/s)，旧版 Agent 未上报时为空
 
   // 内核状态（v0.3.0，Agent 心跳上报；旧版 Agent 不上报时保持 null）
   kernelRunning   Boolean?                               // sing-box 内核进程存活
@@ -130,13 +132,34 @@ model Node {
   entryLines      Line[]        @relation("LineEntryNode")
   exitLines       Line[]        @relation("LineExitNode")
   trafficLogs     TrafficLog[]
+  rateMetrics     NodeRateMetric[]
 
   @@index([status])
   @@index([isLocal])
 }
 
 // ==============================
-// 2.1 历史节点入站实体 (NodeInbound，迁移兼容)
+// 2.1 节点速率指标实体 (NodeRateMetric，本次迭代)
+// ==============================
+model NodeRateMetric {
+  id               String   @id @default(uuid())
+  nodeId           String
+  bucketStart      DateTime                         // UTC 五分钟桶起点
+  sampleCount      Int      @default(0)
+  uploadRateSum    Float    @default(0)             // 桶内心跳上行速率之和
+  downloadRateSum  Float    @default(0)             // 桶内心跳下行速率之和
+  uploadRatePeak   Float    @default(0)             // 节点桶内上行峰值
+  downloadRatePeak Float    @default(0)             // 节点桶内下行峰值
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, bucketStart])
+  @@index([nodeId, bucketStart])
+  @@index([bucketStart])
+}
+
+// ==============================
+// 2.2 历史节点入站实体 (NodeInbound，迁移兼容)
 // 保留旧数据以便迁移与审计；新线路创建、配置下发和管理 API 均不再依赖该表。
 // ==============================
 model NodeInbound {
@@ -304,16 +327,21 @@ model TrafficLog {
   id         String   @id @default(uuid())
   nodeId     String
   userId     String
+  lineId     String?  // 入口线路归属；历史流水或裸节点可为空
   upload     BigInt   @default(0) // 增量上传字节数
   download   BigInt   @default(0) // 增量下载字节数
   recordedAt DateTime @default(now())
 
   node       Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  line       Line?    @relation(fields: [lineId], references: [id], onDelete: SetNull)
 
   @@index([nodeId])
   @@index([userId])
+  @@index([lineId])
   @@index([recordedAt])
+  @@index([recordedAt, lineId])
+  @@index([recordedAt, userId])
 }
 
 // ==============================

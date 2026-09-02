@@ -85,6 +85,8 @@ type pollPayload struct {
 	CPUUsage            float64             `json:"cpuUsage"`
 	MemoryUsage         float64             `json:"memoryUsage"`
 	BandwidthRate       float64             `json:"bandwidthRate"`
+	UploadRate          float64             `json:"uploadRate"`
+	DownloadRate        float64             `json:"downloadRate"`
 	KernelRunning       bool                `json:"kernelRunning"`
 	AppliedVersion      int64               `json:"appliedConfigVersion"`
 	LastError           string              `json:"lastError"`
@@ -189,6 +191,8 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		CPUUsage:       sample.CPUUsage,
 		MemoryUsage:    sample.MemoryUsage,
 		BandwidthRate:  sample.BandwidthRate,
+		UploadRate:     sample.UploadRate,
+		DownloadRate:   sample.DownloadRate,
 		KernelRunning:  kernel.Running,
 		AppliedVersion: kernel.AppliedConfigVersion,
 		LastError:      kernel.LastError,

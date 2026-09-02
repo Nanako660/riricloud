@@ -35,6 +35,9 @@ export interface HeartbeatData {
   memoryUsage: number;
   bandwidthRate: number;
   trafficRecords: HeartbeatTrafficRecord[];
+  // 可选字段：拆分后的节点网卡上行/下行速率（bytes/s），旧版 Agent 不上报
+  uploadRate?: number;
+  downloadRate?: number;
   // 可选字段（v0.3.0，向后兼容：旧版 Agent 不上报）
   kernelRunning?: boolean; // 内核进程存活
   appliedConfigVersion?: number; // 当前生效配置版本
@@ -161,6 +164,8 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (!isFiniteNumber(value.cpuUsage) || value.cpuUsage < 0 || value.cpuUsage > 100) return false;
   if (!isFiniteNumber(value.memoryUsage) || value.memoryUsage < 0 || value.memoryUsage > 100) return false;
   if (!isFiniteNumber(value.bandwidthRate) || value.bandwidthRate < 0) return false;
+  if (value.uploadRate !== undefined && (!isFiniteNumber(value.uploadRate) || value.uploadRate < 0)) return false;
+  if (value.downloadRate !== undefined && (!isFiniteNumber(value.downloadRate) || value.downloadRate < 0)) return false;
   if (!Array.isArray(value.trafficRecords)) return false;
   if (
     value.kernelRunning !== undefined &&

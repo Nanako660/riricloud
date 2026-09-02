@@ -62,6 +62,12 @@ export const router = createBrowserRouter([
                 })
               },
               {
+                path: '/admin/traffic',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/traffic')).default
+                })
+              },
+              {
                 path: '/admin/settings',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/settings')).default

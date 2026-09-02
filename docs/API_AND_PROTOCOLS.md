@@ -40,6 +40,12 @@
 
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
+#### 流量统计
+- `GET /admin/traffic/overview?range=today|24h|7d|30d`：管理员查询全站流量统计。⭐ `range` 省略时默认为 `today`；响应包含 `summary`（总上行、总下行、物理/计费流量、活跃线路/用户）、连续补零的 `timeSeries`、按计费流量降序排列的 `lineRankings`，以及 `rate`/`rateSeries` 节点网络吞吐统计。速率统一为 `bytes/s`；`today`/`24h` 的速率按 5 分钟、`7d` 按 30 分钟、`30d` 按 1 小时输出。`rate` 的当前值只汇总在线且未超时节点，历史平均值按指标采样数计算，峰值为各节点桶峰值之和的近似全站峰值；速率不参与计费。
+- `GET /admin/traffic/users/:userId?range=today|24h|7d|30d`：管理员查询指定用户的流量画像。⭐ 响应包含当前订阅/配额、选定周期 `summary`、补零时序和线路消耗清单；用户不存在返回 404，`userId` 必须为 UUID。
+
+Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最靠前的 ACTIVE 入口线路；没有匹配线路时保留 `lineId=null`。聚合历史流水时会按节点首选 ACTIVE 入口线路回退归组，仍无法归属的数据标记为“未分配线路（节点直连）”。
+
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
 - `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐
@@ -234,6 +240,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "cpuUsage": 12.5,
     "memoryUsage": 38.2,
     "bandwidthRate": 1048576,
+    "uploadRate": 262144,
+    "downloadRate": 786432,
     "kernelRunning": true,
     "appliedConfigVersion": 3,
     "lastError": "",
@@ -245,7 +253,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 }
 ```
 
-> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `trafficRecords` 均已实现 ⭐。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=true)` 读取并清零本周期用户计数，`trafficRecords` 只携带正数增量；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
+> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `uploadRate` / `downloadRate` / `trafficRecords` 均已实现 ⭐。Agent 通过 gopsutil 以 1 秒差分拆分网卡上行与下行速率，并保留 `bandwidthRate = uploadRate + downloadRate`；计数器回绕或采样异常时对应速率为 0。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=true)` 读取并清零本周期用户计数，`trafficRecords` 只携带正数增量；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
 >
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
@@ -312,6 +320,8 @@ Content-Type: application/json
   "cpuUsage": 12.5,
   "memoryUsage": 38.2,
   "bandwidthRate": 1048576,
+  "uploadRate": 262144,
+  "downloadRate": 786432,
   "kernelRunning": true,
   "appliedConfigVersion": 3,
   "lastError": "",

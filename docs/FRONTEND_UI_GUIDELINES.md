@@ -255,7 +255,7 @@ export function NodeCardSkeleton() {
    - **L2 业务内容卡片**：页面内 `Card`、表格、表单（`bg-card`，深色模式微提亮为 `zinc-850/60`），呈现细腻的浮雕凸起质感。
 5. **页面容器组件 (`PageContainer`)**：所有子页面统一嵌套标准容器，保证全站间距与页头排版完全一致：
 
-管理员侧边栏固定为 6 项：**用户管理、节点管理、线路管理、系统设置、套餐管理、订阅模板**。订阅履约操作属于用户管理的综合弹窗；旧地址 `/admin/subscriptions` 仅作为兼容入口重定向至 `/admin/users`，不得再次作为平级菜单展示。
+管理员侧边栏固定为 8 项：**用户管理、流量统计、节点管理、线路管理、证书管理、系统设置、套餐管理、订阅模板**。订阅履约操作属于用户管理的综合弹窗；旧地址 `/admin/subscriptions` 仅作为兼容入口重定向至 `/admin/users`，不得再次作为平级菜单展示。
 
 ```tsx
 interface PageContainerProps {
@@ -296,6 +296,9 @@ export function PageContainer({ title, description, actions, children }: PageCon
 - 底层技术：采用 shadcn/ui 官方 `Chart`（封装自 `Recharts`）。
 - 色彩绑定：使用预设 CSS 变量 `--chart-1` ~ `--chart-5`，严禁在图表配置中写死十六进制色值，确保暗黑模式完美自适应。
 - 交互提示：统一使用 `ChartTooltip` 与 `ChartTooltipContent` 保证悬浮卡片视觉风格与面板整体一致。
+- 流量统计使用 `--chart-1` 表示下行、`--chart-2` 表示上行、`--chart-3` 表示计费流量、`--chart-4`/`--chart-5` 表示线路分布；速率图同时展示平均值与近似峰值，面积图必须保留连续零值时隙，避免数据空洞造成折线断裂。
+- 字节数统一经过 `formatBytes` 格式化为 B / KB / MB / GB / TB / PB；时序图按小时或天显示 `displayTime`，Tooltip 同时展示上行、下行和当前合计。
+- 管理员流量统计位于 `/admin/traffic`，时间范围切换使用紧凑 `Tabs`，线路明细在表格容器内横向滚动；页面明确标注节点网络吞吐不参与计费，用户管理操作列的“流量明细”使用 `Activity` 图标打开响应式下钻弹窗。
 
 ---
 
@@ -389,6 +392,8 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 | 线路编辑弹窗 | `/admin/lines`（点击新建/编辑） | 默认打开的“入站配置”页签与“线路高级设置”页签；入站页集中配置协议、入口节点、监听地址/端口、Transport、TLS/Reality/ACME 与协议专属参数，高级页配置出口拓扑、对外覆盖、倍率与线路属性 | 使用 Tabs 切换；页签内容全部平面展开，以分区标题和 Separator 区分层级，不使用 Accordion 或嵌套卡片；两页共享草稿并统一保存；覆盖开关默认关闭且保留已填值；协议切换清理不适用字段；Reality 私钥留空表示保留服务端密钥；提交使用 React Hook Form + Zod |
 | 订阅模板 | `/admin/templates` | 策略组、规则集、DNS 与 YAML/JSON 覆写编辑 | 内嵌默认模板显示“内嵌”标记，只保留编辑操作；普通模板删除使用 AlertDialog；JSON 采用 Textarea + Zod 预校验，服务端再次校验 |
 | 用户管理 | `/admin/users` | 用户、角色、账号状态、当前套餐、订阅状态、流量进度与到期日 | 创建用户可选择初始套餐或暂不绑定；编辑用户通过双 Tab 管理账号安全与订阅，可用“无套餐”彻底移除订阅 |
+| 流量统计 | `/admin/traffic` | 时间范围 KPI、节点上/下行速率摘要与历史速率、线路占比和物理/计费流量排行 | 使用 `Tabs` 切换今日/24 小时/7 天/30 天；速率图表和表格在移动端单列或局部滚动 |
+| 用户流量下钻 | `/admin/users`（操作列“流量明细”） | 用户配额画像、周期用量走势、线路占比和线路明细 | 桌面端宽屏 Dialog，`767px` 及以下为全高右侧 Sheet；无记录时使用统一 EmptyState |
 | 节点升级 | `/admin/nodes/:id` | Sing-box/Agent 目标、当前/推荐版本、主控内置来源、自定义 URL、SHA-256 与主控导入 | 默认使用主控内置版本；自定义来源必须校验 URL/SHA-256；导入或下发中禁用对应按钮 |
 | 证书管理 | `/admin/certificates` | TLS 证书列表、SAN 标签、签发者、有效期状态、关联线路与证书操作 | 证书列表使用表格快速扫描有效期与关联数；新建/编辑弹窗支持 PEM 粘贴或上传、解析预览与私钥查看；证书被线路引用时删除需明确拦截 |
 
@@ -424,4 +429,4 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 
 ### 12.4 视觉验证登记
 
-新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-26。视觉验证仍按需执行，不能接入 CI 或 Git Hook。
+新增页面、弹窗和节点升级入口的编号、源码路径、明暗主题检查点统一登记在 [docs/VISUAL_VERIFICATION.md](VISUAL_VERIFICATION.md) 的 UI-11 至 UI-28。视觉验证仍按需执行，不能接入 CI 或 Git Hook。

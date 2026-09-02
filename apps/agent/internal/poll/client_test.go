@@ -1,8 +1,33 @@
 package poll
 
 import (
+	"encoding/json"
 	"testing"
 )
+
+func TestPollJSONIncludesSplitRates(t *testing.T) {
+	payload, err := json.Marshal(pollPayload{BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficRecords: []pollTrafficRecord{}})
+	if err != nil {
+		t.Fatalf("marshal poll payload: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal poll payload: %v", err)
+	}
+	var uploadRate, downloadRate, bandwidthRate float64
+	if err := json.Unmarshal(decoded["uploadRate"], &uploadRate); err != nil {
+		t.Fatalf("decode upload rate: %v", err)
+	}
+	if err := json.Unmarshal(decoded["downloadRate"], &downloadRate); err != nil {
+		t.Fatalf("decode download rate: %v", err)
+	}
+	if err := json.Unmarshal(decoded["bandwidthRate"], &bandwidthRate); err != nil {
+		t.Fatalf("decode bandwidth rate: %v", err)
+	}
+	if uploadRate != 256 || downloadRate != 512 || bandwidthRate != 768 {
+		t.Fatalf("unexpected split rates: %#v", decoded)
+	}
+}
 
 func TestResolvePollURL(t *testing.T) {
 	tests := []struct {

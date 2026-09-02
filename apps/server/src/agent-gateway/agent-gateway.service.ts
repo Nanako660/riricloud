@@ -67,6 +67,23 @@ type TaskResult = {
   completedAt: string;
 };
 
+const NODE_RATE_BUCKET_MS = 5 * 60 * 1000;
+const NODE_RATE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+type NodeRateMetricDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<{
+    id: string;
+    sampleCount: number;
+    uploadRateSum: number;
+    downloadRateSum: number;
+    uploadRatePeak: number;
+    downloadRatePeak: number;
+  } | null>;
+  create: (args: Record<string, unknown>) => Promise<unknown>;
+  update: (args: Record<string, unknown>) => Promise<unknown>;
+  deleteMany: (args: Record<string, unknown>) => Promise<unknown>;
+};
+
 @Injectable()
 export class AgentService implements OnModuleDestroy {
   private readonly logger = new Logger(AgentService.name);
@@ -119,6 +136,8 @@ export class AgentService implements OnModuleDestroy {
 
   // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode = 'WS'): Promise<void> {
+    const heartbeatAt = new Date();
+    const splitRates = this.getSplitRates(data);
     await this.prisma.$transaction(async (tx) => {
       await tx.node.update({
         where: { id: nodeId },
@@ -126,7 +145,10 @@ export class AgentService implements OnModuleDestroy {
           cpuUsage: data.cpuUsage,
           memoryUsage: data.memoryUsage,
           bandwidthRate: data.bandwidthRate,
-          lastSeenAt: new Date(),
+          // 旧版 Agent 没有拆分字段，清空旧的拆分值，避免把历史值误当作当前速率。
+          uploadRate: splitRates?.uploadRate ?? null,
+          downloadRate: splitRates?.downloadRate ?? null,
+          lastSeenAt: heartbeatAt,
           status: 'ONLINE',
           communicationMode: mode,
           // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
@@ -140,6 +162,20 @@ export class AgentService implements OnModuleDestroy {
           ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
         }
       });
+      const rateDelegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
+      if (rateDelegate && splitRates) {
+        await this.recordRateMetric(rateDelegate, nodeId, heartbeatAt, splitRates.uploadRate, splitRates.downloadRate);
+      }
+      const lineDelegate = (tx as unknown as {
+        line?: { findFirst: (args: Record<string, unknown>) => Promise<{ id: string } | null> };
+      }).line;
+      const activeEntryLine = lineDelegate
+        ? await lineDelegate.findFirst({
+            where: { entryNodeId: nodeId, status: 'ACTIVE' },
+            select: { id: true },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+          })
+        : null;
       for (const record of data.trafficRecords ?? []) {
         let user = await tx.user.findUnique({ where: { uuid: record.userUuid } });
         // 非 UUID 协议的 sing-box 用户统计使用用户名称（当前为邮箱），兼容回查邮箱。
@@ -156,6 +192,7 @@ export class AgentService implements OnModuleDestroy {
           data: {
             nodeId,
             userId: user.id,
+            ...(activeEntryLine ? { lineId: activeEntryLine.id } : {}),
             upload,
             download
           }
@@ -175,6 +212,59 @@ export class AgentService implements OnModuleDestroy {
           data: { trafficUsedBytes: { increment: upload + download } }
         });
       }
+    });
+  }
+
+  private getSplitRates(data: HeartbeatData): { uploadRate: number; downloadRate: number } | null {
+    if (
+      data.uploadRate === undefined ||
+      data.downloadRate === undefined ||
+      !Number.isFinite(data.uploadRate) ||
+      !Number.isFinite(data.downloadRate) ||
+      data.uploadRate < 0 ||
+      data.downloadRate < 0
+    ) {
+      return null;
+    }
+    return { uploadRate: data.uploadRate, downloadRate: data.downloadRate };
+  }
+
+  private async recordRateMetric(
+    delegate: NodeRateMetricDelegate,
+    nodeId: string,
+    heartbeatAt: Date,
+    uploadRate: number,
+    downloadRate: number
+  ): Promise<void> {
+    const bucketStart = new Date(Math.floor(heartbeatAt.getTime() / NODE_RATE_BUCKET_MS) * NODE_RATE_BUCKET_MS);
+    const where = { nodeId_bucketStart: { nodeId, bucketStart } };
+    const existing = await delegate.findUnique({ where });
+    if (existing) {
+      await delegate.update({
+        where: { id: existing.id },
+        data: {
+          sampleCount: { increment: 1 },
+          uploadRateSum: { increment: uploadRate },
+          downloadRateSum: { increment: downloadRate },
+          uploadRatePeak: Math.max(existing.uploadRatePeak, uploadRate),
+          downloadRatePeak: Math.max(existing.downloadRatePeak, downloadRate)
+        }
+      });
+    } else {
+      await delegate.create({
+        data: {
+          nodeId,
+          bucketStart,
+          sampleCount: 1,
+          uploadRateSum: uploadRate,
+          downloadRateSum: downloadRate,
+          uploadRatePeak: uploadRate,
+          downloadRatePeak: downloadRate
+        }
+      });
+    }
+    await delegate.deleteMany({
+      where: { bucketStart: { lt: new Date(heartbeatAt.getTime() - NODE_RATE_RETENTION_MS) } }
     });
   }
 
@@ -744,7 +834,7 @@ export class AgentService implements OnModuleDestroy {
     if (staleIds.length) {
       await this.prisma.node.updateMany({
         where: { id: { in: staleIds }, status: 'ONLINE' },
-        data: { status: 'OFFLINE' }
+        data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
       });
     }
   }

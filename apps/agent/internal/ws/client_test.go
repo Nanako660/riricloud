@@ -1,9 +1,34 @@
 package ws
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
+
+func TestHeartbeatJSONIncludesSplitRates(t *testing.T) {
+	payload, err := json.Marshal(heartbeatData{BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficRecords: []heartbeatTraffic{}})
+	if err != nil {
+		t.Fatalf("marshal heartbeat: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal heartbeat: %v", err)
+	}
+	var uploadRate, downloadRate, bandwidthRate float64
+	if err := json.Unmarshal(decoded["uploadRate"], &uploadRate); err != nil {
+		t.Fatalf("decode upload rate: %v", err)
+	}
+	if err := json.Unmarshal(decoded["downloadRate"], &downloadRate); err != nil {
+		t.Fatalf("decode download rate: %v", err)
+	}
+	if err := json.Unmarshal(decoded["bandwidthRate"], &bandwidthRate); err != nil {
+		t.Fatalf("decode bandwidth rate: %v", err)
+	}
+	if uploadRate != 256 || downloadRate != 512 || bandwidthRate != 768 {
+		t.Fatalf("unexpected split rates: %#v", decoded)
+	}
+}
 
 func TestJitterStaysWithinBounds(t *testing.T) {
 	base := 8 * time.Second

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
+import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { toast } from 'sonner';
@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAdminPlans } from '../plans/use-plans';
 import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
+import { UserTrafficDialog } from './components/user-traffic-dialog';
 
 import { formatBytes } from '@/lib/utils';
 
@@ -65,6 +66,7 @@ export default function AdminUsersPage() {
   const [activeFilter, setActiveFilter] = React.useState<'ALL' | 'true' | 'false'>('ALL');
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status']>('ALL');
   const [planFilter, setPlanFilter] = React.useState('ALL');
+  const [trafficUser, setTrafficUser] = React.useState<AdminUser | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -159,6 +161,14 @@ export default function AdminUsersPage() {
           const isSelf = u.id === selfId;
           return (
             <div className="flex justify-end gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="流量明细" onClick={() => setTrafficUser(u)}>
+                    <Activity className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>流量明细</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" aria-label="编辑" onClick={() => { setEditing(u); setFormOpen(true); }}>
@@ -295,6 +305,7 @@ export default function AdminUsersPage() {
       )}
 
       <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} />
+      <UserTrafficDialog user={trafficUser} open={!!trafficUser} onOpenChange={(open) => !open && setTrafficUser(null)} />
 
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
