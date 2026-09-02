@@ -13,7 +13,7 @@
 | [数据模型设计 (DATA_MODELS.md)](./DATA_MODELS.md) | SQLite + Prisma ORM 实体关系、数据字典与索引设计 |
 | [接口与通信协议 (API_AND_PROTOCOLS.md)](./API_AND_PROTOCOLS.md) | RESTful API 规范、WebSocket 主从双向通信协议、多客户端通用订阅引擎标准 |
 | [前端 UI 设计规范 (FRONTEND_UI_GUIDELINES.md)](./FRONTEND_UI_GUIDELINES.md) | shadcn/ui 组件分层、暗黑模式预设与表格/表单规范 |
-| [部署与运维指南 (DEPLOYMENT_GUIDE.md)](./DEPLOYMENT_GUIDE.md) | 主控面板部署、Go Agent 守护进程一键安装 (systemd / Docker) 与运维排错 |
+| [部署与运维指南 (DEPLOYMENT_GUIDE.md)](./DEPLOYMENT_GUIDE.md) | 主控面板部署、Go Agent 一键安装 (systemd / Docker)、线路编排与中继模式指南及运维排错 |
 | [阶段实施路线图 (ROADMAP.md)](./ROADMAP.md) | 迭代里程碑、模块开发步骤与质量验收清单 |
 | [规划与任务台账 (plans/README.md)](./plans/README.md) | 中短期实施计划、细粒度 TODO、进行中任务与历史归档总台账（含机械约束） |
 | [版本管理规范 (VERSIONING.md)](./VERSIONING.md) | SemVer 最小递增原则、Monorepo 统一版本号、Tag 与发布流程 |

@@ -94,6 +94,84 @@ function templateGroups(template: SubscriptionTemplateConfig | undefined): Array
     .filter((group): group is Record<string, unknown> => !!group && typeof group === 'object' && !Array.isArray(group));
 }
 
+function resolveClashGroupProxies(
+  group: Record<string, unknown>,
+  groupNames: string[],
+  allNames: string[],
+  allGroupNames: Set<string>
+): string[] {
+  const configured = group.proxies;
+  if (configured === undefined || configured === null || configured === 'all') {
+    return groupNames.length ? groupNames : (allNames.length ? [...allNames] : ['DIRECT']);
+  }
+
+  if (Array.isArray(configured)) {
+    const result: string[] = [];
+    for (const raw of configured) {
+      if (typeof raw !== 'string') continue;
+      const item = raw.trim();
+      if (!item) continue;
+
+      const upper = item.toUpperCase();
+      if (item === 'all' || item === '$all' || item === '$nodes') {
+        const nodesToAdd = groupNames.length ? groupNames : allNames;
+        for (const n of nodesToAdd) {
+          if (!result.includes(n)) result.push(n);
+        }
+      } else if (upper === 'DIRECT' || upper === 'REJECT') {
+        if (!result.includes(upper)) result.push(upper);
+      } else if (allGroupNames.has(item)) {
+        if (!result.includes(item)) result.push(item);
+      } else if (allNames.includes(item)) {
+        if (!result.includes(item)) result.push(item);
+      }
+    }
+    if (result.length > 0) return result;
+  }
+
+  return groupNames.length ? groupNames : (allNames.length ? [...allNames, 'DIRECT'] : ['DIRECT']);
+}
+
+function resolveSingboxGroupOutbounds(
+  group: Record<string, unknown>,
+  groupNames: string[],
+  allNames: string[],
+  allGroupNames: Set<string>
+): string[] {
+  const configured = group.proxies;
+  if (configured === undefined || configured === null || configured === 'all') {
+    return groupNames.length ? groupNames : (allNames.length ? [...allNames] : ['direct']);
+  }
+
+  if (Array.isArray(configured)) {
+    const result: string[] = [];
+    for (const raw of configured) {
+      if (typeof raw !== 'string') continue;
+      const item = raw.trim();
+      if (!item) continue;
+
+      const upper = item.toUpperCase();
+      if (item === 'all' || item === '$all' || item === '$nodes') {
+        const nodesToAdd = groupNames.length ? groupNames : allNames;
+        for (const n of nodesToAdd) {
+          if (!result.includes(n)) result.push(n);
+        }
+      } else if (upper === 'DIRECT') {
+        if (!result.includes('direct')) result.push('direct');
+      } else if (upper === 'REJECT') {
+        if (!result.includes('block')) result.push('block');
+      } else if (allGroupNames.has(item)) {
+        if (!result.includes(item)) result.push(item);
+      } else if (allNames.includes(item)) {
+        if (!result.includes(item)) result.push(item);
+      }
+    }
+    if (result.length > 0) return result;
+  }
+
+  return groupNames.length ? groupNames : (allNames.length ? [...allNames] : ['direct']);
+}
+
 function templateRules(template: SubscriptionTemplateConfig | undefined): Array<Record<string, unknown>> {
   return parseJson<unknown[]>(template?.ruleSetsJson, [])
     .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object' && !Array.isArray(rule));
@@ -651,6 +729,11 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
   const names = proxies.map((p) => p.name as string);
   const defaultGroup = '节点选择';
   const groups = templateGroups(template);
+  const allGroupNames = new Set(
+    groups
+      .map((g) => (typeof g.name === 'string' ? g.name.trim() : ''))
+      .filter((n): n is string => !!n)
+  );
   const proxyGroups = groups.length
     ? groups.map((group) => {
         const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group));
@@ -661,7 +744,7 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
         return {
           name: typeof group.name === 'string' && group.name.trim() ? group.name : defaultGroup,
           type,
-          proxies: groupNames.length ? groupNames : [...names, 'DIRECT'],
+          proxies: resolveClashGroupProxies(group, groupNames, names, allGroupNames),
           ...(typeof group.url === 'string' ? { url: group.url } : {}),
           ...(typeof group.interval === 'number' ? { interval: group.interval } : {}),
           ...(typeof group.tolerance === 'number' ? { tolerance: group.tolerance } : {})
@@ -891,14 +974,23 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
 
   const names = primaryOutbounds.map((outbound) => outbound.tag as string);
   const groups = templateGroups(template);
+  const allGroupNames = new Set(
+    groups
+      .map((g) => (typeof g.name === 'string' ? g.name.trim() : ''))
+      .filter((n): n is string => !!n)
+  );
   const strategyOutbounds = groups.length
     ? groups.map((group) => {
+        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group));
+        const groupNames = groupEntries
+          .map((entry) => names[allEntries.indexOf(entry)])
+          .filter((name): name is string => !!name && names.includes(name));
         const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'selector';
         const outboundType = type === 'url-test' ? 'urltest' : 'selector';
         return {
           type: outboundType,
           tag: typeof group.name === 'string' && group.name.trim() ? group.name : '节点选择',
-          outbounds: [...names],
+          outbounds: resolveSingboxGroupOutbounds(group, groupNames, names, allGroupNames),
           ...(outboundType === 'urltest'
             ? {
                 url: typeof group.url === 'string' ? group.url : 'https://www.gstatic.com/generate_204',
