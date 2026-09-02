@@ -78,7 +78,7 @@ graph TB
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、流量仪表盘、线路列表、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
 - **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测事务、配置快照、任务队列、探针快照与健康判定；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
-- **主控二进制分发中心 (`apps/server/src/binaries`)**：启动时扫描发行包 `binaries/`、开发态 Agent/Sing-box 路径并计算 SHA-256；升级任务按节点 `osArch` 选择主控内置版本，下载端点使用 AgentToken 鉴权。自定义 Sing-box 文件经后台导入后落在主控托管目录。
+- **主控二进制分发中心 (`apps/server/src/binaries`)**：维护规范的双层存储架构：最高优先级的运行态持久仓 `data/binaries/`（支持多架构自定义导入、热更新与远程缓存）与静态内置仓 `binaries/`（发行包仅精准预置当前宿主架构的二进制）；开发环境下智能回退至 `artifacts/binaries`。升级任务按节点 `osArch` 选择主控内置或导入版本，下载端点使用 AgentToken 鉴权。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
 - **HTTP 轮询适配器 (`POST /api/v1/agent/poll`)**：为无法完成 WS Upgrade 的网络提供 HTTPS 主动上报、配置差异拉取和异步任务回执。
 - **内置本机 Agent (`apps/agent` + `riri-agent`)**：Docker 镜像和 Linux x64 自包含发行包内置 Agent 与 Sing-box；启动时先完成数据库迁移和 `Master-Local` bootstrap，再启动 Master，等待健康接口就绪后让 Agent 通过回环 WS 连接本机网关。远程 VPS 使用 Agent 原生 CLI 安装并接入，CLI 自己管理配置、服务和诊断。

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import { access, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
@@ -42,14 +42,24 @@ type BinaryInfo = Omit<BinaryAsset, 'path'> & { available: boolean };
 
 @Injectable()
 export class BinariesService implements OnModuleInit {
+  private readonly logger = new Logger(BinariesService.name);
   private readonly assets = new Map<BinaryTarget, BinaryAsset>();
-  private readonly customDir = resolve(process.env.RIRICLOUD_BINARY_DIR ?? join(process.cwd(), 'binaries'), 'custom');
+  private readonly runtimeDir: string;
+  private readonly customDir: string;
+  private readonly staticDir: string;
   private refreshedAt: string | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly settingsService?: SettingsService
-  ) {}
+  ) {
+    const dataDir = process.env.RIRICLOUD_DATA_DIR
+      ? resolve(process.env.RIRICLOUD_DATA_DIR)
+      : resolve(process.cwd(), 'data');
+    this.runtimeDir = resolve(dataDir, 'binaries');
+    this.customDir = resolve(this.runtimeDir, 'custom');
+    this.staticDir = resolve(process.env.RIRICLOUD_BINARY_DIR ?? join(process.cwd(), 'binaries'));
+  }
 
   async onModuleInit() {
     await this.refresh();
@@ -59,7 +69,7 @@ export class BinariesService implements OnModuleInit {
     const next = new Map<BinaryTarget, BinaryAsset>();
     const version = this.readMasterVersion();
     for (const definition of TARGETS) {
-      const candidate = await this.findCandidate(definition.target, version);
+      const candidate = await this.findCandidate(definition.target);
       if (!candidate) continue;
       const file = await this.inspectFile(candidate.path);
       if (!file) continue;
@@ -75,6 +85,9 @@ export class BinariesService implements OnModuleInit {
     this.assets.clear();
     next.forEach((asset, target) => this.assets.set(target, asset));
     this.refreshedAt = new Date().toISOString();
+
+    const ready = Array.from(this.assets.values()).map((a) => `${a.kind}:${a.os}-${a.arch}`);
+    this.logger.log(`二进制分发仓已就绪：${this.assets.size}/${TARGETS.length} 个目标可用${ready.length ? ` (${ready.join(', ')})` : ''}`);
   }
 
   async getInfo() {
@@ -174,21 +187,54 @@ export class BinariesService implements OnModuleInit {
     return this.toInfo(asset);
   }
 
-  private async findCandidate(target: BinaryTarget, fallbackVersion: string): Promise<{ path: string; version?: string; imported: boolean } | undefined> {
+  private async findCandidate(target: BinaryTarget): Promise<{ path: string; version?: string; imported: boolean } | undefined> {
     const definition = TARGETS.find((item) => item.target === target);
     if (!definition) return undefined;
+
+    // 1. 运行态自定义导入目录 (custom) 优先级最高
     const custom = await this.findLatestCustom(target);
     if (custom) return custom;
-    const roots = this.getRoots();
-    const names = [definition.filename, target, `${definition.kind}-${definition.os}-${definition.arch}`];
-    for (const root of roots) {
-      for (const name of names) {
-        const path = join(root, name);
-        if (await this.isFile(path)) return { path, imported: false };
-      }
-      const versioned = join(root, `${definition.kind === 'agent' ? 'riri-agent' : 'sing-box'}_${fallbackVersion}_${definition.os}_${definition.arch}`, definition.filename);
-      if (await this.isFile(versioned)) return { path: versioned, version: fallbackVersion, imported: false };
+
+    const names = [
+      target,
+      `${target}.exe`,
+      `${definition.kind}-${definition.os}-${definition.arch}`,
+      `${definition.kind}-${definition.os}-${definition.arch}.exe`,
+      join(`${definition.os}-${definition.arch}`, definition.filename),
+      definition.filename
+    ];
+
+    // 2. 运行态持久仓 (data/binaries/)
+    for (const name of names) {
+      const path = join(this.runtimeDir, name);
+      if (await this.isFile(path)) return { path, imported: false };
     }
+
+    // 3. 静态内置基线仓 (binaries/ 或 RIRICLOUD_BINARY_DIR)
+    for (const name of names) {
+      const path = join(this.staticDir, name);
+      if (await this.isFile(path)) return { path, imported: false };
+    }
+
+    // 4. 开发环境智能回退 (仅 NODE_ENV !== 'production' 时生效)
+    if (process.env.NODE_ENV !== 'production') {
+      const devDirs = this.getDevDirs();
+      for (const devDir of devDirs) {
+        const devPaths = [
+          join(devDir, definition.kind, `${definition.os}-${definition.arch}`, definition.filename),
+          join(devDir, `${definition.os}-${definition.arch}`, definition.filename),
+          join(devDir, target),
+          join(devDir, `${target}.exe`),
+          join(devDir, '1.14.0', `${definition.os}-${definition.arch}`, definition.filename),
+          join(devDir, `${definition.os}-${definition.arch}`, 'sing-box'),
+          join(devDir, `${definition.os}-${definition.arch}`, 'riri-agent')
+        ];
+        for (const p of devPaths) {
+          if (await this.isFile(p)) return { path: p, imported: false };
+        }
+      }
+    }
+
     return undefined;
   }
 
@@ -205,18 +251,14 @@ export class BinariesService implements OnModuleInit {
     }
   }
 
-  private getRoots(): string[] {
-    const configured = process.env.RIRICLOUD_BINARY_DIR;
+  private getDevDirs(): string[] {
     return [
-      ...(configured ? [resolve(configured)] : []),
-      resolve(process.cwd(), 'binaries'),
-      resolve(process.cwd(), 'dist', 'binaries'),
-      resolve(process.cwd(), '..', 'binaries'),
-      resolve(process.cwd(), '..', '..', 'binaries'),
-      resolve(process.cwd(), 'apps', 'agent'),
-      resolve(process.cwd(), '.tools', 'sing-box'),
-      resolve(process.cwd(), '.cache', 'release'),
-      resolve(process.cwd(), '..', '..', '.cache', 'release')
+      resolve(process.cwd(), 'artifacts', 'binaries'),
+      resolve(process.cwd(), '..', '..', 'artifacts', 'binaries'),
+      resolve(process.cwd(), 'artifacts', 'dev', 'agent'),
+      resolve(process.cwd(), '..', '..', 'artifacts', 'dev', 'agent'),
+      resolve(process.cwd(), '.cache', 'sing-box-v2ray-api'),
+      resolve(process.cwd(), '..', '..', '.cache', 'sing-box-v2ray-api')
     ];
   }
 

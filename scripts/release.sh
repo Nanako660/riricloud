@@ -1,266 +1,177 @@
 #!/usr/bin/env bash
-# 本地发布脚本：前置校验 → 三端门禁 → Agent 多平台构建 + 主控端自包含发行包 → 打包校验 → 创建 GitHub Release
-# 用法：bash scripts/release.sh [vX.Y.Z]（缺省使用根 package.json 版本号）
+# 本地发布脚本：前置校验 → 三端门禁 → Agent 与 Sing-box 编译 → 主控端发行包组装 → 打包校验 → GitHub Release
+# 用法：bash scripts/release.sh [选项] [vX.Y.Z]
 #
-# 约束（docs/VERSIONING.md §3/§5/§6）：
-#   - Tag 必须与根 package.json 统一版本号一致（唯一版本源）
-#   - Tag 与 CHANGELOG 版本小节一一对应
-#   - 构建产物取自 Tag 指向的提交（git worktree 隔离，不污染工作区）
+# 选项：
+#   --dry-run       演练模式：完整执行构建、打包与校验，不上推 Tag、不发布 GitHub Release
+#   --skip-build    复用已有 artifacts/packages 产物，直接发布
+#   -h, --help      显示帮助
 set -euo pipefail
 
-RIRI_ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+RIRI_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$RIRI_ROOT"
 
-# shellcheck source=scripts/dev-env.sh
-. "$RIRI_ROOT/scripts/dev-env.sh"
+if [ -f "$RIRI_ROOT/scripts/dev-env.sh" ]; then
+  # shellcheck source=scripts/dev-env.sh
+  . "$RIRI_ROOT/scripts/dev-env.sh"
+fi
 
 die() { echo "发布失败：$*" >&2; exit 1; }
 
-# ---------- 参数与前置校验 ----------
-VERSION="$(node -p "require('./package.json').version")"
-TAG="${1:-v${VERSION}}"
+DRY_RUN=0
+SKIP_BUILD=0
+TAG_PARAM=""
 
-[ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || die "必须在 main 分支执行发布"
-[ -z "$(git status --porcelain)" ] || die "工作区不干净，请先提交或暂存变更"
-git fetch origin main --quiet
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "本地 main 与 origin/main 不一致，请先 git pull"
-[ "v${VERSION}" = "$TAG" ] || die "Tag $TAG 与根 package.json 版本 v$VERSION 不一致（唯一版本源规则，见 docs/VERSIONING.md §3）"
-grep -q "^## \[${VERSION}\]" CHANGELOG.md || die "CHANGELOG.md 未找到 [${VERSION}] 版本小节（Tag 与 CHANGELOG 一一对应，见 docs/VERSIONING.md §5）"
-command -v gh >/dev/null 2>&1 || die "缺少 gh CLI"
-gh auth status >/dev/null 2>&1 || die "gh CLI 未登录"
-if gh release view "$TAG" >/dev/null 2>&1; then
-  die "Release $TAG 已存在；如需重建请先执行 gh release delete $TAG --yes"
-fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    --skip-build)
+      SKIP_BUILD=1
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+用法：bash scripts/release.sh [选项] [vX.Y.Z]
 
-if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-  git merge-base --is-ancestor "$TAG" main || die "Tag $TAG 不在 main 历史上"
-  NEW_TAG=0
-  echo "[1/8] Tag $TAG 已存在，检出该提交构建"
-else
-  NEW_TAG=1
-  echo "[1/8] 将在当前 main HEAD 创建附注 Tag $TAG"
-fi
-
-# ---------- 在 Tag 提交上执行门禁与构建（worktree 隔离） ----------
-WORKTREE="$RIRI_ROOT/.cache/release-worktree"
-ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
-DIST="$ARTIFACT_ROOT/releases/v${VERSION}"
-rm -rf "$WORKTREE" "$DIST"
-
-[ "$NEW_TAG" = 1 ] && git tag -a "$TAG" -m "release $TAG" HEAD
-git worktree add --detach "$WORKTREE" "$TAG" >/dev/null
-cleanup() { git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
-
-echo "[2/8] 安装依赖并复跑三端质量门禁（与 CI 同一套命令）"
-cd "$WORKTREE"
-pnpm install --frozen-lockfile
-pnpm --filter @riricloud/server exec tsc --noEmit
-pnpm --filter @riricloud/server lint
-pnpm --filter @riricloud/server test
-pnpm --filter @riricloud/server build
-pnpm --filter @riricloud/web exec tsc --noEmit
-pnpm --filter @riricloud/web lint
-pnpm --filter @riricloud/web build
-bash scripts/gate-agent.sh
-
-echo "[3/8] 交叉编译 Agent 多平台产物（CGO=0，版本号 ldflags 注入）"
-mkdir -p "$DIST/agent" "$DIST/master/linux-amd64" "$DIST/packages"
-cd "$WORKTREE"
-for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
-  GOOS_FLAG="${target%%/*}"
-  GOARCH_FLAG="${target#*/}"
-  if [ "$GOOS_FLAG" = "windows" ]; then
-    BIN="riri-agent.exe"
-  else
-    BIN="riri-agent"
-  fi
-  DIR="$DIST/agent/${GOOS_FLAG}-${GOARCH_FLAG}"
-  mkdir -p "$DIR"
-  bash scripts/build-agent.sh \
-    --target "$target" \
-    --output "$DIR/$BIN" \
-    --version "$VERSION" \
-    --release
+选项：
+  --dry-run       演练模式：完整执行构建、打包与校验，不上推 Tag、不发布 GitHub Release
+  --skip-build    复用已有 artifacts/packages 产物直接执行发布
+  -h, --help      显示帮助
+EOF
+      exit 0
+      ;;
+    v[0-9]*)
+      TAG_PARAM="$1"
+      shift
+      ;;
+    *)
+      die "未知参数：$1"
+      ;;
+  esac
 done
 
-echo "[4/8] 装配主控端自包含发行包（生产依赖 + Web 面板 + 启动脚本 + Agent 二进制）"
-MASTER_DIR="$DIST/master/linux-amd64"
-# pnpm deploy 须在 worktree 内执行（读取其 lockfile 与 workspace 依赖拓扑）
-cd "$WORKTREE"
-pnpm --filter @riricloud/server deploy --prod "$MASTER_DIR"
-rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules"
-# pnpm 在 Windows 上可能生成指向当前工作区的绝对符号链接；发行包必须可移动，统一改写为包内相对链接。
-node - "$MASTER_DIR" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-
-const targetArg = process.argv.slice(1).find((arg) => arg && arg !== '-' && arg !== '[stdin]') || process.argv[1];
-const root = path.resolve(targetArg);
-let normalized = 0;
-
-function walk(directory) {
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) {
-      const target = path.resolve(path.dirname(entryPath), fs.readlinkSync(entryPath));
-      const relativeToRoot = path.relative(root, target);
-      if (relativeToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToRoot)) {
-        throw new Error(`发行包符号链接指向包外路径：${entryPath} -> ${target}`);
-      }
-      const relativeTarget = path.relative(path.dirname(entryPath), target) || '.';
-      const targetType = fs.statSync(target).isDirectory() ? 'dir' : 'file';
-      fs.unlinkSync(entryPath);
-      fs.symlinkSync(relativeTarget, entryPath, targetType);
-      normalized += 1;
-      continue;
-    }
-    if (entry.isDirectory()) walk(entryPath);
-  }
+resolve_node() {
+  NODE_BIN="${NODE_BIN:-node}"
+  if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
+    NODE_BIN="node.exe"
+  fi
+  command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
 }
 
-walk(root);
-console.log(`已将 ${normalized} 个发行包内部绝对符号链接改写为相对链接`);
-NODE
-rm -rf "$MASTER_DIR/src" "$MASTER_DIR/tsconfig.json" "$MASTER_DIR/tsconfig.build.json" \
-  "$MASTER_DIR/nest-cli.json"
-# 启动入口与配置模板（scripts/master-bundle 维护）
-cp "$WORKTREE/scripts/master-bundle/start.sh" "$MASTER_DIR/"
-cp "$WORKTREE/scripts/master-bundle/README.md" "$MASTER_DIR/"
-cp "$WORKTREE/scripts/master-bundle/.env.example" "$MASTER_DIR/"
-cp "$WORKTREE/scripts/master-bundle/admin-reset.sh" "$MASTER_DIR/"
-chmod +x "$MASTER_DIR/start.sh"
-chmod +x "$MASTER_DIR/admin-reset.sh"
-# Web 面板静态资源（main.ts 经 WEB_DIST_PATH 探测的三级布局之一）
-mkdir -p "$MASTER_DIR/web-dist"
-cp -r "$WORKTREE/apps/web/dist/." "$MASTER_DIR/web-dist/"
-# 将同版本 Agent 运行时复制进主控分发中心，供节点升级和原生 CLI 安装器内网直连下载。
-mkdir -p "$MASTER_DIR/binaries"
-cp "$DIST/agent/linux-amd64/riri-agent" "$MASTER_DIR/binaries/agent-linux-amd64"
-cp "$DIST/agent/linux-arm64/riri-agent" "$MASTER_DIR/binaries/agent-linux-arm64"
-if [ -f "$DIST/agent/windows-amd64/riri-agent.exe" ]; then
-  cp "$DIST/agent/windows-amd64/riri-agent.exe" "$MASTER_DIR/binaries/agent-windows-amd64"
-fi
-if [ -f "$DIST/agent/darwin-amd64/riri-agent" ]; then
-  cp "$DIST/agent/darwin-amd64/riri-agent" "$MASTER_DIR/binaries/agent-macos-amd64"
-fi
-if [ -f "$DIST/agent/darwin-arm64/riri-agent" ]; then
-  cp "$DIST/agent/darwin-arm64/riri-agent" "$MASTER_DIR/binaries/agent-macos-arm64"
-fi
-# 主控发行包内置本机 Agent；优先使用本地缓存，否则构建并缓存启用 V2Ray API/NaiveProxy 的 Linux x64 Sing-box。
-SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
-CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
-SINGBOX_SOURCE_DIR="${SINGBOX_BINARY_DIR:-$RIRI_ROOT/.tools/sing-box}"
-DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION"
-if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ] && [ -f "$DOWNLOAD_DIR/linux-amd64/sing-box" ]; then
-	SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
-fi
+resolve_node
 
-if [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ]; then
-	SINGBOX_VERSION_OUTPUT="$("$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" version 2>/dev/null || true)"
-else
-	SINGBOX_VERSION_OUTPUT=""
-fi
+VERSION="$($NODE_BIN -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
+TAG="${TAG_PARAM:-v${VERSION}}"
 
-# 若存在已有二进制且同目录下包含 libcronet.so，而在非 Linux 宿主上无法直接执行 ELF 探测输出，则复用已存在构建
-if [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ] && [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ] && [ -z "$SINGBOX_VERSION_OUTPUT" ]; then
-	echo "检测到跨平台预构建的 Sing-box 与 libcronet.so（宿主非 Linux x64，复用现有二进制）"
-elif ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
-	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
-	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
-	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
-	|| [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ]; then
-	if [ -n "${SINGBOX_BINARY_DIR:-}" ]; then
-		die "SINGBOX_BINARY_DIR 中的 Sing-box 缺少所需构建标签或 libcronet.so"
-	fi
-	command -v curl >/dev/null 2>&1 || die "缺少 curl，无法获取 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
-	command -v tar >/dev/null 2>&1 || die "缺少 tar，无法解压 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
-	command -v go >/dev/null 2>&1 || die "缺少 Go 1.25.5+，无法构建启用 V2Ray API 的 Sing-box；请设置 SINGBOX_BINARY_DIR"
-	mkdir -p "$DOWNLOAD_DIR/linux-amd64"
-	if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
-		echo "获取内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION 源码"
-		TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
-		curl --fail --silent --show-error --location \
-		  "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
-		  --output "$TMP_ARCHIVE"
-		tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
-	fi
-	if [ ! -f "$DOWNLOAD_DIR/linux-amd64/libcronet.so" ]; then
-		echo "获取 NaiveProxy purego 运行库 $CRONET_VERSION"
-		curl --fail --silent --show-error --location \
-		  "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-amd64.so" \
-		  --output "$DOWNLOAD_DIR/linux-amd64/libcronet.so"
-		chmod 0755 "$DOWNLOAD_DIR/linux-amd64/libcronet.so"
-	fi
-	echo "构建内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION（with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego）"
-	(
-		cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
-		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-		  -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego -ldflags "-s -w" \
-		  -o "$DOWNLOAD_DIR/linux-amd64/sing-box" ./cmd/sing-box
-	)
-	SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
-	SINGBOX_VERSION_OUTPUT="$("$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" version 2>/dev/null || true)"
-fi
+# ---------- 前置校验 ----------
+echo "[1/7] 检查前置条件与版本一致性"
+[ "v${VERSION}" = "$TAG" ] || die "Tag $TAG 与根 package.json 版本 v$VERSION 不一致（见 docs/VERSIONING.md §3）"
+grep -q "^## \[${VERSION}\]" CHANGELOG.md || die "CHANGELOG.md 未找到 [${VERSION}] 版本小节（见 docs/VERSIONING.md §5）"
 
-if [ -n "$SINGBOX_VERSION_OUTPUT" ]; then
-	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
-		|| die "Sing-box 未启用 with_v2ray_api，无法提供按用户流量统计"
-	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
-		|| die "Sing-box 未启用 with_utls，无法提供 VLESS Reality"
-	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
-		|| die "Sing-box 未启用 with_quic，无法提供 Hysteria2/TUIC"
-	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
-		|| die "Sing-box 未启用 with_naive_outbound，无法提供 NaiveProxy"
-fi
-if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ]; then
-	die "Sing-box 启用了 NaiveProxy，但缺少同目录的 libcronet.so"
-fi
-cp "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" "$MASTER_DIR/binaries/singbox-linux-amd64"
-cp "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" "$MASTER_DIR/binaries/libcronet.so"
-chmod +x "$MASTER_DIR/binaries/singbox-linux-amd64"
-for target in linux-amd64 linux-arm64 windows-amd64; do
-  case "$target" in
-    windows-amd64) FILE_NAME="sing-box.exe" ;;
-    *) FILE_NAME="sing-box" ;;
-  esac
-  if [ -f "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" ] && [ "$target" != "linux-amd64" ]; then
-    cp "$SINGBOX_SOURCE_DIR/$target/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"
-  elif [ -f "$SINGBOX_SOURCE_DIR/$FILE_NAME" ] && [ "$target" = "windows-amd64" ]; then
-    cp "$SINGBOX_SOURCE_DIR/$FILE_NAME" "$MASTER_DIR/binaries/singbox-$target"
+if [ "$DRY_RUN" = "0" ]; then
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || die "正式发布必须在 main 分支执行"
+  [ -z "$(git status --porcelain)" ] || die "工作区不干净，请先提交或暂存变更"
+  git fetch origin main --quiet
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "本地 main 与 origin/main 不一致，请先 git pull"
+  command -v gh >/dev/null 2>&1 || die "缺少 gh CLI"
+  gh auth status >/dev/null 2>&1 || die "gh CLI 未登录"
+  if gh release view "$TAG" >/dev/null 2>&1; then
+    die "Release $TAG 已存在；如需重建请先执行 gh release delete $TAG --yes"
   fi
-done
-# 版本号唯一源：system.service 读取 cwd/package.json；prisma.seed 供 db seed 命令使用
-# 路径经 argv 传入（MSYS 对参数做自动路径转换；内嵌 -e 脚本字符串则不会，Windows 下会得到 D:\d\... 坏路径）
-node -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$MASTER_DIR/package.json" "$VERSION"
-# 产物内生成 Prisma client（native 引擎供发布机冒烟；目标机 start.sh 首启重新 generate 生成 Linux 引擎）
-(cd "$MASTER_DIR" && node node_modules/prisma/build/index.js generate >/dev/null)
-
-echo "[5/8] 打包并生成 SHA-256 校验和"
-PACKAGE_DIR="$DIST/packages"
-tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" -C "$DIST/agent" linux-amd64
-tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" -C "$DIST/agent" linux-arm64
-tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" -C "$DIST/agent" darwin-amd64
-tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" -C "$DIST/agent" darwin-arm64
-# Git Bash 无 zip，回退 PowerShell Compress-Archive
-if command -v zip >/dev/null 2>&1; then
-  (cd "$DIST/agent" && zip -q -r "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" windows-amd64)
-else
-  powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -m "$DIST")/agent/windows-amd64' -DestinationPath '$(cygpath -m "$PACKAGE_DIR")/riri-agent_${VERSION}_windows_amd64.zip'"
 fi
-tar -czf "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" -C "$DIST/master" linux-amd64
-(
-  cd "$PACKAGE_DIR"
-  sha256sum "riri-agent_${VERSION}_linux_amd64.tar.gz" \
-            "riri-agent_${VERSION}_linux_arm64.tar.gz" \
-            "riri-agent_${VERSION}_darwin_amd64.tar.gz" \
-            "riri-agent_${VERSION}_darwin_arm64.tar.gz" \
-            "riri-agent_${VERSION}_windows_amd64.zip" \
-            "riri-master_${VERSION}_linux_amd64.tar.gz" > "$DIST/checksums.txt"
-)
 
-echo "[6/8] 提取 CHANGELOG 版本小节为发布说明"
-node -e '
+NEW_TAG=0
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "  -> Tag $TAG 已存在，复用现有 Tag"
+else
+  NEW_TAG=1
+  if [ "$DRY_RUN" = "0" ]; then
+    echo "  -> 创建附注 Tag $TAG"
+    git tag -a "$TAG" -m "release $TAG" HEAD
+  else
+    echo "  -> [dry-run] 模拟创建 Tag $TAG"
+  fi
+fi
+
+ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
+BINARIES_DIR="$ARTIFACT_ROOT/binaries"
+PACKAGE_DIR="$ARTIFACT_ROOT/packages"
+WORKTREE="$RIRI_ROOT/.cache/release-worktree"
+
+cleanup() {
+  if [ -d "$WORKTREE" ]; then
+    echo "清理临时 release-worktree..."
+    git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+    rm -rf "$WORKTREE"
+  fi
+  if [ "$DRY_RUN" = "1" ] && [ "$NEW_TAG" = "1" ]; then
+    git tag -d "$TAG" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+if [ "$SKIP_BUILD" = "0" ]; then
+  mkdir -p "$PACKAGE_DIR"
+
+  # ---------- Worktree 隔离 ----------
+  echo "[2/7] 准备独立构建工作区（git worktree）"
+  rm -rf "$WORKTREE"
+  git worktree prune >/dev/null 2>&1 || true
+  git worktree add --detach "$WORKTREE" HEAD >/dev/null
+
+  echo "[3/7] 在工作区中执行三端质量门禁"
+  (
+    cd "$WORKTREE"
+    pnpm install --frozen-lockfile
+    pnpm --filter @riricloud/server exec tsc --noEmit
+    pnpm --filter @riricloud/server lint
+    pnpm --filter @riricloud/server test
+    pnpm --filter @riricloud/server build
+    pnpm --filter @riricloud/web exec tsc --noEmit
+    pnpm --filter @riricloud/web lint
+    pnpm --filter @riricloud/web build
+    bash scripts/gate-agent.sh
+  )
+
+  echo "[4/7] 编译多平台 Agent 与 Sing-box 定制内核"
+  bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$VERSION"
+
+  echo "[5/7] 打包 Agent 多平台归档包"
+  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
+  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" -C "$BINARIES_DIR/agent/linux-arm64" riri-agent
+  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" -C "$BINARIES_DIR/agent/darwin-amd64" riri-agent
+  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" -C "$BINARIES_DIR/agent/darwin-arm64" riri-agent
+
+  if command -v zip >/dev/null 2>&1; then
+    (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" riri-agent.exe)
+  else
+    powershell -NoProfile -Command "Compress-Archive -Force -Path '$BINARIES_DIR/agent/windows-amd64/riri-agent.exe' -DestinationPath '$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip'"
+  fi
+
+  echo "[6/7] 精准装配主控端发行包（linux-amd64，仅含对应架构）"
+  bash "$RIRI_ROOT/scripts/bundle-master.sh" \
+    --target linux-amd64 \
+    --worktree "$WORKTREE" \
+    --version "$VERSION" \
+    --archive-dir "$PACKAGE_DIR"
+
+  (
+    cd "$PACKAGE_DIR"
+    sha256sum "riri-agent_${VERSION}_linux_amd64.tar.gz" \
+              "riri-agent_${VERSION}_linux_arm64.tar.gz" \
+              "riri-agent_${VERSION}_darwin_amd64.tar.gz" \
+              "riri-agent_${VERSION}_darwin_arm64.tar.gz" \
+              "riri-agent_${VERSION}_windows_amd64.zip" \
+              "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
+  )
+fi
+
+# ---------- 提取发布说明 ----------
+echo "  -> 提取 CHANGELOG 版本说明..."
+"$NODE_BIN" -e '
   const fs = require("fs");
   const version = process.argv[1];
   const md = fs.readFileSync(process.argv[3], "utf8");
@@ -269,22 +180,34 @@ node -e '
   let end = md.indexOf("\n## [", start + 1);
   if (end < 0) end = md.length;
   fs.writeFileSync(process.argv[2], md.slice(start, end).trim() + "\n");
-' "$VERSION" "$DIST/release-notes.md" "$WORKTREE/CHANGELOG.md"
+' "$VERSION" "$PACKAGE_DIR/release-notes.md" "$RIRI_ROOT/CHANGELOG.md"
 
-echo "[7/8] 创建 GitHub Release（本地构建产物，覆盖主控端与 Agent）"
-cd "$RIRI_ROOT"
-if [ "$NEW_TAG" = 1 ]; then
+if [ "$DRY_RUN" = "1" ]; then
+  echo ""
+  echo "========================================================"
+  echo " [dry-run] 演练完成！产物已生成至：$PACKAGE_DIR"
+  echo "========================================================"
+  cat "$PACKAGE_DIR/checksums.txt"
+  echo "========================================================"
+  echo "未推送 Tag，未调用 gh release create。"
+  exit 0
+fi
+
+# ---------- 正式发布 ----------
+echo "[7/7] 推送 Tag 并创建 GitHub Release"
+if [ "$NEW_TAG" = "1" ]; then
   git push origin "$TAG"
 fi
+
 gh release create "$TAG" \
   --title "$TAG" \
-  --notes-file "$DIST/release-notes.md" \
-  "$DIST/packages/riri-master_${VERSION}_linux_amd64.tar.gz" \
-  "$DIST/packages/riri-agent_${VERSION}_linux_amd64.tar.gz" \
-  "$DIST/packages/riri-agent_${VERSION}_linux_arm64.tar.gz" \
-  "$DIST/packages/riri-agent_${VERSION}_darwin_amd64.tar.gz" \
-  "$DIST/packages/riri-agent_${VERSION}_darwin_arm64.tar.gz" \
-  "$DIST/packages/riri-agent_${VERSION}_windows_amd64.zip" \
-  "$DIST/checksums.txt"
+  --notes-file "$PACKAGE_DIR/release-notes.md" \
+  "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
+  "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" \
+  "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" \
+  "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" \
+  "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" \
+  "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" \
+  "$PACKAGE_DIR/checksums.txt"
 
-echo "[8/8] 发布完成：$TAG（主控端发行包 + Agent 多平台产物见 GitHub Release）"
+echo "==> 发布完成：$TAG"

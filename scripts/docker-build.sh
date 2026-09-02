@@ -139,7 +139,7 @@ image_label() {
 export_images() {
   require_image_tags
 
-  local output_dir="${DOCKER_EXPORT_DIR:-$ARTIFACT_ROOT/docker/v${IMAGE_VERSION}/${PLATFORM_DIR}}"
+  local output_dir="${DOCKER_EXPORT_DIR:-$ARTIFACT_ROOT/docker/${PLATFORM_DIR}}"
   mkdir -p "$output_dir"
   EXPORT_DIR="$output_dir"
 

@@ -1,4 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { BinariesService, normalizeOsArch } from './binaries.service';
 
 describe('BinariesService', () => {
@@ -69,5 +72,56 @@ describe('BinariesService', () => {
     await expect(service.authorizeDownload(undefined)).rejects.toThrow('缺少 AgentToken');
     prisma.node.findUnique.mockResolvedValue(null);
     await expect(service.authorizeDownload('bad-token')).rejects.toThrow('无效的 AgentToken');
+  });
+
+  it('优先从持久仓 data/binaries 加载目标二进制', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'riri-bin-test-'));
+    try {
+      const dataDir = join(tempDir, 'data');
+      const staticDir = join(tempDir, 'binaries');
+      await mkdir(join(dataDir, 'binaries'), { recursive: true });
+      await mkdir(staticDir, { recursive: true });
+
+      await writeFile(join(staticDir, 'agent-linux-amd64'), 'static-agent-content');
+      await writeFile(join(dataDir, 'binaries', 'agent-linux-amd64'), 'runtime-agent-content');
+
+      process.env.RIRICLOUD_DATA_DIR = dataDir;
+      process.env.RIRICLOUD_BINARY_DIR = staticDir;
+
+      const testService = new BinariesService(prisma as never);
+      await testService.refresh();
+
+      const asset = testService.getAsset('agent-linux-amd64');
+      expect(asset.path).toBe(join(dataDir, 'binaries', 'agent-linux-amd64'));
+    } finally {
+      delete process.env.RIRICLOUD_DATA_DIR;
+      delete process.env.RIRICLOUD_BINARY_DIR;
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('持久仓无产物时回退到静态内置仓 binaries/', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'riri-bin-test-'));
+    try {
+      const dataDir = join(tempDir, 'data');
+      const staticDir = join(tempDir, 'binaries');
+      await mkdir(join(dataDir, 'binaries'), { recursive: true });
+      await mkdir(staticDir, { recursive: true });
+
+      await writeFile(join(staticDir, 'agent-linux-arm64'), 'static-agent-content');
+
+      process.env.RIRICLOUD_DATA_DIR = dataDir;
+      process.env.RIRICLOUD_BINARY_DIR = staticDir;
+
+      const testService = new BinariesService(prisma as never);
+      await testService.refresh();
+
+      const asset = testService.getAsset('agent-linux-arm64');
+      expect(asset.path).toBe(join(staticDir, 'agent-linux-arm64'));
+    } finally {
+      delete process.env.RIRICLOUD_DATA_DIR;
+      delete process.env.RIRICLOUD_BINARY_DIR;
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });
