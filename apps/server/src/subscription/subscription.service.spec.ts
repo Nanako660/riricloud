@@ -4,26 +4,54 @@ import { parse as parseYaml } from 'yaml';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeShadowsocksPassword } from '../common/inbound';
 import { SettingsService } from '../system/settings.service';
+import { LinesService } from '../lines/lines.service';
 import { resolveFormat, SubscriptionService } from './subscription.service';
 
 describe('SubscriptionService', () => {
   let service: SubscriptionService;
+  type NodeFixture = { id: string; name: string; serverHost: string; inbounds: Array<{ type: string; tag: string; port: number; paramsJson: string }> };
   const prisma = {
     user: { findUnique: jest.fn() },
     node: { findMany: jest.fn() },
     subscriptionTemplate: { findFirst: jest.fn(), findUnique: jest.fn() }
   };
   const settingsService = { getSettings: jest.fn() };
+  const linesService = {
+    getAvailableForPlan: jest.fn()
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         SubscriptionService,
         { provide: PrismaService, useValue: prisma },
-        { provide: SettingsService, useValue: settingsService }
+        { provide: SettingsService, useValue: settingsService },
+        { provide: LinesService, useValue: linesService }
       ]
     }).compile();
     service = moduleRef.get(SubscriptionService);
+  });
+
+  beforeEach(() => {
+    linesService.getAvailableForPlan.mockImplementation(async () => {
+      const nodes = await prisma.node.findMany();
+      return nodes.flatMap((source: NodeFixture) => source.inbounds.map((inbound) => ({
+        id: `${source.id}-${inbound.tag}`,
+        name: source.inbounds.length > 1 ? `${source.name}·${inbound.tag}` : source.name,
+        type: 'DIRECT',
+        relayMode: null,
+        endpointOverrideEnabled: false,
+        serverHost: source.serverHost,
+        serverPort: inbound.port,
+        serverName: null,
+        host: null,
+        trafficRate: 1,
+        tags: [],
+        level: 0,
+        protocolType: inbound.type,
+        params: JSON.parse(inbound.paramsJson)
+      })));
+    });
   });
 
   afterEach(() => jest.resetAllMocks());
@@ -249,6 +277,38 @@ describe('SubscriptionService', () => {
       const decoded = Buffer.from(result.body, 'base64').toString('utf8');
       expect(decoded).toContain(`hy2://${activeUser.uuid}@203.0.113.10:443?`);
     });
+  });
+
+  it('线路对外端点覆盖会写入三种订阅格式的 server 信息', async () => {
+    prisma.user.findUnique.mockResolvedValue(activeUser);
+    linesService.getAvailableForPlan.mockResolvedValue([{
+      id: 'line-override',
+      name: '覆盖线路',
+      type: 'DIRECT',
+      relayMode: null,
+      endpointOverrideEnabled: true,
+      serverHost: 'edge.example.com',
+      serverPort: 8443,
+      serverName: 'tls.example.com',
+      host: 'cdn.example.com',
+      trafficRate: 1,
+      tags: [],
+      level: 0,
+      protocolType: 'VLESS',
+      params: {
+        transport: { type: 'ws', path: '/proxy', host: 'origin.example.com' },
+        tls: { enabled: true, mode: 'tls', serverName: 'origin.example.com', alpn: ['http/1.1'], insecure: false }
+      }
+    }]);
+
+    const base64 = await service.getSubscription('tok-1');
+    expect(Buffer.from(base64.body, 'base64').toString('utf8')).toContain('vless://11111111-2222-3333-4444-555555555555@edge.example.com:8443');
+
+    const clash = await service.getSubscription('tok-1', { type: 'clash' });
+    expect(parseYaml(clash.body).proxies[0]).toMatchObject({ server: 'edge.example.com', port: 8443 });
+
+    const singbox = await service.getSubscription('tok-1', { type: 'sing-box' });
+    expect(JSON.parse(singbox.body).outbounds[0]).toMatchObject({ server: 'edge.example.com', server_port: 8443 });
   });
 
   describe('Clash Meta YAML 输出', () => {

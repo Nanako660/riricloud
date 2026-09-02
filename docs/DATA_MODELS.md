@@ -409,8 +409,8 @@ model SystemSetting {
 
 #### 安全层 (TLS / Reality / ACME)
 - `none`：无加密明文直连
-- `tls`：标准 TLS（`serverName`、`certificatePath`、`keyPath`、`certificate`、`key`、`alpn`、`insecure`）。线路关联 `Certificate` 时，服务端在生成 `config_sync` 的临时参数中以内嵌文本数组 `certificate: ["-----BEGIN CERTIFICATE-----..."]` 与 `key: ["-----BEGIN PRIVATE KEY-----..."]` 下发；未关联证书时继续使用 Agent 机本地路径。
-- `reality`：VLESS Reality 伪装（`dest`、`serverNames`、`privateKey`、`publicKey`、`shortIds`）
+- `tls`：标准 TLS（`serverName`、`certificatePath`、`keyPath`、`certificate`、`key`、`alpn`、`insecure`）。`alpn` 为字符串数组，管理端按传输层提供预设多选：TCP/HTTP 默认 `h2` + `http/1.1`，gRPC 默认 `h2`，WebSocket/HTTPUpgrade 默认 `http/1.1`，NaiveProxy 默认 `h2`；显式空数组表示不发送 ALPN。线路关联 `Certificate` 时，服务端在生成 `config_sync` 的临时参数中以内嵌文本数组 `certificate: ["-----BEGIN CERTIFICATE-----..."]` 与 `key: ["-----BEGIN PRIVATE KEY-----..."]` 下发；未关联证书时继续使用 Agent 机本地路径。
+- `reality`：VLESS Reality 伪装（`dest`、`serverNames`、`privateKey`、`publicKey`、`shortIds`）；Reality 不使用 `alpn`，管理端不展示该字段
 - `acme`：Sing-box 内置 ACME 自动申请证书（`domain`、`email`、`provider`）
 
 #### 协议专属参数结构

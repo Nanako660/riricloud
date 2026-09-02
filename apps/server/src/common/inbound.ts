@@ -24,6 +24,14 @@ export interface InboundTransport {
 
 export type TlsMode = 'none' | 'tls' | 'reality' | 'acme';
 
+const DEFAULT_TLS_ALPN = ['h2', 'http/1.1'];
+
+function defaultTlsAlpn(transport: TransportType): string[] {
+  if (transport === 'grpc') return ['h2'];
+  if (transport === 'ws' || transport === 'httpupgrade') return ['http/1.1'];
+  return [...DEFAULT_TLS_ALPN];
+}
+
 export interface InboundRealityConfig {
   dest: string; // 形如 "www.apple.com:443"
   serverNames: string[];
@@ -259,6 +267,13 @@ function asStringArray(value: unknown, fallback: string[]): string[] {
   return fallback;
 }
 
+function normalizeStringArray(value: unknown, fallback: string[]): string[] {
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+    return [...new Set(value.map((v) => (v as string).trim()).filter(Boolean))];
+  }
+  return fallback;
+}
+
 function asNonEmptyString(value: unknown, field: string): string {
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
@@ -291,7 +306,7 @@ function normalizeTransport(raw: unknown): InboundTransport {
   return res;
 }
 
-function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none'): InboundTlsConfig {
+function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none', defaultAlpn: string[] = DEFAULT_TLS_ALPN): InboundTlsConfig {
   const tls = (raw ?? {}) as Record<string, unknown>;
   const enabled = tls.enabled !== false && tls.mode !== 'none';
   const mode = (typeof tls.mode === 'string' ? tls.mode.toLowerCase() : defaultMode) as TlsMode;
@@ -300,7 +315,7 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none'): Inboun
     return { enabled: false, mode: 'none' };
   }
 
-  const alpn = asStringArray(tls.alpn, ['h3', 'h2', 'http/1.1']);
+  const alpn = normalizeStringArray(tls.alpn, defaultAlpn);
   const insecure = tls.insecure === true;
   const serverName = typeof tls.serverName === 'string' ? tls.serverName.trim() : undefined;
   const certificate = Array.isArray(tls.certificate) ? asStringArray(tls.certificate, []) : undefined;
@@ -404,7 +419,7 @@ export function normalizeInboundParams(
           }
         };
       }
-      const tls = normalizeTlsConfig(rawTls, rawTls ? 'tls' : 'reality');
+      const tls = normalizeTlsConfig(rawTls, rawTls ? 'tls' : 'reality', defaultTlsAlpn(transport.type));
       // Vision flow 依赖 TLS/Reality；明文 VLESS 必须省略 flow。
       const requestedFlow = typeof raw.flow === 'string' && raw.flow.trim() ? raw.flow.trim() : undefined;
       const flow =
@@ -422,7 +437,7 @@ export function normalizeInboundParams(
 
     case 'VMESS': {
       const transport = raw.transport ? normalizeTransport(raw.transport) : { type: 'tcp' as const };
-      const tls = normalizeTlsConfig(raw.tls, 'none');
+      const tls = normalizeTlsConfig(raw.tls, 'none', defaultTlsAlpn(transport.type));
       const alterId = Number(raw.alterId) || 0;
       const params: VmessParams = { alterId, transport, tls };
       return params as unknown as Record<string, unknown>;
@@ -430,7 +445,7 @@ export function normalizeInboundParams(
 
     case 'TROJAN': {
       const transport = raw.transport ? normalizeTransport(raw.transport) : { type: 'tcp' as const };
-      const tls = normalizeTlsConfig(raw.tls, 'tls');
+      const tls = normalizeTlsConfig(raw.tls, 'tls', defaultTlsAlpn(transport.type));
       if (!tls.enabled || tls.mode === 'none') {
         throw new BadRequestException('Trojan 协议必须启用 TLS 安全层');
       }
@@ -439,7 +454,7 @@ export function normalizeInboundParams(
     }
 
     case 'HYSTERIA2': {
-      const tls = normalizeTlsConfig(raw.tls, 'tls');
+      const tls = normalizeTlsConfig(raw.tls, 'tls', ['h3']);
       if (!tls.enabled || tls.mode === 'none') {
         throw new BadRequestException('Hysteria 2 协议必须配置 TLS 安全层');
       }
@@ -461,7 +476,7 @@ export function normalizeInboundParams(
     }
 
     case 'TUIC': {
-      const tls = normalizeTlsConfig(raw.tls, 'tls');
+      const tls = normalizeTlsConfig(raw.tls, 'tls', ['h3']);
       if (!tls.enabled || tls.mode === 'none') {
         throw new BadRequestException('TUIC 协议必须配置 TLS 安全层');
       }
@@ -496,7 +511,7 @@ export function normalizeInboundParams(
     }
 
     case 'NAIVE': {
-      const tls = normalizeTlsConfig(raw.tls, 'tls');
+      const tls = normalizeTlsConfig(raw.tls, 'tls', ['h2']);
       if (!tls.enabled || tls.mode === 'none') {
         throw new BadRequestException('NaiveProxy 协议必须启用 TLS 安全层');
       }

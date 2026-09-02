@@ -529,6 +529,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         const serverName = effectiveServerName(entry, tls.serverName);
         if (serverName) proxy.servername = serverName;
         if (tls.insecure) proxy['skip-cert-verify'] = true;
+        if (tls.alpn) proxy.alpn = [...tls.alpn];
       }
 
       Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));

@@ -23,7 +23,7 @@ describe('subscription builders with lines', () => {
       params: {
         flow: 'xtls-rprx-vision',
         transport: { type: 'ws', path: '/proxy', host: 'origin.example.com' },
-        tls: { enabled: true, mode: 'tls', serverName: 'origin.example.com', insecure: false }
+        tls: { enabled: true, mode: 'tls', serverName: 'origin.example.com', alpn: ['http/1.1'], insecure: false }
       }
     }
   };
@@ -36,6 +36,7 @@ describe('subscription builders with lines', () => {
       server: 'relay.example.com',
       port: 8443,
       servername: 'www.apple.com',
+      alpn: ['http/1.1'],
       'ws-opts': { path: '/proxy', headers: { Host: 'cdn.example.com' } }
     });
   });
@@ -46,7 +47,7 @@ describe('subscription builders with lines', () => {
       tag: '香港中继 [1.5x]',
       server: 'relay.example.com',
       server_port: 8443,
-      tls: { server_name: 'www.apple.com' },
+      tls: { server_name: 'www.apple.com', alpn: ['http/1.1'] },
       transport: { type: 'ws', path: '/proxy', headers: { Host: 'cdn.example.com' } }
     });
     const [uri] = buildUriList(user, [line]);

@@ -51,7 +51,7 @@
 | **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、流量数据自动刷新、标准/伪静态 Token URL 复制/重置、取消保留权益提示、可用线路 |
 | **`UI-22`** | 节点运维 | 远程升级弹窗 | `/admin/nodes/:id`（点击“升级中心”） | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | 当前/推荐版本对比、主控内置来源、自定义 URL/SHA-256 校验、导入主控、HTTP/WS 任务等待、下发中禁用状态、错误 Toast |
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
-| **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
+| **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、标准 TLS/ACME 的 ALPN 预设多选、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；Reality 不显示 ALPN；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
 | **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
 | **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、有效期状态、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
 | **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路 Donut 图、排行表格、明暗主题与移动端局部横向滚动 |
