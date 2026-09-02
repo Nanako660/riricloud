@@ -13,13 +13,15 @@ interface StatCardProps {
 export function StatCard({ title, value, hint, icon, className }: StatCardProps) {
   return (
     <Card className={cn(className)}>
-      <CardContent className="flex items-center justify-between p-6">
-        <div className="space-y-1">
-          <p className="text-muted-foreground text-sm font-medium">{title}</p>
-          <p className="text-2xl font-bold tabular-nums">{value}</p>
-          {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
+      <CardContent className="p-3.5 sm:p-4">
+        <div className="flex items-center justify-between gap-2 text-muted-foreground">
+          <p className="truncate text-xs font-medium">{title}</p>
+          {icon ? <div className="shrink-0 [&>svg]:size-4">{icon}</div> : null}
         </div>
-        {icon ? <div className="text-muted-foreground">{icon}</div> : null}
+        <div className="mt-2 space-y-0.5">
+          <p className="truncate text-lg font-bold tabular-nums tracking-tight sm:text-xl" title={value}>{value}</p>
+          {hint ? <p className="truncate text-[11px] text-muted-foreground" title={hint}>{hint}</p> : null}
+        </div>
       </CardContent>
     </Card>
   );

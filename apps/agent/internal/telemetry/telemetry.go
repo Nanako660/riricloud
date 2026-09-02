@@ -13,6 +13,8 @@ import (
 type Sample struct {
 	CPUUsage      float64
 	MemoryUsage   float64
+	UploadRate    float64
+	DownloadRate  float64
 	BandwidthRate float64
 }
 
@@ -29,29 +31,40 @@ func Collect() Sample {
 		memUsage = vm.UsedPercent
 	}
 
+	uploadRate, downloadRate := netRate()
 	return Sample{
 		CPUUsage:      cpuUsage,
 		MemoryUsage:   memUsage,
-		BandwidthRate: netRate(),
+		UploadRate:    uploadRate,
+		DownloadRate:  downloadRate,
+		BandwidthRate: uploadRate + downloadRate,
 	}
 }
 
-// netRate 以 1 秒差分估算全机网络吞吐
-func netRate() float64 {
-	before := totalNetBytes()
+// netRate 以 1 秒差分估算全机上行与下行吞吐。
+func netRate() (float64, float64) {
+	beforeSent, beforeRecv, beforeOK := totalNetBytes()
 	time.Sleep(time.Second)
-	after := totalNetBytes()
-	if after >= before {
-		return after - before
+	afterSent, afterRecv, afterOK := totalNetBytes()
+	if !beforeOK || !afterOK {
+		return 0, 0
 	}
-	return 0
+	return counterRate(afterSent, beforeSent), counterRate(afterRecv, beforeRecv)
 }
 
-func totalNetBytes() float64 {
+func totalNetBytes() (uint64, uint64, bool) {
 	counters, err := net.IOCounters(false)
 	if err != nil || len(counters) == 0 {
-		return 0
+		return 0, 0, false
 	}
 	c := counters[0]
-	return float64(c.BytesSent + c.BytesRecv)
+	return c.BytesSent, c.BytesRecv, true
+}
+
+// counterRate 处理单个累计计数器的 1 秒差分；回绕或异常值不参与统计。
+func counterRate(after, before uint64) float64 {
+	if after < before {
+		return 0
+	}
+	return float64(after - before)
 }

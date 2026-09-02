@@ -86,6 +86,12 @@
 - [x] ⭐ 完成 Server / Web / Agent / 文档门禁与 WS / HTTP 本地真实联调验收。
 - [x] ⭐ Agent 下载端点升级为 `GET /api/v1/downloads/agent`：按安装器 User-Agent 选择平台并 302 到受 AgentToken 保护的二进制资产。
 
+### Phase 4.3: 管理端流量分析与用户用量下钻（v0.4.16）
+- [x] ⭐ `TrafficLog` 增加可选 `lineId` 归属及复合时序索引，心跳入库自动关联 ACTIVE 入口线路并兼容历史空归属记录。
+- [x] ⭐ 新增管理员流量统计 API 与 `/admin/traffic` 页面，支持今日/24 小时/7 天/30 天动态分桶、补零时序、线路倍率计费、线路排行、Donut 图，以及节点实时上下行速率和 30 天历史速率聚合。
+- [x] ⭐ 用户管理新增流量明细下钻，展示配额画像、周期走势和线路消耗分布，移动端响应为全高 Sheet。
+- [x] ⭐ 同步 REST/数据模型/前端规范/视觉台账文档，并完成 Server/Web/Agent/文档/版本质量门禁。
+
 ### Phase 5: 部署自动化与端到端联调验收
 - [x] ⭐ 移除旧节点安装脚本与 `GET /api/v1/install.sh`，改为面板生成的原生 CLI 下载/安装命令；Agent 自己注册跨平台系统服务。
 - [x] ⭐ 编写主控端与 Agent 的多阶段 Dockerfile 及 `docker-compose.yml`，SQLite 使用持久化卷。
@@ -121,4 +127,3 @@
 - [x] 文档：模型、API/WS、架构、前端规范、视觉台账、路线图与 CHANGELOG 已同步。
 - [ ] 视觉截图回归：按 `docs/VISUAL_VERIFICATION.md` 仅在 Antigravity 环境、收到明确视觉验证请求后执行（按需执行）。
 - [ ] 真实代理客户端连通性：需要可用 VPS、Sing-box 内核及客户端环境，保留为部署环境验收项。
-

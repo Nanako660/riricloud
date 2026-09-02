@@ -49,6 +49,8 @@ type heartbeatData struct {
 	CPUUsage       float64            `json:"cpuUsage"`
 	MemoryUsage    float64            `json:"memoryUsage"`
 	BandwidthRate  float64            `json:"bandwidthRate"`
+	UploadRate     float64            `json:"uploadRate"`
+	DownloadRate   float64            `json:"downloadRate"`
 	KernelRunning  bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
 	AppliedVersion int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
 	LastError      string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
@@ -363,6 +365,8 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				CPUUsage:       sample.CPUUsage,
 				MemoryUsage:    sample.MemoryUsage,
 				BandwidthRate:  sample.BandwidthRate,
+				UploadRate:     sample.UploadRate,
+				DownloadRate:   sample.DownloadRate,
 				KernelRunning:  kernel.Running,
 				AppliedVersion: kernel.AppliedConfigVersion,
 				LastError:      kernel.LastError,

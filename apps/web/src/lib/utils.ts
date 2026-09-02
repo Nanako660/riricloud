@@ -19,3 +19,7 @@ export function formatBytes(bytes: number | bigint | null | undefined, decimals 
   const val = parseFloat((num / 1024 ** i).toFixed(decimals));
   return `${val} ${units[i]}`;
 }
+
+export function formatRate(bytesPerSecond: number | null | undefined, decimals = 1): string {
+  return `${formatBytes(bytesPerSecond, decimals)}/s`;
+}

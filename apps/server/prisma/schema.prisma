@@ -48,6 +48,8 @@ model Node {
   cpuUsage       Float?
   memoryUsage    Float?
   bandwidthRate  Float?
+  uploadRate     Float?
+  downloadRate   Float?
   kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
   configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
   lastProbeResult String? // 最近一次网络探针结果 JSON
@@ -62,9 +64,27 @@ model Node {
   entryLines  Line[]        @relation("LineEntryNode")
   exitLines   Line[]        @relation("LineExitNode")
   trafficLogs TrafficLog[]
+  rateMetrics NodeRateMetric[]
 
   @@index([status])
   @@index([isLocal])
+}
+
+model NodeRateMetric {
+  id               String   @id @default(uuid())
+  nodeId           String
+  bucketStart      DateTime
+  sampleCount      Int      @default(0)
+  uploadRateSum    Float    @default(0)
+  downloadRateSum  Float    @default(0)
+  uploadRatePeak   Float    @default(0)
+  downloadRatePeak Float    @default(0)
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, bucketStart])
+  @@index([nodeId, bucketStart])
+  @@index([bucketStart])
 }
 
 model Plan {
@@ -125,6 +145,7 @@ model Line {
   entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
   exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
   certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
+  trafficLogs   TrafficLog[]
 
   @@index([entryNodeId])
   @@index([exitNodeId])
@@ -216,16 +237,21 @@ model TrafficLog {
   id         String   @id @default(uuid())
   nodeId     String
   userId     String
+  lineId     String?
   upload     BigInt   @default(0) // 增量字节
   download   BigInt   @default(0)
   recordedAt DateTime @default(now())
 
   node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  line Line? @relation(fields: [lineId], references: [id], onDelete: SetNull)
 
   @@index([nodeId])
   @@index([userId])
+  @@index([lineId])
   @@index([recordedAt])
+  @@index([recordedAt, lineId])
+  @@index([recordedAt, userId])
 }
 
 model SystemSetting {

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Cloud, Gauge, GitBranch, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards } from 'lucide-react';
+import { Activity, Cloud, Gauge, GitBranch, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import {
@@ -40,6 +40,7 @@ export function AppSidebar() {
             label: '管理后台',
             items: [
               { to: '/admin/users', label: '用户管理', icon: Users, end: false },
+              { to: '/admin/traffic', label: '流量统计', icon: Activity, end: false },
               { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
               { to: '/admin/lines', label: '线路管理', icon: GitBranch, end: false },
               { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },

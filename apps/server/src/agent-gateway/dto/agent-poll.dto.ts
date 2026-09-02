@@ -115,6 +115,16 @@ export class AgentPollDto {
   @Min(0)
   bandwidthRate!: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  uploadRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  downloadRate?: number;
+
   @IsArray()
   @ArrayMaxSize(1024)
   @ValidateNested({ each: true })

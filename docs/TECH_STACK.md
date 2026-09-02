@@ -33,7 +33,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - **Sonner**：现代化轻量全局 Toast 提示。
 - **TanStack Table (React Table v8)**：复杂数据表格（节点列表、用户列表、审计日志）的核心驱动。
 - **CodeMirror 6（`@uiw/react-codemirror` + `@codemirror/lang-json` / `@codemirror/lang-css` / `@codemirror/lang-html`）**：节点详情页高级模式和系统设置页 CSS、HTML/JS 编辑器，带语法高亮与行号；`@uiw/react-codemirror` 为官方推荐的 React 封装，按路由懒加载分包。
-- **Recharts (via shadcn/ui Chart)**：用于呈现用户流量消耗趋势与节点负载（CPU/内存/带宽）可视化图表。
+- **Recharts (via shadcn/ui Chart)**：用于呈现管理员流量统计与单用户流量下钻的流量/速率时序面积图、柱状图和线路 Donut 图；图表通过 CSS 语义 Token 适配明暗主题。
 - **next-themes**：暗黑/明亮主题平滑切换与系统偏好监听。
 
 ---

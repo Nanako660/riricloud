@@ -182,6 +182,8 @@ export interface AdminNode {
   cpuUsage: number | null;
   memoryUsage: number | null;
   bandwidthRate: number | null;
+  uploadRate: number | null;
+  downloadRate: number | null;
   kernelRunning: boolean | null;
   configError: string | null;
   lastProbeResult: ProbeSnapshot | null;

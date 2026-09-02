@@ -12,11 +12,17 @@ describe('AgentGatewayService', () => {
   const txUserUpdate = jest.fn(async () => undefined);
   const txSubscriptionFindUnique = jest.fn();
   const txSubscriptionUpdate = jest.fn(async () => undefined);
+  const txRateFindUnique = jest.fn();
+  const txRateCreate = jest.fn(async () => undefined);
+  const txRateUpdate = jest.fn(async () => undefined);
+  const txRateDeleteMany = jest.fn(async () => undefined);
   const tx = {
     node: { update: txNodeUpdate },
     user: { findUnique: txUserFindUnique, update: txUserUpdate },
     trafficLog: { create: txTrafficCreate },
-    subscription: { findUnique: txSubscriptionFindUnique, update: txSubscriptionUpdate }
+    line: { findFirst: jest.fn() },
+    subscription: { findUnique: txSubscriptionFindUnique, update: txSubscriptionUpdate },
+    nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate, deleteMany: txRateDeleteMany }
   };
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
@@ -33,6 +39,8 @@ describe('AgentGatewayService', () => {
     jest.clearAllMocks();
     prisma.user.findMany.mockResolvedValue([]);
     txSubscriptionFindUnique.mockResolvedValue(null);
+    txRateFindUnique.mockResolvedValue(null);
+    tx.line.findFirst.mockResolvedValue(null);
   });
 
   const user = { uuid: 'uuid-1', email: 'user@example.com', password: 'secret', isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) };
@@ -135,16 +143,46 @@ describe('AgentGatewayService', () => {
 
   it('心跳遥测与流量扣减在同一事务内', async () => {
     txUserFindUnique.mockResolvedValue({ id: 'user-1', uuid: user.uuid });
+    tx.line.findFirst.mockResolvedValue({ id: 'line-1' });
     const heartbeat: HeartbeatData = { cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512, trafficRecords: [{ userUuid: user.uuid, upload: 100, download: 200 }] };
     await service.handleHeartbeat('node-1', heartbeat);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(txTrafficCreate).toHaveBeenCalled();
+    expect(txTrafficCreate).toHaveBeenCalledWith({
+      data: { nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200) }
+    });
     expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(300) } } });
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
   });
 
+  it('新 Agent 心跳落库上下行速率并写入五分钟聚合桶', async () => {
+    await service.handleHeartbeat('node-1', {
+      cpuUsage: 12,
+      memoryUsage: 30,
+      bandwidthRate: 460,
+      uploadRate: 120,
+      downloadRate: 340,
+      trafficRecords: []
+    });
+    expect(txNodeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ uploadRate: 120, downloadRate: 340, bandwidthRate: 460 })
+    }));
+    expect(txRateCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        nodeId: 'node-1',
+        bucketStart: expect.any(Date),
+        sampleCount: 1,
+        uploadRateSum: 120,
+        downloadRateSum: 340,
+        uploadRatePeak: 120,
+        downloadRatePeak: 340
+      })
+    });
+    expect(txRateDeleteMany).toHaveBeenCalledWith({ where: { bucketStart: { lt: expect.any(Date) } } });
+  });
+
   it('订阅存在时扣减 Subscription 并同步 User 镜像', async () => {
     txUserFindUnique.mockResolvedValue({ id: 'user-1', uuid: user.uuid });
+    tx.line.findFirst.mockResolvedValue({ id: 'line-1' });
     txSubscriptionFindUnique.mockResolvedValue({ id: 'sub-1' });
     const heartbeat: HeartbeatData = {
       cpuUsage: 12,
@@ -276,7 +314,7 @@ describe('AgentGatewayService', () => {
     await service.sweepStaleNodes();
     expect(prisma.node.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: { in: expect.arrayContaining(['ws-stale', 'http-stale']) }, status: 'ONLINE' },
-      data: { status: 'OFFLINE' }
+      data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
     }));
   });
 });
