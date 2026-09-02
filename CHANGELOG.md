@@ -14,6 +14,15 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [0.4.18] - 2026-09-03
+
+### Added
+
 - 新增 `scripts/build-binaries.sh`：自动化编译 Agent 5 平台架构与 Sing-box Linux 双架构定制内核（含 V2Ray API、uTLS、QUIC、NaiveProxy purego 与 libcronet.so），统一输出到 `artifacts/binaries/`。
 - 新增 `scripts/bundle-master.sh`：独立装配指定宿主架构的主控端生产发行包，精准注入匹配架构的内置 Agent 与 Sing-box，彻底剔除无关平台的二进制冗余。
 - `scripts/release.sh` 升级支持 `--dry-run` 完整构建演练与 `--skip-build` 快速发布重试模式。
@@ -22,6 +31,7 @@
 
 - 彻底收敛重构服务端二进制纳管体系（`BinariesService`）：废除 9 目录模糊搜索，建立 `data/binaries/`（持久仓）与 `binaries/`（内置仓）双层规范存储，非生产环境自动回退至本地开发产物，并新增启动看板日志输出。
 - 统一收敛全局构建产物目录拓扑至 `artifacts/`（`binaries/`、`master/`、`packages/`、`docker/`），清理遗留嵌套与冗余规则。
+
 
 
 ## [0.4.17] - 2026-09-03
