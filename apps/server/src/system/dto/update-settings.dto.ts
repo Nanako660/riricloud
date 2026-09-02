@@ -164,6 +164,11 @@ export class UpdateSettingsDto {
   @IsOptional()
   subscriptionBaseUrl?: string | null;
 
+  @ApiPropertyOptional({ example: false, description: '开启后用户端生成由 Nginx rewrite 到 /api/v1/sub/:token 的短链接' })
+  @IsBoolean()
+  @IsOptional()
+  subscriptionShortLinksEnabled?: boolean;
+
   @ApiPropertyOptional({ example: 24, minimum: 1, maximum: 168 })
   @Type(() => Number)
   @IsInt()

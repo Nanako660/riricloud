@@ -252,6 +252,23 @@ pnpm admin:reset -- --email admin@example.com
 docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
 ```
 
+### 6. Nginx 反向代理与订阅短链接
+
+生产环境推荐使用 Nginx 作为 HTTPS、反向代理、WebSocket 和订阅伪静态处理层。Master 继续只维护标准订阅接口：
+
+```text
+https://domain.com/api/v1/sub/<UUID>
+```
+
+复制 `scripts/nginx/riricloud.conf.example` 到 Nginx 配置目录并按域名、证书和上游地址修改，检查通过后 reload：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+示例会把严格 UUID 单段路径 `/<UUID>` 内部 rewrite 到 `/api/v1/sub/<UUID>`，保留 `?type=clash` 等查询参数，并为 `/ws/agent` 配置 WebSocket Upgrade。管理员在「系统设置 → 订阅与分发」开启短链接后，用户页面展示 `https://domain.com/<UUID>`；`subscriptionBaseUrl` 若为 `https://domain.com/panel`，则需同步使用示例中的 `/panel/<UUID>` rewrite 配置。短链接开关默认关闭，且不会自动检测 Nginx 是否完成配置。
+
 ---
 
 ## 🌐 开放接口与扩展
@@ -260,6 +277,7 @@ docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --emai
 主控订阅端点：`GET /api/v1/sub/:token`
 - **自动格式匹配**：根据 `?type=clash|singbox|base64` 参数或客户端 `User-Agent` 自动返回对应格式配置。
 - **流量与有效期响应头**：标准返回 `Subscription-Userinfo: upload=...; download=...; total=...; expire=...` 与 `Profile-Update-Interval`。
+- **Nginx 伪静态入口**：部署边缘配置后，`GET /<UUID>` 或 `GET /<prefix>/<UUID>` 由 Nginx rewrite 到上述标准接口，后端业务和响应语义保持不变。
 
 ### 2. OpenAPI / Swagger 接口契约
 主控端内置交互式 API 文档，启动后访问 `/api/docs` 即可查看并调试全部 RESTful 接口（认证、用户与订阅管理、节点与线路编排、套餐与模板管理、遥测与系统设置）。

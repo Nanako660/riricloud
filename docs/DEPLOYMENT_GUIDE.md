@@ -155,6 +155,27 @@ COMPOSE_PROFILES=agent pnpm docker:up
 pnpm docker:down
 ```
 
+### 1.5 Nginx 反向代理与订阅伪静态链接
+
+生产环境建议让 Nginx 作为唯一边缘代理，负责 HTTPS 终止、域名入口、订阅短链 rewrite、WebSocket Upgrade 和限流；Master 只监听内网地址并继续提供标准 API。配置示例位于 `scripts/nginx/riricloud.conf.example`，其中默认上游为 `http://127.0.0.1:3000`。
+
+```bash
+sudo cp scripts/nginx/riricloud.conf.example /etc/nginx/conf.d/riricloud.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+示例默认提供以下行为：
+
+- 严格匹配 `/<UUID>`，内部 rewrite 到 `/api/v1/sub/<UUID>`，不覆盖查询参数；`?type=clash`、`?type=sing-box` 和客户端 `User-Agent` 会继续参与后端格式协商。
+- `/ws/agent` 使用 HTTP/1.1 并转发 `Upgrade`、`Connection`，生产 Agent 地址使用 `wss://<domain>/ws/agent`。
+- `/api/**`、`/login`、`/admin`、SPA 路由和其他请求继续代理给 Master，不会被短链规则捕获。
+- 代理统一传递 `Host`、`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`。
+
+管理员在「系统设置 → 订阅与分发」开启「使用 Nginx 伪静态短链接」后，用户页面会展示 `https://domain.com/<UUID>`。若 `subscriptionBaseUrl` 设置为 `https://domain.com/panel`，前端会展示 `https://domain.com/panel/<UUID>`，必须同时把示例中的短链 location/rewrite 改成 `/panel/` 前缀。开关只改变展示地址，不会自动检测 Nginx 配置；配置不一致时应先关闭开关或修正 Nginx。
+
+短链只支持 GET 和严格 UUID 单段路径。Token 失效、订阅过期或账号被禁用时，仍由 Master 返回现有 404/403 响应。HTTPS 证书、域名 DNS、访问控制和限流属于 Nginx/部署环境职责。
+
 ---
 
 ## 2. 节点端 (Edge Node Agent) 部署

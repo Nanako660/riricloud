@@ -2,6 +2,8 @@
 
 所有 HTTP 接口基于 `http(s)://<master-host>/api/v1` 前缀。
 
+生产环境推荐由 Nginx 负责 HTTPS 终止、反向代理和边缘路由。后端唯一真实订阅接口仍为 `GET /api/v1/sub/:token`；伪静态订阅地址由 Nginx 将严格匹配的 UUID 单段路径内部 rewrite 到该接口，不新增 NestJS 路由或通用代理 middleware。
+
 > **实现状态（v0.4.5）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
@@ -118,7 +120,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, subscriptionShortLinksEnabled, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维参数。
 
 ---
 
@@ -370,6 +372,26 @@ Content-Type: application/json
 ```
 http(s)://<master-host>/api/v1/sub/:token
 ```
+
+### 3.0 Nginx 伪静态订阅地址
+
+部署了 Nginx 示例配置后，可额外使用以下对外地址：
+
+```text
+GET https://<domain>/<UUID>
+GET https://<domain>/<prefix>/<UUID>
+```
+
+这两个地址不是新的后端 API。Nginx 仅对严格匹配 UUID 的单段路径执行内部 rewrite：
+
+```text
+/<UUID>          -> /api/v1/sub/<UUID>
+/<prefix>/<UUID> -> /api/v1/sub/<UUID>
+```
+
+rewrite 不覆盖原始查询字符串，因此 `?type=clash`、`?type=sing-box` 等参数会继续传给订阅接口；`User-Agent` 和订阅响应头也由 Nginx 原样转发。`/login`、`/admin`、`/api/**`、`/ws/agent` 等非 UUID 路径继续交给 Master，WebSocket 路径单独配置 Upgrade/Connection 头。无效 Token、过期订阅和禁用账号继续沿用后端现有的 404/403 语义。
+
+前端系统设置 `subscriptionShortLinksEnabled` 默认关闭，只控制用户界面展示的链接形式，不检测 Nginx 是否已配置。`subscriptionBaseUrl` 可包含 pathname，例如 `https://domain.com/panel` 会生成 `https://domain.com/panel/<UUID>`；Nginx 的 location/rewrite 前缀必须与其保持一致。完整配置见 `scripts/nginx/riricloud.conf.example`。
 
 > **实现状态（v0.4.0）**：三种格式、自动协商与全协议线路输出均已实现 ⭐。订阅按**线路**逐条生成：仅含公开、启用且入口/出口节点均在线的线路；线路输出使用其最终对外地址/端口，只有启用 `endpointOverrideEnabled` 时才应用线路 SNI/Host 覆盖，否则回退到 Line 自身的 TLS/Transport 参数，并保留倍率名称（如 `[1.5x]`）。单条线路对应一个 `protocolType` + `params`，重名全局去重；`nodes` 字段仅作为旧客户端兼容镜像。
 

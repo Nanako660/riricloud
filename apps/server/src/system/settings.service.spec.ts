@@ -27,6 +27,7 @@ describe('SettingsService', () => {
     prisma.systemSetting.findMany.mockResolvedValue([
       { key: SETTING_KEYS.SITE_NAME, value: ' 我的面板 ' },
       { key: SETTING_KEYS.REGISTRATION_ENABLED, value: 'true' },
+      { key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED, value: '1' },
       { key: SETTING_KEYS.DEFAULT_TRAFFIC_LIMIT_BYTES, value: 'abc' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_MODE, value: 'whitelist' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_LIST, value: JSON.stringify(['@Example.COM', 'company.org']) },
@@ -36,6 +37,7 @@ describe('SettingsService', () => {
     const settings = await service.getSettings();
     expect(settings.siteName).toBe('我的面板');
     expect(settings.registrationEnabled).toBe(true);
+    expect(settings.subscriptionShortLinksEnabled).toBe(true);
     expect(settings.defaultTrafficLimitBytes).toBe(DEFAULTS.defaultTrafficLimitBytes);
     expect(settings.emailDomainList).toEqual(['example.com', 'company.org']);
     expect(settings.probePresetTargets).toEqual([{ type: 'tcp', target: 'example.com', port: 443 }]);
@@ -59,15 +61,32 @@ describe('SettingsService', () => {
     expect(result.defaultTrafficLimitBytes).toBe(214748364800);
   });
 
+  it('可保存 Nginx 短订阅链接开关', async () => {
+    prisma.systemSetting.upsert.mockResolvedValue({});
+    prisma.systemSetting.findMany.mockResolvedValue([]);
+    await service.updateSettings({ subscriptionShortLinksEnabled: true });
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
+      where: { key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED },
+      update: { value: 'true' },
+      create: {
+        key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED,
+        value: 'true',
+        description: '是否使用 Nginx 伪静态短订阅链接'
+      }
+    });
+  });
+
   it('公开设置严格过滤内部运维参数', async () => {
     prisma.systemSetting.findMany.mockResolvedValue([
       { key: SETTING_KEYS.SITE_NAME, value: '公开站点' },
       { key: SETTING_KEYS.JWT_SESSION_DAYS, value: '30' },
       { key: SETTING_KEYS.BINARY_DOWNLOAD_BASE_URL, value: 'https://internal.example.com' },
+      { key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED, value: 'true' },
       { key: SETTING_KEYS.CUSTOM_CSS, value: 'body {}' }
     ]);
     await expect(service.getPublicSettings()).resolves.toEqual(expect.objectContaining({
       siteName: '公开站点',
+      subscriptionShortLinksEnabled: true,
       customCss: 'body {}'
     }));
     const result = await service.getPublicSettings();
@@ -76,10 +95,10 @@ describe('SettingsService', () => {
   });
 
   it('重置指定键时删除覆盖值并返回默认值', async () => {
-    prisma.systemSetting.deleteMany.mockResolvedValue({ count: 2 });
+    prisma.systemSetting.deleteMany.mockResolvedValue({ count: 3 });
     prisma.systemSetting.findMany.mockResolvedValue([]);
-    const result = await service.resetToDefaults(['siteName', 'registrationEnabled']);
-    expect(prisma.systemSetting.deleteMany).toHaveBeenCalledWith({ where: { key: { in: ['siteName', 'registrationEnabled'] } } });
+    const result = await service.resetToDefaults(['siteName', 'registrationEnabled', 'subscriptionShortLinksEnabled']);
+    expect(prisma.systemSetting.deleteMany).toHaveBeenCalledWith({ where: { key: { in: ['siteName', 'registrationEnabled', 'subscriptionShortLinksEnabled'] } } });
     expect(result).toEqual(DEFAULTS);
   });
 });

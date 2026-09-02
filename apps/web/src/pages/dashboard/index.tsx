@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 
 import { formatBytes } from '@/lib/utils';
+import { buildSubscriptionUrl } from '@/lib/subscription-url';
 
 interface DashboardData {
   trafficLimitBytes: number;
@@ -65,8 +66,12 @@ export default function DashboardPage() {
     ? Number((BigInt(data.trafficUsedBytes) * 100n) / BigInt(data.trafficLimitBytes))
     : 0;
   const remaining = Math.max(0, data.trafficLimitBytes - data.trafficUsedBytes);
-  const baseUrl = publicSettings.data?.subscriptionBaseUrl?.trim().replace(/\/$/, '') || window.location.origin;
-  const subscriptionUrl = `${baseUrl}/api/v1/sub/${data.subscriptionToken}`;
+  const subscriptionUrl = buildSubscriptionUrl({
+    baseUrl: publicSettings.data?.subscriptionBaseUrl,
+    shortLinksEnabled: publicSettings.data?.subscriptionShortLinksEnabled,
+    origin: window.location.origin,
+    token: data.subscriptionToken
+  });
 
   return (
     <PageContainer>

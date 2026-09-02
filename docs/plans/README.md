@@ -28,7 +28,8 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [RiriCloud 全站移动端适配](./archive/2026-09-02-web-mobile-adaptation.md) | `v0.4.15` | 2026-09-01 | — |
-| [管理端线路流量统计与单用户流量统计](./archive/2026-09-02-admin-traffic-dashboard-and-user-statistics.md) | `v0.4.16` | 2026-09-02 | — |
+| [Nginx 反向代理与订阅伪静态链接](./archive/2026-09-02-nginx-subscription-short-link.md) | `0.4.x` | 2026-09-02 | — |
+| [管理端线路流量大盘与单用户流量统计](./archive/2026-09-02-admin-traffic-dashboard-and-user-statistics.md) | `v0.4.16` | 2026-09-02 | — |
 | [系统设置全参数可配置化与现代化管理面板](./archive/2026-09-01-system-settings-full-config.md) | `v0.4.8` | 2026-09-01 | — |
 | [开发脚本整理与 Docker WSL 约束](./archive/2026-09-01-dev-scripts.md) | `脚本治理` | 2026-09-01 | — |
 | [证书管理中心与 Docker 本地持久化路径改造](./archive/2026-09-01-certificate-management-and-docker-persistence.md) | `v0.4.15` | 2026-09-01 | — |

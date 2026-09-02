@@ -14,6 +14,7 @@ export interface PublicSystemSettings {
   supportCustomUrl: string;
   registrationEnabled: boolean;
   subscriptionBaseUrl: string;
+  subscriptionShortLinksEnabled: boolean;
   customCss: string;
   customHeadHtml: string;
 }
