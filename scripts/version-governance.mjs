@@ -158,15 +158,24 @@ function bumpSemVer(currentVersion, bumpType) {
  * 提取并清理 Unreleased 小节内容
  */
 function extractUnreleasedContent(changelog) {
-  const unreleasedMatch = changelog.match(/^##\s*\[Unreleased\]\r?\n([\s\S]*?)(?=^##\s*\[|$)/m);
-  if (!unreleasedMatch) {
-    return { hasUnreleased: false, content: '' };
+  const startMatch = changelog.match(/^##\s*\[Unreleased\]/m);
+  if (!startMatch || startMatch.index === undefined) {
+    return { hasUnreleased: false, content: '', startIndex: -1, endIndex: -1 };
   }
 
-  const rawContent = unreleasedMatch[1] || '';
+  const startIndex = startMatch.index + startMatch[0].length;
+  const afterStart = changelog.slice(startIndex);
+  const nextSectionMatch = afterStart.match(/\r?\n(?=##\s*\[)/);
+  const endIndex = nextSectionMatch && nextSectionMatch.index !== undefined
+    ? startIndex + nextSectionMatch.index
+    : changelog.length;
+
+  const rawContent = changelog.slice(startIndex, endIndex);
   return {
     hasUnreleased: true,
     content: rawContent.trim(),
+    startIndex: startMatch.index,
+    endIndex,
   };
 }
 
@@ -202,7 +211,7 @@ function cmdBump(args) {
   // 2. 更新 CHANGELOG.md
   if (fs.existsSync(CHANGELOG_PATH)) {
     let changelog = fs.readFileSync(CHANGELOG_PATH, 'utf-8');
-    const { hasUnreleased, content: unreleasedContent } = extractUnreleasedContent(changelog);
+    const { hasUnreleased, content: unreleasedContent, startIndex, endIndex } = extractUnreleasedContent(changelog);
 
     // 判断 Unreleased 内容是否有实际条目（除空分类标题外有条目）
     const lines = unreleasedContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -210,15 +219,19 @@ function cmdBump(args) {
 
     let newVersionSection = '';
     if (hasMeaningfulContent) {
-      newVersionSection = `## [${nextVersion}] - ${today}\n\n${unreleasedContent}\n\n`;
+      const cleanedContent = unreleasedContent
+        .replace(/###\s+(Added|Changed|Fixed|Removed|Security|Deprecated)\s*(?=(?:\r?\n)*###|$)/g, '')
+        .trim();
+      newVersionSection = `## [${nextVersion}] - ${today}\n\n${cleanedContent}\n\n`;
     } else {
       newVersionSection = `## [${nextVersion}] - ${today}\n\n### Added\n\n- \n\n### Changed\n\n- \n\n### Fixed\n\n- \n\n`;
     }
 
     if (hasUnreleased) {
       // 替换旧的 ## [Unreleased]... 为新的 ## [Unreleased] 模板 + 定稿版本小节
-      const unreleasedFullRegex = /^##\s*\[Unreleased\]\r?\n([\s\S]*?)(?=^##\s*\[|$)/m;
-      changelog = changelog.replace(unreleasedFullRegex, `${UNRELEASED_TEMPLATE}\n${newVersionSection}`);
+      const before = changelog.slice(0, startIndex);
+      const after = changelog.slice(endIndex).replace(/^\r?\n+/, '\n\n');
+      changelog = `${before}${UNRELEASED_TEMPLATE}\n${newVersionSection}${after}`;
       fs.writeFileSync(CHANGELOG_PATH, changelog, 'utf-8');
       logSuccess(`CHANGELOG.md 已将 [Unreleased] 转换为 ## [${nextVersion}] - ${today}，并重置顶部 [Unreleased] 模板`);
     } else {
