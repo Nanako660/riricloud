@@ -40,12 +40,14 @@ describe('TrafficService', () => {
     ...overrides
   });
 
+  const localDay = (hour: number, minute: number) => new Date(2026, 8, 2, hour, minute);
+
   it('今日按小时分桶并为无数据时隙补零', async () => {
     prisma.line.count.mockResolvedValue(2);
     prisma.user.count.mockResolvedValue(3);
     prisma.trafficLog.findMany.mockResolvedValue([
-      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 300n, recordedAt: new Date('2026-09-02T01:15:00+08:00'), line: line() },
-      { nodeId: 'node-1', userId: 'user-2', upload: 50n, download: 50n, recordedAt: new Date('2026-09-02T03:05:00+08:00'), line: line({ id: 'line-2', name: '日本 CN2', trafficRate: 2 }) }
+      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 300n, recordedAt: localDay(1, 15), line: line() },
+      { nodeId: 'node-1', userId: 'user-2', upload: 50n, download: 50n, recordedAt: localDay(3, 5), line: line({ id: 'line-2', name: '日本 CN2', trafficRate: 2 }) }
     ]);
 
     const result = await service.getOverview('today');
@@ -121,7 +123,7 @@ describe('TrafficService', () => {
       }
     });
     prisma.trafficLog.findMany.mockResolvedValue([
-      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 200n, recordedAt: new Date('2026-09-02T01:00:00+08:00'), line: line() }
+      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 200n, recordedAt: localDay(1, 0), line: line() }
     ]);
 
     const result = await service.getUserDetail('user-1', 'today');
