@@ -27,9 +27,7 @@ import { useAdminPlans } from '../plans/use-plans';
 import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
 
-function formatGB(bytes: number): string {
-  return `${(bytes / 1024 ** 3).toFixed(0)} GB`;
-}
+import { formatBytes } from '@/lib/utils';
 
 // 状态色规范：激活=success、封禁=destructive（FRONTEND_UI_GUIDELINES §状态色）
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -122,7 +120,7 @@ export default function AdminUsersPage() {
             <div className="w-40 space-y-1">
               <Progress value={percent} />
               <p className="text-muted-foreground text-xs tabular-nums">
-                {formatGB(used)} / {formatGB(limit)}（{percent}%）
+                {formatBytes(used)} / {formatBytes(limit)}（{percent}%）
               </p>
             </div>
           );

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, CheckCircle2, Gauge, HardDrive, HelpCircle, Megaphone, Radio, Sparkles, X } from 'lucide-react';
+import { CalendarClock, CheckCircle2, ChevronRight, Gauge, HardDrive, HelpCircle, Megaphone, Radio, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 import { usePublicSettings } from '@/lib/public-settings';
@@ -25,12 +25,7 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(2)} ${units[i]}`;
-}
+import { formatBytes } from '@/lib/utils';
 
 interface DashboardData {
   trafficLimitBytes: number;
@@ -93,7 +88,19 @@ export default function DashboardPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Sparkles className="h-4 w-4" />我的订阅</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4" />我的订阅
+          </CardTitle>
+          {data.plan ? (
+            <Button asChild variant="ghost" size="sm" className="gap-1 text-xs text-muted-foreground hover:text-foreground">
+              <Link to="/subscription">
+                订阅详情
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          ) : null}
+        </CardHeader>
         <CardContent>
           {data.plan ? (
             <div className="space-y-3">
