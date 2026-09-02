@@ -23,7 +23,7 @@ cp .env.example .env   # 编辑：JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD 必�
 - 生产环境 `AUTO_SEED=false` 时创建管理员、内嵌默认订阅模板和系统保留的 `Master-Local`，不会创建演示用户、套餐和线路；开发/演示环境明确设置 `AUTO_SEED=true` 才会额外执行完整演示 seed。内嵌模板允许管理员通过模板编辑器修改，但不能删除。
 - 重置已有管理员密码：`./admin-reset.sh --email admin@example.com`（默认隐藏交互输入）；自动化场景可用 `printf '%s\n' 'new-password' | ./admin-reset.sh --email admin@example.com --password-stdin`。该命令不会创建或提权账号。
 - 主控端静态托管由 `apps/server/src/static/web-static.ts` 实现（探测顺序：`WEB_DIST_PATH` 环境变量 → monorepo 开发布局 → 发行包 `web-dist/`）。
-- 主控二进制分发目录为发行包内的 `binaries/`；其中 `agent-linux-amd64` 与 `singbox-linux-amd64` 供内置本机 Agent 使用，其他架构资产用于远程 Agent 升级。生产环境建议设置 `MASTER_LOCAL_HOST=<master-domain>`，或设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>` 自动推导订阅地址；否则新库默认使用本机回环地址。
+- 主控二进制分发目录为发行包内的 `binaries/`；其中 `agent-linux-amd64` 与 `singbox-linux-amd64` 供内置本机 Agent 使用，其他架构资产用于远程 Agent 升级。生产环境建议在「系统设置 → 基础与品牌」配置 `publicBaseUrl=https://<master-domain>`；未配置时，节点管理请求会按反向代理的 `X-Forwarded-Proto` 与 `X-Forwarded-Host` 自动匹配当前网站域名，也可设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>` 作为环境变量兜底。
 
 ### 1.3 方式二：源码构建与运行
 

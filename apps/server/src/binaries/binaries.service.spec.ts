@@ -38,6 +38,22 @@ describe('BinariesService', () => {
     );
   });
 
+  it('系统设置未配置时使用请求域名生成二进制地址', async () => {
+    const settings = { getSettings: jest.fn().mockResolvedValue({ binaryDownloadBaseUrl: '', publicBaseUrl: '' }) };
+    const configured = new BinariesService(prisma as never, settings as never);
+    await expect(configured.buildConfiguredDownloadUrl('agent-linux-amd64', 'secret-token', 'https://panel.example.com')).resolves.toBe(
+      'https://panel.example.com/api/v1/downloads/binaries/agent-linux-amd64?token=secret-token'
+    );
+  });
+
+  it('全站访问地址作为二进制分发地址的默认配置', async () => {
+    const settings = { getSettings: jest.fn().mockResolvedValue({ binaryDownloadBaseUrl: '', publicBaseUrl: 'https://panel.example.com' }) };
+    const configured = new BinariesService(prisma as never, settings as never);
+    await expect(configured.buildConfiguredDownloadUrl('agent-linux-amd64', 'secret-token')).resolves.toBe(
+      'https://panel.example.com/api/v1/downloads/binaries/agent-linux-amd64?token=secret-token'
+    );
+  });
+
   it('未知目标不会被当作可下载资产', () => {
     expect(() => service.getAsset('unknown-target')).toThrow(NotFoundException);
   });

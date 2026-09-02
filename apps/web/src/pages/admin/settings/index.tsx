@@ -41,6 +41,7 @@ import {
 interface SystemSettings {
   siteName: string;
   siteDescription: string;
+  publicBaseUrl: string;
   logoUrl: string;
   faviconUrl: string;
   siteAnnouncement: string;
@@ -75,6 +76,7 @@ interface SystemSettings {
 const settingsSchema = z.object({
   siteName: z.string().trim().min(1, '站点名不能为空').max(32),
   siteDescription: z.string().max(120),
+  publicBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的全站访问 URL'),
   logoUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Logo URL'),
   faviconUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Favicon URL'),
   siteAnnouncement: z.string().max(10000),
@@ -120,7 +122,7 @@ export default function AdminSettingsPage() {
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
     defaultValues: toForm({
-      siteName: '', siteDescription: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
+      siteName: '', siteDescription: '', publicBaseUrl: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       defaultPlanId: null, defaultTrafficLimitBytes: 100 * 1024 ** 3, defaultValidityDays: 0, emailDomainMode: 'none',
       emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
@@ -187,8 +189,9 @@ export default function AdminSettingsPage() {
             </TabsList>
 
             <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户仪表盘。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
-              <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
-              <SettingsInput name="siteDescription" label="副标题描述" placeholder="多节点代理管理面板" />
+               <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
+               <SettingsInput name="siteDescription" label="副标题描述" placeholder="多节点代理管理面板" />
+               <div className="space-y-2 md:col-span-2"><SettingsInput name="publicBaseUrl" label="全站访问 URL" placeholder="https://panel.example.com" description="用于生成 Agent 安装命令、升级地址和二进制下载地址；留空时自动匹配当前访问域名。" /><SetOriginButton name="publicBaseUrl" /></div>
               <SettingsInput name="logoUrl" label="Logo URL" placeholder="https://cdn.example.com/logo.svg" description="留空时使用默认云朵图标。" />
               <SettingsInput name="faviconUrl" label="Favicon URL" placeholder="https://cdn.example.com/favicon.ico" />
               <SettingsTextarea name="siteAnnouncement" label="全局公告横幅" className="md:col-span-2" rows={5} description="支持标题、粗体、列表、行内代码和安全的 HTTPS 链接 Markdown。" />
@@ -210,7 +213,7 @@ export default function AdminSettingsPage() {
             </CardContent></Card></TabsContent>
 
             <TabsContent value="subscription"><Card><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL" placeholder="https://panel.example.com" description="用于用户端拼装订阅链接；可包含 Nginx 对外使用的路径，留空时使用当前面板地址。" /><SetOriginButton /></div>
+               <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL" placeholder="https://panel.example.com" description="用于用户端拼装订阅链接；可包含 Nginx 对外使用的路径，留空时使用当前面板地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
               <SettingsSwitch name="subscriptionShortLinksEnabled" label="使用 Nginx 伪静态短链接" description="开启后展示 https://domain.com/<UUID>；请先在 Nginx 中配置对应 rewrite 规则。" />
               <SettingsInput name="subscriptionUpdateIntervalHours" label="客户端更新周期（小时）" type="number" min={1} max={168} />
               <SettingsSelect name="defaultTemplateId" label="全局默认订阅模板" options={[{ value: 'none', label: '不指定，回退到标记为默认的模板' }, ...(templates.data ?? []).map((template) => ({ value: template.id, label: `${template.name}${template.isDefault ? '（当前默认）' : ''}` }))]} />
@@ -271,15 +274,16 @@ function SettingsEditor({ name, label, description, extensions }: { name: FieldP
   return <FormField control={control} name={name} render={({ field }) => <FormItem className="min-w-0"><FormLabel className="flex items-center gap-2"><Code2 className="h-4 w-4" />{label}</FormLabel><FormControl><div className="min-w-0 overflow-hidden rounded-md border bg-background shadow-sm"><CodeMirror value={String(field.value ?? '')} height="220px" theme={editorTheme} extensions={extensions} basicSetup={{ lineNumbers: true, foldGutter: true }} onChange={field.onChange} /></div></FormControl><FormDescription>{description}</FormDescription><FormMessage /></FormItem>} />;
 }
 
-function SetOriginButton() {
+function SetOriginButton({ name }: { name: 'publicBaseUrl' | 'subscriptionBaseUrl' }) {
   const { setValue } = useFormContext<SettingsForm>();
-  return <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setValue('subscriptionBaseUrl', window.location.origin, { shouldDirty: true })}><Link2 />使用当前面板地址</Button>;
+  return <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setValue(name, window.location.origin, { shouldDirty: true })}><Link2 />使用当前面板地址</Button>;
 }
 
 function toForm(settings: SystemSettings): SettingsForm {
   return {
     siteName: settings.siteName,
     siteDescription: settings.siteDescription,
+    publicBaseUrl: settings.publicBaseUrl,
     logoUrl: settings.logoUrl,
     faviconUrl: settings.faviconUrl,
     siteAnnouncement: settings.siteAnnouncement,
@@ -316,6 +320,7 @@ function toPayload(values: SettingsForm) {
   return {
     siteName: values.siteName,
     siteDescription: values.siteDescription,
+    publicBaseUrl: values.publicBaseUrl,
     logoUrl: values.logoUrl,
     faviconUrl: values.faviconUrl,
     siteAnnouncement: values.siteAnnouncement,

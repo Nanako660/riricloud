@@ -76,6 +76,15 @@ describe('SettingsService', () => {
     });
   });
 
+  it('读取全站访问 URL 设置', async () => {
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.PUBLIC_BASE_URL, value: ' https://panel.example.com/ ' }
+    ]);
+    await expect(service.getSettings()).resolves.toEqual(expect.objectContaining({
+      publicBaseUrl: 'https://panel.example.com/'
+    }));
+  });
+
   it('公开设置严格过滤内部运维参数', async () => {
     prisma.systemSetting.findMany.mockResolvedValue([
       { key: SETTING_KEYS.SITE_NAME, value: '公开站点' },

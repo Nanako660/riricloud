@@ -424,6 +424,7 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 - 系统设置页固定使用「基础与品牌 / 注册与用户 / 订阅与分发 / Agent 运维 / 安全与高级」五个 `Tabs`，Tab 图标统一固定为 `16px`，所有字段由 React Hook Form + Zod 管理，保存和重置操作使用 Sonner 提示结果。
 - Logo、Favicon、站点名、公告、页脚和客服入口通过公开站点信息动态感知；登录页、已认证外壳和用户仪表盘共享同一 Query 缓存，不在页面内硬编码品牌文案。
 - 公告横幅使用安全的 Markdown 子集渲染，支持本地收起记忆；订阅链接统一通过 `apps/web/src/lib/subscription-url.ts` 构造，优先使用配置的 `subscriptionBaseUrl`，没有有效订阅时必须引导进入套餐市场。
+- 系统设置的“基础与品牌”页签提供 `publicBaseUrl` 全站访问 URL，用于主控生成 Agent 安装、升级和二进制下载地址；URL 字段旁提供“使用当前面板地址”快捷填充，并明确说明留空时服务端会按当前反向代理域名自动匹配。
 - `subscriptionShortLinksEnabled=false` 时展示标准 `.../api/v1/sub/<UUID>`；开启时展示由 Nginx rewrite 提供的 `.../<UUID>`，`subscriptionBaseUrl` 中的 pathname 必须原样保留并与部署配置一致。系统设置开关旁必须明确提示“先配置 Nginx”，但不在前端检测代理状态。
 - CSS 与 HTML/JS 头部代码编辑器使用 CodeMirror，代码区域保持固定高度和等宽字体；头部注入仅接受管理员配置，文案需提示只粘贴可信代码。
 - CSS 与 HTML/JS 头部代码编辑器必须读取 `next-themes` 的 `resolvedTheme`，在浅色/深色模式下分别传入 CodeMirror 的 `light` / `dark` 主题，禁止依赖默认浅色主题造成深色页面出现白色编辑区；编辑器外层使用语义化背景与边框 Token。

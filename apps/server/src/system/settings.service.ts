@@ -16,6 +16,7 @@ export interface ProbePresetTarget {
 export const SETTING_KEYS = {
   SITE_NAME: 'siteName',
   SITE_DESCRIPTION: 'siteDescription',
+  PUBLIC_BASE_URL: 'publicBaseUrl',
   LOGO_URL: 'logoUrl',
   FAVICON_URL: 'faviconUrl',
   SITE_ANNOUNCEMENT: 'siteAnnouncement',
@@ -50,6 +51,7 @@ export const SETTING_KEYS = {
 export interface SystemSettings {
   siteName: string;
   siteDescription: string;
+  publicBaseUrl: string;
   logoUrl: string;
   faviconUrl: string;
   siteAnnouncement: string;
@@ -107,6 +109,7 @@ export type PublicSystemSettings = Pick<
 export const DEFAULTS: SystemSettings = {
   siteName: 'RiriCloud',
   siteDescription: '多节点代理管理面板',
+  publicBaseUrl: '',
   logoUrl: '',
   faviconUrl: '',
   siteAnnouncement: '',
@@ -144,6 +147,7 @@ export const DEFAULTS: SystemSettings = {
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   siteName: '站点名称',
   siteDescription: '站点副标题描述',
+  publicBaseUrl: '全站对外访问地址',
   logoUrl: '站点 Logo 地址',
   faviconUrl: '站点 Favicon 地址',
   siteAnnouncement: '全局公告横幅',
@@ -187,6 +191,7 @@ export class SettingsService {
     return {
       siteName: this.readString(map, 'siteName'),
       siteDescription: this.readString(map, 'siteDescription'),
+      publicBaseUrl: this.readString(map, 'publicBaseUrl'),
       logoUrl: this.readString(map, 'logoUrl'),
       faviconUrl: this.readString(map, 'faviconUrl'),
       siteAnnouncement: this.readString(map, 'siteAnnouncement'),
