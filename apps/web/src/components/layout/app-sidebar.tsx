@@ -44,9 +44,9 @@ export function AppSidebar() {
               { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
               { to: '/admin/lines', label: '线路管理', icon: GitBranch, end: false },
               { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },
-              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
               { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
               { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
+              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
             ]
           }
         ]
