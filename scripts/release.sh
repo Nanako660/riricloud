@@ -32,12 +32,8 @@ to_os_path() {
 remove_dir_safe() {
   local dir="$1"
   [ -d "$dir" ] || return 0
-  if command -v cmd.exe >/dev/null 2>&1; then
-    cmd.exe /c "if exist \"$(to_os_path "$dir")\" rmdir /s /q \"$(to_os_path "$dir")\"" >/dev/null 2>&1 || true
-  fi
-  if [ -d "$dir" ]; then
-    rm -rf "$dir" 2>/dev/null || true
-  fi
+  chmod -R u+w "$dir" 2>/dev/null || true
+  rm -rf "$dir" 2>/dev/null || true
 }
 
 DRY_RUN=0
