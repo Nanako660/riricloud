@@ -80,6 +80,8 @@ RUN pnpm --filter @riricloud/server deploy --prod /out/server \
 
 FROM gcr.io/distroless/nodejs20-debian12 AS runtime
 
+ARG TARGETARCH=amd64
+
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
@@ -108,6 +110,9 @@ COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
+COPY --from=agent-build /out/riri-agent /app/binaries/agent-linux-${TARGETARCH}
+COPY --from=singbox-build /sing-box /app/binaries/singbox-linux-${TARGETARCH}
+COPY --from=singbox-build /libcronet.so /app/binaries/libcronet.so
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 0

@@ -16,6 +16,8 @@
 
 ### Changed
 
+- 优化 Docker 镜像构建（Dockerfile）：在 runtime 阶段自动将匹配宿主架构的 Agent、Sing-box 定制内核及 libcronet.so 内置进 `/app/binaries/` 静态基线仓，容器即便在挂载空白持久卷时也能开箱对外提供同平台二进制的下载与分发。
+
 ### Fixed
 
 - 修复 Windows 环境下文件原子替换因瞬态文件句柄占用导致的重命名失败，增加带退避的重试机制。
