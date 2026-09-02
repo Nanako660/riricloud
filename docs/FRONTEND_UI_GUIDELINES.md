@@ -221,9 +221,9 @@ toast.promise(reloadAgentPromise, {
 
 响应式弹窗统一通过 `ResponsiveDialog` / `ResponsiveDialogContent` 承载：桌面端保持 Dialog，`767px` 及以下切换为右侧全高 Sheet，宽度占满视口并在内容区滚动。移动端导航使用 `SidebarProvider` 的 `openMobile` 状态与 Sheet 抽屉，路由切换后关闭抽屉；不得为每个业务页面重复实现媒体查询和抽屉状态。
 
-### 6.3 加载占位 (Skeleton)
+### 6.3 加载占位 (Skeleton) 与数据平滑补间过渡
 
-页面加载与卡片数据请求中，禁止使用全屏巨型 Spinner 打断用户体验，必须使用 `Skeleton` 还原真实 UI 的骨架结构：
+1. **初次加载**：页面加载与卡片首次数据请求中，禁止使用全屏巨型 Spinner 打断用户体验，必须使用 `Skeleton` 还原真实 UI 的骨架结构：
 ```tsx
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -239,6 +239,8 @@ export function NodeCardSkeleton() {
   );
 }
 ```
+
+2. **参数/时间颗粒度切换（防闪屏约束）**：在 Tabs、筛选器、分页或时间跨度（如今日/24h/7d/30d）切换时，严禁使用粗粒度的 `isPending ? <Skeleton /> : ...` 导致整页 DOM 与图表被硬性卸载并闪烁骨架屏；必须配合 TanStack Query 的 `placeholderData: keepPreviousData`，条件渲染仅在首次无数据时触发骨架屏（`isPending && !data`），已有数据更新时保持原有视图并施加微透明过渡（如 `isFetching && 'opacity-85'`），图表通过数据补间平滑更新。
 
 ---
 
