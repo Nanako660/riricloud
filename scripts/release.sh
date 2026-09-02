@@ -151,12 +151,21 @@ fi
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
 CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 SINGBOX_SOURCE_DIR="${SINGBOX_BINARY_DIR:-$RIRI_ROOT/.tools/sing-box}"
+DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION"
+if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ] && [ -f "$DOWNLOAD_DIR/linux-amd64/sing-box" ]; then
+	SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
+fi
+
 if [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ]; then
-	SINGBOX_VERSION_OUTPUT="$($SINGBOX_SOURCE_DIR/linux-amd64/sing-box version 2>/dev/null || true)"
+	SINGBOX_VERSION_OUTPUT="$("$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" version 2>/dev/null || true)"
 else
 	SINGBOX_VERSION_OUTPUT=""
 fi
-if ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
+
+# 若存在已有二进制且同目录下包含 libcronet.so，而在非 Linux 宿主上无法直接执行 ELF 探测输出，则复用已存在构建
+if [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" ] && [ -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ] && [ -z "$SINGBOX_VERSION_OUTPUT" ]; then
+	echo "检测到跨平台预构建的 Sing-box 与 libcronet.so（宿主非 Linux x64，复用现有二进制）"
+elif ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
 	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
 	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
 	|| ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
@@ -167,7 +176,6 @@ if ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
 	command -v curl >/dev/null 2>&1 || die "缺少 curl，无法获取 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
 	command -v tar >/dev/null 2>&1 || die "缺少 tar，无法解压 Sing-box 源码；请设置 SINGBOX_BINARY_DIR"
 	command -v go >/dev/null 2>&1 || die "缺少 Go 1.25.5+，无法构建启用 V2Ray API 的 Sing-box；请设置 SINGBOX_BINARY_DIR"
-	DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION"
 	mkdir -p "$DOWNLOAD_DIR/linux-amd64"
 	if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
 		echo "获取内置本机 Agent 所需的 Sing-box v$SINGBOX_VERSION 源码"
@@ -192,16 +200,19 @@ if ! printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
 		  -o "$DOWNLOAD_DIR/linux-amd64/sing-box" ./cmd/sing-box
 	)
 	SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR"
-	SINGBOX_VERSION_OUTPUT="$($SINGBOX_SOURCE_DIR/linux-amd64/sing-box version)"
+	SINGBOX_VERSION_OUTPUT="$("$SINGBOX_SOURCE_DIR/linux-amd64/sing-box" version 2>/dev/null || true)"
 fi
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
-	|| die "Sing-box 未启用 with_v2ray_api，无法提供按用户流量统计"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
-	|| die "Sing-box 未启用 with_utls，无法提供 VLESS Reality"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
-	|| die "Sing-box 未启用 with_quic，无法提供 Hysteria2/TUIC"
-printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
-	|| die "Sing-box 未启用 with_naive_outbound，无法提供 NaiveProxy"
+
+if [ -n "$SINGBOX_VERSION_OUTPUT" ]; then
+	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_v2ray_api' \
+		|| die "Sing-box 未启用 with_v2ray_api，无法提供按用户流量统计"
+	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_utls' \
+		|| die "Sing-box 未启用 with_utls，无法提供 VLESS Reality"
+	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_quic' \
+		|| die "Sing-box 未启用 with_quic，无法提供 Hysteria2/TUIC"
+	printf '%s\n' "$SINGBOX_VERSION_OUTPUT" | grep -q 'with_naive_outbound' \
+		|| die "Sing-box 未启用 with_naive_outbound，无法提供 NaiveProxy"
+fi
 if [ ! -f "$SINGBOX_SOURCE_DIR/linux-amd64/libcronet.so" ]; then
 	die "Sing-box 启用了 NaiveProxy，但缺少同目录的 libcronet.so"
 fi
