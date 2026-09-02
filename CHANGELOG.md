@@ -14,6 +14,8 @@
 
 ### Added
 
+- 新增中继模式（Relay）实操与运维指南：在 `docs/DEPLOYMENT_GUIDE.md` 中新增第 5 节《线路编排与中继模式指南》，系统阐述直连与中继拓扑、盲转发与协议代理机制、入口/出口端口及 TCP/UDP 传输层映射规范、云安全组放行策略与多跳拓展方案；并在 `docs/ARCHITECTURE.md` 中完善中继数据流向与独立端口管道架构说明。
+
 ### Changed
 
 - 优化 Docker 镜像构建（Dockerfile）：在 runtime 阶段自动将匹配宿主架构的 Agent、Sing-box 定制内核及 libcronet.so 内置进 `/app/binaries/` 静态基线仓，容器即便在挂载空白持久卷时也能开箱对外提供同平台二进制的下载与分发。
