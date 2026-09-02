@@ -11,7 +11,8 @@ import { useAdminPlans, usePlanMutations, type Plan } from './use-plans';
 import { useAdminTemplates } from '../templates/use-templates';
 import { useAdminLines } from '../lines/use-lines';
 
-function formatBytes(value: number) { return `${(value / 1024 ** 3).toFixed(value % 1024 ** 3 ? 1 : 0)} GiB`; }
+import { formatBytes } from '@/lib/utils';
+
 const matchLabels = { ALL: '全部线路', TAGS: '按标签', EXPLICIT: '指定线路' };
 
 export default function PlansPage() {

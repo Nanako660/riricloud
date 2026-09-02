@@ -77,6 +77,7 @@ apps/web/src/
 │   │   ├── stat-card.tsx        # 统计指标卡片
 │   │   ├── empty-state.tsx      # 空状态插槽组件
 │   │   ├── copy-button.tsx      # 订阅链接一键复制按钮
+│   │   ├── line-card.tsx        # 统一线路展示卡片（compact/full 双变体）
 │   │   └── traffic-badge.tsx    # 流量单位格式化与状态胶囊
 │   └── layout/             # 【全局框架布局】
 │       ├── app-layout.tsx       # 主控端侧边栏 + 主内容区 Inset 总布局
@@ -247,7 +248,7 @@ export function NodeCardSkeleton() {
 
 1. **左侧导航栏 (`AppSidebar`)**：采用 shadcn/ui 官方 `Sidebar` (v4) `variant="inset"` 范式，无右侧贯穿硬分割线（`border-r-0`），与最外层底层底色（`bg-sidebar`）自然融为一体。顶部品牌区高度固定为 `h-14`，底部展示极简版本号；移动端使用左侧 Sheet 抽屉，支持遮罩、Escape 和导航后自动关闭。
 2. **顶部全局操作栏 (`AppHeader`)**：位于主内容大卡片上方，高度为 `h-14`，与左侧品牌 Logo 水平高度严格齐平（1:1 对齐）。右侧放置紧凑的微操作按钮组：`ThemeToggle`（明暗三态图标切换）与 `UserMenu`（首字母圆形头像与个人中心下拉菜单）。移动端自动展示抽屉折叠触发器与站点名。
-3. **主工作区浮雕大卡片 (`<main>` / Inset Canvas)**：主工作区位于顶部操作栏下方，桌面端（`md:` 及以上）应用 Inset 样式（`md:mr-2 md:mb-2 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm md:bg-background`），页面标题（`PageHeader`）直接作为大卡片顶部内容起始点，避免卡片内部被任何多余横线切断。
+3. **主工作区浮雕大卡片 (`<main>` / Inset Canvas)**：主工作区位于顶部操作栏下方，桌面端（`md:` 及以上）应用 Inset 样式（`md:mr-4 md:mb-4 md:rounded-xl md:border md:border-sidebar-border/40 md:shadow-sm md:bg-background`），页面标题（`PageHeader`）直接作为大卡片顶部内容起始点，避免卡片内部被任何多余横线切断。
 4. **明暗双模式三层阶梯景深 (Three-Tier Surface Elevation)**：
    - **L0 底层画框**：`bg-sidebar`（浅色 `zinc-100/60` / 深色 `zinc-950`），顶栏与侧边栏沉浸于底层；
    - **L1 主画布容器**：`main` 浮雕大卡片（浅色纯白 `bg-background` / 深色 `zinc-900`）；
@@ -381,8 +382,8 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 | 页面 | 路由 | 主要内容 | 交互边界 |
 | :--- | :--- | :--- | :--- |
 | 套餐市场 | `/market` | 公开套餐网格、流量/期限/价格、当前套餐标记 | 订购或升配必须经 AlertDialog 二次确认 |
-| 我的订阅 | `/subscription` | 当前套餐、流量进度、到期时间、Token 链接、可用线路 | 重置 Token 与取消订阅必须经 AlertDialog；取消需说明到期前仍可使用 |
-| 可用线路 | `/lines` | 当前套餐授权的线路、倍率、标签、中继机制与底层健康状态 | 无订阅时引导前往套餐市场；线路状态只读 |
+| 我的订阅 | `/subscription` | 当前套餐完整画像、流量进度、到期时间、Token 链接、LineCard 紧凑线路概览 | 重置 Token 与取消订阅必须经 AlertDialog；消除冗余复制按钮，唯一使用输入框内联 CopyButton；提供前往套餐市场的升配入口 |
+| 可用线路 | `/lines` | 当前套餐授权的线路、倍率、标签、中继机制与底层健康状态 | 复用 LineCard 完整变体展示拓扑与在线状态；无订阅时引导前往套餐市场；线路状态只读 |
 | 套餐管理 | `/admin/plans` | 套餐卡片、上下架状态、匹配模式、模板关联 | 删除使用中的套餐只显示服务端错误并建议下架 |
 | 线路管理 | `/admin/lines` | 直连/中继线路表格、类型/状态/标签筛选、排序、批量启停、复制、解析测试 | 删除使用 AlertDialog；中继表单必须校验入口节点/端口/机制 |
 | 线路编辑弹窗 | `/admin/lines`（点击新建/编辑） | 默认打开的“入站配置”页签与“线路高级设置”页签；入站页集中配置协议、入口节点、监听地址/端口、Transport、TLS/Reality/ACME 与协议专属参数，高级页配置出口拓扑、对外覆盖、倍率与线路属性 | 使用 Tabs 切换；页签内容全部平面展开，以分区标题和 Separator 区分层级，不使用 Accordion 或嵌套卡片；两页共享草稿并统一保存；覆盖开关默认关闭且保留已填值；协议切换清理不适用字段；Reality 私钥留空表示保留服务端密钥；提交使用 React Hook Form + Zod |

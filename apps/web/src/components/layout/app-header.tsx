@@ -11,7 +11,7 @@ export function AppHeader() {
   const logoUrl = publicSettings.data?.logoUrl;
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 px-3 text-sidebar-foreground sm:gap-4 sm:px-4 md:px-2 md:pr-4">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-3 px-3 text-sidebar-foreground sm:gap-4 sm:px-4 md:px-4">
       <div className="flex items-center gap-2 md:hidden">
         <SidebarTrigger />
         <div className="flex items-center gap-2">
