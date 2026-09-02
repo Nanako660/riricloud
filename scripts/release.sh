@@ -18,6 +18,17 @@ fi
 
 die() { echo "发布失败：$*" >&2; exit 1; }
 
+to_os_path() {
+  local p="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$p"
+  elif command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 DRY_RUN=0
 SKIP_BUILD=0
 TAG_PARAM=""
@@ -148,7 +159,9 @@ if [ "$SKIP_BUILD" = "0" ]; then
   if command -v zip >/dev/null 2>&1; then
     (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" riri-agent.exe)
   else
-    powershell -NoProfile -Command "Compress-Archive -Force -Path '$BINARIES_DIR/agent/windows-amd64/riri-agent.exe' -DestinationPath '$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip'"
+    WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
+    WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip")"
+    powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
   fi
 
   echo "[6/7] 精准装配主控端发行包（linux-amd64，仅含对应架构）"
@@ -180,7 +193,7 @@ echo "  -> 提取 CHANGELOG 版本说明..."
   let end = md.indexOf("\n## [", start + 1);
   if (end < 0) end = md.length;
   fs.writeFileSync(process.argv[2], md.slice(start, end).trim() + "\n");
-' "$VERSION" "$PACKAGE_DIR/release-notes.md" "$RIRI_ROOT/CHANGELOG.md"
+' "$VERSION" "$(to_os_path "$PACKAGE_DIR/release-notes.md")" "$(to_os_path "$RIRI_ROOT/CHANGELOG.md")"
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ""
