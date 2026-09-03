@@ -18,10 +18,10 @@ func TestRecordsFromCountersAggregatesUserTraffic(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("got %d records, want 2", len(records))
 	}
-	if records[0] != (Record{UserID: "a@example.com", Upload: 50}) {
+	if records[0] != (Record{UserID: "a@example.com", UploadTotal: 50}) {
 		t.Fatalf("unexpected first record: %+v", records[0])
 	}
-	if records[1] != (Record{UserID: "z@example.com", Upload: 100, Download: 200}) {
+	if records[1] != (Record{UserID: "z@example.com", UploadTotal: 100, DownloadTotal: 200}) {
 		t.Fatalf("unexpected second record: %+v", records[1])
 	}
 }
@@ -36,7 +36,7 @@ func TestCollectorUsesConfiguredQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Collect returned error: %v", err)
 	}
-	if len(records) != 1 || records[0].UserID != "user-1" || records[0].Upload != 64 {
+	if len(records) != 1 || records[0].UserID != "user-1" || records[0].UploadTotal != 64 {
 		t.Fatalf("unexpected records: %+v", records)
 	}
 }

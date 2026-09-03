@@ -135,6 +135,7 @@ model Node {
   entryLines      Line[]        @relation("LineEntryNode")
   exitLines       Line[]        @relation("LineExitNode")
   trafficLogs     TrafficLog[]
+  trafficCursors  TrafficCursor[]
   rateMetrics     NodeRateMetric[]
 
   @@index([status])
@@ -159,6 +160,24 @@ model NodeRateMetric {
   @@unique([nodeId, bucketStart])
   @@index([nodeId, bucketStart])
   @@index([bucketStart])
+}
+
+// ==============================
+// 2.1.1 流量累计游标 (TrafficCursor，v0.5.0)
+// 每个节点按 Agent 上报的原始凭证保存已观察累计值，避免断线重试重复计费。
+// ==============================
+model TrafficCursor {
+  id           String   @id @default(uuid())
+  nodeId       String
+  credential   String   // Sing-box 用户名称，通常为邮箱，也兼容 User.uuid
+  uploadTotal  BigInt   @default(0)
+  downloadTotal BigInt  @default(0)
+  updatedAt    DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, credential])
+  @@index([nodeId, updatedAt])
 }
 
 // ==============================
@@ -536,7 +555,9 @@ model SystemSetting {
 
 `User.trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`subscriptionToken` 暂时保留为兼容镜像。订阅模块存在时以 `Subscription` 为准，每次订购、升配、管理员修改或 Token 重置在同一事务中同步镜像；旧迁移/旧测试缺少订阅表时沿用原 User 配额路径。
 
-用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 按心跳周期上报。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。`TrafficLog` 与两处已用流量更新必须在同一短事务中完成；节点实时遥测与速率聚合独立落库，历史速率桶由低频巡检按保留周期清理，不在每个心跳事务内执行删除。
+用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 使用 `QueryStats(reset=false)` 上报累计值。Master 以 `nodeId + credential` 查询 `TrafficCursor` 计算增量：首次出现计入当前值，累计值上升只计入差额，累计值下降视为内核重启/计数器重置并计入当前值，同时记录告警，累计值相等则不生成流水。未知凭证只更新游标，不计费；用户之后恢复时只计算新增流量。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。
+
+每次账务事务同时提交 `TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 和 `User.trafficUsedBytes`。同一节点积压的心跳允许合并为最新快照，用户与订阅配额按批次聚合更新，因而重试和中间样本丢失不会重复计费或丢失累计差额。节点实时遥测与速率聚合独立落库，历史速率桶由低频巡检按保留周期清理，不在每个心跳事务内执行删除。
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 

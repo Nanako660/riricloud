@@ -15,11 +15,11 @@ import (
 
 const DefaultAddress = "127.0.0.1:10085"
 
-// Record 是一个心跳周期内的用户流量增量。
+// Record 是 Sing-box 返回的用户累计流量快照。
 type Record struct {
-	UserID   string
-	Upload   uint64
-	Download uint64
+	UserID        string
+	UploadTotal   uint64
+	DownloadTotal uint64
 }
 
 // Counter 是 V2Ray API 返回的单个计数，单独定义便于测试解析逻辑。
@@ -30,8 +30,7 @@ type Counter struct {
 
 type queryFunc func(context.Context, string) ([]Counter, error)
 
-// Collector 通过 reset=true 读取并清零本周期计数。读取失败时不清零，
-// 下次成功读取会把积累期间的流量一次性上报，避免因短暂重连丢流量。
+// Collector 通过 reset=false 读取 Sing-box 累计计数，Master 负责计算增量。
 type Collector struct {
 	log   *logrus.Entry
 	query queryFunc
@@ -68,7 +67,7 @@ func queryStats(parent context.Context, address string) ([]Counter, error) {
 
 	response, err := NewStatsServiceClient(conn).QueryStats(ctx, &QueryStatsRequest{
 		Patterns: []string{"user>>>"},
-		Reset_:   true,
+		Reset_:   false,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("query sing-box stats: %w", err)
@@ -101,9 +100,9 @@ func recordsFromCounters(counters []Counter) []Record {
 		}
 		value := uint64(counter.Value)
 		if parts[3] == "uplink" {
-			record.Upload += value
+			record.UploadTotal += value
 		} else {
-			record.Download += value
+			record.DownloadTotal += value
 		}
 	}
 

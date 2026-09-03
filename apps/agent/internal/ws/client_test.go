@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 )
 
 func TestHeartbeatJSONIncludesSplitRates(t *testing.T) {
-	payload, err := json.Marshal(heartbeatData{BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficRecords: []heartbeatTraffic{}})
+	payload, err := json.Marshal(heartbeatData{ProtocolVersion: protocol.Version, BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficSnapshots: []heartbeatTraffic{{UserUUID: "u", UploadTotal: 1, DownloadTotal: 2}}})
 	if err != nil {
 		t.Fatalf("marshal heartbeat: %v", err)
 	}
@@ -27,6 +29,9 @@ func TestHeartbeatJSONIncludesSplitRates(t *testing.T) {
 	}
 	if uploadRate != 256 || downloadRate != 512 || bandwidthRate != 768 {
 		t.Fatalf("unexpected split rates: %#v", decoded)
+	}
+	if string(decoded["trafficSnapshots"]) != `[{"userUuid":"u","uploadTotal":"1","downloadTotal":"2"}]` {
+		t.Fatalf("unexpected cumulative traffic encoding: %s", decoded["trafficSnapshots"])
 	}
 }
 

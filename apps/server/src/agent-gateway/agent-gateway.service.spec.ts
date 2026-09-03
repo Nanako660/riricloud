@@ -11,6 +11,8 @@ describe('AgentGatewayService', () => {
   const txUserUpdate = jest.fn(async () => undefined);
   const txSubscriptionFindMany = jest.fn();
   const txSubscriptionUpdate = jest.fn(async () => undefined);
+  const txTrafficCursorFindMany = jest.fn();
+  const txTrafficCursorUpsert = jest.fn(async () => undefined);
   const txRateFindUnique = jest.fn();
   const txRateCreate = jest.fn(async () => undefined);
   const txRateUpdate = jest.fn(async () => undefined);
@@ -18,6 +20,7 @@ describe('AgentGatewayService', () => {
     user: { findMany: txUserFindMany, update: txUserUpdate },
     trafficLog: { createMany: txTrafficCreateMany },
     subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate },
+    trafficCursor: { findMany: txTrafficCursorFindMany, upsert: txTrafficCursorUpsert },
     nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate }
   };
   const prisma = {
@@ -38,6 +41,7 @@ describe('AgentGatewayService', () => {
     prisma.user.findMany.mockResolvedValue([]);
     txUserFindMany.mockResolvedValue([]);
     txSubscriptionFindMany.mockResolvedValue([]);
+    txTrafficCursorFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
     prisma.line.findFirst.mockResolvedValue(null);
     (service as unknown as { nextRateMetricCleanupAt: number }).nextRateMetricCleanupAt = 0;
@@ -144,7 +148,7 @@ describe('AgentGatewayService', () => {
   it('心跳遥测独立落库，流量账务在单独事务内完成', async () => {
     txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
     prisma.line.findFirst.mockResolvedValue({ id: 'line-1' });
-    const heartbeat: HeartbeatData = { cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512, trafficRecords: [{ userUuid: user.uuid, upload: 100, download: 200 }] };
+    const heartbeat: HeartbeatData = { protocolVersion: 2, cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512, trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }] };
     await service.handleHeartbeat('node-1', heartbeat);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -152,7 +156,7 @@ describe('AgentGatewayService', () => {
       data: expect.objectContaining({ cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512 })
     }));
     expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: [{ nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200) }]
+      data: [expect.objectContaining({ nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200), recordedAt: expect.any(Date) })]
     });
     expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(300) } } });
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
@@ -165,8 +169,10 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 460,
       uploadRate: 120,
       downloadRate: 340,
-      trafficRecords: []
+      protocolVersion: 2,
+      trafficSnapshots: []
     });
+    await (service as unknown as { flushRateMetrics: () => Promise<void> }).flushRateMetrics();
     expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ uploadRate: 120, downloadRate: 340, bandwidthRate: 460 })
     }));
@@ -192,7 +198,8 @@ describe('AgentGatewayService', () => {
       cpuUsage: 12,
       memoryUsage: 30,
       bandwidthRate: 512,
-      trafficRecords: [{ userUuid: user.uuid, upload: 4503599627370497, download: 4503599627370498 }]
+      protocolVersion: 2,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '4503599627370497', downloadTotal: '4503599627370498' }]
     };
     await service.handleHeartbeat('node-1', heartbeat);
     expect(txSubscriptionUpdate).toHaveBeenCalledWith({
@@ -205,6 +212,103 @@ describe('AgentGatewayService', () => {
     });
   });
 
+  it('累计快照只按游标差额计费，重复快照不会重复扣减', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    txTrafficCursorFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ credential: user.uuid, uploadTotal: 100n, downloadTotal: 200n }]);
+
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }]
+    });
+    txTrafficCreateMany.mockClear();
+    txUserUpdate.mockClear();
+    txTrafficCursorUpsert.mockClear();
+
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }]
+    });
+    expect(txTrafficCreateMany).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
+    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('累计快照支持丢失中间样本并处理单方向计数器重置', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    txTrafficCursorFindMany.mockResolvedValue([
+      { credential: user.uuid, uploadTotal: 1000n, downloadTotal: 2000n }
+    ]);
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '25', downloadTotal: '2500' }]
+    });
+    expect(txTrafficCreateMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ upload: 25n, download: 500n })]
+    });
+  });
+
+  it('未知凭证只建立游标基线，之后只计入新增流量', async () => {
+    txUserFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    txTrafficCursorFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ credential: user.uuid, uploadTotal: 100n, downloadTotal: 200n }]);
+
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }]
+    });
+    expect(txTrafficCreateMany).not.toHaveBeenCalled();
+
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '150', downloadTotal: '250' }]
+    });
+    expect(txTrafficCreateMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ upload: 50n, download: 50n })]
+    });
+  });
+
+  it('不同节点的累计游标相互隔离', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    txTrafficCursorFindMany.mockResolvedValue([]);
+    await Promise.all([
+      service.handleHeartbeat('node-1', {
+        protocolVersion: 2,
+        cpuUsage: 1,
+        memoryUsage: 2,
+        bandwidthRate: 3,
+        trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '0' }]
+      }),
+      service.handleHeartbeat('node-2', {
+        protocolVersion: 2,
+        cpuUsage: 1,
+        memoryUsage: 2,
+        bandwidthRate: 3,
+        trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '0' }]
+      })
+    ]);
+    expect(txTrafficCreateMany).toHaveBeenCalledTimes(2);
+  });
+
   it('同一节点的并发心跳按顺序执行', async () => {
     let releaseFirst!: () => void;
     const firstUpdate = new Promise<void>((resolve) => { releaseFirst = resolve; });
@@ -215,14 +319,16 @@ describe('AgentGatewayService', () => {
       cpuUsage: 1,
       memoryUsage: 2,
       bandwidthRate: 3,
-      trafficRecords: []
+      protocolVersion: 2,
+      trafficSnapshots: []
     });
     await new Promise((resolve) => setImmediate(resolve));
     const second = service.handleHeartbeat('node-serial', {
       cpuUsage: 4,
       memoryUsage: 5,
       bandwidthRate: 6,
-      trafficRecords: []
+      protocolVersion: 2,
+      trafficSnapshots: []
     });
     await new Promise((resolve) => setImmediate(resolve));
     expect(nodeUpdate).toHaveBeenCalledTimes(1);
@@ -254,7 +360,8 @@ describe('AgentGatewayService', () => {
       cpuUsage: 1,
       memoryUsage: 2,
       bandwidthRate: 3,
-      trafficRecords: []
+      protocolVersion: 2,
+      trafficSnapshots: []
     })).rejects.toThrow(UnauthorizedException);
   });
 
@@ -267,7 +374,7 @@ describe('AgentGatewayService', () => {
       .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
     await service.register('poll-node', socket);
-    await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(socket.close).toHaveBeenCalledWith(4002, 'switched to HTTP polling');
     expect(service.isCurrentSocket('poll-node', socket)).toBe(false);
   });
@@ -278,7 +385,7 @@ describe('AgentGatewayService', () => {
       .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
       .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
-    const first = await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    const first = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(first.needUpdate).toBe(true);
     expect(first.singboxConfig).toEqual(expect.objectContaining({ inbounds: [] }));
     expect(first.nextPollSecs).toBe(15);
@@ -291,7 +398,8 @@ describe('AgentGatewayService', () => {
       memoryUsage: 2,
       bandwidthRate: 3,
       appliedConfigVersion: first.version,
-      trafficRecords: []
+      protocolVersion: 2,
+      trafficSnapshots: []
     });
     expect(second.needUpdate).toBe(false);
     expect(second.singboxConfig).toBeNull();
@@ -308,7 +416,7 @@ describe('AgentGatewayService', () => {
       .mockResolvedValueOnce({ id: 'http-task-node', name: 'HTTP 任务节点', status: 'ONLINE' })
       .mockResolvedValueOnce({ id: 'http-task-node', serverHost: '198.51.100.11', configOverride: null, entryLines: [], exitLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
-    const response = await service.poll('token', { cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficRecords: [] });
+    const response = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(response.tasks).toHaveLength(1);
     const taskId = response.tasks[0].data.taskId;
 
@@ -337,7 +445,8 @@ describe('AgentGatewayService', () => {
       cpuUsage: 12,
       memoryUsage: 30,
       bandwidthRate: 512,
-      trafficRecords: [],
+      protocolVersion: 2,
+      trafficSnapshots: [],
       agentVersion: '0.3.0',
       osArch: 'linux/amd64',
       kernelVersion: '1.11.0'
@@ -358,5 +467,23 @@ describe('AgentGatewayService', () => {
       where: { id: { in: expect.arrayContaining(['ws-stale', 'http-stale']) }, status: 'ONLINE' },
       data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
     }));
+  });
+
+  it('写入失败时保留最新心跳并安排指数退避重试', async () => {
+    prisma.node.update.mockRejectedValue(new Error('database is busy'));
+
+    await expect(service.handleHeartbeat('retry-node', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: []
+    })).rejects.toThrow('database is busy');
+
+    const pending = (service as unknown as { pendingHeartbeats: Map<string, { data: HeartbeatData }> }).pendingHeartbeats;
+    expect(pending.get('retry-node')?.data.cpuUsage).toBe(1);
+
+    service.onModuleDestroy();
+    prisma.node.update.mockResolvedValue(undefined);
   });
 });
