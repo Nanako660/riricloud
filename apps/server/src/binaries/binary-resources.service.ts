@@ -434,8 +434,10 @@ export class BinaryResourcesService implements OnModuleInit {
       });
       const storageRoot = asset.path.includes(this.staticDir) ? 'STATIC' : 'RUNTIME';
       const storagePath = this.relativeStoragePath(storageRoot === 'STATIC' ? this.staticDir : this.runtimeDir, asset.path);
-      const created = await this.prisma.binaryAsset.create({
-        data: {
+      const created = await this.prisma.binaryAsset.upsert({
+        where: { releaseId_target: { releaseId: release.id, target } },
+        update: {},
+        create: {
           releaseId: release.id,
           target,
           os: target.split('-')[1],
@@ -448,6 +450,10 @@ export class BinaryResourcesService implements OnModuleInit {
           available: true
         }
       });
+      if (created.sha256.toLowerCase() !== asset.sha256.toLowerCase()) {
+        this.logger.warn(`legacy asset skipped: target=${target} release=${release.id} existing checksum differs`);
+        continue;
+      }
       await this.prisma.binaryAssetFile.create({
         data: { assetId: created.id, name: asset.filename, role: 'main', storageRoot, storagePath, sha256: asset.sha256, size: asset.size }
       });
