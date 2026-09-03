@@ -53,6 +53,7 @@ interface SystemSettings {
   registrationEnabled: boolean;
   defaultPlanId: string | null;
   defaultTrafficLimitBytes: number;
+  defaultBalance: number;
   defaultValidityDays: number;
   emailDomainMode: 'none' | 'whitelist' | 'blacklist';
   emailDomainList: string[];
@@ -88,6 +89,7 @@ const settingsSchema = z.object({
   registrationEnabled: z.boolean(),
   defaultPlanId: z.string(),
   defaultQuotaGB: z.coerce.number().int().min(1, '至少 1 GB').max(1048576, '不能超过 1 PB'),
+  defaultBalanceYuan: z.coerce.number().min(0, '余额不能为负数').multipleOf(0.01, '最多保留两位小数'),
   defaultValidityDays: z.coerce.number().int().min(0).max(3650),
   emailDomainMode: z.enum(['none', 'whitelist', 'blacklist']),
   emailDomainListText: z.string().max(16000),
@@ -125,6 +127,7 @@ export default function AdminSettingsPage() {
       siteName: '', siteDescription: '', publicBaseUrl: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       defaultPlanId: null, defaultTrafficLimitBytes: 100 * 1024 ** 3, defaultValidityDays: 0, emailDomainMode: 'none',
+      defaultBalance: 0,
       emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
@@ -188,9 +191,9 @@ export default function AdminSettingsPage() {
               <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户仪表盘。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
+            <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
                <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
-               <SettingsInput name="siteDescription" label="副标题描述" placeholder="多节点代理管理面板" />
+               <SettingsInput name="siteDescription" label="副标题描述" placeholder="留空则不显示副标题" />
                <div className="space-y-2 md:col-span-2"><SettingsInput name="publicBaseUrl" label="全站访问 URL" placeholder="https://panel.example.com" description="用于生成 Agent 安装命令、升级地址和二进制下载地址；留空时自动匹配当前访问域名。" /><SetOriginButton name="publicBaseUrl" /></div>
               <SettingsInput name="logoUrl" label="Logo URL" placeholder="https://cdn.example.com/logo.svg" description="留空时使用默认云朵图标。" />
               <SettingsInput name="faviconUrl" label="Favicon URL" placeholder="https://cdn.example.com/favicon.ico" />
@@ -206,6 +209,7 @@ export default function AdminSettingsPage() {
               <SettingsSwitch name="registrationEnabled" label="开放注册" description="关闭后公开注册接口和注册页入口都会拒绝新用户。" className="md:col-span-2" />
               <SettingsSelect name="defaultPlanId" label="新用户默认套餐" options={[{ value: 'none', label: '不自动绑定套餐' }, ...(plans.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }))]} description="绑定后注册会立即生成有效订阅和订阅链接。" />
               <SettingsInput name="defaultQuotaGB" label="默认流量配额（GB）" type="number" min={1} />
+              <SettingsInput name="defaultBalanceYuan" label="新用户注册初始余额（元）" type="number" min={0} description="注册赠金会记录为 SYSTEM_GIFT 流水。" />
               <SettingsInput name="defaultValidityDays" label="默认有效天数" type="number" min={0} description="0 表示永久有效；配置套餐时以套餐周期为准。" />
               <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} />
               <SettingsSelect name="emailDomainMode" label="邮箱域名过滤模式" options={[{ value: 'none', label: '不限制' }, { value: 'whitelist', label: '白名单，仅允许列表域名' }, { value: 'blacklist', label: '黑名单，拒绝列表域名' }]} />
@@ -295,6 +299,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     registrationEnabled: settings.registrationEnabled,
     defaultPlanId: settings.defaultPlanId ?? 'none',
     defaultQuotaGB: Math.max(1, Math.round(settings.defaultTrafficLimitBytes / 1024 ** 3)),
+    defaultBalanceYuan: settings.defaultBalance / 100,
     defaultValidityDays: settings.defaultValidityDays,
     emailDomainMode: settings.emailDomainMode,
     emailDomainListText: settings.emailDomainList.join('\n'),
@@ -332,6 +337,7 @@ function toPayload(values: SettingsForm) {
     registrationEnabled: values.registrationEnabled,
     defaultPlanId: values.defaultPlanId === 'none' ? null : values.defaultPlanId,
     defaultTrafficLimitBytes: Math.round(values.defaultQuotaGB * 1024 ** 3),
+    defaultBalance: Math.round(values.defaultBalanceYuan * 100),
     emailDomainList: values.emailDomainListText.split(/\r?\n|,/).map((item) => item.trim().toLowerCase().replace(/^@+/, '')).filter(Boolean),
     defaultValidityDays: values.defaultValidityDays,
     emailDomainMode: values.emailDomainMode,

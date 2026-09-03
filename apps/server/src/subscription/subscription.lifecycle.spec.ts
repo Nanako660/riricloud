@@ -4,11 +4,12 @@ import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { LinesService } from '../lines/lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionService } from './subscription.service';
+import { WalletService } from '../wallet/wallet.service';
 
 describe('SubscriptionService lifecycle', () => {
   let service: SubscriptionService;
   const plan = {
-    id: 'p1', name: '体验', isPublic: true, durationDays: 30, trafficLimitBytes: BigInt(1000),
+    id: 'p1', name: '体验', isPublic: true, price: 1000, durationDays: 30, trafficLimitBytes: BigInt(1000),
     lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null
   };
   const subscription = {
@@ -18,7 +19,8 @@ describe('SubscriptionService lifecycle', () => {
   };
   const tx = {
     subscription: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-    user: { update: jest.fn() }
+    user: { update: jest.fn() },
+    balanceTransaction: { create: jest.fn() }
   };
   const prisma = {
     plan: { findUnique: jest.fn() },
@@ -29,10 +31,11 @@ describe('SubscriptionService lifecycle', () => {
   };
   const gateway = { pushConfigToAll: jest.fn() };
   const linesService = { getAvailableForPlan: jest.fn() };
+  const walletService = { applyBalanceChange: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }]
+      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }, { provide: WalletService, useValue: walletService }]
     }).compile();
     service = moduleRef.get(SubscriptionService);
   });
@@ -84,5 +87,56 @@ describe('SubscriptionService lifecycle', () => {
     });
     expect(result).toEqual({ removed: true, id: 's1', userId: 'u1' });
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
+  });
+
+  it('首次订购付费套餐会在订阅事务内扣除余额', async () => {
+    const paidPlan = { ...plan, price: 1999 };
+    prisma.plan.findUnique.mockResolvedValue(paidPlan);
+    tx.subscription.findUnique.mockResolvedValue(null);
+    tx.subscription.create.mockResolvedValue({ ...subscription, plan: paidPlan });
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan: paidPlan });
+
+    await service.subscribe('u1', 'p1');
+
+    expect(walletService.applyBalanceChange).toHaveBeenCalledWith(
+      tx,
+      'u1',
+      -1999,
+      'PLAN_BUY',
+      '订购套餐',
+      's1'
+    );
+  });
+
+  it('续费会顺延周期、重置流量并扣除当前套餐价格', async () => {
+    const paidPlan = { ...plan, price: 500 };
+    prisma.subscription.findUnique.mockResolvedValue(subscription);
+    prisma.plan.findUnique.mockResolvedValue(paidPlan);
+    tx.subscription.update.mockResolvedValue({ ...subscription, plan: paidPlan, trafficUsedBytes: BigInt(0) });
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan: paidPlan, trafficUsedBytes: BigInt(0) });
+
+    await service.renew('u1');
+
+    expect(tx.subscription.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 's1' },
+      data: expect.objectContaining({ status: 'ACTIVE', trafficUsedBytes: BigInt(0) })
+    }));
+    expect(walletService.applyBalanceChange).toHaveBeenCalledWith(
+      tx,
+      'u1',
+      -500,
+      'PLAN_RENEW',
+      '续费套餐',
+      's1'
+    );
+  });
+
+  it('禁止向价格更低的套餐升配', async () => {
+    const lowerPlan = { ...plan, id: 'p2', name: '低价套餐', price: 500 };
+    prisma.plan.findUnique.mockResolvedValue(lowerPlan);
+    prisma.subscription.findUnique.mockResolvedValue(subscription);
+
+    await expect(service.upgrade('u1', 'p2')).rejects.toThrow('不能升级到价格更低的套餐');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

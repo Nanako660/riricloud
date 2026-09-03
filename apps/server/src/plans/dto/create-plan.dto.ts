@@ -16,9 +16,9 @@ export class CreatePlanDto {
   @IsOptional()
   description?: string;
 
-  @ApiPropertyOptional({ example: 990, description: '价格最小货币单位' })
+  @ApiPropertyOptional({ example: 9.9, description: '价格，单位为元，最多两位小数；服务端按分存储' })
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @IsOptional()
   price?: number;

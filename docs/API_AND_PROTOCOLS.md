@@ -4,7 +4,7 @@
 
 生产环境推荐由 Nginx 负责 HTTPS 终止、反向代理和边缘路由。后端唯一真实订阅接口仍为 `GET /api/v1/sub/:token`；伪静态订阅地址由 Nginx 将严格匹配的 UUID 单段路径内部 rewrite 到该接口，不新增 NestJS 路由或通用代理 middleware。
 
-> **实现状态（v0.4.5）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.4.20）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
 >
@@ -17,17 +17,23 @@
   - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。
   - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始配额取 `defaultTrafficLimitBytes`；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，否则按 `defaultValidityDays` 计算有效期，0 为永久。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
-- `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色。⭐
+- `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色；用户自身视图额外返回 `balance`（分）和 `uuid`。⭐
 
 ### 1.2 用户面板 (`/user`)
-- `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐
+- `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐ **Deprecated**：前端已下线独立仪表盘并统一使用 `GET /user/subscription`；该接口仍保留以兼容外部脚本。
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
-- 前端路由 `/lines`：使用 `/user/subscription` 数据展示当前套餐授权线路。
+- 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）。
+- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
+- `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
+- `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
+- `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
+- `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功。
 - `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、节点匹配模式。
 - `GET /user/subscription`：查询当前用户唯一订阅及按套餐匹配的可用线路。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [] }`；有订阅时返回 `lines[]`，并保留 `nodes` 兼容镜像。
-- `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409。
-- `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；切换套餐、重置已用流量并按新套餐重算周期。
+- `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409；按套餐价格从余额扣款并写入 `PLAN_BUY` 流水，余额不足返回 400。
+- `POST /user/subscription/renew`：续费当前套餐。⭐ 无请求体；按当前套餐价格扣款，顺延 `durationDays`、重置当期已用流量并写入 `PLAN_RENEW` 流水。
+- `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；仅允许目标套餐价格不低于当前套餐，低价目标返回 409；通过校验后全价扣款，切换套餐、重置已用流量并按新套餐重算周期，写入 `PLAN_UPGRADE` 流水。
 - `POST /user/subscription/cancel`：取消当前订阅。⭐ 状态变为 `CANCELED`，到期前保留使用权。
 - `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段。
 
@@ -38,7 +44,8 @@
 - `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额/期限作为初始值且可由 `trafficLimitBytes`/`expireAt` 覆盖；明确传 `planId: null` 时创建无套餐用户；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
-- `DELETE /admin/users/:id`：删除用户（级联删除流量记录）。⭐
+- `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
+- `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
 
 用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
@@ -94,16 +101,22 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组和探针对象；响应返回更新后全量。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 
+#### 卡密管理
+- `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选。⭐
+- `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。
+- `POST /admin/redeem-codes/:id/revoke`：作废未使用卡密。⭐ 已兑换或已作废卡密返回 409。
+
 #### 套餐管理
 - `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
 - `GET /admin/plans/:id`：查询套餐详情。⭐
 - `GET /admin/plans/:id/nodes`：兼容路径，按套餐规则计算当前可用线路。⭐
 - `GET /admin/plans/:id/lines`：按套餐规则计算当前在线公开线路。⭐
-- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`。
-- `PATCH /admin/plans/:id`：部分更新套餐。⭐
+- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。
+- `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存。⭐
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
+- 主控 JSON 与 URL-encoded 请求体上限为 `2 MiB`；超出上限在进入 Controller 前返回 HTTP `413 Payload Too Large`。订阅模板的策略组、规则集、DNS 与 YAML/JSON 覆写会合并在同一请求中，编辑大文本时应控制在该上限内。
 - `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐

@@ -5,6 +5,7 @@ import { Roles } from '../common/roles.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AdjustBalanceDto } from './dto/adjust-balance.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('admin')
@@ -37,6 +38,11 @@ export class UsersAdminController {
     @CurrentUser() operator: { id: string }
   ) {
     return this.usersService.updateUser(id, dto, operator.id);
+  }
+
+  @Post(':id/adjust-balance')
+  adjustBalance(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdjustBalanceDto) {
+    return this.usersService.adjustBalance(id, dto.amount, dto.description);
   }
 
   @Delete(':id')

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, Cloud, Gauge, GitBranch, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards } from 'lucide-react';
+import { Activity, Cloud, GitBranch, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import {
@@ -28,10 +28,9 @@ export function AppSidebar() {
     {
       label: '控制台',
       items: [
-        { to: '/', label: '仪表盘', icon: Gauge, end: true },
         { to: '/subscription', label: '我的订阅', icon: WalletCards, end: false },
-        { to: '/lines', label: '可用线路', icon: GitBranch, end: false },
-        { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false }
+        { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false },
+        { to: '/profile', label: '个人中心', icon: Wallet, end: false }
       ]
     },
     ...(isAdmin
@@ -46,6 +45,7 @@ export function AppSidebar() {
               { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },
               { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
               { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
+              { to: '/admin/redeem-codes', label: '卡密管理', icon: Ticket, end: false },
               { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
             ]
           }

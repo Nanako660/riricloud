@@ -38,6 +38,7 @@ api.interceptors.response.use(
 // 统一错误消息提取（表单与 mutation 复用）
 export function extractErrorMessage(error: unknown, fallback = '操作失败'): string {
   if (axios.isAxiosError(error)) {
+    if (error.response?.status === 413) return '请求内容过大，请减少提交内容后重试';
     return error.response?.data?.message ?? fallback;
   }
   return fallback;

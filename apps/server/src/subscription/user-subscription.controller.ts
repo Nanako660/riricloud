@@ -26,6 +26,11 @@ export class UserSubscriptionController {
     return this.subscriptionService.upgrade(user.id, dto.planId);
   }
 
+  @Post('renew')
+  renew(@CurrentUser() user: { id: string }) {
+    return this.subscriptionService.renew(user.id);
+  }
+
   @Post('cancel')
   cancel(@CurrentUser() user: { id: string }) {
     return this.subscriptionService.cancel(user.id);

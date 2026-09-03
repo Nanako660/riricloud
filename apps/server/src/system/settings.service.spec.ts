@@ -29,6 +29,7 @@ describe('SettingsService', () => {
       { key: SETTING_KEYS.REGISTRATION_ENABLED, value: 'true' },
       { key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED, value: '1' },
       { key: SETTING_KEYS.DEFAULT_TRAFFIC_LIMIT_BYTES, value: 'abc' },
+      { key: SETTING_KEYS.DEFAULT_BALANCE, value: '2500' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_MODE, value: 'whitelist' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_LIST, value: JSON.stringify(['@Example.COM', 'company.org']) },
       { key: SETTING_KEYS.PROBE_PRESET_TARGETS, value: JSON.stringify([{ type: 'tcp', target: 'example.com', port: 443 }]) },
@@ -39,6 +40,7 @@ describe('SettingsService', () => {
     expect(settings.registrationEnabled).toBe(true);
     expect(settings.subscriptionShortLinksEnabled).toBe(true);
     expect(settings.defaultTrafficLimitBytes).toBe(DEFAULTS.defaultTrafficLimitBytes);
+    expect(settings.defaultBalance).toBe(2500);
     expect(settings.emailDomainList).toEqual(['example.com', 'company.org']);
     expect(settings.probePresetTargets).toEqual([{ type: 'tcp', target: 'example.com', port: 443 }]);
     expect(settings.configSyncDebounceMs).toBe(DEFAULTS.configSyncDebounceMs);

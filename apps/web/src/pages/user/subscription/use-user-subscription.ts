@@ -4,7 +4,13 @@ import { api, extractErrorMessage } from '@/lib/api';
 
 export interface UserPlan { id: string; name: string; description: string | null; price: number; durationDays: number; trafficLimitBytes: number; lineMatchMode: string; }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; plan: UserPlan; }
-export interface UserLine { id: string; name: string; type: 'DIRECT' | 'RELAY'; relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null; protocolType: string; entryPort: number; exitPort: number; serverHost: string; serverPort: number; trafficRate: number; tags: string[]; level: number; status: 'ACTIVE' | 'DISABLED'; entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; }
+export interface UserLine {
+  id: string;
+  name: string;
+  protocolType: string;
+  trafficRate: number;
+  exitNode: { status: string };
+}
 
 export function useUserSubscription() {
   return useQuery({
@@ -18,7 +24,6 @@ export function useUserSubscriptionMutations() {
   const queryClient = useQueryClient();
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
-    void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['user', 'nodes'] });
   };
   const subscribe = useMutation({
@@ -31,6 +36,11 @@ export function useUserSubscriptionMutations() {
     onSuccess: () => { toast.success('套餐已升配'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '升配失败'))
   });
+  const renew = useMutation({
+    mutationFn: async () => (await api.post('/user/subscription/renew')).data,
+    onSuccess: () => { toast.success('订阅续费成功'); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '续费失败'))
+  });
   const cancel = useMutation({
     mutationFn: async () => (await api.post('/user/subscription/cancel')).data,
     onSuccess: () => { toast.success('订阅已取消，到期前仍可使用'); invalidate(); },
@@ -41,5 +51,5 @@ export function useUserSubscriptionMutations() {
     onSuccess: () => { toast.success('订阅链接已重置'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置失败'))
   });
-  return { subscribe, upgrade, cancel, resetToken };
+  return { subscribe, upgrade, renew, cancel, resetToken };
 }

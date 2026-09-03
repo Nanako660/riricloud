@@ -33,6 +33,7 @@ export default function LoginPage() {
   const infoQuery = usePublicSettings();
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
   const logoUrl = infoQuery.data?.logoUrl;
+  const siteDescription = infoQuery.data?.siteDescription?.trim();
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -66,7 +67,7 @@ export default function LoginPage() {
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
           <CardTitle>登录</CardTitle>
-          <CardDescription>{infoQuery.data?.siteDescription || '输入账号信息进入控制面板'}</CardDescription>
+          {siteDescription ? <CardDescription>{siteDescription}</CardDescription> : null}
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -78,7 +79,7 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>邮箱</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="admin@riricloud.local" autoComplete="username" {...field} />
+                      <Input type="email" placeholder="请输入邮箱地址" autoComplete="username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -91,7 +92,7 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="••••••••" autoComplete="current-password" {...field} />
+                      <Input type="password" placeholder="请输入登录密码" autoComplete="current-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

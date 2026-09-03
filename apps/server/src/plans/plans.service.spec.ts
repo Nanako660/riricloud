@@ -47,4 +47,15 @@ describe('PlansService', () => {
       data: expect.objectContaining({ trafficLimitBytes: BigInt(1024), lineTagsJson: '[]', lineIdsJson: '[]' })
     }));
   });
+
+  it('以元接收价格并按分写入数据库', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'p2', name: '付费', description: null, price: 1234, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0
+    });
+    await service.create({ name: '付费', price: 12.34, durationDays: 30, trafficLimitBytes: 1024 });
+    expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ price: 1234 }) }));
+  });
 });

@@ -4,7 +4,7 @@
 
 RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中，SQLite 开启 **WAL (Write-Ahead Logging)** 模式，读写并发能力大幅提升。
 
-> **落地说明（v0.4.5）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式与订阅状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
+> **落地说明（v0.4.20）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式、订阅状态、钱包流水类型与卡密状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
 
 ---
 
@@ -67,6 +67,7 @@ model User {
   email             String       @unique
   passwordHash      String
   role              String       @default("USER")
+  balance           Int          @default(0)             // 账户余额，单位为分
   
   // 流量与套餐控制
   trafficLimitBytes BigInt       @default(107374182400) // 流量配额 (默认 100GB)
@@ -75,7 +76,7 @@ model User {
   
   // 代理与订阅凭证
   subscriptionToken String       @unique @default(uuid()) // 订阅 URL 唯一样条
-  uuid              String       @unique @default(uuid()) // VLESS / Sing-box 用户识别 UUID
+  uuid              String       @unique @default(uuid()) // 用户代理凭据（底层 UUID；VLESS/VMess 等协议使用）
   password          String?                               // 用于 Shadowsocks/Hysteria2 连接密码
   
   isActive          Boolean      @default(true)          // 是否启用
@@ -85,6 +86,8 @@ model User {
   // 关联
   trafficLogs       TrafficLog[]
   subscription      Subscription?
+  balanceTransactions BalanceTransaction[]
+  redeemedCodes     RedeemCode[] @relation("RedeemedCodes")
 
   @@index([role])
   @@index([isActive])
@@ -254,7 +257,7 @@ model Plan {
   id                String   @id @default(uuid())
   name              String
   description       String?
-  price             Int      @default(0) // 最小货币单位
+  price             Int      @default(0) // 最小货币单位（分）；API 的 price 使用元
   durationDays      Int
   trafficLimitBytes BigInt
   lineMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
@@ -321,6 +324,53 @@ model Subscription {
 }
 
 // ==============================
+// 2.6 钱包余额流水 (BalanceTransaction，v0.4.20)
+// amount 为带符号的金额，正数表示入账，负数表示扣款；每条记录保存变更前后余额。
+// ==============================
+model BalanceTransaction {
+  id             String   @id @default(uuid())
+  userId         String
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  type           String
+  description    String?
+  referenceId    String?
+  redeemCodeId   String?  @unique
+  createdAt      DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redeemCode RedeemCode? @relation(fields: [redeemCodeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([referenceId])
+}
+
+// ==============================
+// 2.7 充值卡密 (RedeemCode，v0.4.20)
+// ==============================
+model RedeemCode {
+  id                  String    @id @default(uuid())
+  code                String    @unique
+  amount              Int       // 面额，单位为分
+  status              String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
+  expiresAt           DateTime?
+  note                String?
+  redeemedAt          DateTime?
+  redeemedByUserId    String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  redeemedBy          User?              @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  balanceTransaction  BalanceTransaction?
+
+  @@index([status, createdAt])
+  @@index([expiresAt])
+  @@index([redeemedByUserId])
+}
+
+// ==============================
 // 3. 流量流水记录 (TrafficLog)
 // ==============================
 model TrafficLog {
@@ -360,16 +410,17 @@ model SystemSetting {
 | 键 | value 格式 | 缺省默认 | 用途 |
 | :--- | :--- | :--- | :--- |
 | `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
-| `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
+| `siteDescription` | 纯文本（≤120 字符） | `""` | 登录页和品牌区域副标题；留空时不展示 |
 | `publicBaseUrl` | HTTP/HTTPS URL 或空字符串 | `""` | 全站对外访问基准地址；用于 Agent 安装、升级和二进制下载地址 |
 | `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
-| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户仪表盘公告横幅 |
+| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户订阅控制台公告横幅 |
 | `footerCopyright` | 纯文本 | `""` | 页脚版权文案 |
 | `supportTelegramUrl` / `supportDiscordUrl` / `supportCustomUrl` | URL 或空字符串 | `""` | 客服、群组与自定义支持入口 |
 | `supportEmail` | 邮箱或空字符串 | `""` | 客服邮箱入口 |
 | `registrationEnabled` | `"true"` / `"false"` | `"false"` | 注册开关，控制 `POST /auth/register` 与前端注册入口 |
 | `defaultPlanId` | UUID 或空字符串 | `""` | 注册时自动激活的公开套餐 |
 | `defaultTrafficLimitBytes` | 十进制字符串（字节，>0） | `"107374182400"`（100 GiB） | 新建/注册用户的初始流量配额 |
+| `defaultBalance` | 十进制字符串（分，≥0） | `"0"` | 新用户注册初始余额；注册时写入 `SYSTEM_GIFT` 流水 |
 | `defaultValidityDays` | 十进制整数（0~3650） | `"0"` | 未绑定默认套餐的新用户有效天数，0 为永久 |
 | `emailDomainMode` | `none` / `whitelist` / `blacklist` | `"none"` | 注册邮箱域名过滤模式 |
 | `emailDomainList` | JSON 字符串数组 | `[]` | 注册邮箱域名过滤列表 |

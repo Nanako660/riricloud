@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LogOut, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
@@ -66,6 +66,9 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/profile"><UserIcon className="mr-2 size-4" /><span>个人中心</span></Link>
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={onLogout}
           className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive"

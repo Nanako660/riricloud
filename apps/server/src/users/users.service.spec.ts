@@ -1,9 +1,11 @@
 import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import * as bcrypt from 'bcryptjs';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { UsersService } from './users.service';
+import { WalletService } from '../wallet/wallet.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -16,6 +18,7 @@ describe('UsersService', () => {
   };
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn(), getDefaultQuota: jest.fn() };
+  const walletService = { adjustBalance: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -23,7 +26,8 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: prisma },
         { provide: AgentGatewayService, useValue: agentGateway },
-        { provide: SettingsService, useValue: settingsService }
+        { provide: SettingsService, useValue: settingsService },
+        { provide: WalletService, useValue: walletService }
       ]
     }).compile();
     service = moduleRef.get(UsersService);
@@ -240,6 +244,29 @@ describe('UsersService', () => {
       const result = await service.deleteUser('u1', 'admin-1');
       expect(result.deleted).toBe(true);
       expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('个人安全与余额', () => {
+    it('旧密码正确时可以修改登录密码', async () => {
+      prisma.user.findUnique.mockResolvedValue({ passwordHash: await bcrypt.hash('old-password', 10) });
+      prisma.user.update.mockResolvedValue({});
+      await expect(service.changePassword('u1', { oldPassword: 'old-password', newPassword: 'new-password' })).resolves.toEqual({ updated: true });
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u1' }, data: { passwordHash: expect.any(String) } }));
+    });
+
+    it('重置 UUID 后向在线节点推送配置', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.user.update.mockResolvedValue({});
+      const result = await service.resetUuid('u1');
+      expect(result.uuid).toEqual(expect.any(String));
+      expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('管理员调账复用钱包服务并返回新余额', async () => {
+      walletService.adjustBalance.mockResolvedValue({ balance: 2500, transaction: { id: 'bt1' } });
+      await expect(service.adjustBalance('u1', 500, '活动补发')).resolves.toEqual({ userId: 'u1', balance: 2500, transaction: { id: 'bt1' } });
+      expect(walletService.adjustBalance).toHaveBeenCalledWith('u1', 500, 'ADMIN_ADJUST', '活动补发');
     });
   });
 

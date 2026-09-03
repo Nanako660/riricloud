@@ -11,7 +11,7 @@ export function AuthGuard() {
   return <Outlet />;
 }
 
-// 管理员守卫：非 ADMIN 回落仪表盘
+// 管理员守卫：非 ADMIN 回落用户订阅页
 export function AdminGuard() {
   const user = useAuthStore((s) => s.user);
   if (user?.role !== 'ADMIN') {

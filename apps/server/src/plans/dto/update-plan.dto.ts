@@ -17,7 +17,7 @@ export class UpdatePlanDto {
 
   @ApiPropertyOptional()
   @Type(() => Number)
-  @IsInt()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @IsOptional()
   price?: number;

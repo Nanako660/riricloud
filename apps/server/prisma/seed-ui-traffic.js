@@ -285,7 +285,7 @@ async function main() {
   const template = await prisma.subscriptionTemplate.findFirst({ where: { isDefault: true } });
   const planStandard = await upsertPlan('UI 演示 · 标准 100 GiB', {
     description: '用于检查用户列表和流量明细布局的标准演示套餐',
-    price: 199,
+    price: 19900,
     durationDays: 30,
     trafficLimitBytes: 100n * GIB,
     lineMatchMode: 'ALL',
@@ -297,7 +297,7 @@ async function main() {
   });
   const planProfessional = await upsertPlan('UI 演示 · 专业 1 TiB', {
     description: '用于检查大配额和长文本套餐名称布局的演示套餐',
-    price: 699,
+    price: 69900,
     durationDays: 90,
     trafficLimitBytes: 1024n * GIB,
     lineMatchMode: 'TAGS',
@@ -309,7 +309,7 @@ async function main() {
   });
   const planLight = await upsertPlan('UI 演示 · 轻量 20 GiB', {
     description: '用于检查小配额进度条临界状态的演示套餐',
-    price: 59,
+    price: 5900,
     durationDays: 7,
     trafficLimitBytes: 20n * GIB,
     lineMatchMode: 'EXPLICIT',

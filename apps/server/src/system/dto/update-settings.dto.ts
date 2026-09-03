@@ -57,7 +57,7 @@ export class UpdateSettingsDto {
   @IsOptional()
   siteName?: string;
 
-  @ApiPropertyOptional({ example: '多节点代理管理面板' })
+  @ApiPropertyOptional({ example: '欢迎使用本服务' })
   @IsString()
   @MaxLength(120)
   @IsOptional()
@@ -134,6 +134,13 @@ export class UpdateSettingsDto {
   @Min(1)
   @IsOptional()
   defaultTrafficLimitBytes?: number;
+
+  @ApiPropertyOptional({ example: 1000, description: '新用户注册初始余额，单位为分' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  defaultBalance?: number;
 
   @ApiPropertyOptional({ example: 30, description: '0 表示永久有效' })
   @Type(() => Number)

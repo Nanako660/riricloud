@@ -27,6 +27,8 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [用户系统完善：货币系统、个人中心、卡密充值与订阅交易闭环](./archive/2026-09-03-user-currency-and-profile.md) | `v0.4.20` | 2026-09-03 | — |
+| [下线仪表盘并将能力全量合并至我的订阅](./archive/2026-09-03-merge-dashboard-into-subscription.md) | `v0.4.x` | 2026-09-03 | — |
 | [RiriCloud 全站移动端适配](./archive/2026-09-02-web-mobile-adaptation.md) | `v0.4.15` | 2026-09-01 | — |
 | [Nginx 反向代理与订阅伪静态链接](./archive/2026-09-02-nginx-subscription-short-link.md) | `0.4.x` | 2026-09-02 | — |
 | [管理端线路流量大盘与单用户流量统计](./archive/2026-09-02-admin-traffic-dashboard-and-user-statistics.md) | `v0.4.16` | 2026-09-02 | — |

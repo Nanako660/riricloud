@@ -5,6 +5,7 @@ import { AgentService } from '../agent-gateway/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { WalletService } from '../wallet/wallet.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -15,7 +16,8 @@ export class AuthService {
     private jwtService: JwtService,
     private settingsService: SettingsService,
     private agentGateway: AgentService,
-    @Optional() private subscriptionService?: SubscriptionService
+    @Optional() private subscriptionService?: SubscriptionService,
+    @Optional() private walletService?: WalletService
   ) {}
 
   async login(dto: LoginDto): Promise<{ accessToken: string }> {
@@ -55,6 +57,9 @@ export class AuthService {
           : {})
       }
     });
+    if (settings.defaultBalance > 0 && this.walletService) {
+      await this.walletService.adjustBalance(user.id, settings.defaultBalance, 'SYSTEM_GIFT', '新用户注册赠金');
+    }
     if (settings.defaultPlanId && this.subscriptionService) {
       await this.subscriptionService.subscribe(user.id, settings.defaultPlanId);
     } else {
@@ -71,6 +76,8 @@ export class AuthService {
         id: true,
         email: true,
         role: true,
+        balance: true,
+        uuid: true,
         trafficLimitBytes: true,
         trafficUsedBytes: true,
         expireAt: true,
@@ -85,6 +92,8 @@ export class AuthService {
     // BigInt 无法 JSON 序列化，在服务边界转 Number（流量值 < 2^53，无精度损失）
     return {
       ...user,
+      balance: user.balance,
+      uuid: user.uuid,
       trafficLimitBytes: Number(user.trafficLimitBytes),
       trafficUsedBytes: Number(user.trafficUsedBytes)
     };
