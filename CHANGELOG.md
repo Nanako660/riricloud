@@ -18,6 +18,9 @@
 
 ### Fixed
 
+- 修复本地主控已运行时 `scripts/dev-e2e.sh` 仍先执行 SQLite 迁移导致 `database is locked`，并统一 Prisma CLI 调用方式。
+- 修复主控和 Agent Dockerfile 多行 Node.js manifest 生成脚本被 Docker 解析为独立指令、导致镜像构建失败的问题。
+
 
 ## [0.6.0] - 2026-09-04
 

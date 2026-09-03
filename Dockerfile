@@ -45,6 +45,7 @@ FROM node:20-bookworm-slim AS build
 WORKDIR /workspace
 ENV COREPACK_HOME=/tmp/corepack
 ARG TARGETARCH=amd64
+ARG RIRICLOUD_VERSION=dev
 ARG SINGBOX_VERSION=1.14.0
 ARG SINGBOX_REVISION=1
 ARG CRONET_VERSION=v150.0.7871.63-2
@@ -97,11 +98,12 @@ RUN mkdir -p \
     && cp /tmp/sing-box /out/binaries/singbox-linux-${TARGETARCH} \
     && cp /tmp/libcronet.so /out/binaries/libcronet.so \
     && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/agent-linux-${TARGETARCH} /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box /out/binaries/singbox-linux-${TARGETARCH}
-RUN node -e '
+# 使用 Dockerfile heredoc 保持 manifest 生成脚本为单条 RUN 指令。
+RUN node - /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION" <<'NODE'
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
-  const [root, appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(1);
+  const [root, appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(2);
   const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: path.relative(root, file).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
   const platform = `linux-${arch}`;
   const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${revision}`, platform);
@@ -110,7 +112,7 @@ RUN node -e '
     { kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(revision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${platform}`, os: "linux", arch, files: [info("sing-box", "main", path.join(singboxDir, "sing-box")), info("libcronet.so", "auxiliary", path.join(singboxDir, "libcronet.so"))] }] }
   ];
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
-' /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION"
+NODE
 
 FROM gcr.io/distroless/nodejs20-debian12 AS runtime
 
