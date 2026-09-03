@@ -200,7 +200,7 @@ sequenceDiagram
     Nginx-->>User: 原样转发订阅响应
 ```
 
-订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开、启用且入口/出口节点在线，额外线路可绕过公开性和套餐规则但仍要求启用且两端在线，全局 `publicLinesEnabled=false` 作为总开关。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
+订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开、启用且入口/出口节点在线，额外线路可绕过公开性和套餐规则但仍要求启用且两端在线，全局 `publicLinesEnabled=false` 作为总开关。Master 重启后的 60 秒恢复窗口内，若离线节点最近一次心跳仍处于其通信模式对应的健康窗口内，线路计算会临时保留该节点线路，避免 Agent 重连期间刷新订阅造成客户端配置抖动；手动禁用或长期无心跳的节点仍会被过滤。节点离线扫描按 `lastSeenAt` 做乐观并发校验，避免旧扫描结果覆盖扫描期间已恢复的节点。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
 
 ### 3.5 远程升级与网络探针时序
 

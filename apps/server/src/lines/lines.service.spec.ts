@@ -25,6 +25,7 @@ describe('LinesService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (service as unknown as { processStartedAt: number }).processStartedAt = Date.now();
     prisma.line.findMany.mockResolvedValue([]);
     prisma.line.findFirst.mockResolvedValue(null);
     prisma.line.findUnique.mockReset();
@@ -171,6 +172,22 @@ describe('LinesService', () => {
     const result = await service.getAvailableForPlan({ lineMatchMode: 'TAGS', lineTagsJson: '["premium"]', lineIdsJson: '[]' });
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe(rawLine.id);
+  });
+
+  it('Master 重启宽限期内保留最近失联节点的线路', async () => {
+    const masterStartedAt = Date.now() - 20_000;
+    const lastSeenAt = new Date(masterStartedAt - 10_000);
+    (service as unknown as { processStartedAt: number }).processStartedAt = masterStartedAt;
+    prisma.line.findMany.mockResolvedValue([{
+      ...rawLine,
+      exitNode: { ...exitNode, status: 'OFFLINE', lastSeenAt, communicationMode: 'WS', pollIntervalSecs: 15 }
+    }]);
+
+    const result = await service.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(rawLine.id);
+    expect(result[0].exitNode).not.toHaveProperty('lastSeenAt');
   });
 
   it('套餐线路视图会解析对外端点覆盖', async () => {

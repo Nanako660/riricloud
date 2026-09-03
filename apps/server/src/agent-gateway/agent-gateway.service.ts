@@ -1501,7 +1501,7 @@ export class AgentService implements OnModuleDestroy {
       select: { id: true, communicationMode: true, pollIntervalSecs: true, lastSeenAt: true }
     });
     const now = Date.now();
-    const staleIds = nodes
+    const staleNodes = nodes
       .filter((node) => {
         if (!node.lastSeenAt) return true;
         const thresholdMs = node.communicationMode === 'HTTP'
@@ -1509,10 +1509,15 @@ export class AgentService implements OnModuleDestroy {
           : heartbeatTimeoutMs;
         return now - node.lastSeenAt.getTime() > thresholdMs;
       })
-      .map((node) => node.id);
-    if (staleIds.length) {
+    if (staleNodes.length) {
       await this.enqueueAgentWrite('stale-sweep', () => this.prisma.node.updateMany({
-        where: { id: { in: staleIds }, status: 'ONLINE' },
+        where: {
+          OR: staleNodes.map((node) => ({
+            id: node.id,
+            status: 'ONLINE',
+            lastSeenAt: node.lastSeenAt
+          }))
+        },
         data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
       }));
     }

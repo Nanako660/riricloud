@@ -111,7 +111,7 @@ model Node {
   communicationMode AgentTransportMode @default(WS)      // 当前/期望通信模式
   pollIntervalSecs Int           @default(15)             // HTTP 轮询建议周期（秒）
   status          NodeStatus    @default(OFFLINE)        // 实时状态
-  lastSeenAt      DateTime?                              // 最近心跳时间
+  lastSeenAt      DateTime?                              // 最近心跳时间；Master 重启后的短暂订阅恢复宽限会据此判断心跳是否仍在健康窗口内
 
   // 实时遥测指标
   cpuUsage        Float         @default(0)             // CPU 使用率 (0~100)

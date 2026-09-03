@@ -110,7 +110,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
 - `GET /admin/plans/:id`：查询套餐详情。⭐
 - `GET /admin/plans/:id/nodes`：兼容路径，按套餐规则计算当前可用线路。⭐
-- `GET /admin/plans/:id/lines`：按套餐规则计算当前在线公开线路。⭐
+- `GET /admin/plans/:id/lines`：按套餐规则计算当前可用公开线路。正常情况下要求入口/出口节点在线；Master 重启后的 60 秒恢复窗口内，若离线节点最近一次心跳仍在其通信模式对应的健康窗口内，也暂时保留线路，等待 Agent 重连。⭐
 - `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, trafficResetMode?: "NONE"|"CALENDAR_MONTH"|"SUBSCRIPTION_CYCLE", lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。
 - `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存，支持更新 `trafficResetMode`。⭐
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
@@ -425,6 +425,8 @@ Content-Type: application/json
 - WS/WSS：最后上报超过 15 秒且没有新连接时标记 `OFFLINE`。
 - HTTP/HTTPS：最后上报超过 `3 × pollIntervalSecs`（默认 45 秒）时标记 `OFFLINE`。
 - 任一模式重新上报都会恢复 `ONLINE`，并把 `communicationMode` 更新为实际传输模式。
+- Master 重启后的 60 秒内，订阅线路计算会对最近一次心跳仍处于上述健康窗口内的 `OFFLINE` 节点启用临时恢复宽限；超过宽限期或心跳已明显过期的节点仍会从订阅中移除，手动 `DISABLED` 节点不会被宽限放行。
+- 离线扫描按扫描时读取的 `lastSeenAt` 做乐观并发校验；节点在扫描期间重新上报心跳时，旧扫描结果不会覆盖其在线状态。
 
 ---
 
@@ -455,7 +457,7 @@ rewrite 不覆盖原始查询字符串，因此 `?type=clash`、`?type=sing-box`
 
 前端系统设置 `subscriptionShortLinksEnabled` 默认关闭，只控制用户界面展示的链接形式，不检测 Nginx 是否已配置。`subscriptionBaseUrl` 可包含 pathname，例如 `https://domain.com/panel` 会生成 `https://domain.com/panel/<UUID>`；Nginx 的 location/rewrite 前缀必须与其保持一致。完整配置见 `scripts/nginx/riricloud.conf.example`。
 
-> **实现状态（v0.4.0）**：三种格式、自动协商与全协议线路输出均已实现 ⭐。订阅引擎统一通过 `LinesService` 获取线路视图，不再回退到旧 Node 入站查询；订阅按**线路**逐条生成：仅含公开、启用且入口/出口节点均在线的线路；线路输出使用其最终对外地址/端口，启用 `endpointOverrideEnabled` 时三种格式的 `server`/`server_port`（或 URI 主机/端口）均使用 `serverHost/serverPort` 覆盖值，并应用线路 SNI/Host 覆盖，否则回退到 Line 自身的 TLS/Transport 参数。单条线路对应一个 `protocolType` + `params`，重名全局去重；`nodes` 字段仅作为旧客户端兼容镜像。
+> **实现状态（v0.4.0）**：三种格式、自动协商与全协议线路输出均已实现 ⭐。订阅引擎统一通过 `LinesService` 获取线路视图，不再回退到旧 Node 入站查询；订阅按**线路**逐条生成：仅含公开、启用且入口/出口节点均在线的线路，Master 重启后的短暂恢复宽限期内例外保留最近心跳仍有效的离线节点线路；线路输出使用其最终对外地址/端口，启用 `endpointOverrideEnabled` 时三种格式的 `server`/`server_port`（或 URI 主机/端口）均使用 `serverHost/serverPort` 覆盖值，并应用线路 SNI/Host 覆盖，否则回退到 Line 自身的 TLS/Transport 参数。单条线路对应一个 `protocolType` + `params`，重名全局去重；`nodes` 字段仅作为旧客户端兼容镜像。
 
 ### 3.1 客户端请求头自动识别与参数适配
 - 格式协商优先级：显式 `?type=` 参数 > User-Agent 嗅探 > 默认 Base64。
