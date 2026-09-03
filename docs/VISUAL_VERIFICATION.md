@@ -53,8 +53,8 @@
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、TARGET_LINE 的入口协议 ➔ 目标节点协议拓扑、覆盖启用状态、删除确认 |
 | **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、标准 TLS/ACME 的 ALPN 预设多选、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；Reality 不显示 ALPN；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态；TARGET_LINE 选项显示为“协议转换：桥接已有线路”，并显示目标直连筛选、目标节点/协议/端口摘要且隐藏手填出口字段；两页统一保存 |
 | **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、有效期状态、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
-| **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路 Donut 图、排行表格、明暗主题与移动端局部横向滚动 |
-| **`UI-28`** | 用户管理 | 单用户流量明细下钻 | `/admin/users`（点击操作列“流量明细”） | `apps/web/src/pages/admin/users/components/user-traffic-dialog.tsx` | 用户配额画像、周期走势图、线路占比、明细表格、无记录 EmptyState、桌面 Dialog/移动 Sheet、明暗主题 |
+| **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路 Donut 图、排行表格数字字段不换行、明暗主题与移动端局部横向滚动 |
+| **`UI-28`** | 用户管理 | 单用户流量明细下钻 | `/admin/users`（点击操作列“流量明细”） | `apps/web/src/pages/admin/users/components/user-traffic-dialog.tsx` | 用户配额画像、周期走势图、线路占比、明细表格、无记录 EmptyState、桌面 `max-w-5xl` Dialog/移动 Sheet、外层无横向溢出且明细表局部滚动、明暗主题 |
 | **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | 余额与收支摘要、卡密兑换、流水分页、密码修改、用户代理凭据展示/复制与重置确认；移动端单列、流水表格保持完整字段与可读列宽并在容器内横向滚动、明暗主题 |
 | **`UI-30`** | 卡密管理 | 卡密管理列表与批量生成/作废交互 | `/admin/redeem-codes` | `apps/web/src/pages/admin/redeem-codes/**` | 状态筛选、元/分单位提示、批量生成表单、生成结果换行复制、有效期状态、未使用卡密作废确认、移动端表格局部滚动与弹窗内滚动 |
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | Agent/Sing-box 类型、平台与状态筛选；独立资源版本、来源、默认/启停/归档状态、平台文件 SHA-256 与大小；本地上传、远程导入、资源详情、辅助文件、分发历史；明暗主题与移动端弹窗内滚动 |

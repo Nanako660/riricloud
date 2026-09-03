@@ -18,14 +18,14 @@ export function TrafficRankTable({ items, compact = false }: { items: LineTraffi
     <Table className={compact ? 'min-w-[700px]' : 'min-w-[920px]'}>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-12">#</TableHead>
-          <TableHead>线路</TableHead>
-          <TableHead>类型 / 协议</TableHead>
-          <TableHead>倍率</TableHead>
-          <TableHead className="text-right">上行</TableHead>
-          <TableHead className="text-right">下行</TableHead>
-          <TableHead className="text-right">物理总量</TableHead>
-          <TableHead className="text-right">计费量</TableHead>
+          <TableHead className="w-12 whitespace-nowrap">#</TableHead>
+          <TableHead className="whitespace-nowrap">线路</TableHead>
+          <TableHead className="whitespace-nowrap">类型 / 协议</TableHead>
+          <TableHead className="whitespace-nowrap">倍率</TableHead>
+          <TableHead className="whitespace-nowrap text-right">上行</TableHead>
+          <TableHead className="whitespace-nowrap text-right">下行</TableHead>
+          <TableHead className="whitespace-nowrap text-right">物理总量</TableHead>
+          <TableHead className="whitespace-nowrap text-right">计费量</TableHead>
           {!compact && <TableHead>占比</TableHead>}
         </TableRow>
       </TableHeader>
@@ -41,10 +41,10 @@ export function TrafficRankTable({ items, compact = false }: { items: LineTraffi
               </div>
             </TableCell>
             <TableCell><Badge className="whitespace-nowrap" variant="outline">{item.trafficRate}x</Badge></TableCell>
-            <TableCell className="text-right tabular-nums">{formatBytes(item.upload)}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatBytes(item.download)}</TableCell>
-            <TableCell className="text-right tabular-nums">{formatBytes(item.total)}</TableCell>
-            <TableCell className="text-right font-medium tabular-nums">{formatBytes(item.billedTotal)}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">{formatBytes(item.upload)}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">{formatBytes(item.download)}</TableCell>
+            <TableCell className="whitespace-nowrap text-right tabular-nums">{formatBytes(item.total)}</TableCell>
+            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatBytes(item.billedTotal)}</TableCell>
             {!compact && <TableCell><div className="flex items-center gap-2"><Progress value={item.percentage} className="h-1.5 w-16" /><span className="text-xs tabular-nums">{item.percentage}%</span></div></TableCell>}
           </TableRow>
         ))}
