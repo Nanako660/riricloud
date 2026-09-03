@@ -24,9 +24,7 @@ export const router = createBrowserRouter([
         children: [
           {
             path: '/',
-            lazy: async () => ({
-              Component: (await import('@/pages/dashboard')).default
-            })
+            element: <Navigate to="/subscription" replace />
           },
           {
             element: <AdminGuard />,

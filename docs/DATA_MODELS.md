@@ -413,7 +413,7 @@ model SystemSetting {
 | `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
 | `publicBaseUrl` | HTTP/HTTPS URL 或空字符串 | `""` | 全站对外访问基准地址；用于 Agent 安装、升级和二进制下载地址 |
 | `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
-| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户仪表盘公告横幅 |
+| `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户订阅控制台公告横幅 |
 | `footerCopyright` | 纯文本 | `""` | 页脚版权文案 |
 | `supportTelegramUrl` / `supportDiscordUrl` / `supportCustomUrl` | URL 或空字符串 | `""` | 客服、群组与自定义支持入口 |
 | `supportEmail` | 邮箱或空字符串 | `""` | 客服邮箱入口 |

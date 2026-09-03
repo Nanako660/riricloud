@@ -109,7 +109,6 @@ export function useUserMutations() {
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
       void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
-      void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
     },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '订阅更新失败'))
   });
@@ -139,7 +138,6 @@ export function useUserMutations() {
       toast.success('订阅链接已重置');
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
-      void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
     },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置订阅链接失败'))
   });

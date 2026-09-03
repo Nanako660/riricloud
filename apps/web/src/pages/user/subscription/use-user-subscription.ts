@@ -24,7 +24,6 @@ export function useUserSubscriptionMutations() {
   const queryClient = useQueryClient();
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
-    void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
     void queryClient.invalidateQueries({ queryKey: ['user', 'nodes'] });
   };
   const subscribe = useMutation({

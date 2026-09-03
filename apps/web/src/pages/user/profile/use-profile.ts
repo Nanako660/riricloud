@@ -62,7 +62,6 @@ export function useProfileMutations() {
     void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
     void queryClient.invalidateQueries({ queryKey: ['user', 'wallet'] });
     void queryClient.invalidateQueries({ queryKey: ['user', 'wallet', 'transactions'] });
-    void queryClient.invalidateQueries({ queryKey: ['user', 'dashboard'] });
   };
   const redeem = useMutation({
     mutationFn: async (code: string) => (await api.post('/user/wallet/redeem', { code })).data,

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -10,7 +10,11 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  /**
+   * @deprecated 前端统一使用 GET /user/subscription；保留该接口供外部脚本兼容。
+   */
   @Get('dashboard')
+  @ApiOperation({ summary: '获取个人仪表盘数据（已弃用，请使用 /user/subscription）', deprecated: true })
   getDashboard(@CurrentUser() user: { id: string }) {
     return this.usersService.getDashboard(user.id);
   }
