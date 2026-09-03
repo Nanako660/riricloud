@@ -50,6 +50,7 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
 2. **数字输入框规范 (Number Input Spinners)**
    - 全局隐藏 `<input type="number">` 的浏览器原生微调上下箭头（Spinners），由 `index.css` 全局重置（WebKit `-webkit-appearance: none` + Firefox `-moz-appearance: textfield`）。
    - 保持数字输入框（端口、速率、权重等）与普通文本输入框完全一致的对齐排版与间距。
+   - 以字节保存、换算为 GiB 展示的流量字段必须使用 `step="any"`，避免任意字节数换算后的高精度小数被浏览器的固定步长校验误判；最小值与业务范围由 Zod schema 校验。
 
 3. **页面与卡片进场动效规范 (Page & Card Transition)**
    - 全站子页面容器（`PageContainer`）与独立全屏卡片（`LoginPage` / `RegisterPage`）统一配置 `300ms ease-out` 的微景深淡入动效（`animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out`）。
