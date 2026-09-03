@@ -17,6 +17,8 @@ import { type ProtocolType } from '../common/constants';
 import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
+import { isLineAuthorized } from '../common/line-access';
+import { getTrafficPeriod } from '../common/traffic-reset';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -26,14 +28,21 @@ type SubscriptionUserSnapshot = {
   email: string;
   password: string | null;
   isActive: boolean;
+  extraLineGrants?: Array<{ lineId: string }>;
 };
 
 type SubscriptionSnapshot = {
+  id: string;
   status: string;
   trafficLimitBytes: bigint;
   trafficUsedBytes: bigint;
   expireAt: Date | null;
   user: SubscriptionUserSnapshot;
+  plan?: {
+    lineMatchMode: string;
+    lineTagsJson: string;
+    lineIdsJson: string;
+  } | null;
 };
 
 type SubscriptionDelegate = {
@@ -41,7 +50,13 @@ type SubscriptionDelegate = {
 };
 
 type TrafficSubscriptionDelegate = {
-  findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; userId: string }>>;
+  findMany: (args: Record<string, unknown>) => Promise<Array<{
+    id: string;
+    userId: string;
+    trafficPeriodStartAt?: Date | null;
+    startedAt?: Date;
+    plan?: { durationDays: number; trafficResetMode: string } | null;
+  }>>;
   update: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
@@ -289,7 +304,8 @@ export class AgentService implements OnModuleDestroy {
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
           })
           : null;
-      await this.persistTrafficSnapshots(nodeId, trafficSnapshots, activeEntryLine?.id, heartbeatAt);
+      const reset = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, activeEntryLine?.id, heartbeatAt);
+      if (reset) void this.pushConfigToAll();
     }
   }
 
@@ -298,7 +314,8 @@ export class AgentService implements OnModuleDestroy {
     records: HeartbeatData['trafficSnapshots'],
     lineId?: string,
     observedAt = new Date()
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let resetCount = 0;
     await this.prisma.$transaction(async (tx) => {
       const snapshotsByCredential = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const record of records) {
@@ -369,9 +386,37 @@ export class AgentService implements OnModuleDestroy {
       if (subscription && totalsByUser.size) {
         const subscriptions = await subscription.findMany({
           where: { userId: { in: [...totalsByUser.keys()] } },
-          select: { id: true, userId: true }
+          select: {
+            id: true,
+            userId: true,
+            startedAt: true,
+            trafficPeriodStartAt: true,
+            plan: { select: { durationDays: true, trafficResetMode: true } }
+          }
         });
-        subscriptions.forEach((item) => subscriptionByUser.set(item.userId, item.id));
+        for (const item of subscriptions) {
+          subscriptionByUser.set(item.userId, item.id);
+          if (!item.plan || !item.startedAt) continue;
+          const period = getTrafficPeriod(item.plan.trafficResetMode, observedAt, item.startedAt, item.plan.durationDays);
+          if (!period) continue;
+          const previous = item.trafficPeriodStartAt ?? null;
+          const shouldReset = Boolean(previous && previous.getTime() < period.startAt.getTime());
+          if (!previous) {
+            await tx.subscription.updateMany({
+              where: { id: item.id, trafficPeriodStartAt: null },
+              data: { trafficPeriodStartAt: period.startAt }
+            });
+          } else if (shouldReset) {
+            const updated = await tx.subscription.updateMany({
+              where: { id: item.id, trafficPeriodStartAt: previous },
+              data: { trafficPeriodStartAt: period.startAt, trafficUsedBytes: BigInt(0) }
+            });
+            if (updated.count > 0) {
+              await tx.user.update({ where: { id: item.userId }, data: { trafficUsedBytes: BigInt(0) } });
+              resetCount += 1;
+            }
+          }
+        }
       }
       if (logs.length) {
         await tx.trafficLog.createMany({ data: logs });
@@ -387,6 +432,7 @@ export class AgentService implements OnModuleDestroy {
       await this.batchIncrement(tx, 'Subscription', subscriptionTotals);
       await this.batchUpsertTrafficCursors(tx, nodeId, cursorUpdates);
     });
+    return resetCount > 0;
   }
 
   private enqueueAgentWrite<T>(label: string, task: () => Promise<T>): Promise<T> {
@@ -783,31 +829,43 @@ export class AgentService implements OnModuleDestroy {
 
     // vless/tuic 用 uuid 登录；hy2 的 password 回退 uuid（与订阅输出一致，见 docs/DATA_MODELS.md §3.1）
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: SubscriptionDelegate }).subscription;
-    let users: InboundUserCredential[];
+    let entitledSubscriptions: SubscriptionSnapshot[] = [];
     if (subscriptionDelegate) {
-      const subscriptions = await subscriptionDelegate.findMany({
+      entitledSubscriptions = await subscriptionDelegate.findMany({
         where: { status: { in: ['ACTIVE', 'CANCELED'] } },
-        include: { user: { select: { uuid: true, email: true, password: true, isActive: true } } }
+        include: {
+          user: {
+            select: {
+              uuid: true,
+              email: true,
+              password: true,
+              isActive: true,
+              extraLineGrants: { select: { lineId: true } }
+            }
+          },
+          plan: { select: { lineMatchMode: true, lineTagsJson: true, lineIdsJson: true } }
+        }
       });
-      users = subscriptions
-        .filter((subscription) =>
-          subscription.user.isActive &&
-          subscription.trafficUsedBytes < subscription.trafficLimitBytes &&
-          (!subscription.expireAt || subscription.expireAt.getTime() > Date.now())
-        )
-        .map((subscription) => ({
-          uuid: subscription.user.uuid,
-          email: subscription.user.email,
-          credential: subscription.user.password ?? subscription.user.uuid
-        }));
+      entitledSubscriptions = entitledSubscriptions.filter((subscription) =>
+        subscription.user.isActive &&
+        subscription.trafficUsedBytes < subscription.trafficLimitBytes &&
+        (!subscription.expireAt || subscription.expireAt.getTime() > Date.now())
+      );
     } else {
       const entitledUsers = await this.prisma.user.findMany({
         where: { isActive: true },
         select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
       });
-      users = entitledUsers
+      entitledSubscriptions = entitledUsers
         .filter(isUserEntitled)
-        .map((u) => ({ uuid: u.uuid, email: u.email, credential: u.password ?? u.uuid }));
+        .map((u) => ({
+          id: u.uuid,
+          status: 'ACTIVE',
+          trafficLimitBytes: u.trafficLimitBytes,
+          trafficUsedBytes: u.trafficUsedBytes,
+          expireAt: u.expireAt,
+          user: { uuid: u.uuid, email: u.email, password: u.password, isActive: u.isActive }
+        }));
     }
 
     type ConfigLine = {
@@ -822,7 +880,10 @@ export class AgentService implements OnModuleDestroy {
       entryPort: number;
       exitNodeId: string;
       exitPort: number;
-      exitNode: { serverHost: string };
+      tagsJson: string;
+      isPublic: boolean;
+      entryNode?: { status: string };
+      exitNode: { serverHost: string; status?: string };
       certificate: { certificatePem: string; privateKeyPem: string } | null;
     };
     const lines = new Map<string, ConfigLine>();
@@ -833,15 +894,41 @@ export class AgentService implements OnModuleDestroy {
       }
     }
 
+    const publicLinesEnabled = (await this.settingsService?.getSettings())?.publicLinesEnabled !== false;
     const inbounds: Array<Record<string, unknown>> = [];
     const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
     const relayRules: Array<Record<string, unknown>> = [];
+    const authorizedUsers = new Map<string, InboundUserCredential>();
+    const usersForLine = (line: ConfigLine): InboundUserCredential[] => {
+      const lineUsers = entitledSubscriptions
+        .filter((subscription) => {
+          if (!subscription.plan) return true;
+          return isLineAuthorized(
+            subscription.plan,
+            line,
+            subscription.user.extraLineGrants?.map((grant) => grant.lineId) ?? []
+          );
+        })
+        .map((subscription) => ({
+          uuid: subscription.user.uuid,
+          email: subscription.user.email,
+          credential: subscription.user.password ?? subscription.user.uuid
+        }));
+      lineUsers.forEach((user) => authorizedUsers.set(user.uuid, user));
+      return lineUsers;
+    };
     for (const line of lines.values()) {
+      if (!publicLinesEnabled) continue;
       const protocolType = line.protocolType as ProtocolType;
       const params = this.buildLineParams(line);
       const lineTags = resolveLineTags(line);
       const isEntry = line.entryNodeId === nodeId;
       const isExit = line.exitNodeId === nodeId;
+      const otherNodeOnline = isEntry
+        ? line.exitNode.status === 'ONLINE'
+        : line.entryNode?.status === 'ONLINE';
+      if (node.status !== 'ONLINE' || !otherNodeOnline) continue;
+      const users = usersForLine(line);
       if (line.type === 'DIRECT' && isEntry) {
         inbounds.push(...buildServerInbounds({
           type: protocolType,
@@ -906,7 +993,7 @@ export class AgentService implements OnModuleDestroy {
           listen: getStatsApiListen(),
           stats: {
             enabled: true,
-            users: [...new Set(users.map((user) => user.email).filter(Boolean))]
+             users: [...new Set([...authorizedUsers.values()].map((user) => user.email).filter(Boolean))]
           }
         }
       },

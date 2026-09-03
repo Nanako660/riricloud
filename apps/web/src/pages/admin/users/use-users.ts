@@ -22,6 +22,9 @@ export interface AdminUserSubscription {
   trafficUsedBytes: number;
   startedAt: string;
   expireAt: string | null;
+  trafficResetMode: 'NONE' | 'CALENDAR_MONTH' | 'SUBSCRIPTION_CYCLE';
+  nextTrafficResetAt: string | null;
+  extraLineIds: string[];
   plan: { id: string; name: string } | null;
 }
 
@@ -103,6 +106,7 @@ export function useUserMutations() {
       trafficUsedBytes?: number;
       expireAt?: string | null;
       addDays?: number;
+      extraLineIds?: string[];
     }) => (await api.patch(`/admin/subscriptions/${id}`, payload)).data,
     onSuccess: () => {
       toast.success('订阅已更新');
@@ -122,6 +126,7 @@ export function useUserMutations() {
       trafficUsedBytes?: number;
       expireAt?: string | null;
       addDays?: number;
+      extraLineIds?: string[];
     }) => (await api.post(`/admin/subscriptions/users/${userId}`, payload)).data,
     onSuccess: () => {
       toast.success('已绑定订阅');

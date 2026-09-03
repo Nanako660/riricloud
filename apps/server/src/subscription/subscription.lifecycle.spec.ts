@@ -10,20 +10,22 @@ describe('SubscriptionService lifecycle', () => {
   let service: SubscriptionService;
   const plan = {
     id: 'p1', name: '体验', isPublic: true, price: 1000, durationDays: 30, trafficLimitBytes: BigInt(1000),
-    lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null
+    trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null
   };
   const subscription = {
     id: 's1', userId: 'u1', planId: 'p1', status: 'ACTIVE', trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0),
     startedAt: new Date(), expireAt: new Date(Date.now() + 86400000), subscriptionToken: 'token', canceledAt: null,
-    createdAt: new Date(), updatedAt: new Date(), plan, user: { id: 'u1', email: 'u@example.com', uuid: 'uuid', password: null, isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) }
+    trafficPeriodStartAt: null, createdAt: new Date(), updatedAt: new Date(), plan, user: { id: 'u1', email: 'u@example.com', uuid: 'uuid', password: null, isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0), extraLineGrants: [] }
   };
   const tx = {
-    subscription: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    subscription: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
+    userLineGrant: { deleteMany: jest.fn(), createMany: jest.fn() },
     user: { update: jest.fn() },
     balanceTransaction: { create: jest.fn() }
   };
   const prisma = {
     plan: { findUnique: jest.fn() },
+    line: { findMany: jest.fn() },
     subscription: { findUnique: jest.fn(), update: jest.fn() },
     user: { findUnique: jest.fn(), update: jest.fn() },
     node: { findMany: jest.fn() },
@@ -38,6 +40,11 @@ describe('SubscriptionService lifecycle', () => {
       providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }, { provide: WalletService, useValue: walletService }]
     }).compile();
     service = moduleRef.get(SubscriptionService);
+  });
+
+  beforeEach(() => {
+    tx.subscription.updateMany.mockResolvedValue({ count: 0 });
+    prisma.line.findMany.mockResolvedValue([]);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -129,6 +136,61 @@ describe('SubscriptionService lifecycle', () => {
       '续费套餐',
       's1'
     );
+  });
+
+  it('已有订阅首次启用重置策略时只初始化周期起点，不清空当前用量', async () => {
+    const resetPlan = { ...plan, trafficResetMode: 'CALENDAR_MONTH' };
+    const legacy = {
+      ...subscription,
+      trafficUsedBytes: BigInt(123),
+      trafficPeriodStartAt: null,
+      plan: resetPlan,
+      user: { ...subscription.user, extraLineGrants: [] }
+    };
+    prisma.subscription.findUnique.mockResolvedValue(legacy);
+    tx.subscription.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.get('s1');
+
+    expect(result.trafficUsedBytes).toBe(123);
+    expect(tx.subscription.updateMany).toHaveBeenCalledWith({
+      where: { id: 's1', trafficPeriodStartAt: null },
+      data: { trafficPeriodStartAt: expect.any(Date) }
+    });
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('续费周期套餐时按原订阅起点计算当前周期，而不是把周期起点回退到初始日期', async () => {
+    const cyclePlan = { ...plan, trafficResetMode: 'SUBSCRIPTION_CYCLE' };
+    const current = { ...subscription, plan: cyclePlan, startedAt: new Date(Date.now() - 45 * 86400000) };
+    prisma.subscription.findUnique.mockResolvedValue(current);
+    prisma.plan.findUnique.mockResolvedValue(cyclePlan);
+    tx.subscription.update.mockResolvedValue({ ...current, plan: cyclePlan, trafficUsedBytes: BigInt(0) });
+    prisma.subscription.findUnique.mockResolvedValue({ ...current, plan: cyclePlan, trafficUsedBytes: BigInt(0) });
+
+    await service.renew('u1');
+
+    const update = tx.subscription.update.mock.calls[0][0] as { data: { trafficPeriodStartAt: Date } };
+    expect(update.data.trafficPeriodStartAt.getTime()).toBeGreaterThan(current.startedAt.getTime());
+  });
+
+  it('额外线路授权全量替换，移除订阅时保留授权关系', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, user: { ...subscription.user, extraLineGrants: [] } });
+    prisma.line.findMany.mockResolvedValue([{ id: 'line-1' }, { id: 'line-2' }]);
+    tx.subscription.update.mockResolvedValue(subscription);
+    await service.adminUpdate('s1', { extraLineIds: ['line-1', 'line-1'] });
+
+    expect(tx.userLineGrant.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } });
+    expect(tx.userLineGrant.createMany).toHaveBeenCalledWith({ data: [{ userId: 'u1', lineId: 'line-1' }] });
+
+    tx.userLineGrant.deleteMany.mockClear();
+    tx.userLineGrant.createMany.mockClear();
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, user: { ...subscription.user, extraLineGrants: [{ lineId: 'line-1' }] } });
+    const result = await service.adminUpdate('s1', { planId: null, extraLineIds: [] });
+
+    expect(result).toEqual({ removed: true, id: 's1', userId: 'u1' });
+    expect(tx.userLineGrant.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userLineGrant.createMany).not.toHaveBeenCalled();
   });
 
   it('禁止向价格更低的套餐升配', async () => {

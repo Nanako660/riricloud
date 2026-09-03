@@ -9,6 +9,7 @@ export interface Plan {
   price: number;
   durationDays: number;
   trafficLimitBytes: number;
+  trafficResetMode: 'NONE' | 'CALENDAR_MONTH' | 'SUBSCRIPTION_CYCLE';
   lineMatchMode: 'ALL' | 'TAGS' | 'EXPLICIT';
   lineTags: string[];
   lineIds: string[];
@@ -24,6 +25,7 @@ export interface PlanPayload {
   price: number;
   durationDays: number;
   trafficLimitBytes: number;
+  trafficResetMode: Plan['trafficResetMode'];
   lineMatchMode: Plan['lineMatchMode'];
   lineTags: string[];
   lineIds: string[];

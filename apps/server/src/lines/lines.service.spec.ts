@@ -147,6 +147,25 @@ describe('LinesService', () => {
     });
   });
 
+  it('套餐线路与额外线路取并集，额外授权可包含隐藏线路但不放行禁用线路', async () => {
+    const hidden = { ...rawLine, id: 'hidden', name: '隐藏线路', isPublic: false, tagsJson: '["internal"]' };
+    const disabled = { ...rawLine, id: 'disabled', name: '禁用线路', isPublic: false, status: 'DISABLED' };
+    prisma.line.findMany.mockResolvedValue([rawLine, hidden, disabled]);
+
+    const result = await service.getAvailableForPlan(
+      { lineMatchMode: 'TAGS', lineTagsJson: '["premium"]', lineIdsJson: '[]' },
+      ['hidden', 'disabled']
+    );
+
+    expect(result.map((line) => line.id)).toEqual(['line-1', 'hidden']);
+    expect(prisma.line.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ isPublic: true }, { id: { in: ['hidden', 'disabled'] } }]
+      }
+    }));
+  });
+
   it('线路不存在时抛出 NotFoundException', async () => {
     prisma.line.findUnique.mockResolvedValue(null);
     await expect(service.detail('missing')).rejects.toThrow(NotFoundException);

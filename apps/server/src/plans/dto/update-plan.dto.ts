@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PLAN_MATCH_MODES, PlanMatchMode } from './create-plan.dto';
+import { TRAFFIC_RESET_MODES, TrafficResetMode } from '../../common/traffic-reset';
 
 export class UpdatePlanDto {
   @ApiPropertyOptional()
@@ -36,6 +37,11 @@ export class UpdatePlanDto {
   @Min(1)
   @IsOptional()
   trafficLimitBytes?: number;
+
+  @ApiPropertyOptional({ enum: TRAFFIC_RESET_MODES, description: '流量累计配额重置策略' })
+  @IsIn(TRAFFIC_RESET_MODES)
+  @IsOptional()
+  trafficResetMode?: TrafficResetMode;
 
   @ApiPropertyOptional({ enum: PLAN_MATCH_MODES })
   @IsIn(PLAN_MATCH_MODES)

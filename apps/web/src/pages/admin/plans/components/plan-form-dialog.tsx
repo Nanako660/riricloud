@@ -19,6 +19,7 @@ const schema = z.object({
   price: z.coerce.number().min(0).multipleOf(0.01, '最多保留两位小数'),
   durationDays: z.coerce.number().int().min(1),
   trafficLimitGB: z.coerce.number().positive('流量必须大于 0'),
+  trafficResetMode: z.enum(['NONE', 'CALENDAR_MONTH', 'SUBSCRIPTION_CYCLE']),
   lineMatchMode: z.enum(['ALL', 'TAGS', 'EXPLICIT']),
   lineTags: z.string().optional(),
   lineIds: z.string().optional(),
@@ -33,7 +34,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
   const { create, update } = usePlanMutations();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', description: '', price: 0, durationDays: 30, trafficLimitGB: 100, lineMatchMode: 'ALL', lineTags: '', lineIds: '', templateId: '', isPublic: true, sortOrder: 0 }
+    defaultValues: { name: '', description: '', price: 0, durationDays: 30, trafficLimitGB: 100, trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTags: '', lineIds: '', templateId: '', isPublic: true, sortOrder: 0 }
   });
   const lineTags = Array.from(new Set(lineOptions.flatMap((line) => line.tags))).sort();
   const selectedTags = (form.watch('lineTags') ?? '').split(',').map((tag) => tag.trim()).filter(Boolean);
@@ -54,6 +55,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
       price: plan.price,
       durationDays: plan.durationDays,
       trafficLimitGB: plan.trafficLimitBytes / GB,
+      trafficResetMode: plan.trafficResetMode ?? 'NONE',
       lineMatchMode: plan.lineMatchMode,
       lineTags: plan.lineTags.join(', '),
       lineIds: plan.lineIds.join(', '),
@@ -69,6 +71,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
       price: values.price,
       durationDays: values.durationDays,
       trafficLimitBytes: Math.round(values.trafficLimitGB * GB),
+      trafficResetMode: values.trafficResetMode,
       lineMatchMode: values.lineMatchMode,
       lineTags: values.lineTags?.split(',').map((tag) => tag.trim()).filter(Boolean) ?? [],
       lineIds: values.lineIds?.split(',').map((id) => id.trim()).filter(Boolean) ?? [],
@@ -89,6 +92,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
     <div className="space-y-2"><Label htmlFor="plan-price">价格（元）</Label><Input id="plan-price" type="number" min="0" step="0.01" {...form.register('price')} />{form.formState.errors.price && <p className="text-xs text-destructive">{form.formState.errors.price.message}</p>}</div>
     <div className="space-y-2"><Label htmlFor="plan-days">有效期（天）</Label><Input id="plan-days" type="number" min="1" {...form.register('durationDays')} /></div>
     <div className="space-y-2"><Label htmlFor="plan-traffic">流量（GiB）</Label><Input id="plan-traffic" type="number" min="1" step="0.1" {...form.register('trafficLimitGB')} /></div>
+    <div className="space-y-2"><Label>流量重置策略</Label><Controller control={form.control} name="trafficResetMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="NONE">不自动重置</SelectItem><SelectItem value="CALENDAR_MONTH">自然月重置</SelectItem><SelectItem value="SUBSCRIPTION_CYCLE">订阅周期重置</SelectItem></SelectContent></Select>} /></div>
     <div className="space-y-2"><Label htmlFor="plan-sort">排序</Label><Input id="plan-sort" type="number" min="0" {...form.register('sortOrder')} /></div>
     <div className="space-y-2 sm:col-span-2"><Label>线路匹配模式</Label><Controller control={form.control} name="lineMatchMode" render={({ field }) => <Select value={field.value} onValueChange={field.onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部可用线路</SelectItem><SelectItem value="TAGS">按线路标签匹配</SelectItem><SelectItem value="EXPLICIT">显式线路 ID</SelectItem></SelectContent></Select>} /></div>
     <div className="space-y-2"><Label htmlFor="plan-line-tags">线路标签</Label><Input id="plan-line-tags" placeholder="vip, hk" {...form.register('lineTags')} />{lineTags.length > 0 && <div className="flex flex-wrap gap-1.5">{lineTags.map((tag) => <Button key={tag} type="button" size="sm" variant={selectedTags.includes(tag) ? 'secondary' : 'outline'} onClick={() => toggleTag(tag)}>#{tag}</Button>)}</div>}</div>
