@@ -169,6 +169,7 @@ sudo systemctl reload nginx
 - 严格匹配 `/<UUID>`，内部 rewrite 到 `/api/v1/sub/<UUID>`，不覆盖查询参数；`?type=clash`、`?type=sing-box` 和客户端 `User-Agent` 会继续参与后端格式协商。
 - `/ws/agent` 使用 HTTP/1.1 并转发 `Upgrade`、`Connection`，生产 Agent 地址使用 `wss://<domain>/ws/agent`。
 - `/api/**`、`/login`、`/admin`、SPA 路由和其他请求继续代理给 Master，不会被短链规则捕获。
+- 示例将 `client_max_body_size` 设置为 `2m`，与 Master 的 JSON/表单请求体上限一致；若自定义 Nginx 配置，请保留该值或更大值，否则大模板保存可能在到达 Master 前返回 HTTP `413`。
 - 代理统一传递 `Host`、`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto` 和 `X-Forwarded-Host`。
 
 管理员在「系统设置 → 订阅与分发」开启「使用 Nginx 伪静态短链接」后，用户页面会展示 `https://domain.com/<UUID>`。若 `subscriptionBaseUrl` 设置为 `https://domain.com/panel`，前端会展示 `https://domain.com/panel/<UUID>`，必须同时把示例中的短链 location/rewrite 改成 `/panel/` 前缀。开关只改变展示地址，不会自动检测 Nginx 配置；配置不一致时应先关闭开关或修正 Nginx。

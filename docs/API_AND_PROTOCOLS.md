@@ -116,6 +116,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
+- 主控 JSON 与 URL-encoded 请求体上限为 `2 MiB`；超出上限在进入 Controller 前返回 HTTP `413 Payload Too Large`。订阅模板的策略组、规则集、DNS 与 YAML/JSON 覆写会合并在同一请求中，编辑大文本时应控制在该上限内。
 - `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐

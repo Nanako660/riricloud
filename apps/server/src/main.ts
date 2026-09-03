@@ -6,10 +6,12 @@ import { WsAdapter } from '@nestjs/platform-ws';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
+import { configureRequestBodyParser } from './common/request-body-parser';
 import { registerWebStatic } from './static/web-static';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  configureRequestBodyParser(app);
   app.useWebSocketAdapter(new WsAdapter(app));
   app.setGlobalPrefix('api/v1');
   // 默认所有端点需要 JWT，@Public() 显式放行（安全红线：服务端默认拒绝）
