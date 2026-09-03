@@ -19,7 +19,7 @@
 
 | 规划名称 | 目标版本 | 创建日期 | 任务进度 |
 | :--- | :--- | :--- | :--- |
-| [流量账务与 SQLite 写入链路优化](./traffic-accounting-sqlite-optimization.md) | `0.5.0` | 2026-09-03 | 18/20 (90%) |
+| [流量账务与 SQLite 写入链路优化](./traffic-accounting-sqlite-optimization.md) | `0.5.0` | 2026-09-03 | 19/20 (95%) |
 
 ---
 

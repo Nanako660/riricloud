@@ -46,7 +46,7 @@ created_at: 2026-09-03
 - [x] 补充协议边界、超大整数、未知凭证、重置计数器、SQLite 并发和写入失败重试测试。
 - [x] 通过 Server 类型检查、Lint、全量 Jest、Agent gofmt/go test/go vet。
 - [x] 通过 Prisma schema 校验并生成最新 Client。
-- [ ] 在发布分支执行 `pnpm bump minor` 固化 `0.5.0`，完成五合一门禁、Agent/Docker 构建和 Release。
+- [x] 在发布分支执行 `pnpm bump minor` 固化 `0.5.0`，完成五合一门禁、Agent/Docker 构建和 Release。
 - [ ] 按生产顺序替换全部 Agent、迁移 Master，观察游标和写队列指标。
 
 ## 运行与回滚
@@ -58,3 +58,4 @@ created_at: 2026-09-03
 - Server 全量测试：27 个测试套件、218 项测试通过，包含协议边界、真实 SQLite 并发幂等和事务回滚测试。
 - Agent：`go test ./...`、`go vet ./...` 通过，便携工具链版本为 Go 1.27.0。
 - Prisma：schema validate、client generate 与本地 `prisma migrate deploy` 通过；迁移文件已加入仓库，生产部署使用 `prisma migrate deploy`。
+- 发布：`v0.5.0` 已合并至 `main` 并创建 GitHub Release；WSL Docker 已完成 Master/Agent 双标签构建与镜像导出校验。
