@@ -213,13 +213,14 @@ model Line {
   tag             String?
   listen          String   @default("0.0.0.0")
   type            String   @default("DIRECT") // DIRECT | RELAY
-  relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY
+  relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY | TARGET_LINE
   protocolType    String   @default("VLESS") // ProtocolType
   paramsJson      String   @default("{}") // 协议专属参数 JSON
   entryNodeId     String
   entryPort       Int
   exitNodeId      String
   exitPort        Int
+  targetLineId    String? // TARGET_LINE 模式引用的其他节点直连线路
   certificateId   String? // 关联标准 TLS 证书；为空时使用 Agent 本地路径
   endpointOverrideEnabled Boolean @default(false) // 是否启用线路对外覆盖；关闭时复用底层默认设置
   serverHost      String?
@@ -237,10 +238,13 @@ model Line {
 
   entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
   exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  targetLine    Line? @relation("LineRelayTarget", fields: [targetLineId], references: [id], onDelete: Restrict)
+  relaySources  Line[] @relation("LineRelayTarget")
   certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
 
   @@index([entryNodeId])
   @@index([exitNodeId])
+  @@index([targetLineId])
   @@index([certificateId])
   @@index([protocolType])
   @@index([type, status])
@@ -549,6 +553,8 @@ model SystemSetting {
 | `listen` | 线路派生入站的监听地址，默认 `0.0.0.0`；直连和中继入口/出口复用该地址 |
 | `relayMode=BLIND_FORWARD` | 入口节点生成 `direct` inbound，并用 `override_address` / `override_port` 指向出口节点的 Line 端口，保持端到端协议加密 |
 | `relayMode=PROTOCOL_PROXY` | 入口节点生成 Line 协议入站、目标协议 outbound 与 route rule；出口节点生成对应协议入站 |
+| `relayMode=TARGET_LINE` | 入口节点生成当前 Line 的协议入站和指向目标直连线路的异构协议 outbound；目标节点复用目标直连线路的协议入站，不重复占用端口 |
+| `targetLineId` | 仅用于 `TARGET_LINE`；必须引用其他节点上的 `DIRECT` 线路，目标协议限定为 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS` 或 `NAIVE` |
 | `endpointOverrideEnabled=false` | 默认关闭；用户连接地址/端口复用入口节点与入口端口，SNI/Host 从 Line 协议 TLS/Transport 参数回退 |
 | `endpointOverrideEnabled=true` | 启用 `serverHost/serverPort/serverName/host` 覆盖；覆盖值单独保留，关闭开关不会清空 |
 | `serverHost/serverPort` | 用户端实际连接地址/端口覆盖；线路 API 顶层字段返回最终生效值，`endpointOverrides` 返回原始值 |
@@ -572,7 +578,7 @@ model SystemSetting {
 | `lineMatchMode=EXPLICIT` | 仅匹配 `lineIdsJson` 中列出的线路 |
 | `templateId` | 可选订阅模板；为空时使用全局 `isDefault=true` 模板 |
 
-节点只提供底层健康状态；线路只有 `status=ACTIVE`、`isPublic=true` 且入口节点与出口节点均在线时，才会作为套餐市场的可用线路返回。订阅详情直接返回线路协议、倍率、等级、标签、端点覆盖和中继机制。
+节点只提供底层健康状态；线路只有 `status=ACTIVE`、`isPublic=true` 且入口节点与出口节点均在线时，才会作为套餐市场的可用线路返回；`TARGET_LINE` 还要求目标直连线路自身为 `ACTIVE`。订阅详情直接返回线路协议、倍率、等级、标签、端点覆盖和中继机制。
 
 ### 3.4 `Subscription` 生命周期与兼容镜像
 

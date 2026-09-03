@@ -28,6 +28,7 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [订阅流量周期重置与用户额外线路](./archive/2026-09-04-subscription-traffic-reset-extra-lines.md) | `0.5.0` | 2026-09-04 | — |
+| [中继线路复用已有落地线路（异构协议桥接）](./archive/2026-09-04-relay-target-line-bridge.md) | `0.5.0` | 2026-09-04 | — |
 | [用户系统完善：货币系统、个人中心、卡密充值与订阅交易闭环](./archive/2026-09-03-user-currency-and-profile.md) | `v0.4.20` | 2026-09-03 | — |
 | [下线仪表盘并将能力全量合并至我的订阅](./archive/2026-09-03-merge-dashboard-into-subscription.md) | `v0.4.x` | 2026-09-03 | — |
 | [二进制资源中心与 Sing-box 版本解耦](./archive/2026-09-03-binary-resource-center.md) | `v0.5.0` | 2026-09-03 | — |

@@ -24,10 +24,10 @@ export type ProtocolType = (typeof PROTOCOL_TYPES)[number];
 export const LINE_TYPES = ['DIRECT', 'RELAY'] as const;
 export type LineType = (typeof LINE_TYPES)[number];
 
-export const RELAY_MODES = ['BLIND_FORWARD', 'PROTOCOL_PROXY'] as const;
+export const RELAY_MODES = ['BLIND_FORWARD', 'PROTOCOL_PROXY', 'TARGET_LINE'] as const;
 export type RelayMode = (typeof RELAY_MODES)[number];
 
-// 可被协议重加密中继作为目标的协议；纯本地代理和传输层协议没有对应的统一出站。
+// 可被协议重加密中继或目标线路桥接作为出口的协议；纯本地代理和传输层协议没有对应的统一出站。
 export const PROTOCOL_PROXY_TARGET_TYPES = [
   'VLESS',
   'VMESS',

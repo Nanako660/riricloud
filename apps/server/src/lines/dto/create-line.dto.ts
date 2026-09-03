@@ -61,6 +61,11 @@ export class CreateLineDto {
   @IsOptional()
   exitNodeId?: string;
 
+  @ApiPropertyOptional({ format: 'uuid', description: '桥接已有直连线路时的目标线路；服务端自动同步出口节点与端口' })
+  @IsUUID()
+  @IsOptional()
+  targetLineId?: string;
+
   @ApiPropertyOptional({ example: 24444, minimum: 1, maximum: 65535, description: '出口监听端口，中继线路省略时随机分配' })
   @Type(() => Number)
   @IsInt()

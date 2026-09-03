@@ -149,7 +149,7 @@ export interface NodeLine {
   id: string;
   name: string;
   type: 'DIRECT' | 'RELAY';
-  relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | null;
+  relayMode: 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | 'TARGET_LINE' | null;
   protocolType: ProtocolType;
   entryNodeId: string;
   entryPort: number;

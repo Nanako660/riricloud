@@ -5,6 +5,7 @@ import { normalizeInboundParams, sanitizeInboundParams } from '../common/inbound
 import {
   LINE_TYPES,
   PROTOCOL_TYPES,
+  PROTOCOL_PROXY_TARGET_TYPES,
   RELAY_MODES,
   LineStatus,
   LineType,
@@ -26,7 +27,21 @@ const nodeSummary = { select: { id: true, name: true, serverHost: true, status: 
 const certificateSummary = {
   select: { id: true, name: true, subject: true, issuer: true, sansJson: true, validFrom: true, validTo: true }
 } as const;
-const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary, certificate: certificateSummary } as const;
+const targetLineSummary = {
+  select: {
+    id: true,
+    name: true,
+    type: true,
+    protocolType: true,
+    status: true,
+    entryNodeId: true,
+    entryPort: true,
+    exitNodeId: true,
+    exitPort: true,
+    entryNode: nodeSummary
+  }
+} as const;
+const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary, targetLine: targetLineSummary, certificate: certificateSummary } as const;
 type LineWithRelations = Prisma.LineGetPayload<{ include: typeof lineInclude }>;
 
 type LineInput = {
@@ -41,6 +56,7 @@ type LineInput = {
   entryPort?: number | null;
   exitNodeId?: string | null;
   exitPort?: number | null;
+  targetLineId?: string | null;
   certificateId?: string | null;
   endpointOverrideEnabled?: boolean;
   serverHost?: string | null;
@@ -105,6 +121,10 @@ export class LinesService {
 
   async remove(id: string) {
     await this.findRaw(id);
+    const referencingLine = await this.prisma.line.findFirst({ where: { targetLineId: id }, select: { id: true } });
+    if (referencingLine) {
+      throw new BadRequestException('该线路正被其他中继线路作为出口目标引用，请先解除引用后再删除');
+    }
     await this.prisma.line.delete({ where: { id } });
     void this.agentGateway.pushConfigToAll();
     return { deleted: true, id };
@@ -121,6 +141,7 @@ export class LinesService {
       relayMode: current.relayMode as RelayMode | null,
       entryNodeId: current.entryNodeId,
       exitNodeId: current.exitNodeId,
+      targetLineId: current.targetLineId,
       tags: this.parseTags(current.tagsJson),
       trafficRate: current.trafficRate,
       level: current.level,
@@ -179,6 +200,7 @@ export class LinesService {
     return rows
       .filter((line) => line.status === undefined || line.status === 'ACTIVE')
       .filter((line) => line.entryNode.status === 'ONLINE' && line.exitNode.status === 'ONLINE')
+      .filter((line) => line.relayMode !== 'TARGET_LINE' || line.targetLine?.status === 'ACTIVE')
       .filter((line) => isLineAuthorized(plan, line, extraIds))
       .map((line) => this.toView(line));
   }
@@ -218,20 +240,40 @@ export class LinesService {
       delete (params.tls as Record<string, unknown>).key;
     }
 
-    let entryNodeId = input.entryNodeId !== undefined ? input.entryNodeId : current?.entryNodeId;
-    let exitNodeId = input.exitNodeId !== undefined ? input.exitNodeId : current?.exitNodeId;
-    if (!entryNodeId) entryNodeId = exitNodeId;
-    if (!exitNodeId) exitNodeId = entryNodeId;
-    if (!entryNodeId || !exitNodeId) throw new BadRequestException('必须指定入口节点和出口节点');
-    if (type === 'DIRECT' && entryNodeId !== exitNodeId) {
-      throw new BadRequestException('直连线路的入口节点必须与出口节点一致');
-    }
     const relayMode = type === 'RELAY' ? (input.relayMode ?? current?.relayMode) as RelayMode | null : null;
     if (type === 'RELAY' && (!relayMode || !RELAY_MODES.includes(relayMode))) {
       throw new BadRequestException('中继线路必须指定有效的中继机制');
     }
     if (type === 'RELAY' && relayMode === 'PROTOCOL_PROXY' && protocolType === 'SHADOWTLS') {
       throw new BadRequestException('ShadowTLS 仅支持直连或盲转发，不支持协议代理中继');
+    }
+
+    let entryNodeId = input.entryNodeId !== undefined ? input.entryNodeId : current?.entryNodeId;
+    let exitNodeId = input.exitNodeId !== undefined ? input.exitNodeId : current?.exitNodeId;
+    let targetLineId: string | null = null;
+    let targetLine: { id: string; type: string; protocolType: string; entryNodeId: string; entryPort: number } | null = null;
+    if (type === 'RELAY' && relayMode === 'TARGET_LINE') {
+      if (!entryNodeId) throw new BadRequestException('桥接中继线路必须指定入口节点');
+      targetLineId = input.targetLineId !== undefined ? input.targetLineId : current?.targetLineId ?? null;
+      if (!targetLineId) throw new BadRequestException('桥接中继线路必须指定目标线路');
+      targetLine = await this.prisma.line.findUnique({
+        where: { id: targetLineId },
+        select: { id: true, type: true, protocolType: true, entryNodeId: true, entryPort: true }
+      });
+      if (!targetLine) throw new NotFoundException('目标线路不存在');
+      if (targetLine.type !== 'DIRECT') throw new BadRequestException('桥接目标必须是直连线路');
+      if (!PROTOCOL_PROXY_TARGET_TYPES.includes(targetLine.protocolType as (typeof PROTOCOL_PROXY_TARGET_TYPES)[number])) {
+        throw new BadRequestException('目标线路协议不支持作为桥接出口');
+      }
+      if (targetLine.entryNodeId === entryNodeId) throw new BadRequestException('桥接目标必须位于其他节点');
+      exitNodeId = targetLine.entryNodeId;
+    } else {
+      if (!entryNodeId) entryNodeId = exitNodeId;
+      if (!exitNodeId) exitNodeId = entryNodeId;
+    }
+    if (!entryNodeId || !exitNodeId) throw new BadRequestException('必须指定入口节点和出口节点');
+    if (type === 'DIRECT' && entryNodeId !== exitNodeId) {
+      throw new BadRequestException('直连线路的入口节点必须与出口节点一致');
     }
 
     const [entryNode, exitNode] = await Promise.all([
@@ -247,7 +289,9 @@ export class LinesService {
     const requestedExitPort = input.exitPort !== undefined && input.exitPort !== null ? input.exitPort : current?.exitPort;
     const exitPort = type === 'DIRECT'
       ? entryPort
-      : requestedExitPort ?? await this.findAvailablePort(exitNodeId, protocolType, current?.id);
+      : targetLine
+        ? targetLine.entryPort
+        : requestedExitPort ?? await this.findAvailablePort(exitNodeId, protocolType, current?.id);
     if (type === 'DIRECT' && requestedExitPort !== undefined && requestedExitPort !== null && requestedExitPort !== entryPort) {
       throw new BadRequestException('直连线路的入口与出口端口必须一致');
     }
@@ -255,7 +299,7 @@ export class LinesService {
       throw new BadRequestException('同节点中继线路的入口与出口端口必须不同');
     }
     await this.assertPortAvailable(entryNodeId, entryPort, protocolType, current?.id);
-    if (type === 'RELAY' || exitNodeId !== entryNodeId || exitPort !== entryPort) {
+    if (!(type === 'RELAY' && relayMode === 'TARGET_LINE') && (type === 'RELAY' || exitNodeId !== entryNodeId || exitPort !== entryPort)) {
       await this.assertPortAvailable(exitNodeId, exitPort, protocolType, current?.id);
     }
 
@@ -297,6 +341,7 @@ export class LinesService {
       entryPort,
       exitNodeId,
       exitPort,
+      targetLineId,
       certificateId,
       endpointOverrideEnabled: input.endpointOverrideEnabled ?? current?.endpointOverrideEnabled ?? false,
       serverHost: optionalText(input.serverHost, current?.serverHost),

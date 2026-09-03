@@ -20,12 +20,13 @@ interface LineFormDialogProps {
   onOpenChange: (open: boolean) => void;
   line: AdminLine | null;
   nodes: AdminNode[];
+  lines: AdminLine[];
   certificates: ApiCertificate[];
   pending: boolean;
   onSubmit: (payload: LinePayload) => void;
 }
 
-export function LineFormDialog({ open, onOpenChange, line, nodes, certificates, pending, onSubmit }: LineFormDialogProps) {
+export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certificates, pending, onSubmit }: LineFormDialogProps) {
   const [tab, setTab] = useState('inbound');
   const form = useForm<LineFormValues>({
     resolver: zodResolver(lineFormSchema),
@@ -63,6 +64,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, certificates, 
       listen: current.listen,
       type: current.type,
       relayMode: current.relayMode,
+      targetLineId: current.targetLineId,
       entryNodeId: current.entryNodeId,
       entryPort: current.entryPort,
       exitNodeId: current.exitNodeId,
@@ -88,6 +90,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, certificates, 
       const current = form.getValues();
       form.setValue('exitNodeId', current.entryNodeId, { shouldDirty: true });
       form.setValue('exitPort', current.entryPort, { shouldDirty: true });
+      form.setValue('targetLineId', '', { shouldDirty: true });
     }
   };
 
@@ -127,7 +130,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, certificates, 
                 <TabsTrigger value="advanced">线路高级设置</TabsTrigger>
               </TabsList>
               <TabsContent value="inbound" className="mt-4"><LineInboundFields form={form} nodes={nodes} certificates={certificates} onProtocolChange={changeProtocol} onGenerateKeys={generateKeys} keyPending={realityKeypair.isPending} /></TabsContent>
-              <TabsContent value="advanced" className="mt-4"><LineAdvancedFields form={form} nodes={nodes} onTypeChange={changeType} /></TabsContent>
+              <TabsContent value="advanced" className="mt-4"><LineAdvancedFields form={form} nodes={nodes} lines={lines} currentLineId={line?.id} onTypeChange={changeType} /></TabsContent>
             </Tabs>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
