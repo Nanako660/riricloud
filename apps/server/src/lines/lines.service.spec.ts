@@ -10,7 +10,7 @@ describe('LinesService', () => {
   const exitNode = { id: 'node-exit', name: '出口节点', serverHost: '198.51.100.20', status: 'ONLINE', isLocal: false };
   const prisma = {
     line: {
-      findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), updateMany: jest.fn()
+      findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn(), updateMany: jest.fn()
     },
     certificate: { findUnique: jest.fn() },
     node: { findUnique: jest.fn() },
@@ -26,6 +26,8 @@ describe('LinesService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.line.findMany.mockResolvedValue([]);
+    prisma.line.findFirst.mockResolvedValue(null);
+    prisma.line.findUnique.mockReset();
     prisma.certificate.findUnique.mockResolvedValue(null);
     prisma.node.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => where.id === entryNode.id ? entryNode : where.id === exitNode.id ? exitNode : null);
   });
@@ -33,7 +35,7 @@ describe('LinesService', () => {
   const rawLine = {
     id: 'line-1', name: '东京 VLESS', tag: 'tokyo-vless', listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS',
     paramsJson: JSON.stringify({ flow: 'xtls-rprx-vision', transport: { type: 'tcp' }, tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], privateKey: 'private', publicKey: 'public', shortIds: ['sid'] } } }),
-    entryNodeId: entryNode.id, entryPort: 24443, exitNodeId: entryNode.id, exitPort: 24443,
+    entryNodeId: entryNode.id, entryPort: 24443, exitNodeId: entryNode.id, exitPort: 24443, targetLineId: null,
     certificateId: null, certificate: null,
     endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null, trafficRate: 1, tagsJson: '["premium"]', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE', createdAt: new Date(), updatedAt: new Date(), entryNode, exitNode: entryNode
   };
@@ -54,6 +56,56 @@ describe('LinesService', () => {
     expect(result.line.topology.entry.port).toBe(25001);
     expect(result.line.topology.exit.port).toBe(25002);
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
+  });
+
+  it('桥接已有直连线路时自动复用目标节点和端口', async () => {
+    const targetLine = { id: 'line-target', type: 'DIRECT', protocolType: 'SHADOWSOCKS', entryNodeId: exitNode.id, entryPort: 25002 };
+    prisma.line.findUnique.mockResolvedValue(targetLine);
+    const relay = { ...rawLine, id: 'line-bridge', name: '异构桥接', type: 'RELAY', relayMode: 'TARGET_LINE', protocolType: 'VLESS', entryNodeId: entryNode.id, entryPort: 25001, exitNodeId: exitNode.id, exitPort: 25002, targetLineId: targetLine.id, entryNode, exitNode };
+    prisma.line.create.mockResolvedValue(relay);
+
+    const result = await service.create({
+      name: relay.name,
+      type: 'RELAY',
+      relayMode: 'TARGET_LINE',
+      protocolType: 'VLESS',
+      entryNodeId: entryNode.id,
+      entryPort: 25001,
+      exitNodeId: entryNode.id,
+      exitPort: 29999,
+      targetLineId: targetLine.id,
+      params: { tls: { mode: 'reality' } }
+    });
+
+    expect(prisma.line.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        relayMode: 'TARGET_LINE',
+        targetLineId: targetLine.id,
+        exitNodeId: exitNode.id,
+        exitPort: targetLine.entryPort
+      })
+    }));
+    expect(result.line.targetLineId).toBe(targetLine.id);
+  });
+
+  it('桥接目标必须是其他节点上的直连且支持出站的线路', async () => {
+    prisma.line.findUnique.mockResolvedValue({ id: 'relay-target', type: 'RELAY', protocolType: 'VLESS', entryNodeId: exitNode.id, entryPort: 25002 });
+    await expect(service.create({
+      name: '目标不是直连', type: 'RELAY', relayMode: 'TARGET_LINE', protocolType: 'VLESS',
+      entryNodeId: entryNode.id, targetLineId: 'relay-target'
+    })).rejects.toThrow('桥接目标必须是直连线路');
+
+    prisma.line.findUnique.mockResolvedValue({ id: 'shadowtls-target', type: 'DIRECT', protocolType: 'SHADOWTLS', entryNodeId: exitNode.id, entryPort: 25002 });
+    await expect(service.create({
+      name: '目标协议不支持', type: 'RELAY', relayMode: 'TARGET_LINE', protocolType: 'VLESS',
+      entryNodeId: entryNode.id, targetLineId: 'shadowtls-target'
+    })).rejects.toThrow('目标线路协议不支持作为桥接出口');
+
+    prisma.line.findUnique.mockResolvedValue({ id: 'same-node-target', type: 'DIRECT', protocolType: 'VLESS', entryNodeId: entryNode.id, entryPort: 25002 });
+    await expect(service.create({
+      name: '目标同节点', type: 'RELAY', relayMode: 'TARGET_LINE', protocolType: 'VLESS',
+      entryNodeId: entryNode.id, targetLineId: 'same-node-target'
+    })).rejects.toThrow('桥接目标必须位于其他节点');
   });
 
   it('关联证书时仅保存 certificateId，并允许标准 TLS 省略节点本地路径', async () => {
@@ -145,6 +197,20 @@ describe('LinesService', () => {
         host: 'cdn.example.com'
       }
     });
+  });
+
+  it('目标直连线路禁用时不返回桥接中继线路', async () => {
+    const bridge = { ...rawLine, id: 'bridge', type: 'RELAY', relayMode: 'TARGET_LINE', targetLineId: 'target', entryNode, exitNode, targetLine: { id: 'target', status: 'DISABLED' } };
+    prisma.line.findMany.mockResolvedValue([bridge]);
+    const result = await service.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+    expect(result).toHaveLength(0);
+  });
+
+  it('删除被桥接引用的目标线路时拦截操作', async () => {
+    prisma.line.findUnique.mockResolvedValue(rawLine);
+    prisma.line.findFirst.mockResolvedValue({ id: 'bridge-line' });
+    await expect(service.remove(rawLine.id)).rejects.toThrow('该线路正被其他中继线路作为出口目标引用');
+    expect(prisma.line.delete).not.toHaveBeenCalled();
   });
 
   it('套餐线路与额外线路取并集，额外授权可包含隐藏线路但不放行禁用线路', async () => {

@@ -12,6 +12,7 @@ export interface LinePayload {
   protocolType: ProtocolType;
   params: Record<string, unknown>;
   relayMode?: RelayMode | null;
+  targetLineId?: string | null;
   entryNodeId: string;
   entryPort?: number | null;
   exitNodeId: string;

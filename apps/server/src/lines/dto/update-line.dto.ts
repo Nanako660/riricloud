@@ -62,6 +62,11 @@ export class UpdateLineDto {
   @IsOptional()
   exitNodeId?: string | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '桥接已有直连线路时的目标线路；服务端自动同步出口节点与端口' })
+  @IsUUID()
+  @IsOptional()
+  targetLineId?: string | null;
+
   @ApiPropertyOptional({ minimum: 1, maximum: 65535, nullable: true })
   @Type(() => Number)
   @IsInt()

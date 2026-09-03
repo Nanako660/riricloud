@@ -45,7 +45,7 @@ export function extractErrorMessage(error: unknown, fallback = '操作失败'): 
 }
 
 export type LineType = 'DIRECT' | 'RELAY';
-export type RelayMode = 'BLIND_FORWARD' | 'PROTOCOL_PROXY';
+export type RelayMode = 'BLIND_FORWARD' | 'PROTOCOL_PROXY' | 'TARGET_LINE';
 export type LineStatus = 'ACTIVE' | 'DISABLED';
 export type ProtocolType = 'VLESS' | 'VMESS' | 'TROJAN' | 'HYSTERIA2' | 'TUIC' | 'SHADOWSOCKS' | 'NAIVE' | 'SHADOWTLS' | 'MIXED' | 'SOCKS' | 'HTTP' | 'DIRECT';
 
@@ -56,6 +56,7 @@ export interface ApiLine {
   listen: string;
   type: LineType;
   relayMode: RelayMode | null;
+  targetLineId: string | null;
   protocolType: ProtocolType;
   params: Record<string, unknown>;
   entryNodeId: string;
@@ -82,6 +83,18 @@ export interface ApiLine {
   status: LineStatus;
   entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
   exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  targetLine?: {
+    id: string;
+    name: string;
+    type: LineType;
+    protocolType: ProtocolType;
+    status: LineStatus;
+    entryNodeId: string;
+    entryPort: number;
+    exitNodeId: string;
+    exitPort: number;
+    entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  } | null;
   certificate: {
     id: string;
     name: string;

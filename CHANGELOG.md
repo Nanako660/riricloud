@@ -18,6 +18,7 @@
 - 新增 `BinaryRelease`、`BinaryAsset`、`BinaryAssetFile`、`BinaryDeploymentTask` 和 `BinaryAuditLog` 持久化模型，升级任务与重试/回滚历史可在 Master 重启后恢复。
 - 新增套餐流量重置策略：支持不自动重置、自然月重置和按订阅套餐周期重置。
 - 新增管理员用户级额外线路授权，授权线路与套餐线路合并输出并可跨订阅续费、升配和重新购买长期保留。
+- 新增 `TARGET_LINE` 中继模式：入口线路可复用其他节点上的直连落地线路，实现异构协议桥接，并保护被引用目标线路免遭删除。
 
 ### Changed
 

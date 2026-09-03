@@ -70,7 +70,8 @@ describe('AgentGatewayService', () => {
   const vlessParams = { flow: 'xtls-rprx-vision', transport: { type: 'tcp' }, tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], privateKey: 'private', publicKey: 'public', shortIds: ['sid'] } } };
   const line = (overrides: Record<string, unknown> = {}) => ({
     id: 'line-1', name: 'VLESS 线路', tag: null, listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS', paramsJson: JSON.stringify(vlessParams),
-    entryNodeId: 'node-1', entryPort: 24443, exitNodeId: 'node-1', exitPort: 24443, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
+    entryNodeId: 'node-1', entryPort: 24443, exitNodeId: 'node-1', exitPort: 24443, targetLineId: null, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
+    status: 'ACTIVE',
     ...overrides, exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
   });
 
@@ -162,6 +163,71 @@ describe('AgentGatewayService', () => {
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-proxy-entry', listen_port: 25101 })]));
     expect(singboxConfig.outbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-out-proxy', server: '198.51.100.20', server_port: 25102, uuid: user.uuid })]));
     expect(singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-proxy-entry'], outbound: 'relay-out-proxy' }] });
+  });
+
+  it('目标线路桥接生成入口协议、目标协议出口，并复用目标直连入站', async () => {
+    const targetParams = { tls: { enabled: true, mode: 'tls', serverName: 'target.example.com' }, upMbps: 100, downMbps: 500 };
+    const targetLine = line({
+      id: 'target',
+      name: '落地 Hysteria2',
+      type: 'DIRECT',
+      relayMode: null,
+      protocolType: 'HYSTERIA2',
+      paramsJson: JSON.stringify(targetParams),
+      entryNodeId: 'node-2',
+      entryPort: 25002,
+      exitNodeId: 'node-2',
+      exitPort: 25002,
+      relaySources: [{ id: 'bridge', tagsJson: '[]', isPublic: true, status: 'ACTIVE' }],
+      exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+    });
+    const bridge = line({
+      id: 'bridge',
+      name: 'VLESS 转 Hysteria2',
+      tag: 'relay-bridge',
+      type: 'RELAY',
+      relayMode: 'TARGET_LINE',
+      protocolType: 'VLESS',
+      entryNodeId: 'node-1',
+      entryPort: 25001,
+      exitNodeId: 'node-2',
+      exitPort: 25002,
+      targetLineId: 'target',
+      targetLine: {
+        id: 'target',
+        type: 'DIRECT',
+        protocolType: 'HYSTERIA2',
+        paramsJson: JSON.stringify(targetParams),
+        entryPort: 25002,
+        status: 'ACTIVE',
+        entryNode: { serverHost: '198.51.100.20' }
+      },
+      exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+    });
+
+    prisma.node.findUnique.mockResolvedValueOnce({
+      id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [bridge], exitLines: []
+    });
+    prisma.user.findMany.mockResolvedValue([user]);
+    const entryConfig = await service.buildConfigSync('node-1');
+    expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'vless', tag: 'relay-bridge-entry', listen_port: 25001 })
+    ]));
+    expect(entryConfig.singboxConfig.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'hysteria2', tag: 'relay-out-bridge', server: '198.51.100.20', server_port: 25002, password: user.password })
+    ]));
+    expect(entryConfig.singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-bridge-entry'], outbound: 'relay-out-bridge' }] });
+
+    prisma.node.findUnique.mockResolvedValueOnce({
+      id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [targetLine], exitLines: [{ ...bridge, entryNode: { id: 'node-1', status: 'ONLINE' } }]
+    });
+    const exitConfig = await service.buildConfigSync('node-2');
+    expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'hysteria2', listen_port: 25002, users: [{ name: user.email, password: user.password }] })
+    ]));
+    expect(exitConfig.singboxConfig.inbounds).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ listen_port: 25002, tag: 'relay-bridge-exit' })
+    ]));
   });
 
   it('心跳遥测独立落库，流量账务在单独事务内完成', async () => {

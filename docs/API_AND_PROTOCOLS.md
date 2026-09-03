@@ -78,11 +78,11 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/出口的角色、线路协议和派生监听端口；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
 
 #### 线路管理
-- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
+- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`targetLineId`/`targetLine` 目标摘要、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
 - `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数、证书简要信息和端点解析结果。⭐
-- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路入口/出口节点与端口必须一致；中继线路必须指定入口、出口和机制，端口省略时由服务端在 `20000~29999` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
+- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路入口/出口节点与端口必须一致；普通中继线路必须指定入口、出口和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，服务端自动同步 `exitNodeId`/`exitPort` 为目标线路的入口节点/端口。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~29999` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
-- `DELETE /admin/lines/:id`：删除线路。⭐
+- `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
 - `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/出口节点与端口，不建立真实连接。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
@@ -171,7 +171,7 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
 当节点首次连接成功、或主控端发生用户/线路变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
-`inbounds`、`outbounds` 与 `route` 均由该节点承担的启用 Line 自动派生；直连/协议代理线路生成协议入站，盲转发线路生成 `direct` 入站，监听地址使用 Line 的 `listen`，Tag 使用 Line 的自定义 Tag 或自动派生的稳定角色 Tag，`configOverride` 再按顶层深合并应用（含 `inbounds` 则整组替换）。历史 `NodeInbound` 不参与新配置生成。
+`inbounds`、`outbounds` 与 `route` 均由该节点承担的启用 Line 自动派生；直连/协议代理线路生成协议入站，盲转发线路生成 `direct` 入站，`TARGET_LINE` 在入口生成当前线路协议入站与目标线路协议 outbound/route，在目标节点复用目标直连线路入站而不重复监听端口。监听地址使用 Line 的 `listen`，Tag 使用 Line 的自定义 Tag 或自动派生的稳定角色 Tag，`configOverride` 再按顶层深合并应用（含 `inbounds` 则整组替换）。历史 `NodeInbound` 不参与新配置生成。
 Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {
@@ -237,7 +237,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。
 
-中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路则生成与 Line 协议对应的入口入站、出口 outbound 以及 route rule。
+中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路生成与 Line 协议对应的入口入站、出口 outbound 以及 route rule；`TARGET_LINE` 则将 outbound 的协议、参数、目标地址和端口取自所引用的直连线路。
 ```json
 {
   "type": "direct",
@@ -248,7 +248,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   "override_port": 443
 }
 ```
-线路 CRUD、套餐/用户订阅变动均通过现有 250ms 防抖机制触发相关在线节点的 `config_sync`；节点上的配置来源始终是 Line 与节点级 `configOverride`。
+线路 CRUD、套餐/用户订阅变动均通过现有 250ms 防抖机制触发相关在线节点的 `config_sync`；目标线路或目标节点地址变更也会刷新桥接入口节点。节点上的配置来源始终是 Line 与节点级 `configOverride`。
 
 #### 3. 遥测心跳与流量上报 (`heartbeat`) —— Agent -> Master (每 5~10 秒)
 ```json

@@ -15,6 +15,8 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
 
 export const MANUAL_CERTIFICATE_ID = '__node_local__';
 
+export const TARGET_LINE_PROTOCOLS = ['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'SHADOWSOCKS', 'NAIVE'] as const;
+
 export const ALPN_PRESET_VALUES = ['h3', 'h2', 'http/1.1'] as const;
 
 export function getAlpnPresets(protocolType: ProtocolType, transportType: LineFormValues['transportType'] = 'tcp'): string[] {
@@ -51,7 +53,8 @@ export const lineFormSchema = z.object({
   listen: z.string().trim().min(1, '请输入监听地址').max(64, '监听地址不超过 64 字符'),
   type: z.enum(['DIRECT', 'RELAY']),
   protocolType: z.enum(PROTOCOL_TYPES),
-  relayMode: z.enum(['BLIND_FORWARD', 'PROTOCOL_PROXY']).optional(),
+  relayMode: z.enum(['BLIND_FORWARD', 'PROTOCOL_PROXY', 'TARGET_LINE']).optional(),
+  targetLineId: z.string().optional(),
   entryNodeId: z.string().optional(),
   entryPort: optionalPort,
   exitNodeId: z.string().optional(),
@@ -119,11 +122,14 @@ export const lineFormSchema = z.object({
   status: z.enum(['ACTIVE', 'DISABLED'])
 }).superRefine((value, ctx) => {
   if (!value.entryNodeId) ctx.addIssue({ code: 'custom', path: ['entryNodeId'], message: '请选择入口节点' });
-  if (value.type === 'RELAY' && !value.exitNodeId) {
+  if (value.type === 'RELAY' && value.relayMode !== 'TARGET_LINE' && !value.exitNodeId) {
     ctx.addIssue({ code: 'custom', path: ['exitNodeId'], message: '中继线路必须选择出口节点' });
   }
   if (value.type === 'RELAY' && !value.relayMode) {
     ctx.addIssue({ code: 'custom', path: ['relayMode'], message: '请选择中继机制' });
+  }
+  if (value.type === 'RELAY' && value.relayMode === 'TARGET_LINE' && !value.targetLineId) {
+    ctx.addIssue({ code: 'custom', path: ['targetLineId'], message: '请选择目标落地线路' });
   }
 
   const tlsRequired = ['TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE'].includes(value.protocolType);
@@ -193,7 +199,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
   const tlsMode = protocolTlsMode(protocolType);
   const isQuic = protocolType === 'HYSTERIA2' || protocolType === 'TUIC';
   return {
-    name: '', tag: '', listen: '0.0.0.0', type: 'DIRECT', protocolType, relayMode: 'BLIND_FORWARD',
+    name: '', tag: '', listen: '0.0.0.0', type: 'DIRECT', protocolType, relayMode: 'BLIND_FORWARD', targetLineId: '',
     entryNodeId: '', entryPort: undefined, exitNodeId: '', exitPort: undefined,
     certificateId: MANUAL_CERTIFICATE_ID,
     transportType: 'tcp', wsPath: '/ws', wsHost: '', wsHeaders: [], wsMaxEarlyData: undefined,
@@ -252,6 +258,7 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     type: line.type,
     protocolType: line.protocolType,
     relayMode: line.relayMode ?? 'BLIND_FORWARD',
+    targetLineId: line.targetLineId ?? '',
     entryNodeId: line.entryNodeId,
     entryPort: line.entryPort,
     exitNodeId: line.exitNodeId,
@@ -437,6 +444,7 @@ export function toLinePayload(values: LineFormValues) {
     protocolType: values.protocolType as NodeProtocolType,
     params: buildParamsFromValues(values),
     relayMode: values.type === 'RELAY' ? values.relayMode : null,
+    targetLineId: values.type === 'RELAY' && values.relayMode === 'TARGET_LINE' ? values.targetLineId || null : null,
     entryNodeId,
     entryPort: values.entryPort,
     exitNodeId,

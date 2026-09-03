@@ -814,12 +814,28 @@ export class AgentService implements OnModuleDestroy {
         entryLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: { exitNode: true, certificate: true }
+          include: {
+            exitNode: true,
+            certificate: true,
+            targetLine: { include: { entryNode: true } },
+            relaySources: {
+              where: { status: 'ACTIVE' },
+              select: { id: true, tagsJson: true, isPublic: true, status: true }
+            }
+          }
         },
         exitLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          include: { entryNode: true, certificate: true }
+          include: {
+            entryNode: true,
+            certificate: true,
+            targetLine: { include: { entryNode: true } },
+            relaySources: {
+              where: { status: 'ACTIVE' },
+              select: { id: true, tagsJson: true, isPublic: true, status: true }
+            }
+          }
         }
       }
     });
@@ -882,9 +898,20 @@ export class AgentService implements OnModuleDestroy {
       exitPort: number;
       tagsJson: string;
       isPublic: boolean;
+      status: string;
       entryNode?: { status: string };
       exitNode: { serverHost: string; status?: string };
       certificate: { certificatePem: string; privateKeyPem: string } | null;
+      targetLine?: {
+        id: string;
+        type: string;
+        protocolType: string;
+        paramsJson: string;
+        entryPort: number;
+        status: string;
+        entryNode: { serverHost: string };
+      } | null;
+      relaySources?: Array<{ id: string; tagsJson: string; isPublic: boolean; status: string }>;
     };
     const lines = new Map<string, ConfigLine>();
     for (const line of node.entryLines ?? []) lines.set(line.id, line);
@@ -899,7 +926,7 @@ export class AgentService implements OnModuleDestroy {
     const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
     const relayRules: Array<Record<string, unknown>> = [];
     const authorizedUsers = new Map<string, InboundUserCredential>();
-    const usersForLine = (line: ConfigLine): InboundUserCredential[] => {
+    const usersForLine = (line: Pick<ConfigLine, 'id' | 'tagsJson' | 'isPublic' | 'status'>): InboundUserCredential[] => {
       const lineUsers = entitledSubscriptions
         .filter((subscription) => {
           if (!subscription.plan) return true;
@@ -929,6 +956,12 @@ export class AgentService implements OnModuleDestroy {
         : line.entryNode?.status === 'ONLINE';
       if (node.status !== 'ONLINE' || !otherNodeOnline) continue;
       const users = usersForLine(line);
+      const inboundUsers = line.type === 'DIRECT' && line.relaySources?.length
+        ? [...new Map(
+          [...users, ...line.relaySources.flatMap((source) => usersForLine(source))]
+            .map((user) => [user.uuid, user] as const)
+        ).values()]
+        : users;
       if (line.type === 'DIRECT' && isEntry) {
         inbounds.push(...buildServerInbounds({
           type: protocolType,
@@ -936,7 +969,7 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
-          users
+          users: inboundUsers
         }));
         continue;
       }
@@ -972,7 +1005,35 @@ export class AgentService implements OnModuleDestroy {
         relayRules.push({ inbound: [relayTag], outbound: `relay-out-${line.id}` });
       }
 
-      if (isExit) {
+      if (isEntry && line.relayMode === 'TARGET_LINE') {
+        const targetLine = line.targetLine;
+        if (!targetLine || targetLine.status !== 'ACTIVE') continue;
+        const relayTag = lineTags.entry ?? `relay-${line.id}-entry`;
+        const relayInbounds = buildServerInbounds({
+          type: protocolType,
+          tag: relayTag,
+          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          port: line.entryPort,
+          params,
+          users
+        });
+        inbounds.push(...relayInbounds);
+        const outbound = this.buildProtocolRelayOutbound({
+          id: line.id,
+          protocolType: targetLine.protocolType,
+          paramsJson: targetLine.paramsJson,
+          exitPort: targetLine.entryPort,
+          exitNode: targetLine.entryNode
+        }, users);
+        if (!outbound) {
+          inbounds.splice(-relayInbounds.length, relayInbounds.length);
+          continue;
+        }
+        outbounds.push(outbound);
+        relayRules.push({ inbound: [relayTag], outbound: `relay-out-${line.id}` });
+      }
+
+      if (isExit && !(line.type === 'RELAY' && line.relayMode === 'TARGET_LINE')) {
         inbounds.push(...buildServerInbounds({
           type: protocolType,
           tag: lineTags.exit ?? `line-${line.id}-exit`,

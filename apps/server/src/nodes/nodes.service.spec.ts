@@ -12,7 +12,7 @@ describe('NodesService', () => {
   const prisma = {
     node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() }
   };
-  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn() };
+  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn() };
   const binaries = { resolveForNode: jest.fn() };
 
   beforeAll(async () => {
@@ -65,6 +65,14 @@ describe('NodesService', () => {
     prisma.node.update.mockResolvedValue(nodeWithLines);
     await service.update(baseNode.id, { name: '更新节点' });
     expect(gateway.pushConfig).toHaveBeenCalledWith(baseNode.id);
+  });
+
+  it('节点地址变更后向全部节点防抖推送配置', async () => {
+    prisma.node.findUnique.mockResolvedValue(baseNode);
+    prisma.node.update.mockResolvedValue(nodeWithLines);
+    await service.update(baseNode.id, { serverHost: '198.51.100.11' });
+    expect(gateway.pushConfigToAll).toHaveBeenCalledTimes(1);
+    expect(gateway.pushConfig).not.toHaveBeenCalled();
   });
 
   it('本机节点禁止删除', async () => {

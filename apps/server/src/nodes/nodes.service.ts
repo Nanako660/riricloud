@@ -196,7 +196,7 @@ export class NodesService {
     if (dto.pollIntervalSecs !== undefined) data.pollIntervalSecs = dto.pollIntervalSecs;
     if (Object.keys(data).length === 0) throw new BadRequestException('未提供任何更新字段');
     const updated = await this.prisma.node.update({ where: { id }, data, include: nodeLinesInclude });
-    void this.agentGateway.pushConfig(id);
+    void (dto.serverHost !== undefined ? this.agentGateway.pushConfigToAll() : this.agentGateway.pushConfig(id));
     return { node: this.sanitize(updated) };
   }
 

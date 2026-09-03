@@ -3,17 +3,47 @@ import { FormField, FormItem, FormLabel, FormControl, FormDescription } from '@/
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import type { AdminNode } from '../../nodes/use-nodes';
+import type { AdminLine } from '../use-lines';
 import { FieldGrid, SelectField, SwitchField, TextField } from './line-form-controls';
-import type { LineFormValues } from './line-form-schema';
+import { TARGET_LINE_PROTOCOLS, type LineFormValues } from './line-form-schema';
 
-export function LineAdvancedFields({ form, nodes, onTypeChange }: {
+export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeChange }: {
   form: UseFormReturn<LineFormValues>;
   nodes: AdminNode[];
+  lines: AdminLine[];
+  currentLineId?: string;
   onTypeChange: (type: LineFormValues['type']) => void;
 }) {
   const type = form.watch('type');
+  const relayMode = form.watch('relayMode');
+  const entryNodeId = form.watch('entryNodeId');
+  const targetLineId = form.watch('targetLineId');
   const endpointOverrideEnabled = form.watch('endpointOverrideEnabled');
   const nodeOptions = nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.serverHost}` }));
+  const targetLines = lines.filter((line) => (
+    line.id !== currentLineId &&
+    line.type === 'DIRECT' &&
+    line.entryNodeId !== entryNodeId &&
+    TARGET_LINE_PROTOCOLS.includes(line.protocolType as (typeof TARGET_LINE_PROTOCOLS)[number]) &&
+    (line.status === 'ACTIVE' || line.id === targetLineId)
+  ));
+  const targetLine = lines.find((line) => line.id === targetLineId);
+  const targetLineOptions = targetLines.map((line) => ({
+    value: line.id,
+    label: `${line.name} · ${line.entryNode.name} · ${line.protocolType} · ${line.entryPort}${line.status === 'ACTIVE' ? '' : ' · 已禁用'}`
+  }));
+  const changeRelayMode = (value: string) => {
+    form.setValue('relayMode', value as LineFormValues['relayMode'], { shouldDirty: true });
+    if (value !== 'TARGET_LINE') form.setValue('targetLineId', '', { shouldDirty: true });
+  };
+  const changeTargetLine = (value: string) => {
+    const selected = lines.find((line) => line.id === value);
+    form.setValue('targetLineId', value, { shouldDirty: true });
+    if (selected) {
+      form.setValue('exitNodeId', selected.entryNodeId, { shouldDirty: true });
+      form.setValue('exitPort', selected.entryPort, { shouldDirty: true });
+    }
+  };
   return (
     <div className="space-y-6">
       <section className="space-y-3">
@@ -21,10 +51,26 @@ export function LineAdvancedFields({ form, nodes, onTypeChange }: {
         <Separator />
         <FieldGrid>
           <SelectField form={form} name="type" label="线路模式" options={[{ value: 'DIRECT', label: '直连' }, { value: 'RELAY', label: '中继' }]} onValueChange={(value) => onTypeChange(value as LineFormValues['type'])} />
-          {type === 'RELAY' && <SelectField form={form} name="exitNodeId" label="出口节点" options={nodeOptions} />}
-          {type === 'RELAY' && <TextField form={form} name="exitPort" label="出口监听端口" type="number" placeholder="留空自动分配" />}
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="exitNodeId" label="出口节点" options={nodeOptions} />}
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="exitPort" label="出口监听端口" type="number" placeholder="留空自动分配" />}
         </FieldGrid>
-        {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }]} />}
+        {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }, { value: 'TARGET_LINE', label: '桥接已有线路：协议转换' }]} onValueChange={changeRelayMode} />}
+        {type === 'RELAY' && relayMode === 'TARGET_LINE' && <div className="space-y-3">
+          <SelectField
+            form={form}
+            name="targetLineId"
+            label="目标落地线路"
+            options={targetLineOptions.length ? targetLineOptions : [{ value: '__no-target-line__', label: '暂无可用目标线路' }]}
+            disabled={!entryNodeId || targetLineOptions.length === 0}
+            description="仅可选择其他节点上的启用直连线路；出口节点和端口由目标线路自动绑定。"
+            onValueChange={changeTargetLine}
+          />
+          {targetLine && <div className="rounded-md border bg-muted/30 p-3 text-sm">
+            <p className="font-medium">已绑定出口</p>
+            <p className="mt-1 text-muted-foreground">{targetLine.entryNode.name} · {targetLine.entryNode.serverHost}:{targetLine.entryPort}</p>
+            <p className="text-muted-foreground">目标协议：{targetLine.protocolType} · {targetLine.status === 'ACTIVE' ? '线路已启用' : '线路已禁用'}</p>
+          </div>}
+        </div>}
       </section>
 
       <Separator />
