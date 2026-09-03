@@ -53,7 +53,7 @@ type SubscriptionDelegate = {
 };
 
 type TrafficSubscriptionDelegate = {
-  findUnique: (args: Record<string, unknown>) => Promise<{ id: string } | null>;
+  findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; userId: string }>>;
   update: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
@@ -81,8 +81,14 @@ type NodeRateMetricDelegate = {
   } | null>;
   create: (args: Record<string, unknown>) => Promise<unknown>;
   update: (args: Record<string, unknown>) => Promise<unknown>;
-  deleteMany: (args: Record<string, unknown>) => Promise<unknown>;
 };
+
+type NodeRateMetricRootDelegate = {
+  deleteMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+};
+
+const RATE_METRIC_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const RATE_METRIC_CLEANUP_RETRY_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class AgentService implements OnModuleDestroy {
@@ -91,9 +97,11 @@ export class AgentService implements OnModuleDestroy {
   private readonly pendingTasks = new Map<string, PendingTask[]>();
   private readonly taskResults = new Map<string, TaskResult>();
   private readonly configCache = new Map<string, ConfigSyncData>();
+  private readonly heartbeatTails = new Map<string, Promise<void>>();
   private configVersion = Date.now();
   private configPushTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
+  private nextRateMetricCleanupAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -136,37 +144,56 @@ export class AgentService implements OnModuleDestroy {
 
   // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode = 'WS'): Promise<void> {
+    const previous = this.heartbeatTails.get(nodeId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => this.persistHeartbeat(nodeId, data, mode));
+    this.heartbeatTails.set(nodeId, current);
+    try {
+      await current;
+    } finally {
+      if (this.heartbeatTails.get(nodeId) === current) this.heartbeatTails.delete(nodeId);
+    }
+  }
+
+  private async persistHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode): Promise<void> {
     const heartbeatAt = new Date();
     const splitRates = this.getSplitRates(data);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.node.update({
-        where: { id: nodeId },
-        data: {
-          cpuUsage: data.cpuUsage,
-          memoryUsage: data.memoryUsage,
-          bandwidthRate: data.bandwidthRate,
-          // 旧版 Agent 没有拆分字段，清空旧的拆分值，避免把历史值误当作当前速率。
-          uploadRate: splitRates?.uploadRate ?? null,
-          downloadRate: splitRates?.downloadRate ?? null,
-          lastSeenAt: heartbeatAt,
-          status: 'ONLINE',
-          communicationMode: mode,
-          // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
-          ...(data.kernelRunning !== undefined ? { kernelRunning: data.kernelRunning } : {}),
-          ...(data.lastError !== undefined && data.lastError !== ''
-            ? { configError: data.lastError }
-            : {}),
-          ...(data.lastError === '' ? { configError: null } : {}),
-          ...(data.agentVersion !== undefined ? { agentVersion: data.agentVersion } : {}),
-          ...(data.osArch !== undefined ? { osArch: data.osArch } : {}),
-          ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
-        }
-      });
-      const rateDelegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
-      if (rateDelegate && splitRates) {
-        await this.recordRateMetric(rateDelegate, nodeId, heartbeatAt, splitRates.uploadRate, splitRates.downloadRate);
+    await this.prisma.node.update({
+      where: { id: nodeId },
+      data: {
+        cpuUsage: data.cpuUsage,
+        memoryUsage: data.memoryUsage,
+        bandwidthRate: data.bandwidthRate,
+        // 旧版 Agent 没有拆分字段，清空旧的拆分值，避免把历史值误当作当前速率。
+        uploadRate: splitRates?.uploadRate ?? null,
+        downloadRate: splitRates?.downloadRate ?? null,
+        lastSeenAt: heartbeatAt,
+        status: 'ONLINE',
+        communicationMode: mode,
+        // 旧版 Agent 不上报内核状态时保持原值（undefined 不写入）
+        ...(data.kernelRunning !== undefined ? { kernelRunning: data.kernelRunning } : {}),
+        ...(data.lastError !== undefined && data.lastError !== ''
+          ? { configError: data.lastError }
+          : {}),
+        ...(data.lastError === '' ? { configError: null } : {}),
+        ...(data.agentVersion !== undefined ? { agentVersion: data.agentVersion } : {}),
+        ...(data.osArch !== undefined ? { osArch: data.osArch } : {}),
+        ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
       }
-      const lineDelegate = (tx as unknown as {
+    });
+    if (splitRates) {
+      const rateDelegate = (this.prisma as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
+      if (rateDelegate) {
+        await this.prisma.$transaction(async (tx) => {
+          const txRateDelegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
+          if (txRateDelegate) {
+            await this.recordRateMetric(txRateDelegate, nodeId, heartbeatAt, splitRates.uploadRate, splitRates.downloadRate);
+          }
+        });
+      }
+    }
+    const trafficRecords = data.trafficRecords ?? [];
+    if (trafficRecords.length) {
+      const lineDelegate = (this.prisma as unknown as {
         line?: { findFirst: (args: Record<string, unknown>) => Promise<{ id: string } | null> };
       }).line;
       const activeEntryLine = lineDelegate
@@ -176,40 +203,70 @@ export class AgentService implements OnModuleDestroy {
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
           })
         : null;
-      for (const record of data.trafficRecords ?? []) {
-        let user = await tx.user.findUnique({ where: { uuid: record.userUuid } });
-        // 非 UUID 协议的 sing-box 用户统计使用用户名称（当前为邮箱），兼容回查邮箱。
-        if (!user) {
-          user = await tx.user.findUnique({ where: { email: record.userUuid } });
-        }
+      await this.persistTrafficRecords(nodeId, trafficRecords, activeEntryLine?.id);
+    }
+  }
+
+  private async persistTrafficRecords(
+    nodeId: string,
+    records: HeartbeatData['trafficRecords'],
+    lineId?: string
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const credentials = [...new Set(records.map((record) => record.userUuid))];
+      const users = await tx.user.findMany({
+        where: { OR: [{ uuid: { in: credentials } }, { email: { in: credentials } }] },
+        select: { id: true, uuid: true, email: true }
+      });
+      const usersByCredential = new Map<string, { id: string; uuid: string; email: string }>();
+      users.forEach((user) => {
+        usersByCredential.set(user.uuid, user);
+        usersByCredential.set(user.email, user);
+      });
+
+      const logs: Array<{
+        nodeId: string;
+        userId: string;
+        lineId?: string;
+        upload: bigint;
+        download: bigint;
+      }> = [];
+      const totalsByUser = new Map<string, bigint>();
+      for (const record of records) {
+        const user = usersByCredential.get(record.userUuid);
         if (!user) {
           this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
         const upload = BigInt(record.upload);
         const download = BigInt(record.download);
-        await tx.trafficLog.create({
-          data: {
-            nodeId,
-            userId: user.id,
-            ...(activeEntryLine ? { lineId: activeEntryLine.id } : {}),
-            upload,
-            download
-          }
+        const total = upload + download;
+        logs.push({ nodeId, userId: user.id, ...(lineId ? { lineId } : {}), upload, download });
+        totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + total);
+      }
+      if (!logs.length) return;
+
+      await tx.trafficLog.createMany({ data: logs });
+      const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
+      const subscriptionByUser = new Map<string, string>();
+      if (subscription) {
+        const subscriptions = await subscription.findMany({
+          where: { userId: { in: [...totalsByUser.keys()] } },
+          select: { id: true, userId: true }
         });
-        const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
-        const userSubscription = subscription
-          ? await subscription.findUnique({ where: { userId: user.id } })
-          : null;
-        if (subscription && userSubscription) {
+        subscriptions.forEach((item) => subscriptionByUser.set(item.userId, item.id));
+      }
+      for (const [userId, total] of totalsByUser) {
+        const subscriptionId = subscriptionByUser.get(userId);
+        if (subscription && subscriptionId) {
           await subscription.update({
-            where: { id: userSubscription.id },
-            data: { trafficUsedBytes: { increment: upload + download } }
+            where: { id: subscriptionId },
+            data: { trafficUsedBytes: { increment: total } }
           });
         }
         await tx.user.update({
-          where: { id: user.id },
-          data: { trafficUsedBytes: { increment: upload + download } }
+          where: { id: userId },
+          data: { trafficUsedBytes: { increment: total } }
         });
       }
     });
@@ -263,9 +320,27 @@ export class AgentService implements OnModuleDestroy {
         }
       });
     }
-    await delegate.deleteMany({
-      where: { bucketStart: { lt: new Date(heartbeatAt.getTime() - NODE_RATE_RETENTION_MS) } }
-    });
+  }
+
+  // 低频清理历史速率桶，避免每个心跳都在写事务中扫描和删除历史数据。
+  async cleanupOldRateMetrics(): Promise<void> {
+    const delegate = (this.prisma as unknown as { nodeRateMetric?: NodeRateMetricRootDelegate }).nodeRateMetric;
+    if (!delegate) return;
+    const now = Date.now();
+    if (now < this.nextRateMetricCleanupAt) return;
+    this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_INTERVAL_MS;
+    let result: { count: number };
+    try {
+      result = await delegate.deleteMany({
+        where: { bucketStart: { lt: new Date(now - NODE_RATE_RETENTION_MS) } }
+      });
+    } catch (err) {
+      this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_RETRY_MS;
+      throw err;
+    }
+    if (result.count > 0) {
+      this.logger.log(`rate metric cleanup removed ${result.count} expired bucket(s)`);
+    }
   }
 
   // HTTP 轮询适配器的单一业务入口：先处理回执，再返回配置差异与待执行任务。
@@ -849,6 +924,7 @@ export class AgentService implements OnModuleDestroy {
     this.pendingTasks.clear();
     this.taskResults.clear();
     this.configCache.clear();
+    this.heartbeatTails.clear();
   }
 }
 

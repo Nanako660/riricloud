@@ -77,7 +77,7 @@ graph TB
 ### 2.1 主控中心 (Master Server)
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、融合公告/订阅管理/可用线路/客户端指引的「我的订阅」控制台、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
 - **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
-- **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测事务、配置快照、任务队列、探针快照与健康判定；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
+- **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测落库、配置快照、任务队列、探针快照与健康判定；同一节点的心跳串行处理，流量账务使用短事务；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
 - **主控二进制分发中心 (`apps/server/src/binaries`)**：维护规范的双层存储架构：最高优先级的运行态持久仓 `data/binaries/`（支持多架构自定义导入、热更新与远程缓存）与静态内置仓 `binaries/`（发行包仅精准预置当前宿主架构的二进制）；开发环境下智能回退至 `artifacts/binaries`。升级任务按节点 `osArch` 选择主控内置或导入版本，下载端点使用 AgentToken 鉴权。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
 - **HTTP 轮询适配器 (`POST /api/v1/agent/poll`)**：为无法完成 WS Upgrade 的网络提供 HTTPS 主动上报、配置差异拉取和异步任务回执。
@@ -94,8 +94,8 @@ graph TB
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~29999` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。标准 TLS 可通过 `Certificate` 实体统一托管，Master 在 `config_sync` 时以内嵌 PEM 数组下发并在证书更新后级联同步关联节点；未关联证书的线路仍支持 Agent 机本地路径。
-- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，保留 30 天。
-- **流量统计与上报**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=true)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 并作为心跳增量上报。Master 在同一 SQLite 事务内写入 `TrafficLog`、扣减 `Subscription.trafficUsedBytes` 并同步 `User.trafficUsedBytes` 镜像；共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
+- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，保留 30 天，由低频巡检清理过期桶。
+- **流量统计与上报**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=true)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 并作为心跳增量上报。Master 在同一短 SQLite 事务内写入 `TrafficLog`、扣减 `Subscription.trafficUsedBytes` 并同步 `User.trafficUsedBytes` 镜像；节点遥测更新、速率聚合与流量账务分开落库，减少写锁持有时间。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
 - **网络速率统计查询**：`GET /admin/traffic/overview` 同时返回节点网络吞吐当前摘要与历史 `rateSeries`。当前值仅汇总在线且未超时节点；历史按查询周期重采样为 5 分钟、30 分钟或 1 小时。该指标描述网卡吞吐，不进入 `TrafficLog`，中继入口与出口的重复网络传输允许分别计入。
 
 ---

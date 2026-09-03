@@ -2,7 +2,7 @@
 
 ## 1. 数据库架构设计
 
-RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。在生产环境中，SQLite 开启 **WAL (Write-Ahead Logging)** 模式，读写并发能力大幅提升。
+RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。Master 启动时会为当前数据库显式开启 **WAL (Write-Ahead Logging)**，并设置 10 秒写锁等待上限；生产环境仍应将数据库放在本地持久化文件系统，避免网络文件系统的锁语义和延迟放大问题。
 
 > **落地说明（v0.4.20）**：Prisma 对 SQLite 不支持 `enum` 类型，角色、节点状态、协议、线路类型、线路状态、套餐匹配模式、订阅状态、钱包流水类型与卡密状态在 `schema.prisma` 中落地为 **String 字段 + 默认值**，取值约束由应用层完成（DTO 的 class-validator 与服务层校验）。下方 schema 中的 `enum` 定义视为**逻辑枚举**，实际类型以仓库内 schema.prisma 为准。Line 顶层编排已通过迁移 `20260831100000_line_centric_pipeline` 落地。
 
@@ -536,7 +536,7 @@ model SystemSetting {
 
 `User.trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`subscriptionToken` 暂时保留为兼容镜像。订阅模块存在时以 `Subscription` 为准，每次订购、升配、管理员修改或 Token 重置在同一事务中同步镜像；旧迁移/旧测试缺少订阅表时沿用原 User 配额路径。
 
-用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 按心跳周期上报。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。`TrafficLog` 与两处已用流量更新必须在同一事务中完成。
+用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 按心跳周期上报。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。`TrafficLog` 与两处已用流量更新必须在同一短事务中完成；节点实时遥测与速率聚合独立落库，历史速率桶由低频巡检按保留周期清理，不在每个心跳事务内执行删除。
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 

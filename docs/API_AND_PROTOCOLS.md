@@ -270,6 +270,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `uploadRate` / `downloadRate` / `trafficRecords` 均已实现 ⭐。Agent 通过 gopsutil 以 1 秒差分拆分网卡上行与下行速率，并保留 `bandwidthRate = uploadRate + downloadRate`；计数器回绕或采样异常时对应速率为 0。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=true)` 读取并清零本周期用户计数，`trafficRecords` 只携带正数增量；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
 >
+> **落库约束**：Master 对同一节点的心跳按顺序处理；节点遥测、速率聚合与流量账务分开落库。`TrafficLog`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 仍在同一短事务内完成，速率历史保留 30 天并由低频巡检清理。
+>
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
 #### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
@@ -353,7 +355,7 @@ Content-Type: application/json
 }
 ```
 
-`configApplyResults`、`upgradeResults`、`probeResults`、`restartAgentResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳同事务更新节点遥测与流量，再处理回执。
+`configApplyResults`、`upgradeResults`、`probeResults`、`restartAgentResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳规则更新节点遥测与流量，再处理回执。节点遥测与流量账务分开落库，但流量日志和两处配额更新保持在同一短事务内。
 
 ### 2.3.2 Master -> Agent 响应体
 

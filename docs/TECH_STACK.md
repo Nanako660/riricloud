@@ -50,7 +50,8 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
   - 支持声明式 Database Migrations。
 - **SQLite (WAL 模式)**：
   - 零配置安装，避免额外维护 MySQL / PostgreSQL 服务。
-  - 开启 WAL 模式后读写互不阻塞，单机轻松承受数万 QPS 的查询压力。
+  - Master 启动时显式设置 `journal_mode=WAL` 与 `busy_timeout=10000`；如果运行目录不支持 WAL，启动日志会记录调优失败。
+  - Agent 心跳按节点串行落库，流量账务保留短事务，速率历史清理由低频巡检执行，避免高频心跳长期占用写锁。
 - **JWT & Passport**：
   - 标准无状态 Bearer Token 认证。
 - **YAML 序列化（`yaml`）**：
