@@ -24,6 +24,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdminPlans } from '../plans/use-plans';
+import { useAdminLines } from '../lines/use-lines';
 import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
@@ -83,6 +84,7 @@ export default function AdminUsersPage() {
     planId: planFilter === 'ALL' ? undefined : planFilter
   });
   const { data: plans } = useAdminPlans();
+  const { data: lineData } = useAdminLines();
   const { deleteUser, bulkActive, resetSubscriptionToken } = useUserMutations();
   const users = data?.data ?? [];
 
@@ -315,7 +317,7 @@ export default function AdminUsersPage() {
         />
       )}
 
-      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} />
+      <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} lineOptions={lineData?.data ?? []} />
       <UserTrafficDialog user={trafficUser} open={!!trafficUser} onOpenChange={(open) => !open && setTrafficUser(null)} />
       <BalanceFormDialog user={adjusting} open={!!adjusting} onOpenChange={(open) => !open && setAdjusting(null)} />
 

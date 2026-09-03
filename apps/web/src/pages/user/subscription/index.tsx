@@ -6,6 +6,7 @@ import {
   HardDrive,
   KeyRound,
   RefreshCw,
+  RotateCcw,
   ShoppingBag,
   XCircle
 } from 'lucide-react';
@@ -43,7 +44,7 @@ import { QuickRedeemForm } from '@/components/shared/quick-redeem-form';
 import { useWallet } from '@/pages/user/profile/use-profile';
 
 export default function UserSubscriptionPage() {
-  const { data, isPending, isError } = useUserSubscription();
+const { data, isPending, isError } = useUserSubscription();
 
   if (isPending) {
     return (
@@ -173,7 +174,7 @@ function ActiveSubscriptionContent({ subscription: sub, lines }: { subscription:
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-0">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
               <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <HardDrive className="h-3.5 w-3.5 shrink-0" />
@@ -193,6 +194,19 @@ function ActiveSubscriptionContent({ subscription: sub, lines }: { subscription:
               </div>
               <Progress value={percent} />
               <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
+            </div>
+
+            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                <span>流量重置</span>
+              </div>
+              <p className="text-base font-bold tracking-tight">
+                {sub.trafficResetMode === 'CALENDAR_MONTH' ? '自然月重置' : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE' ? '订阅周期重置' : '不自动重置'}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {sub.nextTrafficResetAt ? `下次：${new Date(sub.nextTrafficResetAt).toLocaleString('zh-CN')}` : '流量累计不会自动清零'}
+              </p>
             </div>
 
             <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">

@@ -11,6 +11,7 @@ describe('AgentGatewayService', () => {
   const txUserUpdate = jest.fn(async () => undefined);
   const txSubscriptionFindMany = jest.fn();
   const txSubscriptionUpdate = jest.fn(async () => undefined);
+  const txSubscriptionUpdateMany = jest.fn(async () => ({ count: 0 }));
   const txTrafficCursorFindMany = jest.fn();
   const txTrafficCursorUpsert = jest.fn(async () => undefined);
   const txRateFindUnique = jest.fn();
@@ -19,7 +20,7 @@ describe('AgentGatewayService', () => {
   const tx = {
     user: { findMany: txUserFindMany, update: txUserUpdate },
     trafficLog: { createMany: txTrafficCreateMany },
-    subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate },
+    subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate, updateMany: txSubscriptionUpdateMany },
     trafficCursor: { findMany: txTrafficCursorFindMany, upsert: txTrafficCursorUpsert },
     nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate }
   };
@@ -53,6 +54,7 @@ describe('AgentGatewayService', () => {
     prisma.user.findMany.mockResolvedValue([]);
     txUserFindMany.mockResolvedValue([]);
     txSubscriptionFindMany.mockResolvedValue([]);
+    txSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     txTrafficCursorFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
     prisma.line.findFirst.mockResolvedValue(null);
@@ -69,7 +71,7 @@ describe('AgentGatewayService', () => {
   const line = (overrides: Record<string, unknown> = {}) => ({
     id: 'line-1', name: 'VLESS 线路', tag: null, listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS', paramsJson: JSON.stringify(vlessParams),
     entryNodeId: 'node-1', entryPort: 24443, exitNodeId: 'node-1', exitPort: 24443, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
-    ...overrides, exitNode: { id: 'node-2', serverHost: '198.51.100.20' }
+    ...overrides, exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
   });
 
   it('按 Line 顶层协议生成 VLESS、Hysteria2 与 Shadowsocks 入站', async () => {
@@ -90,7 +92,7 @@ describe('AgentGatewayService', () => {
         })
       })
     ];
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: lines, exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: lines, exitLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     const inbounds = singboxConfig.inbounds as Array<Record<string, unknown>>;
@@ -118,7 +120,7 @@ describe('AgentGatewayService', () => {
       paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'example.com' } }),
       certificate: { certificatePem: 'CERTIFICATE PEM', privateKeyPem: 'PRIVATE KEY PEM' }
     });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [managed], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [managed], exitLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
 
     const { singboxConfig } = await service.buildConfigSync('node-1');
@@ -133,7 +135,7 @@ describe('AgentGatewayService', () => {
 
   it('使用线路自定义监听地址和直连 Tag', async () => {
     const custom = line({ id: 'custom', tag: 'public-vless', listen: '127.0.0.1' });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [custom], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [custom], exitLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([
@@ -143,18 +145,18 @@ describe('AgentGatewayService', () => {
 
   it('双节点盲转发在入口生成 direct，在出口生成协议入站', async () => {
     const relay = line({ id: 'blind', name: '盲转发', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: 'node-1', entryPort: 25001, exitNodeId: 'node-2', exitPort: 25002 });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [relay], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], exitLines: [] });
     const entryConfig = await service.buildConfigSync('node-1');
     expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'direct', listen_port: 25001, override_address: '198.51.100.20', override_port: 25002 })]));
 
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', configOverride: null, entryLines: [], exitLines: [{ ...relay, entryNode: { id: 'node-1' } }] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], exitLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }] });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
   });
 
   it('协议代理中继生成协议入口、协议出口和路由规则', async () => {
     const relay = line({ id: 'proxy', tag: 'relay-proxy', type: 'RELAY', relayMode: 'PROTOCOL_PROXY', entryNodeId: 'node-1', entryPort: 25101, exitNodeId: 'node-2', exitPort: 25102 });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [relay], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], exitLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-proxy-entry', listen_port: 25101 })]));
@@ -227,6 +229,55 @@ describe('AgentGatewayService', () => {
       where: { id: 'user-1' },
       data: { trafficUsedBytes: { increment: BigInt('9007199254740995') } }
     });
+  });
+
+  it('心跳跨过流量周期边界时先重置再计入新周期，且只重置一次', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    txTrafficCursorFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ credential: user.uuid, uploadTotal: 100n, downloadTotal: 200n }]);
+    const now = new Date();
+    const currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    txSubscriptionFindMany
+      .mockResolvedValueOnce([{
+        id: 'sub-1',
+        userId: 'user-1',
+        startedAt: new Date(now.getTime() - 45 * 86400000),
+        trafficPeriodStartAt: new Date(currentPeriodStart.getTime() - 86400000),
+        plan: { durationDays: 30, trafficResetMode: 'CALENDAR_MONTH' }
+      }])
+      .mockResolvedValueOnce([{
+        id: 'sub-1',
+        userId: 'user-1',
+        startedAt: new Date(now.getTime() - 45 * 86400000),
+        trafficPeriodStartAt: currentPeriodStart,
+        plan: { durationDays: 30, trafficResetMode: 'CALENDAR_MONTH' }
+      }]);
+    txSubscriptionUpdateMany.mockResolvedValue({ count: 1 });
+
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }]
+    });
+    await service.handleHeartbeat('node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '101', downloadTotal: '200' }]
+    });
+
+    expect(txSubscriptionUpdateMany).toHaveBeenCalledTimes(1);
+    expect(txSubscriptionUpdateMany).toHaveBeenCalledWith({
+      where: { id: 'sub-1', trafficPeriodStartAt: expect.any(Date) },
+      data: { trafficPeriodStartAt: expect.any(Date), trafficUsedBytes: BigInt(0) }
+    });
+    expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: BigInt(0) } });
+    expect(txSubscriptionUpdate).toHaveBeenCalledWith({ where: { id: 'sub-1' }, data: { trafficUsedBytes: { increment: BigInt(1) } } });
+    expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(1) } } });
   });
 
   it('累计快照只按游标差额计费，重复快照不会重复扣减', async () => {

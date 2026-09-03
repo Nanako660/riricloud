@@ -34,7 +34,8 @@ export const subscriptionSchema = z.object({
   quotaGB: z.coerce.number().positive('配额必须大于 0'),
   usedGB: z.coerce.number().min(0, '已用流量不能为负数'),
   expireAt: z.string().optional(),
-  addDays: optionalPositiveInt
+  addDays: optionalPositiveInt,
+  extraLineIds: z.array(z.string()).default([])
 });
 
 export type CreateUserForm = z.infer<typeof createUserSchema>;

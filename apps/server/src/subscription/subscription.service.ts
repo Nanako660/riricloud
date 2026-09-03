@@ -29,12 +29,14 @@ import type { Prisma } from '@prisma/client';
 import type { SubscriptionTemplateConfig } from './builders';
 import { SettingsService } from '../system/settings.service';
 import { WalletService } from '../wallet/wallet.service';
+import { getTrafficPeriod, TRAFFIC_RESET_MODES } from '../common/traffic-reset';
 
 type SubscriptionPlan = {
   id: string;
   name: string;
   durationDays: number;
   trafficLimitBytes: bigint;
+  trafficResetMode: string;
   lineMatchMode: string;
   lineTagsJson: string;
   lineIdsJson: string;
@@ -52,6 +54,7 @@ type SubscriptionUser = {
   expireAt: Date | null;
   trafficLimitBytes: bigint;
   trafficUsedBytes: bigint;
+  extraLineGrants?: Array<{ lineId: string }>;
 };
 
 type SubscriptionRecord = {
@@ -61,6 +64,7 @@ type SubscriptionRecord = {
   status: string;
   trafficLimitBytes: bigint;
   trafficUsedBytes: bigint;
+  trafficPeriodStartAt: Date | null;
   startedAt: Date;
   expireAt: Date | null;
   subscriptionToken: string;
@@ -118,8 +122,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (this.subscriptionDelegate()) {
       // 用进程内巡检保持零外部依赖；unref 不阻止测试进程自然退出。
       this.expiryTimer = setInterval(() => {
-        void this.expireSubscriptions().catch((err) => {
-          this.logger.warn(`subscription expiry sweep failed: ${err}`);
+        void this.maintainSubscriptions().catch((err) => {
+          this.logger.warn(`subscription maintenance sweep failed: ${err}`);
         });
       }, 60000);
       this.expiryTimer.unref();
@@ -131,7 +135,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getSubscription(token: string, opts: { type?: string; userAgent?: string } = {}) {
-    const subscription = await this.findByToken(token);
+    const foundSubscription = await this.findByToken(token);
+    const subscription = foundSubscription && foundSubscription.plan?.trafficResetMode
+      ? (await this.ensureTrafficReset(foundSubscription)).subscription
+      : foundSubscription;
     const user = subscription?.user ?? (await this.prisma.user.findUnique({ where: { subscriptionToken: token } }));
     if (!user) throw new NotFoundException('订阅不存在');
 
@@ -140,7 +147,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     }
 
     const lines = subscription
-      ? await this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      ? await this.linesService.getAvailableForPlan(
+          subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' },
+          this.getExtraLineIds(subscription)
+        )
       : await this.linesService.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
     const subscriptionSources: SubLine[] = lines.map((line) => ({
       id: line.id,
@@ -189,7 +199,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         startedAt: now,
         expireAt: addDays(now, plan.durationDays),
         subscriptionToken: randomUUID(),
-        canceledAt: null
+        canceledAt: null,
+        trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, now)
       };
       const subscription = current
         ? await tx.subscription.update({ where: { id: current.id }, data })
@@ -220,7 +231,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           startedAt: new Date(),
           expireAt: addDays(new Date(), plan.durationDays),
           status: 'ACTIVE',
-          canceledAt: null
+          canceledAt: null,
+          trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, new Date())
         }
       });
       await this.chargePlan(tx, userId, plan.price, 'PLAN_UPGRADE', '升配套餐', updated.id);
@@ -249,7 +261,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           trafficLimitBytes: plan.trafficLimitBytes,
           trafficUsedBytes: BigInt(0),
           expireAt: addDays(baseExpireAt, plan.durationDays),
-          canceledAt: null
+          canceledAt: null,
+          trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, now, current.startedAt)
         }
       });
       await this.chargePlan(tx, userId, plan.price, 'PLAN_RENEW', '续费套餐', updated.id);
@@ -277,13 +290,19 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const delegate = this.requireSubscriptionDelegate();
     const subscription = await delegate.findUnique({
       where: { userId },
-      include: { user: { select: { id: true, email: true, isActive: true } }, plan: { include: { template: true } } }
+      include: {
+        user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
+        plan: { include: { template: true } }
+      }
     });
     if (!subscription) return { subscription: null, lines: [], nodes: [] };
+    const current = subscription.plan?.trafficResetMode
+      ? (await this.ensureTrafficReset(subscription as unknown as SubscriptionRecord)).subscription
+      : subscription as unknown as SubscriptionRecord;
     return {
-      subscription: this.toView(subscription),
-      lines: await this.getLinesForSubscription(subscription),
-      nodes: await this.getLinesForSubscription(subscription)
+      subscription: this.toView(current),
+      lines: await this.getLinesForSubscription(current),
+      nodes: await this.getLinesForSubscription(current)
     };
   }
 
@@ -320,7 +339,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const [data, total] = await Promise.all([
       delegate.findMany({
         where,
-        include: { user: { select: { id: true, email: true, isActive: true } }, plan: { select: { id: true, name: true, price: true } } },
+        include: {
+          user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
+          plan: { select: { id: true, name: true, price: true, durationDays: true, trafficLimitBytes: true, trafficResetMode: true } }
+        },
         orderBy: [{ updatedAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize
@@ -333,14 +355,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   async get(id: string) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id },
-      include: { user: { select: { id: true, email: true, isActive: true } }, plan: { include: { template: true } } }
+      include: {
+        user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
+        plan: { include: { template: true } }
+      }
     });
     if (!subscription) throw new NotFoundException('订阅不存在');
-    return this.toView(subscription as unknown as SubscriptionRecord);
+    const current = (subscription.plan?.trafficResetMode
+      ? (await this.ensureTrafficReset(subscription as unknown as SubscriptionRecord)).subscription
+      : subscription) as unknown as SubscriptionRecord;
+    return this.toView(current);
   }
 
   async adminUpdate(id: string, dto: AdminUpdateSubDto) {
     const current = await this.getRaw(id);
+    await this.assertExtraLineIds(dto.extraLineIds);
     if (dto.planId === null) return this.adminRemove(id, current.userId);
     const plan = dto.planId ? await this.prisma.plan.findUnique({ where: { id: dto.planId } }) : null;
     if (dto.planId && !plan) throw new NotFoundException('套餐不存在');
@@ -362,9 +391,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           ...(dto.status ? { status: dto.status } : {}),
           trafficLimitBytes: limit,
           trafficUsedBytes: used,
-          expireAt
+          expireAt,
+          ...(dto.planId ? { trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan!, new Date(), current.startedAt) } : {})
         }
       });
+      if (dto.extraLineIds !== undefined) {
+        await this.replaceExtraLineGrants(tx, current.userId, dto.extraLineIds);
+      }
       await this.syncUserMirror(tx, current.userId, updated);
       return updated;
     });
@@ -384,6 +417,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   async adminAssign(userId: string, dto: AdminUpdateSubDto) {
     if (!dto.planId) throw new BadRequestException('绑定订阅必须指定套餐');
+    await this.assertExtraLineIds(dto.extraLineIds);
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) throw new NotFoundException('用户不存在');
     const delegate = this.requireSubscriptionDelegate();
@@ -414,9 +448,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           trafficUsedBytes: used,
           startedAt: now,
           expireAt,
-          subscriptionToken
+          subscriptionToken,
+          trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, now)
         }
       });
+      if (dto.extraLineIds !== undefined) {
+        await this.replaceExtraLineGrants(tx, userId, dto.extraLineIds);
+      }
       await this.syncUserMirror(tx, userId, created);
       return created;
     });
@@ -462,8 +500,132 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (result.count > 0) void this.agentGateway?.pushConfigToAll();
   }
 
+  private async maintainSubscriptions() {
+    await this.expireSubscriptions();
+    const resetCount = await this.resetDueTrafficPeriods();
+    if (resetCount > 0) void this.agentGateway?.pushConfigToAll();
+  }
+
+  private async resetDueTrafficPeriods(now = new Date()): Promise<number> {
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: { plan: { trafficResetMode: { in: TRAFFIC_RESET_MODES.filter((mode) => mode !== 'NONE') } } },
+      include: { plan: true }
+    });
+    const due = subscriptions
+      .map((subscription) => {
+        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays);
+        const previous = subscription.trafficPeriodStartAt;
+        return { subscription, period, shouldReset: Boolean(period && previous && previous.getTime() < period.startAt.getTime()) };
+      })
+      .filter((item) => item.period && (!item.subscription.trafficPeriodStartAt || item.shouldReset));
+    if (!due.length) return 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of due) {
+        if (!item.period) continue;
+        if (!item.subscription.trafficPeriodStartAt) {
+          await tx.subscription.updateMany({
+            where: { id: item.subscription.id, trafficPeriodStartAt: null },
+            data: { trafficPeriodStartAt: item.period.startAt }
+          });
+        } else if (item.shouldReset) {
+          const updated = await tx.subscription.updateMany({
+            where: { id: item.subscription.id, trafficPeriodStartAt: item.subscription.trafficPeriodStartAt },
+            data: { trafficPeriodStartAt: item.period.startAt, trafficUsedBytes: BigInt(0) }
+          });
+          if (updated.count > 0) {
+            await tx.user.update({ where: { id: item.subscription.userId }, data: { trafficUsedBytes: BigInt(0) } });
+          }
+        }
+      }
+    });
+    return due.filter((item) => item.shouldReset).length;
+  }
+
+  private async ensureTrafficReset(subscription: SubscriptionRecord, now = new Date()): Promise<{ subscription: SubscriptionRecord; changed: boolean }> {
+    const plan = subscription.plan;
+    const mode = plan?.trafficResetMode ?? 'NONE';
+    const period = plan ? getTrafficPeriod(mode, now, subscription.startedAt, plan.durationDays) : null;
+    if (!period) return { subscription, changed: false };
+
+    const previous = subscription.trafficPeriodStartAt ?? null;
+    const shouldReset = Boolean(previous && previous.getTime() < period.startAt.getTime());
+    if (previous && !shouldReset) return { subscription, changed: false };
+
+    const changed = await this.prisma.$transaction(async (tx) => {
+      if (!previous) {
+        const result = await tx.subscription.updateMany({
+          where: { id: subscription.id, trafficPeriodStartAt: null },
+          data: { trafficPeriodStartAt: period.startAt }
+        });
+        return result.count > 0;
+      }
+      if (!shouldReset) return false;
+      const result = await tx.subscription.updateMany({
+        where: { id: subscription.id, trafficPeriodStartAt: previous },
+        data: { trafficPeriodStartAt: period.startAt, trafficUsedBytes: BigInt(0) }
+      });
+      if (result.count > 0) {
+        await tx.user.update({ where: { id: subscription.userId }, data: { trafficUsedBytes: BigInt(0) } });
+      }
+      return result.count > 0;
+    });
+    if (shouldReset && changed) void this.agentGateway?.pushConfigToAll();
+    if (!changed && previous && shouldReset) {
+      const latest = await this.prisma.subscription.findUnique({
+        where: { id: subscription.id },
+        include: {
+          user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
+          plan: { include: { template: true } }
+        }
+      });
+      if (latest) return { subscription: latest as unknown as SubscriptionRecord, changed: false };
+    }
+    return {
+      changed,
+      subscription: {
+        ...subscription,
+        trafficPeriodStartAt: period.startAt,
+        trafficUsedBytes: shouldReset ? BigInt(0) : subscription.trafficUsedBytes
+      }
+    };
+  }
+
+  private getInitialTrafficPeriodStart(
+    plan: { trafficResetMode?: string; durationDays: number },
+    now: Date,
+    startedAt = now
+  ): Date | null {
+    return getTrafficPeriod(plan.trafficResetMode ?? 'NONE', now, startedAt, plan.durationDays)?.startAt ?? null;
+  }
+
+  private getExtraLineIds(subscription: SubscriptionRecord): string[] {
+    return subscription.user?.extraLineGrants?.map((grant) => grant.lineId) ?? [];
+  }
+
+  private async assertExtraLineIds(lineIds?: string[]) {
+    if (lineIds === undefined) return;
+    const ids = [...new Set(lineIds)];
+    if (!ids.length) return;
+    const rows = await this.prisma.line.findMany({ where: { id: { in: ids } }, select: { id: true } });
+    const existing = new Set(rows.map((row) => row.id));
+    const missing = ids.find((id) => !existing.has(id));
+    if (missing) throw new NotFoundException('额外线路不存在');
+  }
+
+  private async replaceExtraLineGrants(tx: Prisma.TransactionClient, userId: string, lineIds: string[]) {
+    const ids = [...new Set(lineIds)];
+    await tx.userLineGrant.deleteMany({ where: { userId } });
+    if (ids.length) {
+      await tx.userLineGrant.createMany({ data: ids.map((lineId) => ({ userId, lineId })) });
+    }
+  }
+
   private async getLinesForSubscription(subscription: SubscriptionRecord) {
-    return this.linesService.getAvailableForPlan(subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
+    return this.linesService.getAvailableForPlan(
+      subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' },
+      this.getExtraLineIds(subscription)
+    );
   }
 
   private async resolveTemplate(template?: SubscriptionTemplateConfig | null) {
@@ -498,14 +660,23 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (!delegate) return null;
     return delegate.findUnique({
       where: { subscriptionToken: token },
-      include: { user: true, plan: { include: { template: true } } }
+      include: {
+        user: { include: { extraLineGrants: { select: { lineId: true } } } },
+        plan: { include: { template: true } }
+      }
     });
   }
 
   private async getRaw(id: string): Promise<SubscriptionRecord> {
-    const subscription = await this.prisma.subscription.findUnique({ where: { id } });
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
+        plan: true
+      }
+    });
     if (!subscription) throw new NotFoundException('订阅不存在');
-    return subscription;
+    return subscription as unknown as SubscriptionRecord;
   }
 
   private async chargePlan(
@@ -534,13 +705,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private toView(subscription: SubscriptionRecord) {
+    const trafficResetMode = subscription.plan?.trafficResetMode ?? 'NONE';
+    const period = subscription.plan
+      ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays)
+      : null;
     return {
       ...subscription,
       trafficLimitBytes: Number(subscription.trafficLimitBytes),
       trafficUsedBytes: Number(subscription.trafficUsedBytes),
+      trafficResetMode,
+      nextTrafficResetAt: period?.nextResetAt ?? null,
+      extraLineIds: this.getExtraLineIds(subscription),
       plan: subscription.plan
         ? {
             ...subscription.plan,
+            trafficResetMode: subscription.plan.trafficResetMode ?? 'NONE',
             ...(typeof subscription.plan.price === 'number' ? { price: subscription.plan.price / 100 } : {}),
             trafficLimitBytes: Number(subscription.plan.trafficLimitBytes)
           }

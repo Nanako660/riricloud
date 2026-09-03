@@ -84,7 +84,7 @@ graph TB
 - **内置本机 Agent (`apps/agent` + `riri-agent`)**：Docker 镜像和 Linux x64 自包含发行包内置 Agent 与 Sing-box；启动时先完成数据库迁移和 `Master-Local` bootstrap，再启动 Master，等待健康接口就绪后让 Agent 通过回环 WS 连接本机网关。远程 VPS 使用 Agent 原生 CLI 安装并接入，CLI 自己管理配置、服务和诊断。
 - **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 是用户订阅端点的唯一业务实体，直接拥有协议、参数、监听地址、Tag、入口/出口拓扑和端口，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且入口/出口节点在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。ShadowTLS 固定为 v3 + SS2022 内层，配置生成两个入站：公网 ShadowTLS 外层通过 `detour` 接入仅监听回环地址的 SS 入站，用户凭证只用于外层用户鉴权。
-- **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围，Subscription 维护用户唯一订阅和生命周期，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
+- **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围与流量重置策略，Subscription 维护用户唯一订阅和当前流量周期，UserLineGrant 维护独立于订阅生命周期的用户额外线路授权，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
@@ -95,7 +95,7 @@ graph TB
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~29999` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。标准 TLS 可通过 `Certificate` 实体统一托管，Master 在 `config_sync` 时以内嵌 PEM 数组下发并在证书更新后级联同步关联节点；未关联证书的线路仍支持 Agent 机本地路径。
 - **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，保留 30 天，由低频巡检清理过期桶。
-- **流量统计与上报（协议 v2）**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=false)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 累计值，并在 WS/HTTP 两种模式中统一上报 `trafficSnapshots`。Master 按 `nodeId + credential` 保存 `TrafficCursor`，以 BigInt 差分计算增量；首次值计入，计数器下降按重置告警并计入当前值，相等值不生成流水。`TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 在同一短 SQLite 事务内提交；未知凭证只建立游标基线。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
+- **流量统计与上报（协议 v2）**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=false)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 累计值，并在 WS/HTTP 两种模式中统一上报 `trafficSnapshots`。Master 按 `nodeId + credential` 保存 `TrafficCursor`，以 BigInt 差分计算增量；首次值计入，计数器下降按重置告警并计入当前值，相等值不生成流水。启用套餐重置策略的订阅在心跳入账前检查自然月或 `durationDays` 周期边界，跨界时先在事务内同步清零 Subscription 与 User 镜像，再计入当前增量；`TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 在同一短 SQLite 事务内提交；未知凭证只建立游标基线。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
 - **Agent 写入调度**：Master 对同节点心跳使用最新值覆盖积压数据，并通过单写者队列串行化 Agent 相关数据库写入；速率指标先在内存按 UTC 五分钟桶聚合，再批量写入 `NodeRateMetric`。写入失败保留最新任务并指数退避重试，队列等待、队列长度、事务耗时和计数器重置均记录到日志。SQLite 继续使用 WAL 与 `busy_timeout`，不通过无限增大事务等待时间掩盖写锁争用。
 - **网络速率统计查询**：`GET /admin/traffic/overview` 同时返回节点网络吞吐当前摘要与历史 `rateSeries`。当前值仅汇总在线且未超时节点；历史按查询周期重采样为 5 分钟、30 分钟或 1 小时。该指标描述网卡吞吐，不进入 `TrafficLog`，中继入口与出口的重复网络传输允许分别计入。
 
@@ -200,7 +200,7 @@ sequenceDiagram
     Nginx-->>User: 原样转发订阅响应
 ```
 
-订阅输出请求通过 Token 定位 Subscription，再按 Plan 过滤公开、启用且底层在线的 Line；模板为空时读取全局默认模板。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
+订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开、启用且入口/出口节点在线，额外线路可绕过公开性和套餐规则但仍要求启用且两端在线，全局 `publicLinesEnabled=false` 作为总开关。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
 
 ### 3.5 远程升级与网络探针时序
 

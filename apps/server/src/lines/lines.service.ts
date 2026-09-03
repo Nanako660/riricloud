@@ -20,6 +20,7 @@ import { QueryLineDto } from './dto/query-line.dto';
 import { ReorderLinesDto } from './dto/reorder-lines.dto';
 import { UpdateLineDto } from './dto/update-line.dto';
 import { SettingsService } from '../system/settings.service';
+import { isLineAuthorized } from '../common/line-access';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const certificateSummary = {
@@ -157,23 +158,28 @@ export class LinesService {
     };
   }
 
-  async getAvailableForPlan(plan: { lineMatchMode: string; lineTagsJson: string; lineIdsJson: string }) {
+  async getAvailableForPlan(
+    plan: { lineMatchMode: string; lineTagsJson: string; lineIdsJson: string },
+    extraLineIds: string[] = []
+  ) {
     const settings = await this.settingsService?.getSettings();
     if (settings?.publicLinesEnabled === false) return [];
+    const extraIds = [...new Set(extraLineIds)];
     const rows = await this.prisma.line.findMany({
-      where: { isPublic: true, status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          { isPublic: true },
+          ...(extraIds.length ? [{ id: { in: extraIds } }] : [])
+        ]
+      },
       include: lineInclude,
       orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }]
     });
-    const tags = this.parseTags(plan.lineTagsJson);
-    const ids = this.parseTags(plan.lineIdsJson);
     return rows
+      .filter((line) => line.status === undefined || line.status === 'ACTIVE')
       .filter((line) => line.entryNode.status === 'ONLINE' && line.exitNode.status === 'ONLINE')
-      .filter((line) => {
-        if (plan.lineMatchMode === 'EXPLICIT') return ids.includes(line.id);
-        if (plan.lineMatchMode === 'TAGS') return tags.some((tag) => this.parseTags(line.tagsJson).includes(tag));
-        return true;
-      })
+      .filter((line) => isLineAuthorized(plan, line, extraIds))
       .map((line) => this.toView(line));
   }
 

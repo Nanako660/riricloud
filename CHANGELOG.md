@@ -16,11 +16,14 @@
 
 - 新增二进制资源中心 `/admin/binaries`：支持 Agent/Sing-box 资源的本地上传、远程导入、平台资产、SHA-256、状态、默认版本与分发历史管理。
 - 新增 `BinaryRelease`、`BinaryAsset`、`BinaryAssetFile`、`BinaryDeploymentTask` 和 `BinaryAuditLog` 持久化模型，升级任务与重试/回滚历史可在 Master 重启后恢复。
+- 新增套餐流量重置策略：支持不自动重置、自然月重置和按订阅套餐周期重置。
+- 新增管理员用户级额外线路授权，授权线路与套餐线路合并输出并可跨订阅续费、升配和重新购买长期保留。
 
 ### Changed
 
 - 将 Sing-box 资源版本与 RiriCloud 应用版本解耦；构建、Master bundle、Docker 和 release manifest 分别记录 Agent、Sing-box、`libcronet.so` 的版本与哈希。
 - Sing-box Agent 升级改为主文件与 `libcronet.so` 成组下载、校验、原子替换、启动验证和整体回滚；旧 `upgrade_task` 字段继续兼容。
+- 订阅流量在读取、心跳入账和后台巡检时按配置周期惰性或定时重置，并在同一事务内同步更新订阅与用户兼容镜像，保留全部流量流水记录。
 
 ### Fixed
 

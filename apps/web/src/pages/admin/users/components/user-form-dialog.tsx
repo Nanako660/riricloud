@@ -8,6 +8,7 @@ import { Form } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import type { Plan } from '../../plans/use-plans';
+import type { AdminLine } from '../../lines/use-lines';
 import { useUserMutations, type AdminUser } from '../use-users';
 import { CreateUserFields, EditAccountFields } from './user-account-fields';
 import { UserSubscriptionFields } from './user-subscription-fields';
@@ -19,6 +20,7 @@ interface UserFormDialogProps {
   user: AdminUser | null;
   selfId: string;
   plans: Plan[];
+  lineOptions: AdminLine[];
 }
 
 const emptyCreateValues: CreateUserForm = {
@@ -31,7 +33,7 @@ const emptyCreateValues: CreateUserForm = {
   expireAt: dateInputAfterDays(30)
 };
 
-export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: UserFormDialogProps) {
+export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOptions }: UserFormDialogProps) {
   const { createUser, updateUser, updateSubscription, assignSubscription, resetSubscriptionToken } = useUserMutations();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [removeSubscriptionConfirmOpen, setRemoveSubscriptionConfirmOpen] = useState(false);
@@ -39,7 +41,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
   const isSelf = user?.id === selfId;
   const accountForm = useForm<EditAccountForm>({ resolver: zodResolver(editAccountSchema), defaultValues: { role: 'USER', isActive: true, password: '' } });
   const createForm = useForm<CreateUserForm>({ resolver: zodResolver(createUserSchema), defaultValues: emptyCreateValues });
-  const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 100, usedGB: 0, expireAt: '', addDays: undefined } });
+  const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 100, usedGB: 0, expireAt: '', addDays: undefined, extraLineIds: [] } });
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +57,8 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
       quotaGB: (subscription?.trafficLimitBytes ?? 100 * GB) / GB,
       usedGB: (subscription?.trafficUsedBytes ?? 0) / GB,
       expireAt: subscription?.expireAt ? subscription.expireAt.slice(0, 10) : '',
-      addDays: undefined
+      addDays: undefined,
+      extraLineIds: subscription?.extraLineIds ?? []
     });
   }, [accountForm, createForm, open, subscriptionForm, user]);
 
@@ -92,7 +95,8 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
       trafficLimitBytes: Math.round(values.quotaGB * GB),
       trafficUsedBytes: Math.round(values.usedGB * GB),
       expireAt: values.addDays ? undefined : dateInputToIso(values.expireAt ?? ''),
-      addDays: values.addDays
+      addDays: values.addDays,
+      extraLineIds: values.extraLineIds
     };
     if (user.subscription) {
       updateSubscription.mutate({ id: user.subscription.id, ...payload }, { onSuccess: () => onOpenChange(false) });
@@ -126,7 +130,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans }: User
               <TabsContent value="subscription">
                 <Form {...subscriptionForm}>
                   <form className="space-y-4" onSubmit={subscriptionForm.handleSubmit(submitSubscription)}>
-                    <UserSubscriptionFields form={subscriptionForm} plans={plans} subscription={user.subscription} onResetToken={() => setResetConfirmOpen(true)} resetPending={resetSubscriptionToken.isPending} />
+                    <UserSubscriptionFields form={subscriptionForm} plans={plans} lineOptions={lineOptions} subscription={user.subscription} onResetToken={() => setResetConfirmOpen(true)} resetPending={resetSubscriptionToken.isPending} />
                     <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={updateSubscription.isPending || assignSubscription.isPending}>{updateSubscription.isPending || assignSubscription.isPending ? '保存中…' : '保存订阅'}</Button></DialogFooter>
                   </form>
                 </Form>

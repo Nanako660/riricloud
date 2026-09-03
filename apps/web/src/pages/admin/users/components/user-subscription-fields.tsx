@@ -1,9 +1,12 @@
 import { RefreshCw } from 'lucide-react';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { AdminLine } from '../../lines/use-lines';
 import type { Plan } from '../../plans/use-plans';
 import type { AdminUserSubscription } from '../use-users';
 import { dateInputAfterDays, GB, type SubscriptionForm } from './user-form-schema';
@@ -15,19 +18,31 @@ const STATUS_LABELS = {
   REVOKED: '已吊销'
 } as const;
 
+const RESET_MODE_LABELS = {
+  NONE: '不自动重置',
+  CALENDAR_MONTH: '自然月重置',
+  SUBSCRIPTION_CYCLE: '订阅周期重置'
+} as const;
+
 export function UserSubscriptionFields({
   form,
   plans,
+  lineOptions,
   subscription,
   onResetToken,
   resetPending
 }: {
   form: UseFormReturn<SubscriptionForm>;
   plans: Plan[];
+  lineOptions: AdminLine[];
   subscription: AdminUserSubscription | null;
   onResetToken: () => void;
   resetPending: boolean;
 }) {
+  const selectedPlan = plans.find((plan) => plan.id === form.watch('planId'));
+  const resetMode = subscription?.trafficResetMode ?? selectedPlan?.trafficResetMode ?? 'NONE';
+  const nextResetAt = subscription?.nextTrafficResetAt;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-md border p-3">
@@ -41,6 +56,10 @@ export function UserSubscriptionFields({
           <RefreshCw className={resetPending ? 'animate-spin' : undefined} />
           重置订阅链接
         </Button>
+      </div>
+      <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">流量重置：</span>{RESET_MODE_LABELS[resetMode]}
+        {resetMode === 'NONE' ? '，当前套餐不会自动重置' : nextResetAt ? `，下次重置：${new Date(nextResetAt).toLocaleString('zh-CN')}` : '，绑定后按当前周期计算下次重置时间'}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField
@@ -138,6 +157,50 @@ export function UserSubscriptionFields({
           )}
         />
       </div>
+      <FormField
+        control={form.control}
+        name="extraLineIds"
+        render={({ field }) => {
+          const selectedIds = field.value ?? [];
+          const toggleLine = (lineId: string) => {
+            field.onChange(
+              selectedIds.includes(lineId)
+                ? selectedIds.filter((id) => id !== lineId)
+                : [...selectedIds, lineId]
+            );
+          };
+          return (
+            <FormItem>
+              <FormLabel>额外线路授权</FormLabel>
+              <FormDescription>授权长期保留；线路需启用且入口、出口节点在线后才会生效。</FormDescription>
+              <FormControl>
+                <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">
+                  {lineOptions.length ? lineOptions.map((line) => {
+                    const available = line.status === 'ACTIVE' && line.entryNode.status === 'ONLINE' && line.exitNode.status === 'ONLINE';
+                    return (
+                      <div key={line.id} className="flex items-start gap-2">
+                        <Checkbox
+                          id={`user-extra-line-${line.id}`}
+                          checked={selectedIds.includes(line.id)}
+                          onCheckedChange={() => toggleLine(line.id)}
+                        />
+                        <Label htmlFor={`user-extra-line-${line.id}`} className="min-w-0 cursor-pointer text-sm font-normal">
+                          <span className="block truncate font-medium">{line.name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {line.entryNode.name} → {line.exitNode.name} · {available ? '当前可用' : '等待线路或节点恢复'}
+                            {!line.isPublic ? ' · 隐藏线路' : ''}
+                          </span>
+                        </Label>
+                      </div>
+                    );
+                  }) : <p className="text-xs text-muted-foreground">暂无线路，请先在线路管理中创建。</p>}
+                </div>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }}
+      />
     </div>
   );
 }

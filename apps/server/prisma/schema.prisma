@@ -28,50 +28,51 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  trafficLogs  TrafficLog[]
-  subscription Subscription?
+  trafficLogs         TrafficLog[]
+  subscription        Subscription?
   balanceTransactions BalanceTransaction[]
-  redeemedCodes RedeemCode[] @relation("RedeemedCodes")
+  redeemedCodes       RedeemCode[]         @relation("RedeemedCodes")
+  extraLineGrants     UserLineGrant[]
 
   @@index([role])
   @@index([isActive])
 }
 
 model Node {
-  id             String    @id @default(uuid())
-  name           String
-  serverHost     String
-  isLocal        Boolean   @default(false) // 主控本机预置节点
-  configOverride String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
-  agentToken     String    @unique
-  communicationMode String  @default("WS") // WS | HTTP
-  pollIntervalSecs Int     @default(15) // HTTP 轮询建议周期，秒
-  status         String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED
-  lastSeenAt     DateTime?
-  cpuUsage       Float?
-  memoryUsage    Float?
-  bandwidthRate  Float?
-  uploadRate     Float?
-  downloadRate   Float?
-  kernelRunning  Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
-  configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
-  lastProbeResult String? // 最近一次网络探针结果 JSON
-  agentVersion   String? // Agent 编译版本
-  agentProtocolVersion Int? // Agent 上报的 Master-Agent 协议版本
-  osArch         String? // Agent 运行平台与架构，例如 linux/amd64
-  kernelVersion  String? // sing-box 内核版本
+  id                    String    @id @default(uuid())
+  name                  String
+  serverHost            String
+  isLocal               Boolean   @default(false) // 主控本机预置节点
+  configOverride        String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
+  agentToken            String    @unique
+  communicationMode     String    @default("WS") // WS | HTTP
+  pollIntervalSecs      Int       @default(15) // HTTP 轮询建议周期，秒
+  status                String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED
+  lastSeenAt            DateTime?
+  cpuUsage              Float?
+  memoryUsage           Float?
+  bandwidthRate         Float?
+  uploadRate            Float?
+  downloadRate          Float?
+  kernelRunning         Boolean? // Agent 心跳上报的内核进程存活状态（旧版 Agent 不上报时保持 null）
+  configError           String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
+  lastProbeResult       String? // 最近一次网络探针结果 JSON
+  agentVersion          String? // Agent 编译版本
+  agentProtocolVersion  Int? // Agent 上报的 Master-Agent 协议版本
+  osArch                String? // Agent 运行平台与架构，例如 linux/amd64
+  kernelVersion         String? // sing-box 内核版本
   currentAgentAssetId   String?
   currentSingboxAssetId String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   // NodeInbound 为历史迁移兼容表，新线路配置不再依赖它。
-  inbounds    NodeInbound[]
-  entryLines  Line[]        @relation("LineEntryNode")
-  exitLines   Line[]        @relation("LineExitNode")
-  trafficLogs TrafficLog[]
-  trafficCursors TrafficCursor[]
-  rateMetrics NodeRateMetric[]
+  inbounds              NodeInbound[]
+  entryLines            Line[]                 @relation("LineEntryNode")
+  exitLines             Line[]                 @relation("LineExitNode")
+  trafficLogs           TrafficLog[]
+  trafficCursors        TrafficCursor[]
+  rateMetrics           NodeRateMetric[]
   binaryDeploymentTasks BinaryDeploymentTask[]
 
   @@index([status])
@@ -97,12 +98,12 @@ model NodeRateMetric {
 
 // Sing-box 累计流量游标：按节点与原始用户凭证保存上次已观察的总量。
 model TrafficCursor {
-  id           String   @id @default(uuid())
-  nodeId       String
-  credential   String
-  uploadTotal  BigInt   @default(0)
-  downloadTotal BigInt  @default(0)
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(uuid())
+  nodeId        String
+  credential    String
+  uploadTotal   BigInt   @default(0)
+  downloadTotal BigInt   @default(0)
+  updatedAt     DateTime @updatedAt
 
   node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
@@ -117,6 +118,7 @@ model Plan {
   price             Int      @default(0) // 价格最小货币单位
   durationDays      Int
   trafficLimitBytes BigInt
+  trafficResetMode  String   @default("NONE") // NONE | CALENDAR_MONTH | SUBSCRIPTION_CYCLE
   lineMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
   lineTagsJson      String   @default("[]")
   lineIdsJson       String   @default("[]")
@@ -138,37 +140,38 @@ model Plan {
 // Line 是唯一面向用户的代理业务端点，内聚协议、参数与入口/出口拓扑。
 // ==============================
 model Line {
-  id              String   @id @default(uuid())
-  name            String
-  tag             String?
-  listen          String   @default("0.0.0.0")
-  type            String   @default("DIRECT") // DIRECT | RELAY
-  relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY
-  protocolType    String   @default("VLESS") // ProtocolType
-  paramsJson      String   @default("{}") // 协议专属参数 JSON
-  entryNodeId     String
-  entryPort       Int
-  exitNodeId      String
-  exitPort        Int
-  certificateId   String?
+  id                      String   @id @default(uuid())
+  name                    String
+  tag                     String?
+  listen                  String   @default("0.0.0.0")
+  type                    String   @default("DIRECT") // DIRECT | RELAY
+  relayMode               String? // BLIND_FORWARD | PROTOCOL_PROXY
+  protocolType            String   @default("VLESS") // ProtocolType
+  paramsJson              String   @default("{}") // 协议专属参数 JSON
+  entryNodeId             String
+  entryPort               Int
+  exitNodeId              String
+  exitPort                Int
+  certificateId           String?
   endpointOverrideEnabled Boolean  @default(false)
-  serverHost      String?
-  serverPort      Int?
-  serverName      String?
-  host            String?
-  trafficRate     Float    @default(1)
-  tagsJson        String   @default("[]")
-  level           Int      @default(0)
-  sortOrder       Int      @default(0)
-  isPublic        Boolean  @default(true)
-  status          String   @default("ACTIVE") // ACTIVE | DISABLED
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  serverHost              String?
+  serverPort              Int?
+  serverName              String?
+  host                    String?
+  trafficRate             Float    @default(1)
+  tagsJson                String   @default("[]")
+  level                   Int      @default(0)
+  sortOrder               Int      @default(0)
+  isPublic                Boolean  @default(true)
+  status                  String   @default("ACTIVE") // ACTIVE | DISABLED
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
-  exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
-  certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
-  trafficLogs   TrafficLog[]
+  entryNode       Node            @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
+  exitNode        Node            @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  certificate     Certificate?    @relation(fields: [certificateId], references: [id], onDelete: SetNull)
+  trafficLogs     TrafficLog[]
+  extraLineGrants UserLineGrant[]
 
   @@index([entryNodeId])
   @@index([exitNodeId])
@@ -218,41 +221,58 @@ model SubscriptionTemplate {
 }
 
 model Subscription {
-  id                String    @id @default(uuid())
-  userId            String    @unique
-  planId            String
-  status            String    @default("ACTIVE") // ACTIVE | CANCELED | EXPIRED | REVOKED
-  trafficLimitBytes BigInt
-  trafficUsedBytes  BigInt    @default(0)
-  startedAt         DateTime  @default(now())
-  expireAt          DateTime?
-  subscriptionToken String    @unique @default(uuid())
-  canceledAt        DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  planId               String
+  status               String    @default("ACTIVE") // ACTIVE | CANCELED | EXPIRED | REVOKED
+  trafficLimitBytes    BigInt
+  trafficUsedBytes     BigInt    @default(0)
+  startedAt            DateTime  @default(now())
+  expireAt             DateTime?
+  subscriptionToken    String    @unique @default(uuid())
+  canceledAt           DateTime?
+  trafficPeriodStartAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
 
   @@index([status])
   @@index([expireAt])
+  @@index([trafficPeriodStartAt])
+}
+
+// 用户级额外线路授权，独立于订阅生命周期长期保留。
+model UserLineGrant {
+  id        String   @id @default(uuid())
+  userId    String
+  lineId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  line Line @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lineId])
+  @@index([userId])
+  @@index([lineId])
 }
 
 // 钱包余额流水，amount 为带符号的最小货币单位（分）。
 model BalanceTransaction {
-  id             String    @id @default(uuid())
-  userId         String
-  amount         Int
-  balanceBefore  Int
-  balanceAfter   Int
-  type           String
-  description    String?
-  referenceId    String?
-  redeemCodeId   String?   @unique
-  createdAt      DateTime  @default(now())
+  id            String   @id @default(uuid())
+  userId        String
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  type          String
+  description   String?
+  referenceId   String?
+  redeemCodeId  String?  @unique
+  createdAt     DateTime @default(now())
 
-  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  redeemCode     RedeemCode? @relation(fields: [redeemCodeId], references: [id], onDelete: SetNull)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redeemCode RedeemCode? @relation(fields: [redeemCodeId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
@@ -261,18 +281,18 @@ model BalanceTransaction {
 
 // 管理员生成的充值卡密；code 始终以大写形式落库。
 model RedeemCode {
-  id                String    @id @default(uuid())
-  code              String    @unique
-  amount            Int
-  status            String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
-  expiresAt         DateTime?
-  note              String?
-  redeemedAt        DateTime?
-  redeemedByUserId  String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  code             String    @unique
+  amount           Int
+  status           String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
+  expiresAt        DateTime?
+  note             String?
+  redeemedAt       DateTime?
+  redeemedByUserId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  redeemedBy        User?              @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  redeemedBy         User?               @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
   balanceTransaction BalanceTransaction?
 
   @@index([status, createdAt])
@@ -307,8 +327,8 @@ model TrafficLog {
   download   BigInt   @default(0)
   recordedAt DateTime @default(now())
 
-  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   line Line? @relation(fields: [lineId], references: [id], onDelete: SetNull)
 
   @@index([nodeId])
@@ -332,7 +352,7 @@ model SystemSetting {
 // ==============================
 model BinaryRelease {
   id                  String   @id @default(uuid())
-  kind                String   // AGENT | SINGBOX
+  kind                String // AGENT | SINGBOX
   upstreamVersion     String
   revision            Int      @default(1)
   source              String   @default("BUILTIN") // BUILTIN | UPLOAD | REMOTE
@@ -356,7 +376,7 @@ model BinaryRelease {
 model BinaryAsset {
   id          String   @id @default(uuid())
   releaseId   String
-  target      String   // linux-amd64, windows-amd64 等
+  target      String // linux-amd64, windows-amd64 等
   os          String
   arch        String
   filename    String
@@ -398,27 +418,27 @@ model BinaryAssetFile {
 }
 
 model BinaryDeploymentTask {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   nodeId          String
   assetId         String
   previousAssetId String?
   releaseId       String
-  kind            String   // AGENT | SINGBOX
-  operation       String   @default("UPGRADE") // UPGRADE | ROLLBACK
-  status          String   @default("QUEUED") // QUEUED | DISPATCHED | COMPLETED | FAILED
-  attempts        Int      @default(0)
-  payloadJson     String   @default("{}")
+  kind            String // AGENT | SINGBOX
+  operation       String    @default("UPGRADE") // UPGRADE | ROLLBACK
+  status          String    @default("QUEUED") // QUEUED | DISPATCHED | COMPLETED | FAILED
+  attempts        Int       @default(0)
+  payloadJson     String    @default("{}")
   errorMessage    String?
   requestedById   String?
-  requestedAt     DateTime @default(now())
+  requestedAt     DateTime  @default(now())
   dispatchedAt    DateTime?
   completedAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  node          Node         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  asset         BinaryAsset  @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  previousAsset BinaryAsset? @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
+  node          Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  asset         BinaryAsset   @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  previousAsset BinaryAsset?  @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
   release       BinaryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
 
   auditLogs BinaryAuditLog[]

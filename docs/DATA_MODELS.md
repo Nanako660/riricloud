@@ -86,6 +86,7 @@ model User {
   // 关联
   trafficLogs       TrafficLog[]
   subscription      Subscription?
+  extraLineGrants   UserLineGrant[]
   balanceTransactions BalanceTransaction[]
   redeemedCodes     RedeemCode[] @relation("RedeemedCodes")
 
@@ -279,6 +280,7 @@ model Plan {
   price             Int      @default(0) // 最小货币单位（分）；API 的 price 使用元
   durationDays      Int
   trafficLimitBytes BigInt
+  trafficResetMode  String   @default("NONE") // NONE | CALENDAR_MONTH | SUBSCRIPTION_CYCLE
   lineMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
   lineTagsJson      String   @default("[]")
   lineIdsJson       String   @default("[]")
@@ -332,6 +334,7 @@ model Subscription {
   expireAt          DateTime?
   subscriptionToken String    @unique @default(uuid())
   canceledAt        DateTime?
+  trafficPeriodStartAt DateTime? // 当前流量周期起点；旧订阅首次启用策略时惰性初始化
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -340,10 +343,29 @@ model Subscription {
 
   @@index([status])
   @@index([expireAt])
+  @@index([trafficPeriodStartAt])
 }
 
 // ==============================
-// 2.6 钱包余额流水 (BalanceTransaction，v0.4.20)
+// 2.6 用户额外线路授权 (UserLineGrant，v0.5.0)
+// 用户级授权独立于 Subscription 生命周期，删除订阅不会删除授权。
+// ==============================
+model UserLineGrant {
+  id        String   @id @default(uuid())
+  userId    String
+  lineId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  line Line @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lineId])
+  @@index([userId])
+  @@index([lineId])
+}
+
+// ==============================
+// 2.7 钱包余额流水 (BalanceTransaction，v0.4.20)
 // amount 为带符号的金额，正数表示入账，负数表示扣款；每条记录保存变更前后余额。
 // ==============================
 model BalanceTransaction {
@@ -533,7 +555,7 @@ model SystemSetting {
 | `serverName/host` | 订阅编译与协议代理中继分别覆盖 SNI 与传输层 Host；开关关闭时回退到 `Line.paramsJson` |
 | `protocolType/paramsJson` | Line 自己拥有协议和协议参数；响应字段为 `protocolType` + 脱敏后的 `params`，管理端通过可视化分组表单编辑 |
 | `trafficRate` | 订阅展示倍率，非 1 时线路名称追加 `[Nx]` |
-| `tagsJson/level/sortOrder/isPublic/status` | 线路标签、等级、排序、公开性与启停状态；只在线且公开的启用线路可进入套餐匹配 |
+| `tagsJson/level/sortOrder/isPublic/status` | 线路标签、等级、排序、公开性与启停状态；只在线且公开的启用线路可进入套餐匹配，额外授权线路可绕过公开性与套餐规则但仍须启用且入口/出口在线 |
 
 线路 API 为旧客户端保留只读 `targetInbound` 摘要，但它由 Line 的出口节点、出口端口和协议参数派生，不再对应 `NodeInbound` 外键。
 
@@ -542,6 +564,9 @@ model SystemSetting {
 | 字段 | 说明 |
 | :--- | :--- |
 | `trafficLimitBytes` | 套餐周期总流量，服务边界序列化为 Number |
+| `trafficResetMode=NONE` | 保持现有行为，累计配额不自动重置 |
+| `trafficResetMode=CALENDAR_MONTH` | 按服务器本地时区每月 1 日 00:00 开始新周期 |
+| `trafficResetMode=SUBSCRIPTION_CYCLE` | 从订阅 `startedAt` 起每 `durationDays` 天开始新周期 |
 | `lineMatchMode=ALL` | 匹配所有入口节点与出口节点均在线、且线路公开启用的线路 |
 | `lineMatchMode=TAGS` | `lineTagsJson` 与 `Line.tagsJson` 有任一标签交集 |
 | `lineMatchMode=EXPLICIT` | 仅匹配 `lineIdsJson` 中列出的线路 |
@@ -553,11 +578,15 @@ model SystemSetting {
 
 每个用户通过 `userId @unique` 只有一条订阅实例。首次订购或原订阅已失效时复用/创建实例；升配立即重置已用流量并按新套餐重算周期；取消将状态置为 `CANCELED`，在 `expireAt` 前仍可使用；巡检将到期的 `ACTIVE`/`CANCELED` 更新为 `EXPIRED`；管理员可设置 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED`、配额、已用流量和有效期。
 
+当套餐启用流量重置策略时，`trafficPeriodStartAt` 表示当前累计配额周期起点。自然月策略按服务器本地时区计算每月边界，订阅周期策略按 `startedAt + N × durationDays` 计算；订阅读取、Agent 心跳入账和每分钟后台巡检都会惰性或定时推进周期。旧订阅首次启用策略只补写周期起点，不清空已有用量；跨过边界时在同一事务内把 `Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 清零，再计入本次心跳增量。`TrafficLog` 只记录原始流水，不因重置删除或改写。
+
 `User.trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`subscriptionToken` 暂时保留为兼容镜像。订阅模块存在时以 `Subscription` 为准，每次订购、升配、管理员修改或 Token 重置在同一事务中同步镜像；旧迁移/旧测试缺少订阅表时沿用原 User 配额路径。
 
 用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 使用 `QueryStats(reset=false)` 上报累计值。Master 以 `nodeId + credential` 查询 `TrafficCursor` 计算增量：首次出现计入当前值，累计值上升只计入差额，累计值下降视为内核重启/计数器重置并计入当前值，同时记录告警，累计值相等则不生成流水。未知凭证只更新游标，不计费；用户之后恢复时只计算新增流量。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。
 
 每次账务事务同时提交 `TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 和 `User.trafficUsedBytes`。同一节点积压的心跳允许合并为最新快照，用户与订阅配额按批次聚合更新，因而重试和中间样本丢失不会重复计费或丢失累计差额。节点实时遥测与速率聚合独立落库，历史速率桶由低频巡检按保留周期清理，不在每个心跳事务内执行删除。
+
+`UserLineGrant` 是管理员维护的用户级线路授权关系。绑定/更新订阅接口接收完整 `extraLineIds` 列表，空数组表示清空；授权跨续费、升配、过期和重新购买保留，删除用户订阅时也不清除。订阅线路是套餐匹配线路与额外授权线路的并集；额外线路仍要求 `status=ACTIVE` 且入口、出口节点在线，全局 `publicLinesEnabled=false` 仍会关闭全部线路输出。
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 

@@ -12,6 +12,7 @@ type PlanViewInput = {
   price: number;
   durationDays: number;
   trafficLimitBytes: bigint;
+  trafficResetMode: string;
   lineMatchMode: string;
   lineTagsJson: string;
   lineIdsJson: string;
@@ -122,6 +123,7 @@ export class PlansService {
       price: toCents(dto.price ?? 0),
       durationDays: dto.durationDays,
       trafficLimitBytes: BigInt(dto.trafficLimitBytes),
+      trafficResetMode: dto.trafficResetMode ?? 'NONE',
       lineMatchMode: dto.lineMatchMode ?? 'ALL',
       lineTagsJson: JSON.stringify(dto.lineTags ?? []),
       lineIdsJson: JSON.stringify(dto.lineIds ?? []),
@@ -138,6 +140,7 @@ export class PlansService {
       ...(dto.price !== undefined ? { price: toCents(dto.price) } : {}),
       ...(dto.durationDays !== undefined ? { durationDays: dto.durationDays } : {}),
       ...(dto.trafficLimitBytes !== undefined ? { trafficLimitBytes: BigInt(dto.trafficLimitBytes) } : {}),
+      ...(dto.trafficResetMode !== undefined ? { trafficResetMode: dto.trafficResetMode } : {}),
       ...(dto.lineMatchMode !== undefined ? { lineMatchMode: dto.lineMatchMode } : {}),
       ...(dto.lineTags !== undefined ? { lineTagsJson: JSON.stringify(dto.lineTags) } : {}),
       ...(dto.lineIds !== undefined ? { lineIdsJson: JSON.stringify(dto.lineIds) } : {}),

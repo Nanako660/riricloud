@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsUUID, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsUUID, Min, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED'] as const;
@@ -41,4 +41,10 @@ export class AdminUpdateSubDto {
   @Min(1)
   @IsOptional()
   addDays?: number;
+
+  @ApiPropertyOptional({ type: [String], description: '用户额外线路授权，传入完整列表；空数组清空授权' })
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  @IsOptional()
+  extraLineIds?: string[];
 }

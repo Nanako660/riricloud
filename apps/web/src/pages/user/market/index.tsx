@@ -14,6 +14,8 @@ import { QuickRedeemForm } from '@/components/shared/quick-redeem-form';
 import { useWallet } from '@/pages/user/profile/use-profile';
 import { useUserSubscription, useUserSubscriptionMutations, type UserPlan } from '../subscription/use-user-subscription';
 
+const resetLabels = { NONE: '不自动重置', CALENDAR_MONTH: '自然月重置', SUBSCRIPTION_CYCLE: '订阅周期重置' } as const;
+
 export default function MarketPage() {
   const { data: current } = useUserSubscription();
   const { subscribe, upgrade } = useUserSubscriptionMutations();
@@ -70,6 +72,10 @@ export default function MarketPage() {
                 <div className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-emerald-500 shrink-0" />
                   <span>{formatBytes(plan.trafficLimitBytes)} 流量配额</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span>流量：{resetLabels[plan.trafficResetMode]}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-emerald-500 shrink-0" />

@@ -29,8 +29,8 @@
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
 - `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功。
-- `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、节点匹配模式。
-- `GET /user/subscription`：查询当前用户唯一订阅及按套餐匹配的可用线路。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [] }`；有订阅时返回 `lines[]`，并保留 `nodes` 兼容镜像。
+- `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、`trafficResetMode` 和节点匹配模式。
+- `GET /user/subscription`：查询当前用户唯一订阅及可用线路。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [] }`；有订阅时返回 `lines[]`，并保留 `nodes` 兼容镜像。订阅视图增加 `trafficResetMode`、`nextTrafficResetAt` 和 `extraLineIds`；线路为套餐匹配线路与用户额外授权线路的并集。
 - `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409；按套餐价格从余额扣款并写入 `PLAN_BUY` 流水，余额不足返回 400。
 - `POST /user/subscription/renew`：续费当前套餐。⭐ 无请求体；按当前套餐价格扣款，顺延 `durationDays`、重置当期已用流量并写入 `PLAN_RENEW` 流水。
 - `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；仅允许目标套餐价格不低于当前套餐，低价目标返回 409；通过校验后全价扣款，切换套餐、重置已用流量并按新套餐重算周期，写入 `PLAN_UPGRADE` 流水。
@@ -40,7 +40,7 @@
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态与套餐筛选；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, plan{id,name} }`。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态与套餐筛选；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
 - `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额/期限作为初始值且可由 `trafficLimitBytes`/`expireAt` 覆盖；明确传 `planId: null` 时创建无套餐用户；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
@@ -111,8 +111,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/plans/:id`：查询套餐详情。⭐
 - `GET /admin/plans/:id/nodes`：兼容路径，按套餐规则计算当前可用线路。⭐
 - `GET /admin/plans/:id/lines`：按套餐规则计算当前在线公开线路。⭐
-- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。
-- `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存。⭐
+- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, trafficResetMode?: "NONE"|"CALENDAR_MONTH"|"SUBSCRIPTION_CYCLE", lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。
+- `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存，支持更新 `trafficResetMode`。⭐
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
@@ -127,8 +127,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 #### 订阅管控
 - `GET /admin/subscriptions?page&pageSize&search&status&planId`：分页查询订阅。⭐ 保留为兼容接口；管理端主入口已融合至 `/admin/users`。
 - `GET /admin/subscriptions/:id`：查询订阅详情。⭐
-- `POST /admin/subscriptions/users/:userId`：为尚无订阅的用户绑定套餐。⭐ 请求字段同管理员订阅调整接口，必须提供 `planId`；已有订阅时按更新语义处理。
-- `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`；传 `planId: null` 会删除订阅实例，用户回到无套餐状态并使旧订阅 Token 失效。
+- `POST /admin/subscriptions/users/:userId`：为尚无订阅的用户绑定套餐。⭐ 请求字段同管理员订阅调整接口，必须提供 `planId`；已有订阅时按更新语义处理。支持 `extraLineIds?: UUID[]` 全量设置用户额外线路授权，空数组表示清空。
+- `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`、`extraLineIds`；传 `planId: null` 会删除订阅实例，用户回到无套餐状态并使旧订阅 Token 失效，但不会删除用户额外线路授权。
 - `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
 
 ### 1.4 系统模块 (`/system`)

@@ -11,6 +11,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { LinesService } from '../lines/lines.service';
 import { WalletService } from '../wallet/wallet.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { getTrafficPeriod } from '../common/traffic-reset';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -28,6 +29,7 @@ type UserSubscriptionSnapshot = {
   trafficUsedBytes: bigint;
   startedAt: Date;
   expireAt: Date | null;
+  trafficPeriodStartAt: Date | null;
   subscriptionToken: string;
   plan?: {
     id: string;
@@ -35,6 +37,8 @@ type UserSubscriptionSnapshot = {
     lineMatchMode: string;
     lineTagsJson: string;
     lineIdsJson: string;
+    durationDays: number;
+    trafficResetMode: string;
   } | null;
 };
 
@@ -44,6 +48,7 @@ type UserPlanSnapshot = {
   durationDays: number;
   trafficLimitBytes: bigint;
   isPublic: boolean;
+  trafficResetMode: string;
 };
 
 // 管理端用户视图字段（不含 passwordHash / uuid 等敏感字段）
@@ -65,9 +70,11 @@ const ADMIN_USER_SELECT = {
       trafficUsedBytes: true,
       startedAt: true,
       expireAt: true,
-      plan: { select: { id: true, name: true } }
+      trafficPeriodStartAt: true,
+      plan: { select: { id: true, name: true, durationDays: true, trafficResetMode: true } }
     }
-  }
+  },
+  extraLineGrants: { select: { lineId: true } }
 } as const;
 
 @Injectable()
@@ -157,7 +164,7 @@ export class UsersService {
       this.prisma.user.count({ where })
     ]);
     // BigInt 在服务边界转 Number（< 2^53 无精度损失）
-    const data = users.map((u) => ({
+    const data = users.map(({ extraLineGrants, ...u }) => ({
       ...u,
       trafficLimitBytes: Number(u.trafficLimitBytes),
       trafficUsedBytes: Number(u.trafficUsedBytes),
@@ -166,6 +173,16 @@ export class UsersService {
             ...u.subscription,
             trafficLimitBytes: Number(u.subscription.trafficLimitBytes),
             trafficUsedBytes: Number(u.subscription.trafficUsedBytes),
+            trafficResetMode: u.subscription.plan?.trafficResetMode ?? 'NONE',
+            nextTrafficResetAt: u.subscription.plan
+              ? getTrafficPeriod(
+                  u.subscription.plan.trafficResetMode,
+                  new Date(),
+                  u.subscription.startedAt,
+                  u.subscription.plan.durationDays
+                )?.nextResetAt ?? null
+              : null,
+            extraLineIds: (extraLineGrants ?? []).map((grant) => grant.lineId),
             plan: u.subscription.plan
           }
         : null
@@ -210,7 +227,8 @@ export class UsersService {
               trafficUsedBytes: BigInt(0),
               startedAt: now,
               expireAt,
-              subscriptionToken
+              subscriptionToken,
+              trafficPeriodStartAt: getTrafficPeriod(plan.trafficResetMode, now, now, plan.durationDays)?.startAt ?? null
             }
           });
           return created;
@@ -282,8 +300,9 @@ export class UsersService {
     const subscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
+    const extraLineIds = await this.getExtraLineIds(userId);
     const lines = this.linesService
-      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' }, extraLineIds)
       : [];
     const trafficLimitBytes = subscription?.trafficLimitBytes ?? user.trafficLimitBytes;
     const trafficUsedBytes = subscription?.trafficUsedBytes ?? user.trafficUsedBytes;
@@ -311,8 +330,9 @@ export class UsersService {
     const subscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
+    const extraLineIds = await this.getExtraLineIds(userId);
     const lines = this.linesService
-      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' })
+      ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' }, extraLineIds)
       : [];
     return {
       entitled: subscription
@@ -336,5 +356,14 @@ export class UsersService {
       (await planDelegate.findFirst({ where: { name: '体验套餐' } })) ??
       (await planDelegate.findFirst({ where: { isPublic: true }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }))
     );
+  }
+
+  private async getExtraLineIds(userId: string): Promise<string[]> {
+    const delegate = (this.prisma as unknown as {
+      userLineGrant?: { findMany: (args: Record<string, unknown>) => Promise<Array<{ lineId: string }>> };
+    }).userLineGrant;
+    if (!delegate) return [];
+    const rows = await delegate.findMany({ where: { userId }, select: { lineId: true } });
+    return rows.map((row) => row.lineId);
   }
 }

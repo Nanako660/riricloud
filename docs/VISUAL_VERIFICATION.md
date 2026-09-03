@@ -40,15 +40,15 @@
 | **`UI-10`** | 节点详情 | 高级与运维 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | Line 配置预览、JSON 覆盖编辑器、网络质量快照、格式化内核错误日志、重启/升级/删除操作 |
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | 邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选、套餐 Badge、订阅状态 Badge、流量进度条、到期日、流量数据自动刷新、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select、无套餐创建、套餐联动配额与有效期、永久有效 Switch 卡片与配额输入框高度/阴影一致 |
-| **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色与封禁、密码重置、套餐/无套餐/状态/配额/已用流量调整、启用账号卡片与角色 Select 高度/阴影一致、无套餐危险操作确认、Token 重置确认 |
+| **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色与封禁、密码重置、套餐/无套餐/状态/配额/已用流量调整、流量重置策略与下次重置时间、额外线路 Checkbox 授权、启用账号卡片与角色 Select 高度/阴影一致、无套餐危险操作确认、Token 重置确认 |
 | **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、品牌/注册/订阅/Agent/高级字段、全站访问 URL 与当前面板地址快捷填充、Nginx 短链开关及配置提示、套餐与模板回填、CodeMirror、保存与重置确认 |
 | **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、页脚客服入口、动态标题/Favicon/CSS、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐卡片信息密度、公开/下架 Badge、节点匹配与模板标签、删除确认 |
-| **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
+| **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、流量重置策略 Select、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认模板 Badge、策略组/规则集/DNS 摘要、删除确认 |
 | **`UI-19`** | 模板管理 | 订阅模板编辑弹窗 | `/admin/templates`（点击“新建模板/编辑”） | `apps/web/src/pages/admin/templates/components/template-form-dialog.tsx` | JSON/YAML 等宽编辑区、校验错误、默认模板 Switch、弹窗滚动 |
 | **`UI-20`** | 用户订阅 | 套餐市场 | `/market` | `apps/web/src/pages/user/market/index.tsx` | 套餐权益网格、当前套餐标记、低价套餐禁止直接降级、订购/升配二次确认、窄屏单列 |
-| **`UI-21`** | 用户订阅 | 我的订阅综合控制台 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 公告下方按状态渲染订阅主体或开通引导；有订阅时展示流量进度、状态 Badge、标准/伪静态 Token URL 复制/重置、取消保留权益提示、可用线路紧凑列表（名称/协议/在线状态/倍率）；无订阅时展示前往套餐市场按钮；小型确认弹窗在移动端保持圆角、左右留白、居中紧凑且 Footer 横向排列 |
+| **`UI-21`** | 用户订阅 | 我的订阅综合控制台 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 公告下方按状态渲染订阅主体或开通引导；有订阅时展示流量进度、状态 Badge、流量重置策略与下次重置时间、标准/伪静态 Token URL 复制/重置、取消保留权益提示、可用线路紧凑列表（名称/协议/在线状态/倍率）；无订阅时展示前往套餐市场按钮；小型确认弹窗在移动端保持圆角、左右留白、居中紧凑且 Footer 横向排列 |
 | **`UI-22`** | 节点运维 | 远程升级弹窗 | `/admin/nodes/:id`（点击“升级中心”） | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | 当前/推荐版本对比、主控内置来源、自定义 URL/SHA-256 校验、导入主控、HTTP/WS 任务等待、下发中禁用状态、错误 Toast |
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
 | **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、标准 TLS/ACME 的 ALPN 预设多选、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；Reality 不显示 ALPN；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |

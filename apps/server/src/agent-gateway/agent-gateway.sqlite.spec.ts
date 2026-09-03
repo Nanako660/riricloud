@@ -104,9 +104,27 @@ describe('AgentService SQLite traffic accounting', () => {
         "sortOrder" INTEGER NOT NULL DEFAULT 0,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE "Plan" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "durationDays" INTEGER NOT NULL,
+        "trafficResetMode" TEXT NOT NULL DEFAULT 'NONE'
+      )`,
       `CREATE TABLE "Subscription" (
         "id" TEXT NOT NULL PRIMARY KEY,
-        "userId" TEXT NOT NULL
+        "userId" TEXT NOT NULL,
+        "planId" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "trafficLimitBytes" BIGINT NOT NULL DEFAULT 0,
+        "trafficUsedBytes" BIGINT NOT NULL DEFAULT 0,
+        "startedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "expireAt" DATETIME,
+        "subscriptionToken" TEXT NOT NULL,
+        "canceledAt" DATETIME,
+        "trafficPeriodStartAt" DATETIME,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("planId") REFERENCES "Plan" ("id") ON DELETE RESTRICT,
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
       )`,
       `CREATE TABLE "TrafficLog" (
         "id" TEXT NOT NULL PRIMARY KEY,
