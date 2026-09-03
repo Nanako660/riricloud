@@ -321,6 +321,47 @@ Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配
 
 Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result` 五类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
+## 2.4 二进制资源中心 API（v0.5.0）
+
+以下管理接口均需要管理员 JWT 与 `ADMIN` 角色：
+
+| 方法 | 路径 | 用途 |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/admin/binary-resources` | 按资源类型、版本、状态返回资源、平台资产、文件摘要与最近分发任务。 |
+| `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件、引用任务和分发历史。 |
+| `POST` | `/api/v1/admin/binary-resources/upload` | `multipart/form-data` 上传本地文件；表单字段与远程导入相同，文件上限 100 MiB。 |
+| `POST` | `/api/v1/admin/binary-resources/import` | 按管理员提供的 HTTP(S) URL 下载并托管资源。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/activate` | 启用资源。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/disable` | 停用资源并取消默认标记。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/retire` | 归档资源并取消默认标记。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/default` | 将 ACTIVE 资源设为该类型默认版本。 |
+| `GET` | `/api/v1/admin/binary-resources/:id/deployments` | 查看该资源最近 200 条分发任务。 |
+
+导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 形如 `singbox-linux-amd64`。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
+
+节点升级 `POST /api/v1/admin/nodes/:id/upgrade` 新增可选 `resourceId`。服务端根据节点 OS/架构选择资源的 `assetId`，下发响应包含 `resourceId`、`assetId`、主文件 URL/SHA-256 与 `files[]`；`files[]` 可包含 Sing-box 主文件及 `libcronet.so` 辅助文件。旧版 `target`、`version`、`url`、`sha256` 参数继续支持，旧 Agent 仍可执行只有单文件 URL/SHA-256 的 `upgrade_task`。
+
+`upgrade_task` 新增可选字段如下：
+
+```json
+{
+  "taskId": "task-uuid",
+  "target": "singbox",
+  "version": "1.14.0-r1",
+  "resourceId": "release-uuid",
+  "assetId": "asset-uuid",
+  "operation": "UPGRADE",
+  "url": "https://master.example.com/api/v1/downloads/binary-assets/asset-uuid?token=...",
+  "sha256": "...",
+  "files": [
+    { "name": "sing-box", "role": "main", "url": "...", "sha256": "..." },
+    { "name": "libcronet.so", "role": "auxiliary", "url": "...", "sha256": "..." }
+  ]
+}
+```
+
+兼容下载端点仍保留：`GET /api/v1/downloads/binaries/:target`、`GET /api/v1/downloads/binary-assets/:id` 与 `GET /api/v1/downloads/binary-files/:id`，均使用 AgentToken。升级任务状态、失败原因、重试和回滚结果写入 SQLite；WS 重连或 HTTP 轮询恢复时，Master 会重新投递尚未收到回执的 `DISPATCHED` 任务。
+
 ---
 
 ## 2.3 Master-Agent HTTP/HTTPS 轮询协议

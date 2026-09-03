@@ -1,9 +1,14 @@
 package singbox
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -429,4 +434,134 @@ func TestReconcileSuppressesSpawnDuringKernelUpgrade(t *testing.T) {
 	if m.Running() {
 		t.Fatal("supervisor must not spawn a kernel during binary replacement")
 	}
+}
+
+func sha256Hex(body []byte) string {
+	hash := sha256.Sum256(body)
+	return hex.EncodeToString(hash[:])
+}
+
+func TestUpgradeKernelFilesReplacesMainAndAuxiliaryAsOnePackage(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "sing-box")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
+	oldMain, err := os.ReadFile(stubBin)
+	if err != nil {
+		t.Fatalf("read stub kernel: %v", err)
+	}
+	if err := os.WriteFile(binPath, oldMain, 0o755); err != nil {
+		t.Fatalf("write old kernel: %v", err)
+	}
+	auxPath := filepath.Join(dir, "libcronet.so")
+	oldAux := []byte("old-cronet")
+	if err := os.WriteFile(auxPath, oldAux, 0o755); err != nil {
+		t.Fatalf("write old auxiliary: %v", err)
+	}
+	newAux := []byte("new-cronet")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/main" {
+			_, _ = w.Write(oldMain)
+			return
+		}
+		if r.URL.Path == "/aux" {
+			_, _ = w.Write(newAux)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m := NewManager(ctx, filepath.Join(dir, "config.json"), binPath, silentLog())
+	t.Cleanup(func() {
+		cancel()
+		m.Shutdown(3 * time.Second)
+	})
+
+	if err := m.UpgradeKernelFiles(context.Background(), []UpgradeFile{
+		{Name: "sing-box", Role: "main", URL: server.URL + "/main", SHA256: sha256Hex(oldMain)},
+		{Name: "libcronet.so", Role: "auxiliary", URL: server.URL + "/aux", SHA256: sha256Hex(newAux)},
+	}); err != nil {
+		t.Fatalf("UpgradeKernelFiles: %v", err)
+	}
+	gotMain, err := os.ReadFile(binPath)
+	if err != nil {
+		t.Fatalf("read replaced kernel: %v", err)
+	}
+	gotAux, err := os.ReadFile(auxPath)
+	if err != nil {
+		t.Fatalf("read replaced auxiliary: %v", err)
+	}
+	if !bytes.Equal(gotMain, oldMain) || !bytes.Equal(gotAux, newAux) {
+		t.Fatalf("resource package was not applied atomically: main=%q auxiliary=%q", gotMain, gotAux)
+	}
+}
+
+func TestUpgradeKernelFilesRollsBackMainAndAuxiliaryWhenNewKernelCannotStart(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "sing-box")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
+	oldMain, err := os.ReadFile(stubBin)
+	if err != nil {
+		t.Fatalf("read stub kernel: %v", err)
+	}
+	if err := os.WriteFile(binPath, oldMain, 0o755); err != nil {
+		t.Fatalf("write old kernel: %v", err)
+	}
+	auxPath := filepath.Join(dir, "libcronet.so")
+	oldAux := []byte("old-cronet")
+	if err := os.WriteFile(auxPath, oldAux, 0o755); err != nil {
+		t.Fatalf("write old auxiliary: %v", err)
+	}
+	badMain := []byte("not an executable")
+	newAux := []byte("new-cronet")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/main":
+			_, _ = w.Write(badMain)
+		case "/aux":
+			_, _ = w.Write(newAux)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m := NewManager(ctx, filepath.Join(dir, "config.json"), binPath, silentLog())
+	t.Cleanup(func() {
+		cancel()
+		m.Shutdown(3 * time.Second)
+	})
+	if err := m.ApplyConfig(json.RawMessage(`{"log":{"level":"info"}}`), 1); err != nil {
+		t.Fatalf("ApplyConfig: %v", err)
+	}
+	waitFor(t, 15*time.Second, m.Running)
+
+	upgradeCtx, upgradeCancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	err = m.UpgradeKernelFiles(upgradeCtx, []UpgradeFile{
+		{Name: "sing-box", Role: "main", URL: server.URL + "/main", SHA256: sha256Hex(badMain)},
+		{Name: "libcronet.so", Role: "auxiliary", URL: server.URL + "/aux", SHA256: sha256Hex(newAux)},
+	})
+	upgradeCancel()
+	if err == nil {
+		t.Fatal("expected failed start and rollback")
+	}
+
+	gotMain, err := os.ReadFile(binPath)
+	if err != nil {
+		t.Fatalf("read rolled back kernel: %v", err)
+	}
+	gotAux, err := os.ReadFile(auxPath)
+	if err != nil {
+		t.Fatalf("read rolled back auxiliary: %v", err)
+	}
+	if !bytes.Equal(gotMain, oldMain) || !bytes.Equal(gotAux, oldAux) {
+		t.Fatalf("resource package rollback was incomplete: main=%q auxiliary=%q", gotMain, gotAux)
+	}
+	waitFor(t, 8*time.Second, m.Running)
 }

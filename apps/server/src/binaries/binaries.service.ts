@@ -68,8 +68,12 @@ export class BinariesService implements OnModuleInit {
   async refresh(): Promise<void> {
     const next = new Map<BinaryTarget, BinaryAsset>();
     const version = this.readMasterVersion();
+    const managed = await this.findManagedAssets();
     for (const definition of TARGETS) {
-      const candidate = await this.findCandidate(definition.target);
+      const managedAsset = managed.get(definition.target);
+      const candidate = managedAsset
+        ? { path: managedAsset.path, version: managedAsset.version, imported: managedAsset.imported }
+        : await this.findCandidate(definition.target);
       if (!candidate) continue;
       const file = await this.inspectFile(candidate.path);
       if (!file) continue;
@@ -99,7 +103,7 @@ export class BinariesService implements OnModuleInit {
         const asset = this.assets.get(definition.target);
         return asset
           ? this.toInfo(asset)
-          : { ...definition, version: this.readMasterVersion(), sha256: '', size: 0, imported: false, available: false };
+          : { ...definition, version: definition.kind === 'singbox' ? '' : this.readMasterVersion(), sha256: '', size: 0, imported: false, available: false };
       })
     };
   }
@@ -236,6 +240,63 @@ export class BinariesService implements OnModuleInit {
     }
 
     return undefined;
+  }
+
+  private async findManagedAssets(): Promise<Map<BinaryTarget, BinaryAsset>> {
+    const delegate = (this.prisma as unknown as {
+      binaryAsset?: {
+        findMany: (args: Record<string, unknown>) => Promise<Array<{
+          id: string;
+          target: string;
+          filename: string;
+          storageRoot: string;
+          storagePath: string;
+          sha256: string;
+          size: number;
+          release: { kind: string; upstreamVersion: string; revision: number; status: string; isDefault: boolean };
+        }>>;
+      };
+    }).binaryAsset;
+    if (!delegate) return new Map();
+    try {
+      const rows = await delegate.findMany({
+        where: { available: true, release: { status: 'ACTIVE' } },
+        include: { release: true },
+        orderBy: [{ updatedAt: 'desc' }]
+      });
+      rows.sort((left, right) => Number(right.release.isDefault) - Number(left.release.isDefault));
+      const result = new Map<BinaryTarget, BinaryAsset>();
+      for (const row of rows) {
+        if (!TARGETS.some((definition) => definition.target === row.target)) continue;
+        const path = this.resolveManagedPath(row.storageRoot, row.storagePath);
+        const file = await this.inspectFile(path);
+        if (!file || file.sha256.toLowerCase() !== row.sha256.toLowerCase()) continue;
+        const definition = TARGETS.find((item) => item.target === row.target);
+        if (!definition || result.has(row.target as BinaryTarget)) continue;
+        result.set(row.target as BinaryTarget, {
+          ...definition,
+          version: `${row.release.upstreamVersion}-r${row.release.revision}`,
+          path,
+          sha256: file.sha256,
+          size: file.size,
+          imported: row.storageRoot === 'RUNTIME'
+        });
+      }
+      return result;
+    } catch {
+      return new Map();
+    }
+  }
+
+  private resolveManagedPath(storageRoot: string, storagePath: string): string {
+    if (storagePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(storagePath)) return resolve(storagePath);
+    const dataDir = process.env.RIRICLOUD_DATA_DIR
+      ? resolve(process.env.RIRICLOUD_DATA_DIR)
+      : resolve(process.cwd(), 'data');
+    const root = storageRoot === 'STATIC'
+      ? resolve(process.env.RIRICLOUD_BINARY_DIR ?? join(process.cwd(), 'binaries'))
+      : resolve(dataDir, 'binaries');
+    return resolve(root, storagePath);
   }
 
   private async findLatestCustom(target: BinaryTarget): Promise<{ path: string; version?: string; imported: boolean } | undefined> {

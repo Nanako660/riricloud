@@ -71,6 +71,18 @@ export interface UpgradeTaskData {
   version: string;
   url: string;
   sha256: string;
+  resourceId?: string;
+  assetId?: string;
+  operation?: 'UPGRADE' | 'ROLLBACK';
+  files?: UpgradeFileData[];
+}
+
+export interface UpgradeFileData {
+  name: string;
+  role?: 'main' | 'auxiliary';
+  url: string;
+  sha256: string;
+  size?: number;
 }
 
 export interface UpgradeResultData {

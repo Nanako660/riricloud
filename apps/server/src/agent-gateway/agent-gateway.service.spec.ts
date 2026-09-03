@@ -23,12 +23,24 @@ describe('AgentGatewayService', () => {
     trafficCursor: { findMany: txTrafficCursorFindMany, upsert: txTrafficCursorUpsert },
     nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate }
   };
+  const deploymentFindUnique = jest.fn();
+  const deploymentFindFirst = jest.fn();
+  const deploymentFindMany = jest.fn();
+  const deploymentCreate = jest.fn();
+  const deploymentUpdate = jest.fn();
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
     node: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     user: { findMany: jest.fn() },
     line: { findFirst: jest.fn() },
-    nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) }
+    nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    binaryDeploymentTask: {
+      findUnique: deploymentFindUnique,
+      findFirst: deploymentFindFirst,
+      findMany: deploymentFindMany,
+      create: deploymentCreate,
+      update: deploymentUpdate
+    }
   };
 
   beforeAll(async () => {
@@ -44,6 +56,11 @@ describe('AgentGatewayService', () => {
     txTrafficCursorFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
     prisma.line.findFirst.mockResolvedValue(null);
+    deploymentFindUnique.mockResolvedValue(null);
+    deploymentFindFirst.mockResolvedValue(null);
+    deploymentFindMany.mockResolvedValue([]);
+    deploymentCreate.mockResolvedValue(undefined);
+    deploymentUpdate.mockResolvedValue(undefined);
     (service as unknown as { nextRateMetricCleanupAt: number }).nextRateMetricCleanupAt = 0;
   });
 
@@ -485,5 +502,97 @@ describe('AgentGatewayService', () => {
 
     service.onModuleDestroy();
     prisma.node.update.mockResolvedValue(undefined);
+  });
+
+  it('持久化升级任务在 Master 重启后仍可查询', async () => {
+    const task = {
+      id: 'task-persisted',
+      nodeId: 'node-1',
+      assetId: 'asset-1',
+      previousAssetId: null,
+      releaseId: 'release-1',
+      kind: 'SINGBOX',
+      operation: 'UPGRADE',
+      status: 'DISPATCHED',
+      attempts: 1,
+      payloadJson: JSON.stringify({ taskId: 'task-persisted', target: 'singbox', version: '1.14.0-r1', url: 'https://panel.example.com/binary', sha256: 'a'.repeat(64) }),
+      errorMessage: null,
+      requestedById: 'admin-1',
+      requestedAt: new Date('2026-09-03T10:00:00.000Z'),
+      dispatchedAt: new Date('2026-09-03T10:00:01.000Z'),
+      completedAt: null
+    };
+    deploymentFindFirst.mockResolvedValue(task);
+
+    const restarted = new AgentGatewayService(prisma as never);
+    try {
+      const result = await restarted.getPersistedTaskStatus('node-1', 'task-persisted');
+      expect(result).toEqual(expect.objectContaining({
+        taskId: 'task-persisted',
+        status: 'DISPATCHED',
+        attempts: 1,
+        requestedAt: task.requestedAt,
+        dispatchedAt: task.dispatchedAt
+      }));
+    } finally {
+      restarted.onModuleDestroy();
+    }
+  });
+
+  it('升级失败回执持久化为 FAILED 且不会被内存状态误报为完成', async () => {
+    const task = {
+      id: 'task-failed',
+      nodeId: 'node-1',
+      assetId: 'asset-1',
+      previousAssetId: null,
+      releaseId: 'release-1',
+      kind: 'SINGBOX',
+      operation: 'UPGRADE',
+      status: 'DISPATCHED',
+      attempts: 1,
+      payloadJson: '{}',
+      errorMessage: null,
+      requestedById: null,
+      requestedAt: new Date(),
+      dispatchedAt: new Date(),
+      completedAt: null
+    };
+    deploymentFindFirst.mockResolvedValue(task);
+    prisma.node.update.mockResolvedValue(undefined);
+
+    await service.handleUpgradeResult('node-1', {
+      taskId: task.id,
+      target: 'singbox',
+      version: '1.14.0-r1',
+      success: false,
+      message: '启动验证失败'
+    });
+
+    expect(deploymentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: task.id },
+      data: expect.objectContaining({ status: 'FAILED', errorMessage: '启动验证失败' })
+    }));
+    expect(service.getTaskStatus('node-1', task.id)).toEqual(expect.objectContaining({ status: 'FAILED', success: false }));
+  });
+
+  it('资源升级任务包含完整文件包并在 HTTP 节点离线时保留为持久待执行任务', async () => {
+    prisma.node.findUnique.mockResolvedValue({ status: 'ONLINE', communicationMode: 'HTTP' });
+    const payload = {
+      resourceId: 'release-1',
+      assetId: 'asset-1',
+      releaseId: 'release-1',
+      files: [
+        { name: 'sing-box', role: 'main' as const, url: 'https://panel.example.com/main', sha256: 'a'.repeat(64) },
+        { name: 'libcronet.so', role: 'auxiliary' as const, url: 'https://panel.example.com/aux', sha256: 'b'.repeat(64) }
+      ]
+    };
+    deploymentCreate.mockResolvedValue({ id: 'task-resource' });
+
+    const result = await service.requestUpgrade('node-1', 'singbox', '1.14.0-r1', 'https://panel.example.com/main', 'a'.repeat(64), payload);
+
+    expect(result.requested).toBe(true);
+    expect(deploymentCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ assetId: 'asset-1', releaseId: 'release-1', status: 'QUEUED', payloadJson: expect.stringContaining('libcronet.so') })
+    }));
   });
 });

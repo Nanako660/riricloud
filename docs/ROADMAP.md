@@ -92,6 +92,13 @@
 - [x] ⭐ 用户管理新增流量明细下钻，展示配额画像、周期走势和线路消耗分布，移动端响应为全高 Sheet。
 - [x] ⭐ 同步 REST/数据模型/前端规范/视觉台账文档，并完成 Server/Web/Agent/文档/版本质量门禁。
 
+### Phase 4.4: 二进制资源中心与 Sing-box 版本解耦（v0.5.0）
+- [x] ⭐ 新增可持久化的 Agent/Sing-box 资源、平台资产、辅助文件、部署任务与审计模型。
+- [x] ⭐ 新增资源中心管理 API 与 `/admin/binaries` 页面，支持上传、远程导入、启用、停用、归档、默认版本和分发历史。
+- [x] ⭐ 节点升级按资源 ID/平台资产分发，保留旧升级与下载接口，并持久化重试、失败、回滚和 WS/HTTP 恢复。
+- [x] ⭐ Sing-box 与 `libcronet.so` 成组升级并整体回滚；构建 manifest、Master bundle、release 与 Docker 资源版本独立于应用版本。
+- [x] ⭐ 同步数据模型、API/WS、架构、部署、版本、前端规范、视觉台账和 CHANGELOG 文档。
+
 ### Phase 5: 部署自动化与端到端联调验收
 - [x] ⭐ 移除旧节点安装脚本与 `GET /api/v1/install.sh`，改为面板生成的原生 CLI 下载/安装命令；Agent 自己注册跨平台系统服务。
 - [x] ⭐ 编写主控端与 Agent 的多阶段 Dockerfile 及 `docker-compose.yml`，SQLite 使用持久化卷。

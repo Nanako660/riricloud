@@ -24,6 +24,8 @@ usage() {
 选项：
   --target <target>     指定宿主架构（默认 linux-amd64，支持 linux-arm64）
   --version <version>   指定版本号（默认读取 package.json）
+  --singbox-version <version>  指定独立 Sing-box 上游版本
+  --singbox-revision <n>        指定 Sing-box 资源修订号
   --worktree <path>     指定源码工作区目录（默认当前仓根目录）
   --output-dir <path>   指定装配目标目录（默认 artifacts/master/<target>）
   --archive-dir <path>  指定压缩归档输出目录（默认 artifacts/packages）
@@ -45,6 +47,9 @@ to_os_path() {
 
 TARGET="linux-amd64"
 VERSION=""
+SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
+SINGBOX_REVISION="${SINGBOX_REVISION:-1}"
+CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 WORKTREE_DIR="$RIRI_ROOT"
 OUTPUT_DIR=""
 ARCHIVE_DIR=""
@@ -60,6 +65,16 @@ while [ $# -gt 0 ]; do
     --version)
       [ $# -ge 2 ] || die "--version 缺少参数"
       VERSION="$2"
+      shift 2
+      ;;
+    --singbox-version)
+      [ $# -ge 2 ] || die "--singbox-version 缺少参数"
+      SINGBOX_VERSION="$2"
+      shift 2
+      ;;
+    --singbox-revision)
+      [ $# -ge 2 ] || die "--singbox-revision 缺少参数"
+      SINGBOX_REVISION="$2"
       shift 2
       ;;
     --worktree)
@@ -188,18 +203,50 @@ fi
 [ -f "$AGENT_SRC" ] || die "缺少匹配架构的 Agent 二进制：$AGENT_SRC"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent-$TARGET_NORM"
 chmod +x "$MASTER_DIR/binaries/agent-$TARGET_NORM"
+mkdir -p "$MASTER_DIR/binaries/agent/$TARGET_NORM"
+cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
+chmod +x "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 
-SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/sing-box"
-CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/libcronet.so"
+SINGBOX_RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
+SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
+CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"
 if [ ! -f "$SINGBOX_SRC" ] || [ ! -f "$CRONET_SRC" ]; then
   echo "    未找到 Sing-box/libcronet，尝试实时构建/获取..."
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --singbox-only --target "$TARGET" --version "$VERSION"
+  bash "$RIRI_ROOT/scripts/build-binaries.sh" --singbox-only --target "$TARGET" --version "$VERSION" \
+    --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
 fi
+[ -f "$SINGBOX_SRC" ] || SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/sing-box"
+[ -f "$CRONET_SRC" ] || CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/libcronet.so"
 [ -f "$SINGBOX_SRC" ] || die "缺少匹配架构的 Sing-box 二进制：$SINGBOX_SRC"
 [ -f "$CRONET_SRC" ] || die "缺少匹配架构的 libcronet.so：$CRONET_SRC"
 cp "$SINGBOX_SRC" "$MASTER_DIR/binaries/singbox-$TARGET_NORM"
 cp "$CRONET_SRC" "$MASTER_DIR/binaries/libcronet.so"
 chmod +x "$MASTER_DIR/binaries/singbox-$TARGET_NORM"
+mkdir -p "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM"
+cp "$SINGBOX_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
+cp "$CRONET_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"
+chmod +x "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
+
+echo "  -> 生成内置二进制资源 manifest..."
+"$NODE_BIN" -e '
+  const fs = require("fs");
+  const path = require("path");
+  const crypto = require("crypto");
+   const [root, appVersion, singboxVersion, singboxRevision, cronetVersion, target] = process.argv.slice(1);
+  const fileInfo = (name, role, absolute) => {
+    const body = fs.readFileSync(absolute);
+    return { name, role, path: path.relative(root, absolute).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length };
+  };
+  const agentName = "riri-agent";
+  const agentPath = path.join(root, "agent", target, agentName);
+  const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${singboxRevision}`, target);
+  const singboxPath = path.join(singboxDir, "sing-box");
+  const cronetPath = path.join(singboxDir, "libcronet.so");
+  const resources = [];
+  if (fs.existsSync(agentPath)) resources.push({ kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo(agentName, "main", agentPath)] }] });
+   if (fs.existsSync(singboxPath) && fs.existsSync(cronetPath)) resources.push({ kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(singboxRevision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo("sing-box", "main", singboxPath), fileInfo("libcronet.so", "auxiliary", cronetPath)] }] });
+  fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
+ ' "$MASTER_DIR/binaries" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION" "$TARGET_NORM"
 
 # 6. 固化 package.json 并生成 Prisma 引擎
 echo "  -> 固化 package.json 并生成 Prisma Client..."

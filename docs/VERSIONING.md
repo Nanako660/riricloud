@@ -126,3 +126,15 @@ flowchart TD
 - **触发时机**：当 `main` 上的 `[Unreleased]` 功能已积累完成并通过 Release PR 固化版本后，在 `main` 分支执行 `bash scripts/release.sh`。
 - **自动化**：`scripts/release.sh` 会自动校验当前 `package.json` 版本与 `CHANGELOG.md` 一致性、创建附注 Tag `vX.Y.Z`、复跑三端门禁、交叉编译 Agent 与主控发行包，并通过 `gh` CLI 创建 GitHub Release。
 
+## 8. 应用版本与可分发二进制资源版本
+
+RiriCloud 使用两种互不替代的版本生命周期：
+
+| 版本类型 | 来源 | 作用 | 变更条件 |
+| :--- | :--- | :--- | :--- |
+| 应用版本 | 根 `package.json`，同步 Master/Web/Agent | 应用功能、协议和发布包版本 | 按本文件最小递增规则，在 `pnpm bump` 时统一变更。 |
+| 二进制资源版本 | `BinaryRelease.upstreamVersion + revision` | Sing-box/Agent 可分发文件的逻辑资源版本 | 只有真实二进制、构建标签、Cronet/辅助依赖或兼容约束变化时创建新资源。 |
+
+例如 RiriCloud 从 `0.5.0` 发布到 `0.5.1` 时，如果 Sing-box `1.14.0-r1` 的文件和 SHA-256 未变化，资源 ID、资源版本和哈希保持不变；应用发行包可以重新装配并继续引用同一资源。若 Sing-box 上游版本改变，或 `libcronet.so`、补丁修订号、构建参数改变，则创建新的 `1.14.0-r2` 或新的上游版本资源，并保留旧资源用于节点回滚。
+
+构建脚本约定：`--version`/`RIRICLOUD_VERSION` 用于应用与 Agent，`--singbox-version`、`--singbox-revision`/`SINGBOX_REVISION` 和 `CRONET_VERSION` 用于 Sing-box 资源。发布脚本和 Docker 标签仍使用应用版本；资源 manifest、运行时 SQLite 记录和节点升级任务引用独立的资源 ID。

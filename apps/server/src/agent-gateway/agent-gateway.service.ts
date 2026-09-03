@@ -14,7 +14,7 @@ import {
 import { resolveLineTags } from '../common/line-tags';
 import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
 import { type ProtocolType } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 
@@ -62,6 +62,42 @@ type TaskResult = {
   success: boolean;
   message: string;
   completedAt: string;
+};
+
+export type UpgradeTaskOptions = {
+  resourceId?: string;
+  assetId?: string;
+  releaseId?: string;
+  previousAssetId?: string | null;
+  operation?: 'UPGRADE' | 'ROLLBACK';
+  files?: UpgradeTaskData['files'];
+  requestedById?: string;
+};
+
+type DeploymentTaskRecord = {
+  id: string;
+  nodeId: string;
+  assetId: string;
+  previousAssetId: string | null;
+  releaseId: string;
+  kind: string;
+  operation: string;
+  status: string;
+  attempts: number;
+  payloadJson: string;
+  errorMessage: string | null;
+  requestedById: string | null;
+  requestedAt: Date;
+  dispatchedAt: Date | null;
+  completedAt: Date | null;
+};
+
+type DeploymentTaskDelegate = {
+  create: (args: Record<string, unknown>) => Promise<DeploymentTaskRecord>;
+  findUnique: (args: Record<string, unknown>) => Promise<DeploymentTaskRecord | null>;
+  findFirst: (args: Record<string, unknown>) => Promise<DeploymentTaskRecord | null>;
+  findMany: (args: Record<string, unknown>) => Promise<DeploymentTaskRecord[]>;
+  update: (args: Record<string, unknown>) => Promise<DeploymentTaskRecord>;
 };
 
 const NODE_RATE_BUCKET_MS = 5 * 60 * 1000;
@@ -161,6 +197,7 @@ export class AgentService implements OnModuleDestroy {
       data: { status: 'ONLINE', communicationMode: 'WS', lastSeenAt: new Date() }
     }));
     const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
+    await this.dispatchQueuedUpgradeTasks(nodeId);
     this.logger.log(`agent online: node=${node?.name ?? nodeId}`);
     return { success: true, message: '鉴权成功', nodeId, protocolVersion: AGENT_PROTOCOL_VERSION };
   }
@@ -630,7 +667,7 @@ export class AgentService implements OnModuleDestroy {
       needUpdate,
       version: desired.version,
       singboxConfig: needUpdate ? desired.singboxConfig : null,
-      tasks: this.takePendingTasks(auth.nodeId),
+      tasks: await this.takePendingTasks(auth.nodeId),
       nextPollSecs
     };
   }
@@ -649,13 +686,35 @@ export class AgentService implements OnModuleDestroy {
   }
 
   async handleUpgradeResult(nodeId: string, data: UpgradeResultData): Promise<void> {
-    this.acknowledgeTask(nodeId, data.taskId, {
+    const result = {
       taskId: data.taskId,
       type: 'upgrade',
       success: data.success,
       message: data.message,
       completedAt: new Date().toISOString()
-    });
+    } satisfies TaskResult;
+    this.acknowledgeTask(nodeId, data.taskId, result);
+    const delegate = this.deploymentTasks();
+    if (delegate) {
+      const task = await delegate.findFirst({ where: { id: data.taskId, nodeId } });
+      if (task) {
+        await delegate.update({
+          where: { id: task.id },
+          data: {
+            status: data.success ? 'COMPLETED' : 'FAILED',
+            errorMessage: data.success ? null : data.message.slice(0, 8192),
+            completedAt: new Date(result.completedAt)
+          }
+        });
+        if (data.success) {
+          const currentField = data.target === 'agent' ? 'currentAgentAssetId' : 'currentSingboxAssetId';
+          await this.enqueueAgentWrite('upgrade-node-asset', () => this.prisma.node.update({
+            where: { id: nodeId },
+            data: { [currentField]: task.assetId }
+          }));
+        }
+      }
+    }
     const outcome = data.success ? 'succeeded' : 'failed';
     this.logger[data.success ? 'log' : 'warn'](
       `agent upgrade ${outcome}: node=${nodeId} target=${data.target} version=${data.version} task=${data.taskId} message=${data.message}`
@@ -1026,12 +1085,71 @@ export class AgentService implements OnModuleDestroy {
     return pushed;
   }
 
-  async requestUpgrade(nodeId: string, target: UpgradeTarget, version: string, url: string, sha256: string) {
+  async requestUpgrade(
+    nodeId: string,
+    target: UpgradeTarget,
+    version: string,
+    url: string,
+    sha256: string,
+    options: UpgradeTaskOptions = {}
+  ) {
     if (!/^https?:\/\//i.test(url)) throw new Error('upgrade URL must use http or https');
     if (!/^[a-f0-9]{64}$/i.test(sha256)) throw new Error('upgrade sha256 must be 64 hexadecimal characters');
     const taskId = randomUUID();
-    const sent = await this.sendTask(nodeId, 'upgrade_task', { taskId, target, version, url, sha256 });
+    const payload: UpgradeTaskData = {
+      taskId,
+      target,
+      version,
+      url,
+      sha256,
+      ...(options.resourceId ? { resourceId: options.resourceId } : {}),
+      ...(options.assetId ? { assetId: options.assetId } : {}),
+      ...(options.operation ? { operation: options.operation } : {}),
+      ...(options.files?.length ? { files: options.files } : {})
+    };
+    const delegate = this.deploymentTasks();
+    if (delegate && options.assetId && options.releaseId) {
+      await delegate.create({
+        data: {
+          id: taskId,
+          nodeId,
+          assetId: options.assetId,
+          previousAssetId: options.previousAssetId ?? null,
+          releaseId: options.releaseId,
+          kind: target.toUpperCase(),
+          operation: options.operation ?? 'UPGRADE',
+          status: 'QUEUED',
+          attempts: 0,
+          payloadJson: JSON.stringify(payload),
+          requestedById: options.requestedById ?? null
+        }
+      });
+    }
+    const sent = await this.dispatchUpgradeTask(nodeId, payload);
     return { taskId, requested: sent };
+  }
+
+  async retryUpgrade(nodeId: string, taskId: string, operatorId?: string) {
+    const delegate = this.deploymentTasks();
+    if (!delegate) throw new NotFoundException('升级任务不存在');
+    const task = await delegate.findFirst({ where: { id: taskId, nodeId } });
+    if (!task) throw new NotFoundException('升级任务不存在');
+    if (!['FAILED', 'COMPLETED'].includes(task.status)) {
+      return { taskId, requested: false, status: task.status };
+    }
+    const payload = this.parseUpgradePayload(task.payloadJson);
+    await delegate.update({
+      where: { id: task.id },
+      data: {
+        status: 'QUEUED',
+        attempts: 0,
+        errorMessage: null,
+        completedAt: null,
+        requestedById: operatorId ?? task.requestedById
+      }
+    });
+    const requested = await this.dispatchUpgradeTask(nodeId, payload);
+    return { taskId, requested };
   }
 
   async requestProbe(nodeId: string, probes: ProbeRequest[]) {
@@ -1071,16 +1189,48 @@ export class AgentService implements OnModuleDestroy {
     return true;
   }
 
-  private takePendingTasks(nodeId: string): AgentTaskMessage[] {
+  private async dispatchUpgradeTask(nodeId: string, payload: UpgradeTaskData): Promise<boolean> {
+    const socket = this.sockets.get(nodeId);
+    if (socket) {
+      try {
+        socket.send(JSON.stringify({ type: 'upgrade_task', data: payload }));
+        await this.markDeploymentDispatched(payload.taskId);
+        return true;
+      } catch (err) {
+        this.logger.warn(`send upgrade task failed: node=${nodeId} error=${err}`);
+        return false;
+      }
+    }
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId }, select: { status: true, communicationMode: true } });
+    return node?.status === 'ONLINE' && node.communicationMode === 'HTTP';
+  }
+
+  private async takePendingTasks(nodeId: string): Promise<AgentTaskMessage[]> {
+    const result: AgentTaskMessage[] = [];
     const tasks = this.pendingTasks.get(nodeId) ?? [];
     const now = Date.now();
     const selected = tasks.filter((task) => task.deliveredAt === 0 || now - task.deliveredAt >= 60_000).slice(0, 8);
     selected.forEach((task) => { task.deliveredAt = now; });
-    return selected.map((task): AgentTaskMessage => {
+    result.push(...selected.map((task): AgentTaskMessage => {
       if (task.type === 'upgrade_task') return { type: 'upgrade_task', data: task.data };
       if (task.type === 'probe_task') return { type: 'probe_task', data: task.data };
       return { type: 'restart_agent_task', data: task.data };
+    }));
+    const delegate = this.deploymentTasks();
+    if (!delegate || result.length >= 8) return result.slice(0, 8);
+    const persistent = await delegate.findMany({
+      where: { nodeId, status: { in: ['QUEUED', 'DISPATCHED'] } },
+      orderBy: { requestedAt: 'asc' },
+      take: 8
     });
+    for (const task of persistent) {
+      if (result.length >= 8) break;
+      if (task.status === 'DISPATCHED' && task.dispatchedAt && now - task.dispatchedAt.getTime() < 60_000) continue;
+      const payload = this.parseUpgradePayload(task.payloadJson);
+      await this.markDeploymentDispatched(task.id);
+      result.push({ type: 'upgrade_task', data: payload });
+    }
+    return result;
   }
 
   private acknowledgeTask(nodeId: string, taskId: string, result: TaskResult) {
@@ -1098,9 +1248,63 @@ export class AgentService implements OnModuleDestroy {
 
   getTaskStatus(nodeId: string, taskId: string) {
     const result = this.taskResults.get(`${nodeId}:${taskId}`);
-    if (result) return { ...result, status: 'COMPLETED' as const };
+    if (result) return { ...result, status: result.success ? 'COMPLETED' as const : 'FAILED' as const };
     const queued = (this.pendingTasks.get(nodeId) ?? []).some((task) => (task.data as { taskId?: string }).taskId === taskId);
     return { taskId, status: queued ? 'QUEUED' as const : 'PENDING' as const };
+  }
+
+  async getPersistedTaskStatus(nodeId: string, taskId: string) {
+    const cached = this.getTaskStatus(nodeId, taskId);
+    const delegate = this.deploymentTasks();
+    if (!delegate) return cached;
+    const task = await delegate.findFirst({ where: { id: taskId, nodeId } });
+    if (!task) return cached;
+    return {
+      taskId,
+      status: task.status as 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED',
+      success: task.status === 'COMPLETED' ? true : task.status === 'FAILED' ? false : undefined,
+      message: task.errorMessage ?? undefined,
+      attempts: task.attempts,
+      requestedAt: task.requestedAt,
+      dispatchedAt: task.dispatchedAt,
+      completedAt: task.completedAt
+    };
+  }
+
+  private deploymentTasks(): DeploymentTaskDelegate | undefined {
+    return (this.prisma as unknown as { binaryDeploymentTask?: DeploymentTaskDelegate }).binaryDeploymentTask;
+  }
+
+  private parseUpgradePayload(raw: string): UpgradeTaskData {
+    const parsed = JSON.parse(raw) as UpgradeTaskData;
+    if (!parsed.taskId || !parsed.target || !parsed.version || !parsed.url || !parsed.sha256) {
+      throw new Error('升级任务数据损坏');
+    }
+    return parsed;
+  }
+
+  private async markDeploymentDispatched(taskId: string): Promise<void> {
+    const delegate = this.deploymentTasks();
+    if (!delegate) return;
+    const task = await delegate.findUnique({ where: { id: taskId } });
+    if (!task) return;
+    await delegate.update({
+      where: { id: taskId },
+      data: { status: 'DISPATCHED', attempts: task.attempts + 1, dispatchedAt: new Date() }
+    });
+  }
+
+  private async dispatchQueuedUpgradeTasks(nodeId: string): Promise<void> {
+    const delegate = this.deploymentTasks();
+    if (!delegate || !this.sockets.has(nodeId)) return;
+    const tasks = await delegate.findMany({ where: { nodeId, status: { in: ['QUEUED', 'DISPATCHED'] } }, orderBy: { requestedAt: 'asc' }, take: 8 });
+    for (const task of tasks) {
+      try {
+        await this.dispatchUpgradeTask(nodeId, this.parseUpgradePayload(task.payloadJson));
+      } catch (err) {
+        this.logger.warn(`dispatch restored upgrade task failed: node=${nodeId} task=${task.id} error=${err}`);
+      }
+    }
   }
 
   // 断开：置离线并移除注册

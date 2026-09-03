@@ -190,6 +190,9 @@ export interface AdminNode {
   agentVersion: string | null;
   osArch: string | null;
   kernelVersion: string | null;
+  agentProtocolVersion?: number | null;
+  currentAgentAssetId?: string | null;
+  currentSingboxAssetId?: string | null;
   lines: NodeLine[];
   entryLines: NodeLine[];
   exitLines: NodeLine[];
@@ -210,7 +213,7 @@ export interface CreateNodeResult {
 
 export interface NodeTaskStatus {
   taskId: string;
-  status: 'PENDING' | 'QUEUED' | 'COMPLETED';
+  status: 'PENDING' | 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED';
   success?: boolean;
   message?: string;
 }
@@ -299,7 +302,7 @@ export function useNodeMutations() {
   });
 
   const upgradeNode = useMutation({
-    mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; version?: string; url?: string; sha256?: string }) =>
+    mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; resourceId?: string; version?: string; url?: string; sha256?: string }) =>
       (await api.post(`/admin/nodes/${id}/upgrade`, payload)).data,
     onSuccess: (data, variables) => {
       toast.success(data.requested ? '升级任务已下发' : '节点不在线，升级任务未下发');
@@ -340,7 +343,7 @@ export function useNodeMutations() {
   const waitForTask = async ({ nodeId, taskId, label }: { nodeId: string; taskId: string; label: string }) => {
     for (let attempt = 0; attempt < 60; attempt += 1) {
       const status = (await api.get<NodeTaskStatus>(`/admin/nodes/${nodeId}/tasks/${taskId}`)).data;
-      if (status.status === 'COMPLETED') {
+      if (status.status === 'COMPLETED' || status.status === 'FAILED') {
         if (status.success) toast.success(`${label}已完成`);
         else toast.error(`${label}失败`, { description: status.message ?? 'Agent 返回失败' });
         invalidateDetail(nodeId);

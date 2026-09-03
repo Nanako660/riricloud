@@ -250,3 +250,13 @@ sequenceDiagram
 4. **边缘入口安全**：
    - 生产环境由 Nginx 终止 HTTPS/WSS，并将管理面板、标准订阅、UUID 伪静态订阅和 `/ws/agent` 统一代理到 Master；Master 不内置通用反向代理。
    - 短链 location 只匹配严格 UUID 单段 GET 路径，避免吞掉 `/login`、`/admin`、`/api/**` 和 SPA 路由；部署者必须保持 `subscriptionBaseUrl` pathname 与 Nginx rewrite 前缀一致。
+
+## 8. 二进制资源中心与升级分发
+
+Master 将“应用发布”和“可分发二进制资源”拆成两条生命周期。根 `package.json` 版本继续代表 Master/Web/Agent 应用与协议版本；Sing-box 资源由 `upstreamVersion + revision` 独立标识，平台文件由 `BinaryAsset` 管理，`libcronet.so` 与 Sing-box 主文件挂在同一资产包内。
+
+启动时 `BinaryResourcesService` 读取静态内置仓和运行态 `data/binaries` 中的 `manifest.json`，将资源元数据认领到 SQLite，再兼容旧目录扫描。资源文件不进入数据库，运行态文件按 `data/binaries/resources/<releaseId>/<target>/` 保存。管理员通过资源中心上传或远程导入，资源状态流转为 DRAFT、ACTIVE、DISABLED、RETIRED；节点或默认配置引用的资源只能逻辑停用/归档。
+
+节点升级由 `BinaryDeploymentTask` 驱动：服务端按节点平台与兼容约束解析 ACTIVE 资源，生成受 AgentToken 保护的下载 URL 和文件清单；任务状态与尝试次数落库，WS/HTTP 两种传输都复用同一任务服务。Master 重启后继续处理队列，WS 重连会恢复已投递但未收到回执的任务。
+
+Sing-box Agent 侧将资源文件作为一个事务处理：所有文件先下载并校验 SHA-256，停止旧进程后逐个原子替换；任一替换、预检或启动验证失败，按逆序恢复全部旧文件。旧协议只携带主文件 URL/SHA-256 时仍走单文件兼容路径。

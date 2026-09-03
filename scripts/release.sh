@@ -83,6 +83,9 @@ resolve_node
 
 VERSION="$($NODE_BIN -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
 TAG="${TAG_PARAM:-v${VERSION}}"
+SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
+SINGBOX_REVISION="${SINGBOX_REVISION:-1}"
+CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 
 # ---------- 前置校验 ----------
 echo "[1/7] 检查前置条件与版本一致性"
@@ -157,7 +160,8 @@ if [ "$SKIP_BUILD" = "0" ]; then
   )
 
   echo "[4/7] 编译多平台 Agent 与 Sing-box 定制内核"
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$VERSION"
+  bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$VERSION" \
+    --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
 
   echo "[5/7] 打包 Agent 多平台归档包"
   tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
@@ -178,6 +182,8 @@ if [ "$SKIP_BUILD" = "0" ]; then
     --target linux-amd64 \
     --worktree "$WORKTREE" \
     --version "$VERSION" \
+    --singbox-version "$SINGBOX_VERSION" \
+    --singbox-revision "$SINGBOX_REVISION" \
     --archive-dir "$PACKAGE_DIR"
 
   (

@@ -16,6 +16,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l"
 FROM golang:1.26-bookworm AS singbox-build
 
 ARG TARGETARCH=amd64
+ARG RIRICLOUD_VERSION=dev
 ARG SINGBOX_VERSION=1.14.0
 ARG CRONET_VERSION=v150.0.7871.63-2
 WORKDIR /src
@@ -43,6 +44,10 @@ FROM node:20-bookworm-slim AS build
 
 WORKDIR /workspace
 ENV COREPACK_HOME=/tmp/corepack
+ARG TARGETARCH=amd64
+ARG SINGBOX_VERSION=1.14.0
+ARG SINGBOX_REVISION=1
+ARG CRONET_VERSION=v150.0.7871.63-2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates openssl \
@@ -78,6 +83,35 @@ RUN pnpm --filter @riricloud/server deploy --prod /out/server \
       -o -path '*/node_modules/prisma/prisma-client' \) -prune -exec rm -rf {} + \
     && find /out/server -type f \( -name '*.map' -o -name '*.tsbuildinfo' \) -delete
 
+# 将应用版本与可分发的 Sing-box 资源版本分开登记，文件哈希写入运行时 manifest。
+COPY --from=agent-build /out/riri-agent /tmp/riri-agent
+COPY --from=singbox-build /sing-box /tmp/sing-box
+COPY --from=singbox-build /libcronet.so /tmp/libcronet.so
+RUN mkdir -p \
+      /out/binaries/agent-linux-${TARGETARCH} \
+      /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH} \
+    && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH}/riri-agent \
+    && cp /tmp/sing-box /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box \
+    && cp /tmp/libcronet.so /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/libcronet.so \
+    && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH} \
+    && cp /tmp/sing-box /out/binaries/singbox-linux-${TARGETARCH} \
+    && cp /tmp/libcronet.so /out/binaries/libcronet.so \
+    && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/agent-linux-${TARGETARCH} /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box /out/binaries/singbox-linux-${TARGETARCH}
+RUN node -e '
+  const fs = require("fs");
+  const path = require("path");
+  const crypto = require("crypto");
+  const [root, appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(1);
+  const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: path.relative(root, file).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
+  const platform = `linux-${arch}`;
+  const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${revision}`, platform);
+  const resources = [
+    { kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-${platform}`, os: "linux", arch, files: [info("riri-agent", "main", path.join(root, `agent-${platform}`, "riri-agent"))] }] },
+    { kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(revision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${platform}`, os: "linux", arch, files: [info("sing-box", "main", path.join(singboxDir, "sing-box")), info("libcronet.so", "auxiliary", path.join(singboxDir, "libcronet.so"))] }] }
+  ];
+  fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
+' /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION"
+
 FROM gcr.io/distroless/nodejs20-debian12 AS runtime
 
 ARG TARGETARCH=amd64
@@ -96,6 +130,8 @@ ARG RIRICLOUD_VCS_REF=unknown
 ARG RIRICLOUD_BUILD_DATE=unknown
 ARG RIRICLOUD_IMAGE_TAGS=latest
 ARG SINGBOX_VERSION=1.14.0
+ARG SINGBOX_REVISION=1
+ARG CRONET_VERSION=v150.0.7871.63-2
 LABEL org.opencontainers.image.title="RiriCloud Master" \
       org.opencontainers.image.description="RiriCloud control plane and web dashboard" \
       org.opencontainers.image.version="$RIRICLOUD_VERSION" \
@@ -103,16 +139,16 @@ LABEL org.opencontainers.image.title="RiriCloud Master" \
       org.opencontainers.image.created="$RIRICLOUD_BUILD_DATE" \
       org.opencontainers.image.licenses="GPL-3.0-only" \
       io.riricloud.singbox.version="$SINGBOX_VERSION" \
+      io.riricloud.singbox.revision="$SINGBOX_REVISION" \
+      io.riricloud.cronet.version="$CRONET_VERSION" \
       io.riricloud.image.tags="$RIRICLOUD_IMAGE_TAGS"
 
 COPY --from=build /out/server/ ./
 COPY --from=build /workspace/apps/web/dist/ ./web-dist/
+COPY --from=build /out/binaries/ ./binaries/
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
-COPY --from=agent-build /out/riri-agent /app/binaries/agent-linux-${TARGETARCH}
-COPY --from=singbox-build /sing-box /app/binaries/singbox-linux-${TARGETARCH}
-COPY --from=singbox-build /libcronet.so /app/binaries/libcronet.so
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 0

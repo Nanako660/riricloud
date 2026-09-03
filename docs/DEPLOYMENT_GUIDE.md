@@ -454,5 +454,31 @@ RiriCloud 采用**以线路（Line）为中心（Line-Centric Pipeline）**的�
   - 当前 RiriCloud 原生支持两节点中继（入口 -> 出口）。如需三跳（如 国内 A -> 香港 B -> 日本 C），最简便高效的方案是在中间机 B 上通过系统级端口转发工具（如 `realm`、`gost` 或 `iptables`）将 B 的端口直接转给 C 的出口监听端口；在 RiriCloud 后台只需纳管 A -> B 的中继即可。
 - **Q: 为什么出口监听端口不能直接填已有直连线路的端口？**
   - 为了保证流量倍率计费准确性与线路生命周期解耦，每条线路享有独立的端口通道。多开端口在 Linux 下资源占用可忽略不计，且能带来故障隔离的运维优势。
-- **Q: ShadowTLS 为什么不能选协议代理？**
+  - **Q: ShadowTLS 为什么不能选协议代理？**
   - ShadowTLS 依赖独特的握手验证与内层 Shadowsocks 端口协同，目前仅支持直连模式与盲转发模式。
+
+## 8. 二进制资源与版本化构建产物
+
+### 8.1 版本与目录
+
+应用版本从根 `package.json` 读取，传给 Agent 构建和 Docker 镜像标签；Sing-box 版本使用独立参数 `SINGBOX_VERSION`、`SINGBOX_REVISION`，Cronet 使用 `CRONET_VERSION`。构建产物目录示例：
+
+```text
+artifacts/binaries/
+├── agent/linux-amd64/riri-agent
+├── singbox/1.14.0-r1/linux-amd64/sing-box
+├── singbox/1.14.0-r1/linux-amd64/libcronet.so
+└── manifest.json
+```
+
+`manifest.json` 同时记录应用版本、Agent 资源、Sing-box 上游版本/修订号、平台、文件大小和 SHA-256。`build-binaries.sh` 的 `--version` 只代表 Agent/应用版本；`--singbox-version`、`--singbox-revision` 和 `--cronet-version` 独立控制 Sing-box 资源。相同版本、构建参数和哈希的资源目录可直接复用，不因应用 PATCH 发版创建新的 Sing-box 资源版本。
+
+### 8.2 Master 包与 Docker
+
+`bundle-master.sh` 将目标架构的 Agent、版本化 Sing-box 目录、`libcronet.so` 和 manifest 一起放入 Master 包，同时保留旧的平铺文件路径用于兼容。`release.sh` 只有在 Sing-box/Cronet 参数或真实产物变化时才应准备新的资源版本；普通 RiriCloud 应用发版可以重新装配而不改变既有 Sing-box 资源标识。
+
+Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_VERSION` build args，并把资源版本写入镜像 label、容器内 `/app/binaries/manifest.json` 或 Agent 的 `/var/lib/riri-agent/binaries/manifest.json`。`pnpm docker:export` 生成镜像归档、SHA-256 校验文件和带应用/镜像/Sing-box 元数据的 manifest。SQLite 和 `data/binaries` 必须使用持久化卷，以保留导入资源、任务历史和逻辑状态。
+
+### 8.3 运行时资源管理
+
+管理员从 `/admin/binaries` 管理内置、上传和远程导入资源。资源激活后才可分发；服务端会校验节点 OS/架构、Agent 协议兼容性和资产 SHA-256。升级失败时应从节点详情重试或选择上一资源回滚，回滚会重新发送完整平台资产包。

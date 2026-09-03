@@ -60,6 +60,8 @@ AGENT_VERSION_IMAGE="${AGENT_IMAGE:-${AGENT_REPOSITORY}:${IMAGE_VERSION}}"
 MASTER_LATEST_IMAGE="${MASTER_LATEST_IMAGE:-${MASTER_REPOSITORY}:latest}"
 AGENT_LATEST_IMAGE="${AGENT_LATEST_IMAGE:-${AGENT_REPOSITORY}:latest}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
+SINGBOX_REVISION="${SINGBOX_REVISION:-1}"
+CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 
 if [ -n "${DOCKER_PLATFORM:-}" ]; then
@@ -107,6 +109,8 @@ build_images() {
   docker build "${platform_args[@]}" \
     "${common_build_args[@]}" \
     --build-arg "SINGBOX_VERSION=$SINGBOX_VERSION" \
+    --build-arg "SINGBOX_REVISION=$SINGBOX_REVISION" \
+    --build-arg "CRONET_VERSION=$CRONET_VERSION" \
     --tag "$MASTER_VERSION_IMAGE" \
     --tag "$MASTER_LATEST_IMAGE" \
     --file Dockerfile .
@@ -115,6 +119,8 @@ build_images() {
   docker build "${platform_args[@]}" \
     "${common_build_args[@]}" \
     --build-arg "SINGBOX_VERSION=$SINGBOX_VERSION" \
+    --build-arg "SINGBOX_REVISION=$SINGBOX_REVISION" \
+    --build-arg "CRONET_VERSION=$CRONET_VERSION" \
     --tag "$AGENT_VERSION_IMAGE" \
     --tag "$AGENT_LATEST_IMAGE" \
     --file Dockerfile.agent .
@@ -179,7 +185,7 @@ export_images() {
   "$NODE_BIN" -e '
     const fs = require("fs");
     const [manifestPath, version, platform, masterVersion, masterLatest, agentVersion, agentLatest,
-      masterArchive, agentArchive, masterSha256, agentSha256, singboxVersion,
+      masterArchive, agentArchive, masterSha256, agentSha256, singboxVersion, singboxRevision, cronetVersion,
       masterLabelVersion, masterLabelRevision, masterLabelCreated, masterLabelTags,
       agentLabelVersion, agentLabelRevision, agentLabelCreated, agentLabelTags, created] = process.argv.slice(1);
     const manifest = {
@@ -208,6 +214,8 @@ export_images() {
           archive: agentArchive,
           sha256: agentSha256,
           singboxVersion,
+          singboxRevision,
+          cronetVersion,
           labels: {
             "org.opencontainers.image.title": "RiriCloud Agent",
             "org.opencontainers.image.version": agentLabelVersion || version,
@@ -222,7 +230,8 @@ export_images() {
   ' "$manifest_node_path" "$IMAGE_VERSION" "$NORMALIZED_PLATFORM" \
     "$MASTER_VERSION_IMAGE" "$MASTER_LATEST_IMAGE" "$AGENT_VERSION_IMAGE" "$AGENT_LATEST_IMAGE" \
     "$(basename "$master_archive")" "$(basename "$agent_archive")" "$master_digest" "$agent_digest" \
-    "${agent_singbox_version:-$SINGBOX_VERSION}" "$master_label_version" "$master_label_revision" "$master_label_created" "$master_label_tags" \
+    "${agent_singbox_version:-$SINGBOX_VERSION}" "$(image_label "$AGENT_VERSION_IMAGE" "io.riricloud.singbox.revision")" "$(image_label "$AGENT_VERSION_IMAGE" "io.riricloud.cronet.version")" \
+    "$master_label_version" "$master_label_revision" "$master_label_created" "$master_label_tags" \
     "$agent_label_version" "$agent_label_revision" "$agent_label_created" "$agent_label_tags" "$BUILD_DATE"
 
   echo "镜像导出完成：$EXPORT_DIR"

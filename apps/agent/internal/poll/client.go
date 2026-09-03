@@ -37,11 +37,23 @@ type configApplyResult struct {
 }
 
 type upgradeTask struct {
-	TaskID  string `json:"taskId"`
-	Target  string `json:"target"`
-	Version string `json:"version"`
-	URL     string `json:"url"`
-	SHA256  string `json:"sha256"`
+	TaskID     string        `json:"taskId"`
+	Target     string        `json:"target"`
+	Version    string        `json:"version"`
+	URL        string        `json:"url"`
+	SHA256     string        `json:"sha256"`
+	ResourceID string        `json:"resourceId,omitempty"`
+	AssetID    string        `json:"assetId,omitempty"`
+	Operation  string        `json:"operation,omitempty"`
+	Files      []upgradeFile `json:"files,omitempty"`
+}
+
+type upgradeFile struct {
+	Name   string `json:"name"`
+	Role   string `json:"role,omitempty"`
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size,omitempty"`
 }
 
 type upgradeResult struct {
@@ -362,7 +374,15 @@ func (c *Client) runUpgrade(parent context.Context, raw json.RawMessage) {
 	var err error
 	switch task.Target {
 	case "singbox":
-		err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256)
+		if len(task.Files) > 0 {
+			files := make([]singbox.UpgradeFile, 0, len(task.Files))
+			for _, file := range task.Files {
+				files = append(files, singbox.UpgradeFile{Name: file.Name, Role: file.Role, URL: file.URL, SHA256: file.SHA256})
+			}
+			err = c.singboxMgr.UpgradeKernelFiles(ctx, files)
+		} else {
+			err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256)
+		}
 	case "agent":
 		err = c.upgradeSelf(ctx, task)
 	default:
