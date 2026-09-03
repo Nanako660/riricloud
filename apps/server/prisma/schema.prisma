@@ -57,8 +57,11 @@ model Node {
   configError    String? // 最近一次配置应用失败原因（check 失败/回执失败），成功后清空
   lastProbeResult String? // 最近一次网络探针结果 JSON
   agentVersion   String? // Agent 编译版本
+  agentProtocolVersion Int? // Agent 上报的 Master-Agent 协议版本
   osArch         String? // Agent 运行平台与架构，例如 linux/amd64
   kernelVersion  String? // sing-box 内核版本
+  currentAgentAssetId   String?
+  currentSingboxAssetId String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -69,6 +72,7 @@ model Node {
   trafficLogs TrafficLog[]
   trafficCursors TrafficCursor[]
   rateMetrics NodeRateMetric[]
+  binaryDeploymentTasks BinaryDeploymentTask[]
 
   @@index([status])
   @@index([isLocal])
@@ -320,4 +324,128 @@ model SystemSetting {
   value       String // 站点名/默认配额/注册开关等 JSON 或文本
   description String?
   updatedAt   DateTime @updatedAt
+}
+
+// ==============================
+// 4. 二进制资源中心
+// BinaryRelease 是逻辑资源版本，BinaryAsset 是具体平台资产。
+// ==============================
+model BinaryRelease {
+  id                  String   @id @default(uuid())
+  kind                String   // AGENT | SINGBOX
+  upstreamVersion     String
+  revision            Int      @default(1)
+  source              String   @default("BUILTIN") // BUILTIN | UPLOAD | REMOTE
+  status              String   @default("DRAFT") // DRAFT | ACTIVE | DISABLED | RETIRED
+  builtFromAppVersion String?
+  compatibilityJson   String   @default("{}")
+  notes               String?
+  isDefault           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  assets          BinaryAsset[]
+  deploymentTasks BinaryDeploymentTask[]
+  auditLogs       BinaryAuditLog[]
+
+  @@unique([kind, upstreamVersion, revision])
+  @@index([kind, status])
+  @@index([isDefault])
+}
+
+model BinaryAsset {
+  id          String   @id @default(uuid())
+  releaseId   String
+  target      String   // linux-amd64, windows-amd64 等
+  os          String
+  arch        String
+  filename    String
+  storageRoot String   @default("RUNTIME") // STATIC | RUNTIME
+  storagePath String
+  sha256      String
+  size        Int
+  available   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  release             BinaryRelease          @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+  files               BinaryAssetFile[]
+  deploymentTasks     BinaryDeploymentTask[] @relation("TargetBinaryAsset")
+  previousDeployments BinaryDeploymentTask[] @relation("PreviousBinaryAsset")
+  auditLogs           BinaryAuditLog[]
+
+  @@unique([releaseId, target])
+  @@index([target, available])
+}
+
+model BinaryAssetFile {
+  id          String   @id @default(uuid())
+  assetId     String
+  name        String
+  role        String   @default("main") // main | auxiliary
+  storageRoot String   @default("RUNTIME")
+  storagePath String
+  sha256      String
+  size        Int
+  mode        Int      @default(493) // 0755
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  asset BinaryAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, name])
+  @@index([sha256])
+}
+
+model BinaryDeploymentTask {
+  id              String   @id @default(uuid())
+  nodeId          String
+  assetId         String
+  previousAssetId String?
+  releaseId       String
+  kind            String   // AGENT | SINGBOX
+  operation       String   @default("UPGRADE") // UPGRADE | ROLLBACK
+  status          String   @default("QUEUED") // QUEUED | DISPATCHED | COMPLETED | FAILED
+  attempts        Int      @default(0)
+  payloadJson     String   @default("{}")
+  errorMessage    String?
+  requestedById   String?
+  requestedAt     DateTime @default(now())
+  dispatchedAt    DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  node          Node         @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  asset         BinaryAsset  @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  previousAsset BinaryAsset? @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
+  release       BinaryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+
+  auditLogs BinaryAuditLog[]
+
+  @@index([nodeId, status])
+  @@index([assetId])
+  @@index([releaseId])
+  @@index([requestedAt])
+}
+
+model BinaryAuditLog {
+  id           String   @id @default(uuid())
+  action       String
+  releaseId    String?
+  assetId      String?
+  taskId       String?
+  nodeId       String?
+  operatorId   String?
+  metadataJson String   @default("{}")
+  createdAt    DateTime @default(now())
+
+  release BinaryRelease?        @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  asset   BinaryAsset?          @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  task    BinaryDeploymentTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([releaseId, createdAt])
+  @@index([assetId, createdAt])
+  @@index([taskId])
+  @@index([nodeId, createdAt])
 }

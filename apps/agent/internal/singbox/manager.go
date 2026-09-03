@@ -45,6 +45,20 @@ type Status struct {
 	Version              string // sing-box 二进制版本，无法探测时为空
 }
 
+// UpgradeFile 描述一次 Sing-box 资源包中的文件。main 文件替换内核，
+// auxiliary 文件与内核放在同一目录并参与同一回滚事务。
+type UpgradeFile struct {
+	Name   string
+	Role   string
+	URL    string
+	SHA256 string
+}
+
+type fileReplacement struct {
+	target string
+	backup string
+}
+
 // Manager 内核进程管理器。supervisor goroutine 是唯一的进程操作者，
 // 其余调用方仅通过受 mu 保护的字段提交意图，避免并发操作同一子进程。
 type Manager struct {
@@ -238,25 +252,67 @@ func (m *Manager) checkConfigWithBinary(binaryPath string) error {
 	return nil
 }
 
-// UpgradeKernel 下载并校验新的 Sing-box 二进制，预检当前配置后原子替换并重启内核。
+// UpgradeKernel 保留旧协议入口，单文件升级仍按完整资源包事务执行。
 func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string) error {
+	return m.UpgradeKernelFiles(ctx, []UpgradeFile{{
+		Name: filepath.Base(m.binPath), Role: "main", URL: rawURL, SHA256: expectedSHA,
+	}})
+}
+
+// UpgradeKernelFiles 下载并校验完整 Sing-box 资源包，统一执行原子替换、启动验证和回滚。
+// 旧版 Agent 只发送 url/sha256 时由 UpgradeKernel 转换为单文件资源包。
+func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile) error {
+	if len(files) == 0 {
+		return fmt.Errorf("sing-box upgrade files are required")
+	}
 	m.upgradeMu.Lock()
 	defer m.upgradeMu.Unlock()
 
+	type downloadedFile struct {
+		upgradeFile UpgradeFile
+		temp        string
+		target      string
+	}
+	mainIndex := -1
+	for index, file := range files {
+		if file.Role == "main" || (file.Role == "" && (file.Name == "sing-box" || file.Name == "sing-box.exe")) {
+			mainIndex = index
+			break
+		}
+	}
+	if mainIndex < 0 {
+		return fmt.Errorf("sing-box upgrade package has no main file")
+	}
 	target, err := exec.LookPath(m.binPath)
 	if err != nil {
 		return fmt.Errorf("resolve sing-box binary: %w", err)
 	}
-	temp, err := upgrade.DownloadAndVerify(ctx, rawURL, expectedSHA, filepath.Dir(target))
-	if err != nil {
-		return err
+	downloads := make([]downloadedFile, 0, len(files))
+	for index, file := range files {
+		if file.Name == "" || filepath.Base(file.Name) != file.Name || file.Name == "." || file.Name == ".." {
+			return fmt.Errorf("invalid sing-box upgrade file name %q", file.Name)
+		}
+		fileTarget := target
+		if index != mainIndex {
+			fileTarget = filepath.Join(filepath.Dir(target), file.Name)
+		}
+		temp, downloadErr := upgrade.DownloadAndVerify(ctx, file.URL, file.SHA256, filepath.Dir(fileTarget))
+		if downloadErr != nil {
+			for _, downloaded := range downloads {
+				_ = os.Remove(downloaded.temp)
+			}
+			return downloadErr
+		}
+		downloads = append(downloads, downloadedFile{upgradeFile: file, temp: temp, target: fileTarget})
 	}
 	defer func() {
-		if removeErr := os.Remove(temp); removeErr != nil && !os.IsNotExist(removeErr) {
-			m.log.WithError(removeErr).Warn("remove upgrade temp file failed")
+		for _, downloaded := range downloads {
+			if removeErr := os.Remove(downloaded.temp); removeErr != nil && !os.IsNotExist(removeErr) {
+				m.log.WithError(removeErr).Warn("remove upgrade temp file failed")
+			}
 		}
 	}()
-	if err := m.checkConfigWithBinary(temp); err != nil {
+	if err := m.checkConfigWithBinary(downloads[mainIndex].temp); err != nil {
 		return fmt.Errorf("new sing-box precheck failed: %w", err)
 	}
 	m.mu.Lock()
@@ -276,9 +332,14 @@ func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string)
 	if err := m.gracefulStopForUpgrade(); err != nil {
 		return err
 	}
-	backup, err := upgrade.AtomicReplaceWithBackup(temp, target)
-	if err != nil {
-		return err
+	replacements := make([]fileReplacement, 0, len(downloads))
+	for _, downloaded := range downloads {
+		backup, replaceErr := upgrade.AtomicReplaceWithBackup(downloaded.temp, downloaded.target)
+		if replaceErr != nil {
+			m.rollbackReplacements(replacements)
+			return replaceErr
+		}
+		replacements = append(replacements, fileReplacement{target: downloaded.target, backup: backup})
 	}
 	m.mu.Lock()
 	m.appliedConf = nil
@@ -287,8 +348,13 @@ func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string)
 	m.mu.Unlock()
 	m.kickSupervisor()
 	if !shouldRun {
-		if err := upgrade.CommitBackup(backup); err != nil {
-			m.log.WithError(err).Warn("remove old sing-box backup failed")
+		m.mu.Lock()
+		m.binaryVersion = detectBinaryVersion(m.binPath)
+		m.mu.Unlock()
+		for _, item := range replacements {
+			if err := upgrade.CommitBackup(item.backup); err != nil {
+				m.log.WithError(err).Warn("remove old sing-box backup failed")
+			}
 		}
 		return nil
 	}
@@ -297,7 +363,7 @@ func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string)
 		m.upgrading = true
 		m.mu.Unlock()
 		m.gracefulStopCurrent()
-		if rollbackErr := upgrade.RestoreBackup(target, backup); rollbackErr != nil {
+		if rollbackErr := m.rollbackReplacements(replacements); rollbackErr != nil {
 			return fmt.Errorf("new sing-box failed to start: %w; rollback failed: %v", err, rollbackErr)
 		}
 		m.mu.Lock()
@@ -305,8 +371,32 @@ func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string)
 		m.mu.Unlock()
 		return fmt.Errorf("new sing-box failed to start: %w", err)
 	}
-	if err := upgrade.CommitBackup(backup); err != nil {
-		m.log.WithError(err).Warn("remove old sing-box backup failed")
+	for _, item := range replacements {
+		if err := upgrade.CommitBackup(item.backup); err != nil {
+			m.log.WithError(err).Warn("remove old sing-box backup failed")
+		}
+	}
+	m.mu.Lock()
+	m.binaryVersion = detectBinaryVersion(m.binPath)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *Manager) rollbackReplacements(replacements []fileReplacement) error {
+	for index := len(replacements) - 1; index >= 0; index-- {
+		item := replacements[index]
+		var err error
+		if item.backup == "" {
+			err = os.Remove(item.target)
+			if os.IsNotExist(err) {
+				err = nil
+			}
+		} else {
+			err = upgrade.RestoreBackup(item.target, item.backup)
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

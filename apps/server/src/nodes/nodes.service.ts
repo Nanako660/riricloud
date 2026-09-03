@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { AgentService } from '../agent-gateway/agent.service';
+import { AgentService, type UpgradeTaskOptions } from '../agent-gateway/agent.service';
 import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
+import { BinaryResourcesService } from '../binaries/binary-resources.service';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,7 +25,8 @@ export class NodesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentGateway: AgentService,
-    private readonly binaries: BinariesService,
+    @Optional() private readonly binaries?: BinariesService,
+    @Optional() private readonly resources?: BinaryResourcesService,
     @Optional() private readonly settingsService?: SettingsService
   ) {}
 
@@ -88,23 +90,45 @@ export class NodesService {
     return { requested: pushed, nodeId: id };
   }
 
-  async requestUpgrade(id: string, dto: UpgradeNodeDto, requestBaseUrl?: string) {
+  async requestUpgrade(id: string, dto: UpgradeNodeDto, requestBaseUrl?: string, operatorId?: string, operation: 'UPGRADE' | 'ROLLBACK' = 'UPGRADE') {
     const node = await this.requireNode(id);
     try {
       const hasCustomUrl = dto.url !== undefined;
       const hasCustomSha = dto.sha256 !== undefined;
       if (hasCustomUrl !== hasCustomSha) throw new Error('自定义升级地址与 SHA-256 必须同时提供');
+      if (dto.resourceId && hasCustomUrl) throw new Error('资源版本与自定义升级地址不能同时提供');
       let version = dto.version?.trim() ?? '';
       let url = dto.url?.trim() ?? '';
       let sha256 = dto.sha256?.trim().toLowerCase() ?? '';
+      let managed: Awaited<ReturnType<BinaryResourcesService['resolveForNode']>> | undefined;
       if (!hasCustomUrl) {
-        const asset = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl);
-        version = version || asset.version;
-        url = asset.url;
-        sha256 = asset.sha256;
+        if (this.resources) {
+          managed = await this.resources.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl, dto.resourceId, node);
+        } else if (this.binaries) {
+          managed = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl) as Awaited<ReturnType<BinaryResourcesService['resolveForNode']>>;
+        } else {
+          throw new Error('二进制资源服务不可用');
+        }
+        version = version || managed.version;
+        url = managed.url;
+        sha256 = managed.sha256;
       }
       if (!version) throw new Error('升级版本不能为空');
-      return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256);
+      const options: UpgradeTaskOptions = {
+        resourceId: managed?.resourceId,
+        assetId: managed?.assetId,
+        releaseId: managed?.resourceId,
+        previousAssetId: dto.target === 'agent' ? node.currentAgentAssetId : node.currentSingboxAssetId,
+        operation,
+        files: managed && 'files' in managed
+          ? managed.files.map((file) => ({ ...file, role: file.role === 'auxiliary' ? 'auxiliary' as const : 'main' as const }))
+          : undefined,
+        requestedById: operatorId
+      };
+      if (!options.resourceId && !options.assetId && !options.files?.length) {
+        return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256);
+      }
+      return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256, options);
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : '升级任务参数无效');
     }
@@ -126,7 +150,28 @@ export class NodesService {
 
   async taskStatus(nodeId: string, taskId: string) {
     await this.requireNode(nodeId);
-    return this.agentGateway.getTaskStatus(nodeId, taskId);
+    return this.agentGateway.getPersistedTaskStatus(nodeId, taskId);
+  }
+
+  async retryUpgrade(nodeId: string, taskId: string, operatorId?: string) {
+    await this.requireNode(nodeId);
+    return this.agentGateway.retryUpgrade(nodeId, taskId, operatorId);
+  }
+
+  async rollbackUpgrade(nodeId: string, taskId: string, requestBaseUrl?: string, operatorId?: string) {
+    await this.requireNode(nodeId);
+    const task = await this.prisma.binaryDeploymentTask.findFirst({
+      where: { id: taskId, nodeId },
+      include: { previousAsset: true }
+    });
+    if (!task?.previousAsset) throw new BadRequestException('该升级任务没有可回滚的上一版本');
+    return this.requestUpgrade(
+      nodeId,
+      { target: task.kind.toLowerCase() as 'agent' | 'singbox', resourceId: task.previousAsset.releaseId },
+      requestBaseUrl,
+      operatorId,
+      'ROLLBACK'
+    );
   }
 
   async update(id: string, dto: UpdateNodeDto) {

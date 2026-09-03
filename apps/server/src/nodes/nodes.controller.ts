@@ -54,8 +54,8 @@ export class NodesController {
   }
 
   @Post(':id/upgrade')
-  upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto, @Req() request: Request) {
-    return this.nodesService.requestUpgrade(id, dto, getRequestBaseUrl(request));
+  upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto, @CurrentUser() user: { id: string }, @Req() request: Request) {
+    return this.nodesService.requestUpgrade(id, dto, getRequestBaseUrl(request), user.id);
   }
 
   @Post(':id/probe')
@@ -71,6 +71,16 @@ export class NodesController {
   @Get(':id/tasks/:taskId')
   taskStatus(@Param('id', ParseUUIDPipe) id: string, @Param('taskId', ParseUUIDPipe) taskId: string) {
     return this.nodesService.taskStatus(id, taskId);
+  }
+
+  @Post(':id/tasks/:taskId/retry')
+  retryTask(@Param('id', ParseUUIDPipe) id: string, @Param('taskId', ParseUUIDPipe) taskId: string, @CurrentUser() user: { id: string }) {
+    return this.nodesService.retryUpgrade(id, taskId, user.id);
+  }
+
+  @Post(':id/tasks/:taskId/rollback')
+  rollbackTask(@Param('id', ParseUUIDPipe) id: string, @Param('taskId', ParseUUIDPipe) taskId: string, @CurrentUser() user: { id: string }, @Req() request: Request) {
+    return this.nodesService.rollbackUpgrade(id, taskId, getRequestBaseUrl(request), user.id);
   }
 
 }

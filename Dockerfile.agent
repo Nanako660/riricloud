@@ -17,6 +17,7 @@ FROM golang:1.26-bookworm AS singbox-build
 
 ARG TARGETARCH=amd64
 ARG SINGBOX_VERSION=1.14.0
+ARG SINGBOX_REVISION=1
 ARG CRONET_VERSION=v150.0.7871.63-2
 WORKDIR /src
 
@@ -39,6 +40,30 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
 	-ldflags "-s -w" \
 	-o /sing-box ./cmd/sing-box
 
+FROM node:20-bookworm-slim AS resource-manifest
+
+ARG TARGETARCH=amd64
+ARG RIRICLOUD_VERSION=dev
+ARG SINGBOX_VERSION=1.14.0
+ARG SINGBOX_REVISION=1
+ARG CRONET_VERSION=v150.0.7871.63-2
+WORKDIR /manifest
+COPY --from=agent-build /out/riri-agent ./agent/riri-agent
+COPY --from=singbox-build /sing-box ./singbox/sing-box
+COPY --from=singbox-build /libcronet.so ./singbox/libcronet.so
+RUN node -e '
+  const fs = require("fs");
+  const crypto = require("crypto");
+  const [appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(1);
+  const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: `/usr/local/bin/${name}`, sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
+  const resources = [
+    { kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-linux-${arch}`, os: "linux", arch, files: [info("riri-agent", "main", "/manifest/agent/riri-agent")] }] },
+    { kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(revision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-linux-${arch}`, os: "linux", arch, files: [info("sing-box", "main", "/manifest/singbox/sing-box"), info("libcronet.so", "auxiliary", "/manifest/singbox/libcronet.so")] }] }
+  ];
+  fs.mkdirSync("/manifest/binaries", { recursive: true });
+  fs.writeFileSync("/manifest/binaries/manifest.json", `${JSON.stringify({ schemaVersion: 1, applicationVersion: appVersion, resources }, null, 2)}\n`);
+' "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION"
+
 FROM gcr.io/distroless/cc-debian12 AS runtime
 
 ARG RIRICLOUD_VERSION=dev
@@ -46,6 +71,8 @@ ARG RIRICLOUD_VCS_REF=unknown
 ARG RIRICLOUD_BUILD_DATE=unknown
 ARG RIRICLOUD_IMAGE_TAGS=latest
 ARG SINGBOX_VERSION=1.14.0
+ARG SINGBOX_REVISION=1
+ARG CRONET_VERSION=v150.0.7871.63-2
 LABEL org.opencontainers.image.title="RiriCloud Agent" \
       org.opencontainers.image.description="RiriCloud edge node agent with sing-box" \
       org.opencontainers.image.version="$RIRICLOUD_VERSION" \
@@ -53,7 +80,9 @@ LABEL org.opencontainers.image.title="RiriCloud Agent" \
       org.opencontainers.image.created="$RIRICLOUD_BUILD_DATE" \
       org.opencontainers.image.licenses="GPL-3.0-only" \
       io.riricloud.image.tags="$RIRICLOUD_IMAGE_TAGS" \
-      io.riricloud.singbox.version="$SINGBOX_VERSION"
+      io.riricloud.singbox.version="$SINGBOX_VERSION" \
+      io.riricloud.singbox.revision="$SINGBOX_REVISION" \
+      io.riricloud.cronet.version="$CRONET_VERSION"
 
 WORKDIR /var/lib/riri-agent
 ENV SINGBOX_CONFIG_PATH=/var/lib/riri-agent/config.json \
@@ -62,6 +91,7 @@ ENV SINGBOX_CONFIG_PATH=/var/lib/riri-agent/config.json \
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
+COPY --from=resource-manifest /manifest/binaries/manifest.json /var/lib/riri-agent/binaries/manifest.json
 
 USER 0
 

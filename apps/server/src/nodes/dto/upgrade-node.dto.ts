@@ -1,10 +1,15 @@
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUrl, IsUUID, Matches, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpgradeNodeDto {
   @ApiProperty({ enum: ['singbox', 'agent'] })
   @IsIn(['singbox', 'agent'])
   target!: 'singbox' | 'agent';
+
+  @ApiProperty({ required: false, format: 'uuid', description: '主控资源版本 ID；与自定义 URL 二选一' })
+  @IsUUID()
+  @IsOptional()
+  resourceId?: string;
 
   @ApiProperty({ example: '1.11.0' })
   @IsString()

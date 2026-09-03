@@ -28,7 +28,10 @@ usage() {
   --singbox-only        仅构建/准备 Sing-box
   --target <target>     指定单一目标（如 linux/amd64、linux/arm64、windows/amd64）
   --output-dir <dir>    指定产物输出目录（默认 artifacts/binaries）
-  --version <version>   指定版本号（默认读取 package.json）
+  --version <version>   指定 Agent/应用版本（默认读取 package.json）
+  --singbox-version <version>  指定独立 Sing-box 上游版本（默认 SINGBOX_VERSION 或 1.14.0）
+  --singbox-revision <n>        指定 Sing-box 内部资源修订号（默认 SINGBOX_REVISION 或 1）
+  --cronet-version <version>    指定 libcronet 版本（默认 CRONET_VERSION）
   -h, --help            显示帮助
 EOF
 }
@@ -38,6 +41,9 @@ BUILD_AGENT=1
 BUILD_SINGBOX=1
 VERSION=""
 OUTPUT_DIR=""
+SINGBOX_VERSION_ARG=""
+SINGBOX_REVISION_ARG=""
+CRONET_VERSION_ARG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,6 +74,21 @@ while [ $# -gt 0 ]; do
     --version)
       [ $# -ge 2 ] || die "--version 缺少参数"
       VERSION="$2"
+      shift 2
+      ;;
+    --singbox-version)
+      [ $# -ge 2 ] || die "--singbox-version 缺少参数"
+      SINGBOX_VERSION_ARG="$2"
+      shift 2
+      ;;
+    --singbox-revision)
+      [ $# -ge 2 ] || die "--singbox-revision 缺少参数"
+      SINGBOX_REVISION_ARG="$2"
+      shift 2
+      ;;
+    --cronet-version)
+      [ $# -ge 2 ] || die "--cronet-version 缺少参数"
+      CRONET_VERSION_ARG="$2"
       shift 2
       ;;
     -h|--help)
@@ -137,9 +158,13 @@ fi
 # ---------- 构建 / 准备 Sing-box ----------
 if [ "$BUILD_SINGBOX" = "1" ]; then
   echo "==> 准备 Sing-box 定制内核（Linux 双架构）"
-  SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
-  CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
-  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION"
+  SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-1.14.0}}"
+  SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
+  CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-v150.0.7871.63-2}}"
+  [[ "$SINGBOX_REVISION" =~ ^[0-9]+$ ]] || die "Sing-box revision 必须是正整数"
+  [ "$SINGBOX_REVISION" -ge 1 ] || die "Sing-box revision 必须大于 0"
+  RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
+  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION/r${SINGBOX_REVISION}/${CRONET_VERSION}"
 
   for arch in amd64 arm64; do
     # 检查是否在当前请求的目标列表中
@@ -187,13 +212,63 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
     fi
 
     # 4. 复制到输出目录
-    DEST_DIR="$OUTPUT_DIR/singbox/linux-${arch}"
+    DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/linux-${arch}"
     mkdir -p "$DEST_DIR"
     cp "$CACHE_DIR/sing-box" "$DEST_DIR/sing-box"
     cp "$CACHE_DIR/libcronet.so" "$DEST_DIR/libcronet.so"
     chmod +x "$DEST_DIR/sing-box"
+    # 旧目录继续保留，兼容旧版 bundle、开发脚本和外部安装器。
+    LEGACY_DIR="$OUTPUT_DIR/singbox/linux-${arch}"
+    mkdir -p "$LEGACY_DIR"
+    cp "$CACHE_DIR/sing-box" "$LEGACY_DIR/sing-box"
+    cp "$CACHE_DIR/libcronet.so" "$LEGACY_DIR/libcronet.so"
+    chmod +x "$LEGACY_DIR/sing-box"
     echo "Sing-box linux/$arch 已就绪：$DEST_DIR/sing-box"
   done
 fi
+
+# ---------- 生成资源 manifest ----------
+SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-}}"
+SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
+CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-}}"
+MANIFEST_PATH="$OUTPUT_DIR/manifest.json"
+"$NODE_BIN" -e '
+  const fs = require("fs");
+  const path = require("path");
+  const [root, appVersion, singboxVersion, singboxRevision, cronetVersion] = process.argv.slice(1);
+  const resources = [];
+  const stat = (file) => {
+    const body = fs.readFileSync(file);
+    const crypto = require("crypto");
+    return { sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length };
+  };
+  const addResource = (kind, upstreamVersion, revision, target, files, extra = {}) => {
+    if (!files.every((file) => fs.existsSync(file.path))) return;
+    resources.push({
+      kind, upstreamVersion, revision, source: "BUILTIN", status: "ACTIVE",
+      builtFromAppVersion: appVersion, isDefault: true, ...extra,
+      assets: [{ target, os: target.split("-")[1], arch: target.split("-")[2], files: files.map((file) => {
+        const info = stat(file.path);
+        return { name: file.name, role: file.role, path: path.relative(root, file.path).split(path.sep).join("/"), ...info };
+      }) }]
+    });
+  };
+  for (const platform of ["linux-amd64", "linux-arm64", "windows-amd64", "darwin-amd64", "darwin-arm64"]) {
+    const agentName = platform.startsWith("windows") ? "riri-agent.exe" : "riri-agent";
+    const targetPlatform = platform.replace(/^darwin-/, "macos-");
+    addResource("AGENT", appVersion, 1, `agent-${targetPlatform}`, [{ name: agentName, role: "main", path: path.join(root, "agent", platform, agentName) }]);
+  }
+  if (singboxVersion) {
+    const resourceVersion = `${singboxVersion}-r${singboxRevision}`;
+    for (const platform of ["linux-amd64", "linux-arm64"]) {
+      const dir = path.join(root, "singbox", resourceVersion, platform);
+      addResource("SINGBOX", singboxVersion, Number(singboxRevision), `singbox-${platform}`, [
+        { name: "sing-box", role: "main", path: path.join(dir, "sing-box") },
+        { name: "libcronet.so", role: "auxiliary", path: path.join(dir, "libcronet.so") }
+      ], { cronetVersion });
+    }
+  }
+  fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
+' "$OUTPUT_DIR" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION"
 
 echo "==> 二进制产物准备完成：$OUTPUT_DIR"

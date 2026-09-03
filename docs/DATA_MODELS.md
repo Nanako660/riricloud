@@ -564,3 +564,19 @@ model SystemSetting {
 `proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，支持 `all` 动态节点展开、控制项（`DIRECT` / `REJECT`）与策略组层级引用，并按节点名称或入站 tag 正则过滤线路。
 
 `apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。
+
+## 4. 二进制资源中心模型（v0.5.0）
+
+二进制资源与 RiriCloud 应用版本分开建模。`BinaryRelease` 表示一个逻辑资源版本，`BinaryAsset` 表示某个 OS/架构平台的可分发资产，`BinaryAssetFile` 表示资产内的文件；Sing-box 的主文件与 `libcronet.so` 作为同一个平台资产的 `main` / `auxiliary` 文件保存。
+
+| 模型 | 关键字段与约束 |
+| :--- | :--- |
+| `BinaryRelease` | `kind=AGENT\|SINGBOX`、`upstreamVersion`、`revision` 唯一确定资源版本；`source=BUILTIN\|UPLOAD\|REMOTE`；`status=DRAFT\|ACTIVE\|DISABLED\|RETIRED`；可保存 `builtFromAppVersion`、`compatibilityJson`、备注和按类型唯一的默认标记。 |
+| `BinaryAsset` | 记录 `target`、OS、架构、主文件名、`storageRoot`、本地 `storagePath`、SHA-256、大小和可用状态；资源被引用后禁止物理删除。 |
+| `BinaryAssetFile` | 记录资产内每个文件的名称、角色、存储路径、SHA-256、大小与 Unix mode。辅助依赖与主文件共享资产生命周期。 |
+| `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。Master 重启后从此表恢复待处理任务。 |
+| `BinaryAuditLog` | 记录资源导入、启停用、默认资源变更和分发操作的操作者、资源/资产/任务/节点关联及元数据。 |
+
+文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
+
+资源分发前由服务端校验 ACTIVE 状态、目标平台、资产 SHA-256 及 `compatibilityJson` 中的 Agent 协议/版本约束；节点升级完成后通过部署任务保留历史，回滚复用旧资产完整文件包。

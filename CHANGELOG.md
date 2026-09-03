@@ -14,10 +14,17 @@
 
 ### Added
 
+- 新增二进制资源中心 `/admin/binaries`：支持 Agent/Sing-box 资源的本地上传、远程导入、平台资产、SHA-256、状态、默认版本与分发历史管理。
+- 新增 `BinaryRelease`、`BinaryAsset`、`BinaryAssetFile`、`BinaryDeploymentTask` 和 `BinaryAuditLog` 持久化模型，升级任务与重试/回滚历史可在 Master 重启后恢复。
+
 ### Changed
+
+- 将 Sing-box 资源版本与 RiriCloud 应用版本解耦；构建、Master bundle、Docker 和 release manifest 分别记录 Agent、Sing-box、`libcronet.so` 的版本与哈希。
+- Sing-box Agent 升级改为主文件与 `libcronet.so` 成组下载、校验、原子替换、启动验证和整体回滚；旧 `upgrade_task` 字段继续兼容。
 
 ### Fixed
 
+- 优化资源管理页移动端布局：筛选器与操作按钮自适应堆叠，长 SHA-256 哈希可断行，资源详情与底部操作区避免横向溢出。
 
 ## [0.5.0] - 2026-09-03
 

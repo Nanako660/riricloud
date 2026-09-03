@@ -10,10 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { AdminBinaryInfo, AdminNode } from '../use-nodes';
+import type { BinaryResource } from '../../binaries/use-binaries';
 
 const schema = z.object({
   target: z.enum(['singbox', 'agent']),
   source: z.enum(['master', 'custom']),
+  resourceId: z.string().optional(),
   version: z.string().optional(),
   url: z.string().optional(),
   sha256: z.string().optional()
@@ -32,31 +34,36 @@ function normalizeArch(value: string | null) {
   return value.toLowerCase().replace('/', '-').replace('x86_64', 'amd64').replace('aarch64', 'arm64');
 }
 
-export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node, binaryInfo, onSubmit, onImport }: {
+export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node, binaryInfo, resources, onSubmit, onImport }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pending: boolean;
   importing: boolean;
   node: Pick<AdminNode, 'osArch' | 'agentVersion' | 'kernelVersion'>;
   binaryInfo?: AdminBinaryInfo;
-  onSubmit: (values: { target: 'singbox' | 'agent'; version?: string; url?: string; sha256?: string }) => void;
+  resources?: BinaryResource[];
+  onSubmit: (values: { target: 'singbox' | 'agent'; resourceId?: string; version?: string; url?: string; sha256?: string }) => void;
   onImport: (values: { target: string; version: string; url: string; sha256: string }) => void;
 }) {
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { target: 'singbox', source: 'master', version: '', url: '', sha256: '' }
+    defaultValues: { target: 'singbox', source: 'master', resourceId: '', version: '', url: '', sha256: '' }
   });
   const target = form.watch('target');
   const source = form.watch('source');
   const platform = normalizeArch(node.osArch);
   const builtIn = binaryInfo?.targets.find((item) => item.kind === target && item.target.endsWith(platform));
+  const resourceId = form.watch('resourceId');
+  const resourceOptions = resources?.filter((item) => item.kind === target.toUpperCase() && item.status === 'ACTIVE' && item.assets.some((asset) => asset.target === `${target}-${platform}`)) ?? [];
+  const selectedResource = resourceOptions.find((item) => item.id === resourceId);
 
   React.useEffect(() => {
-    if (open) form.reset({ target: 'singbox', source: 'master', version: '', url: '', sha256: '' });
+    if (open) form.reset({ target: 'singbox', source: 'master', resourceId: '', version: '', url: '', sha256: '' });
   }, [open, form]);
 
   const submit = (values: Values) => onSubmit({
     target: values.target,
+    ...(values.source === 'master' && values.resourceId ? { resourceId: values.resourceId } : {}),
     ...(values.version?.trim() ? { version: values.version.trim() } : {}),
     ...(values.source === 'custom' ? { url: values.url?.trim(), sha256: values.sha256?.trim().toLowerCase() } : {})
   });
@@ -79,9 +86,10 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node
           </div>
         </div>
         <div className="rounded-md border bg-muted/30 p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">当前 {target === 'agent' ? 'Agent' : 'Sing-box'}：</span><span className="font-medium">{target === 'agent' ? node.agentVersion || '未上报' : node.kernelVersion || '未上报'}</span>{source === 'master' && <><span className="text-muted-foreground">主控推荐：</span><Badge variant={builtIn?.available ? 'default' : 'secondary'}>{builtIn?.available ? builtIn.version : '未找到对应架构'}</Badge></>}</div>
+          <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">当前 {target === 'agent' ? 'Agent' : 'Sing-box'}：</span><span className="font-medium">{target === 'agent' ? node.agentVersion || '未上报' : node.kernelVersion || '未上报'}</span>{source === 'master' && <><span className="text-muted-foreground">可用资源：</span><Badge variant={selectedResource || builtIn?.available ? 'default' : 'secondary'}>{selectedResource?.version || builtIn?.version || '未找到对应架构'}</Badge></>}</div>
           <p className="mt-1 text-xs text-muted-foreground">运行平台：{node.osArch || '等待 Agent 首次上报'}</p>
         </div>
+        {source === 'master' && <div className="space-y-2"><Label>资源版本</Label><Controller control={form.control} name="resourceId" render={({ field }) => <Select value={field.value || undefined} onValueChange={field.onChange}><SelectTrigger><SelectValue placeholder={resourceOptions.length ? '选择 ACTIVE 资源' : '使用默认资源'} /></SelectTrigger><SelectContent>{resourceOptions.map((item) => <SelectItem key={item.id} value={item.id}>{item.version}{item.isDefault ? ' · 默认' : ''} · {item.assets.reduce((sum, asset) => sum + asset.files.length, 0) || 1} 个文件</SelectItem>)}</SelectContent></Select>} /><p className="text-xs text-muted-foreground">仅显示匹配当前节点平台且状态为 ACTIVE 的资源。</p></div>}
         <div className="space-y-2">
           <Label htmlFor="upgrade-version">版本号{source === 'master' ? '（留空使用主控版本）' : ''}</Label>
           <Input id="upgrade-version" placeholder={source === 'master' ? (builtIn?.version || '主控内置版本') : '1.11.0'} {...form.register('version')} />
@@ -91,7 +99,7 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node
           <div className="space-y-2"><Label htmlFor="upgrade-url">下载 URL</Label><Input id="upgrade-url" type="url" placeholder="https://downloads.example.com/sing-box" {...form.register('url')} />{form.formState.errors.url && <p className="text-xs text-destructive">{form.formState.errors.url.message}</p>}</div>
           <div className="space-y-2"><Label htmlFor="upgrade-sha">SHA-256</Label><Input id="upgrade-sha" className="font-mono text-xs" placeholder="64 位十六进制摘要" {...form.register('sha256')} />{form.formState.errors.sha256 && <p className="text-xs text-destructive">{form.formState.errors.sha256.message}</p>}</div>
         </>}
-        <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>{source === 'custom' && <Button type="button" variant="secondary" disabled={importing || target !== 'singbox'} onClick={() => void form.handleSubmit((values) => values.version && values.url && values.sha256 && onImport({ target: `singbox-${platform || 'linux-amd64'}`, version: values.version.trim(), url: values.url.trim(), sha256: values.sha256.trim().toLowerCase() }))()}>{importing ? '导入中…' : '导入到主控'}</Button>}<Button type="submit" disabled={pending || (source === 'master' && !builtIn?.available)}>{pending ? '下发中…' : '下发升级任务'}</Button></DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>{source === 'custom' && <Button type="button" variant="secondary" disabled={importing} onClick={() => void form.handleSubmit((values) => values.version && values.url && values.sha256 && onImport({ target: `${values.target}-${platform || 'linux-amd64'}`, version: values.version.trim(), url: values.url.trim(), sha256: values.sha256.trim().toLowerCase() }))()}>{importing ? '导入中…' : '导入到主控'}</Button>}<Button type="submit" disabled={pending || (source === 'master' && !selectedResource && !builtIn?.available)}>{pending ? '下发中…' : '下发升级任务'}</Button></DialogFooter>
       </form>
     </ResponsiveDialogContent>
   </ResponsiveDialog>;
