@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { Server, WebSocket } from 'ws';
 import { AgentService } from './agent.service';
-import { parseAgentInboundMessage } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, parseAgentInboundMessage } from './agent-message';
 
 // Agent 长连接网关：只做连接管理与消息编解码，业务逻辑全部在 AgentService
 // （分层约束见 docs/CODE_REVIEW.md §3.1 S3）
@@ -20,7 +20,7 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const auth = await this.gatewayService.authenticate(token);
     if (!auth.ok) {
       this.logger.warn(`agent auth failed: ${auth.message}`);
-      client.send(JSON.stringify({ type: 'auth_result', data: { success: false, message: auth.message, nodeId: null } }));
+      client.send(JSON.stringify({ type: 'auth_result', data: { success: false, message: auth.message, nodeId: null, protocolVersion: AGENT_PROTOCOL_VERSION } }));
       client.close(4001, 'authentication failed');
       return;
     }

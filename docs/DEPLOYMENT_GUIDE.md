@@ -118,6 +118,8 @@ Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控�
 
 Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。
 
+v0.5.0 新增 `TrafficCursor` 表，并将 Master-Agent 流量协议升级为 v2。迁移会由 `prisma migrate deploy` 创建表；升级前应先备份 SQLite 主文件及其 `-wal`/`-shm` 文件，确认备份可读。不要通过增大 `busy_timeout` 或并行启动多个 Master 来处理写锁问题，单 Master、WAL、本地可靠文件系统和应用层单写者调度器是本版本的运行前提。
+
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash
@@ -309,6 +311,19 @@ artifacts/releases/v<version>/
 
 ### 3.4 主控端升级
 下载新版本 `riri-master_*.tar.gz` → 停服 → 解压新包替换目录 → 拷回旧目录的 `.env` 与 `prisma/data/` 数据目录 → `./start.sh`（数据库迁移自动执行，数据与 `.env` 独立于程序目录，升级不丢数据）。
+
+### 3.5 v0.5.0 Master-Agent 协议升级与回滚
+
+由于 Master v0.5.0 拒绝协议 v1，生产发布必须按以下顺序执行，不能让新旧版本同时在线：
+
+1. 停止或替换全部旧版 Agent，确认旧 Agent 不再向 Master 发送心跳。
+2. 备份 SQLite 数据库，至少保存主文件以及同目录下的 `dev.db-wal`、`dev.db-shm`（实际文件名以 `DATABASE_URL` 为准）。
+3. 编译并分发 v0.5.0 Agent，先不要启动切换后的 Agent。
+4. 停止旧 Master，部署 v0.5.0 Master，执行 `prisma migrate deploy` 创建 `TrafficCursor`。
+5. 启动新 Master，确认 WAL、写入队列和数据库迁移日志正常，再启动全部 v0.5.0 Agent。
+6. 观察 `traffic counter reset detected`、`agent write queue delayed`、`agent write slow` 和 Prisma 错误；重点核对 `TrafficCursor` 是否持续更新、重复快照是否没有产生重复流水。
+
+回滚时必须同时回滚 Master 和 Agent，并恢复发布前的 SQLite 备份。禁止仅回滚其中一端，也禁止让 v0.4.x Agent 与 v0.5.0 Master 混合运行。协议 v2 使用累计计数器，不需要 ACK 作为流量正确性的基础；HTTP 请求失败或 WS 断线后，Agent 保留 Sing-box 累计值，恢复通信即可由 Master 按游标补齐差额。
 
 ---
 

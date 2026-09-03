@@ -3,10 +3,12 @@ package poll
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 )
 
 func TestPollJSONIncludesSplitRates(t *testing.T) {
-	payload, err := json.Marshal(pollPayload{BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficRecords: []pollTrafficRecord{}})
+	payload, err := json.Marshal(pollPayload{ProtocolVersion: protocol.Version, BandwidthRate: 768, UploadRate: 256, DownloadRate: 512, TrafficSnapshots: []pollTrafficRecord{{UserUUID: "u", UploadTotal: 1, DownloadTotal: 2}}})
 	if err != nil {
 		t.Fatalf("marshal poll payload: %v", err)
 	}
@@ -26,6 +28,9 @@ func TestPollJSONIncludesSplitRates(t *testing.T) {
 	}
 	if uploadRate != 256 || downloadRate != 512 || bandwidthRate != 768 {
 		t.Fatalf("unexpected split rates: %#v", decoded)
+	}
+	if string(decoded["trafficSnapshots"]) != `[{"userUuid":"u","uploadTotal":"1","downloadTotal":"2"}]` {
+		t.Fatalf("unexpected cumulative traffic encoding: %s", decoded["trafficSnapshots"])
 	}
 }
 

@@ -95,7 +95,8 @@ graph TB
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~29999` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。标准 TLS 可通过 `Certificate` 实体统一托管，Master 在 `config_sync` 时以内嵌 PEM 数组下发并在证书更新后级联同步关联节点；未关联证书的线路仍支持 Agent 机本地路径。
 - **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，保留 30 天，由低频巡检清理过期桶。
-- **流量统计与上报**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=true)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 并作为心跳增量上报。Master 在同一短 SQLite 事务内写入 `TrafficLog`、扣减 `Subscription.trafficUsedBytes` 并同步 `User.trafficUsedBytes` 镜像；节点遥测更新、速率聚合与流量账务分开落库，减少写锁持有时间。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
+- **流量统计与上报（协议 v2）**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=false)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 累计值，并在 WS/HTTP 两种模式中统一上报 `trafficSnapshots`。Master 按 `nodeId + credential` 保存 `TrafficCursor`，以 BigInt 差分计算增量；首次值计入，计数器下降按重置告警并计入当前值，相等值不生成流水。`TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 在同一短 SQLite 事务内提交；未知凭证只建立游标基线。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
+- **Agent 写入调度**：Master 对同节点心跳使用最新值覆盖积压数据，并通过单写者队列串行化 Agent 相关数据库写入；速率指标先在内存按 UTC 五分钟桶聚合，再批量写入 `NodeRateMetric`。写入失败保留最新任务并指数退避重试，队列等待、队列长度、事务耗时和计数器重置均记录到日志。SQLite 继续使用 WAL 与 `busy_timeout`，不通过无限增大事务等待时间掩盖写锁争用。
 - **网络速率统计查询**：`GET /admin/traffic/overview` 同时返回节点网络吞吐当前摘要与历史 `rateSeries`。当前值仅汇总在线且未超时节点；历史按查询周期重采样为 5 分钟、30 分钟或 1 小时。该指标描述网卡吞吐，不进入 `TrafficLog`，中继入口与出口的重复网络传输允许分别计入。
 
 ---
@@ -151,14 +152,15 @@ sequenceDiagram
 
     loop WS 每 5~10 秒 / HTTP 每 15 秒
         Agent->>Agent: 采集系统 CPU / 内存 / 网速
-        Agent->>Singbox: 通过本地 gRPC StatsService 查询并清零用户流量增量
+        Agent->>Singbox: 通过本地 gRPC StatsService 查询累计用户流量（reset=false）
         alt WS/WSS 模式
-            Agent->>Master: 发送 Heartbeat WSS 消息 (系统指标 + 增量流量数据)
+            Agent->>Master: 发送 Heartbeat WSS 消息 (协议 v2 + 系统指标 + 累计快照)
         else HTTP/HTTPS 模式
-            Agent->>Master: POST /api/v1/agent/poll (系统指标 + 回执)
-            Master-->>Agent: 配置差异、任务队列与 nextPollSecs
+            Agent->>Master: POST /api/v1/agent/poll (协议 v2 + 系统指标 + 累计快照 + 回执)
+            Master-->>Agent: 协议版本、配置差异、任务队列与 nextPollSecs
         end
-        Master->>DB: 更新节点状态、记录 TrafficLog、扣减用户剩余配额
+        Master->>DB: 单写者队列更新节点状态
+        Master->>DB: 事务内差分 TrafficCursor、写 TrafficLog、批量扣减用户/订阅配额
         
         alt 发现某用户已过期或配额耗尽
             Master->>Master: 从该节点白名单中剔除该用户 UUID
@@ -167,6 +169,8 @@ sequenceDiagram
         end
     end
 ```
+
+同一节点在写入队列中只保留最新遥测和最新累计快照；累计计数器本身支持请求重试和断线恢复，因此不依赖 ACK 作为流量正确性的基础。v2 发布需要先替换全部 Agent，再部署 Master，禁止新旧协议混合运行。
 
 ### 3.4 订阅生命周期与配置联动
 

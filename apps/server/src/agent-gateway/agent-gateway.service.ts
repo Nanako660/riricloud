@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
 import {
@@ -13,20 +14,7 @@ import {
 import { resolveLineTags } from '../common/line-tags';
 import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
 import { type ProtocolType } from '../common/constants';
-import type {
-  AuthResultData,
-  AgentPollResponse,
-  AgentTaskMessage,
-  AgentTransportMode,
-  ConfigApplyResultData,
-  ConfigSyncData,
-  HeartbeatData,
-  ProbeRequest,
-  ProbeResultData,
-  RestartAgentResultData,
-  UpgradeResultData,
-  UpgradeTarget
-} from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 
@@ -55,6 +43,15 @@ type SubscriptionDelegate = {
 type TrafficSubscriptionDelegate = {
   findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; userId: string }>>;
   update: (args: Record<string, unknown>) => Promise<unknown>;
+};
+
+type TrafficCursorDelegate = {
+  findMany: (args: Record<string, unknown>) => Promise<Array<{
+    credential: string;
+    uploadTotal: bigint;
+    downloadTotal: bigint;
+  }>>;
+  upsert: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
 type PendingTask = AgentTaskMessage & { deliveredAt: number };
@@ -89,6 +86,26 @@ type NodeRateMetricRootDelegate = {
 
 const RATE_METRIC_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const RATE_METRIC_CLEANUP_RETRY_MS = 5 * 60 * 1000;
+const RATE_METRIC_FLUSH_INTERVAL_MS = 5_000;
+const AGENT_WRITE_RETRY_DELAY_MS = 250;
+const AGENT_WRITE_MAX_ATTEMPTS = 3;
+
+type PendingHeartbeat = {
+  data: HeartbeatData;
+  mode: AgentTransportMode;
+  waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>;
+  retryCount: number;
+};
+
+type RateMetricAggregate = {
+  nodeId: string;
+  bucketStart: Date;
+  sampleCount: number;
+  uploadRateSum: number;
+  downloadRateSum: number;
+  uploadRatePeak: number;
+  downloadRatePeak: number;
+};
 
 @Injectable()
 export class AgentService implements OnModuleDestroy {
@@ -97,11 +114,17 @@ export class AgentService implements OnModuleDestroy {
   private readonly pendingTasks = new Map<string, PendingTask[]>();
   private readonly taskResults = new Map<string, TaskResult>();
   private readonly configCache = new Map<string, ConfigSyncData>();
-  private readonly heartbeatTails = new Map<string, Promise<void>>();
+  private readonly pendingHeartbeats = new Map<string, PendingHeartbeat>();
+  private readonly heartbeatRetryTimers = new Map<string, NodeJS.Timeout>();
+  private writeTail: Promise<void> = Promise.resolve();
+  private writeQueueDepth = 0;
+  private readonly rateMetricBuckets = new Map<string, RateMetricAggregate>();
   private configVersion = Date.now();
   private configPushTimer?: NodeJS.Timeout;
+  private rateMetricFlushTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
   private nextRateMetricCleanupAt = 0;
+  private trafficCounterResetCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -133,30 +156,67 @@ export class AgentService implements OnModuleDestroy {
       existing.close(4000, 'superseded by new connection');
     }
     this.sockets.set(nodeId, socket);
-    await this.prisma.node.update({
+    await this.enqueueAgentWrite('register', () => this.prisma.node.update({
       where: { id: nodeId },
       data: { status: 'ONLINE', communicationMode: 'WS', lastSeenAt: new Date() }
-    });
+    }));
     const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
     this.logger.log(`agent online: node=${node?.name ?? nodeId}`);
-    return { success: true, message: '鉴权成功', nodeId };
+    return { success: true, message: '鉴权成功', nodeId, protocolVersion: AGENT_PROTOCOL_VERSION };
   }
 
   // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode = 'WS'): Promise<void> {
-    const previous = this.heartbeatTails.get(nodeId) ?? Promise.resolve();
-    const current = previous.catch(() => undefined).then(() => this.persistHeartbeat(nodeId, data, mode));
-    this.heartbeatTails.set(nodeId, current);
-    try {
-      await current;
-    } finally {
-      if (this.heartbeatTails.get(nodeId) === current) this.heartbeatTails.delete(nodeId);
+    const splitRates = this.getSplitRates(data);
+    if (splitRates) {
+      // 心跳合并只影响落库状态，速率采样本身必须保留，避免聚合桶少算样本。
+      this.accumulateRateMetric(nodeId, new Date(), splitRates.uploadRate, splitRates.downloadRate);
+    }
+    return new Promise<void>((resolve, reject) => {
+      const pending = this.pendingHeartbeats.get(nodeId);
+      if (pending) {
+        pending.data = data;
+        pending.mode = mode;
+        pending.waiters.push({ resolve, reject });
+        return;
+      }
+      this.pendingHeartbeats.set(nodeId, { data, mode, waiters: [{ resolve, reject }], retryCount: 0 });
+      void this.drainHeartbeats(nodeId);
+    });
+  }
+
+  private async drainHeartbeats(nodeId: string): Promise<void> {
+    while (true) {
+      const pending = this.pendingHeartbeats.get(nodeId);
+      if (!pending) return;
+      this.pendingHeartbeats.delete(nodeId);
+      try {
+        await this.enqueueAgentWrite('heartbeat', () => this.persistHeartbeat(nodeId, pending.data, pending.mode));
+        pending.waiters.forEach(({ resolve }) => resolve());
+      } catch (error) {
+        pending.waiters.forEach(({ reject }) => reject(error));
+        const latest = this.pendingHeartbeats.get(nodeId);
+        if (latest) {
+          latest.retryCount = pending.retryCount + 1;
+        } else {
+          this.pendingHeartbeats.set(nodeId, {
+            data: pending.data,
+            mode: pending.mode,
+            waiters: [],
+            retryCount: pending.retryCount + 1
+          });
+        }
+        const retryCount = pending.retryCount + 1;
+        const delayMs = Math.min(30_000, AGENT_WRITE_RETRY_DELAY_MS * (2 ** Math.min(retryCount, 7)));
+        this.scheduleHeartbeatRetry(nodeId, delayMs);
+        this.logger.warn(`heartbeat persistence failed: node=${nodeId} retryInMs=${delayMs} error=${error}`);
+        return;
+      }
     }
   }
 
   private async persistHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode): Promise<void> {
     const heartbeatAt = new Date();
-    const splitRates = this.getSplitRates(data);
     await this.prisma.node.update({
       where: { id: nodeId },
       data: {
@@ -164,8 +224,8 @@ export class AgentService implements OnModuleDestroy {
         memoryUsage: data.memoryUsage,
         bandwidthRate: data.bandwidthRate,
         // 旧版 Agent 没有拆分字段，清空旧的拆分值，避免把历史值误当作当前速率。
-        uploadRate: splitRates?.uploadRate ?? null,
-        downloadRate: splitRates?.downloadRate ?? null,
+        uploadRate: data.uploadRate ?? null,
+        downloadRate: data.downloadRate ?? null,
         lastSeenAt: heartbeatAt,
         status: 'ONLINE',
         communicationMode: mode,
@@ -180,19 +240,8 @@ export class AgentService implements OnModuleDestroy {
         ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
       }
     });
-    if (splitRates) {
-      const rateDelegate = (this.prisma as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
-      if (rateDelegate) {
-        await this.prisma.$transaction(async (tx) => {
-          const txRateDelegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
-          if (txRateDelegate) {
-            await this.recordRateMetric(txRateDelegate, nodeId, heartbeatAt, splitRates.uploadRate, splitRates.downloadRate);
-          }
-        });
-      }
-    }
-    const trafficRecords = data.trafficRecords ?? [];
-    if (trafficRecords.length) {
+    const trafficSnapshots = data.trafficSnapshots ?? [];
+    if (trafficSnapshots.length) {
       const lineDelegate = (this.prisma as unknown as {
         line?: { findFirst: (args: Record<string, unknown>) => Promise<{ id: string } | null> };
       }).line;
@@ -202,18 +251,31 @@ export class AgentService implements OnModuleDestroy {
             select: { id: true },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
           })
-        : null;
-      await this.persistTrafficRecords(nodeId, trafficRecords, activeEntryLine?.id);
+          : null;
+      await this.persistTrafficSnapshots(nodeId, trafficSnapshots, activeEntryLine?.id, heartbeatAt);
     }
   }
 
-  private async persistTrafficRecords(
+  private async persistTrafficSnapshots(
     nodeId: string,
-    records: HeartbeatData['trafficRecords'],
-    lineId?: string
+    records: HeartbeatData['trafficSnapshots'],
+    lineId?: string,
+    observedAt = new Date()
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const credentials = [...new Set(records.map((record) => record.userUuid))];
+      const snapshotsByCredential = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
+      for (const record of records) {
+        const current = snapshotsByCredential.get(record.userUuid);
+        const uploadTotal = BigInt(record.uploadTotal);
+        const downloadTotal = BigInt(record.downloadTotal);
+        if (!current) {
+          snapshotsByCredential.set(record.userUuid, { uploadTotal, downloadTotal });
+          continue;
+        }
+        current.uploadTotal = current.uploadTotal > uploadTotal ? current.uploadTotal : uploadTotal;
+        current.downloadTotal = current.downloadTotal > downloadTotal ? current.downloadTotal : downloadTotal;
+      }
+      const credentials = [...snapshotsByCredential.keys()];
       const users = await tx.user.findMany({
         where: { OR: [{ uuid: { in: credentials } }, { email: { in: credentials } }] },
         select: { id: true, uuid: true, email: true }
@@ -224,52 +286,236 @@ export class AgentService implements OnModuleDestroy {
         usersByCredential.set(user.email, user);
       });
 
+      const cursor = (tx as unknown as { trafficCursor?: TrafficCursorDelegate }).trafficCursor;
+      if (!cursor) throw new Error('TrafficCursor delegate is unavailable');
+      const cursors = await cursor.findMany({
+        where: { nodeId, credential: { in: credentials } },
+        select: { credential: true, uploadTotal: true, downloadTotal: true }
+      });
+      const cursorByCredential = new Map(cursors.map((item) => [item.credential, item]));
+
       const logs: Array<{
         nodeId: string;
         userId: string;
         lineId?: string;
         upload: bigint;
         download: bigint;
+        recordedAt: Date;
       }> = [];
       const totalsByUser = new Map<string, bigint>();
-      for (const record of records) {
-        const user = usersByCredential.get(record.userUuid);
+      const cursorUpdates = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
+      for (const [credential, current] of snapshotsByCredential) {
+        const previous = cursorByCredential.get(credential);
+        const previousUpload = previous?.uploadTotal ?? 0n;
+        const previousDownload = previous?.downloadTotal ?? 0n;
+        const uploadReset = current.uploadTotal < previousUpload;
+        const downloadReset = current.downloadTotal < previousDownload;
+        if (uploadReset || downloadReset) {
+          this.trafficCounterResetCount += 1;
+          this.logger.warn(`traffic counter reset detected: node=${nodeId} count=${this.trafficCounterResetCount}`);
+        }
+        const upload = uploadReset ? current.uploadTotal : current.uploadTotal - previousUpload;
+        const download = downloadReset ? current.downloadTotal : current.downloadTotal - previousDownload;
+        cursorUpdates.set(credential, current);
+        const user = usersByCredential.get(credential);
         if (!user) {
           this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
-        const upload = BigInt(record.upload);
-        const download = BigInt(record.download);
         const total = upload + download;
-        logs.push({ nodeId, userId: user.id, ...(lineId ? { lineId } : {}), upload, download });
+        if (total === 0n) continue;
+        logs.push({ nodeId, userId: user.id, ...(lineId ? { lineId } : {}), upload, download, recordedAt: observedAt });
         totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + total);
       }
-      if (!logs.length) return;
-
-      await tx.trafficLog.createMany({ data: logs });
       const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
       const subscriptionByUser = new Map<string, string>();
-      if (subscription) {
+      if (subscription && totalsByUser.size) {
         const subscriptions = await subscription.findMany({
           where: { userId: { in: [...totalsByUser.keys()] } },
           select: { id: true, userId: true }
         });
         subscriptions.forEach((item) => subscriptionByUser.set(item.userId, item.id));
       }
+      if (logs.length) {
+        await tx.trafficLog.createMany({ data: logs });
+      }
+      const subscriptionTotals = new Map<string, bigint>();
       for (const [userId, total] of totalsByUser) {
         const subscriptionId = subscriptionByUser.get(userId);
         if (subscription && subscriptionId) {
-          await subscription.update({
-            where: { id: subscriptionId },
-            data: { trafficUsedBytes: { increment: total } }
-          });
+          subscriptionTotals.set(subscriptionId, (subscriptionTotals.get(subscriptionId) ?? 0n) + total);
         }
-        await tx.user.update({
-          where: { id: userId },
-          data: { trafficUsedBytes: { increment: total } }
-        });
+      }
+      await this.batchIncrement(tx, 'User', totalsByUser);
+      await this.batchIncrement(tx, 'Subscription', subscriptionTotals);
+      await this.batchUpsertTrafficCursors(tx, nodeId, cursorUpdates);
+    });
+  }
+
+  private enqueueAgentWrite<T>(label: string, task: () => Promise<T>): Promise<T> {
+    const queuedAt = Date.now();
+    this.writeQueueDepth += 1;
+    const run = this.writeTail.catch(() => undefined).then(async () => {
+      this.writeQueueDepth = Math.max(0, this.writeQueueDepth - 1);
+      const waitMs = Date.now() - queuedAt;
+      if (waitMs >= 250) {
+        this.logger.warn(`agent write queue delayed: type=${label} waitMs=${waitMs} depth=${this.writeQueueDepth}`);
+      }
+      const startedAt = Date.now();
+      try {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= AGENT_WRITE_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            return await task();
+          } catch (error) {
+            lastError = error;
+            if (attempt === AGENT_WRITE_MAX_ATTEMPTS) throw error;
+            const delayMs = AGENT_WRITE_RETRY_DELAY_MS * (2 ** (attempt - 1));
+            this.logger.warn(`agent write retry: type=${label} attempt=${attempt + 1} delayMs=${delayMs}`);
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
+        throw lastError;
+      } finally {
+        const durationMs = Date.now() - startedAt;
+        if (durationMs >= 1000) {
+          this.logger.warn(`agent write slow: type=${label} durationMs=${durationMs}`);
+        }
       }
     });
+    this.writeTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private scheduleHeartbeatRetry(nodeId: string, delayMs: number): void {
+    if (this.heartbeatRetryTimers.has(nodeId)) return;
+    const timer = setTimeout(() => {
+      this.heartbeatRetryTimers.delete(nodeId);
+      void this.drainHeartbeats(nodeId);
+    }, delayMs);
+    timer.unref?.();
+    this.heartbeatRetryTimers.set(nodeId, timer);
+  }
+
+  private accumulateRateMetric(nodeId: string, heartbeatAt: Date, uploadRate: number, downloadRate: number): void {
+    const bucketStart = new Date(Math.floor(heartbeatAt.getTime() / NODE_RATE_BUCKET_MS) * NODE_RATE_BUCKET_MS);
+    const key = `${nodeId}:${bucketStart.getTime()}`;
+    const existing = this.rateMetricBuckets.get(key);
+    if (existing) {
+      existing.sampleCount += 1;
+      existing.uploadRateSum += uploadRate;
+      existing.downloadRateSum += downloadRate;
+      existing.uploadRatePeak = Math.max(existing.uploadRatePeak, uploadRate);
+      existing.downloadRatePeak = Math.max(existing.downloadRatePeak, downloadRate);
+    } else {
+      this.rateMetricBuckets.set(key, {
+        nodeId,
+        bucketStart,
+        sampleCount: 1,
+        uploadRateSum: uploadRate,
+        downloadRateSum: downloadRate,
+        uploadRatePeak: uploadRate,
+        downloadRatePeak: downloadRate
+      });
+    }
+    if (!this.rateMetricFlushTimer) {
+      this.rateMetricFlushTimer = setTimeout(() => {
+        this.rateMetricFlushTimer = undefined;
+        void this.flushRateMetrics().catch((err) => this.logger.warn(`rate metric flush failed: ${err}`));
+      }, RATE_METRIC_FLUSH_INTERVAL_MS);
+      this.rateMetricFlushTimer.unref?.();
+    }
+  }
+
+  private async flushRateMetrics(): Promise<void> {
+    if (!this.rateMetricBuckets.size) return;
+    const batches = [...this.rateMetricBuckets.values()];
+    this.rateMetricBuckets.clear();
+    try {
+      await this.enqueueAgentWrite('rate-metrics', async () => {
+        await this.prisma.$transaction(async (tx) => {
+          const delegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
+          if (!delegate) return;
+          for (const item of batches) {
+            await this.recordRateMetric(delegate, item.nodeId, item.bucketStart, item.uploadRateSum / item.sampleCount, item.downloadRateSum / item.sampleCount, item);
+          }
+        });
+      });
+    } catch (error) {
+      for (const item of batches) {
+        const key = `${item.nodeId}:${item.bucketStart.getTime()}`;
+        const existing = this.rateMetricBuckets.get(key);
+        if (!existing) {
+          this.rateMetricBuckets.set(key, item);
+        } else {
+          existing.sampleCount += item.sampleCount;
+          existing.uploadRateSum += item.uploadRateSum;
+          existing.downloadRateSum += item.downloadRateSum;
+          existing.uploadRatePeak = Math.max(existing.uploadRatePeak, item.uploadRatePeak);
+          existing.downloadRatePeak = Math.max(existing.downloadRatePeak, item.downloadRatePeak);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async batchIncrement(
+    tx: unknown,
+    table: 'User' | 'Subscription',
+    increments: Map<string, bigint>
+  ): Promise<void> {
+    if (!increments.size) return;
+    const rawClient = tx as { $executeRaw?: (query: Prisma.Sql) => Promise<number> };
+    if (rawClient.$executeRaw) {
+      const ids = [...increments.keys()];
+      const cases = [...increments.entries()].map(([id, total]) => Prisma.sql`WHEN ${id} THEN ${total}`);
+      const tableName = table === 'User' ? '"User"' : '"Subscription"';
+      await rawClient.$executeRaw(Prisma.sql`
+        UPDATE ${Prisma.raw(tableName)}
+        SET "trafficUsedBytes" = "trafficUsedBytes" + CASE "id" ${Prisma.join(cases, ' ')} ELSE 0 END
+        WHERE "id" IN (${Prisma.join(ids)})
+      `);
+      return;
+    }
+    const delegate = (tx as unknown as { user?: { update: (args: Record<string, unknown>) => Promise<unknown> }; subscription?: TrafficSubscriptionDelegate });
+    const target = table === 'User' ? delegate.user : delegate.subscription;
+    if (!target) throw new Error(`${table} delegate is unavailable`);
+    for (const [id, total] of increments) {
+      await target.update({ where: { id }, data: { trafficUsedBytes: { increment: total } } });
+    }
+  }
+
+  private async batchUpsertTrafficCursors(
+    tx: unknown,
+    nodeId: string,
+    updates: Map<string, { uploadTotal: bigint; downloadTotal: bigint }>
+  ): Promise<void> {
+    if (!updates.size) return;
+    const rawClient = tx as { $executeRaw?: (query: Prisma.Sql) => Promise<number> };
+    if (rawClient.$executeRaw) {
+      const updatedAt = new Date();
+      const values = [...updates.entries()].map(([credential, totals]) => Prisma.sql`(
+        ${randomUUID()}, ${nodeId}, ${credential}, ${totals.uploadTotal}, ${totals.downloadTotal}, ${updatedAt}
+      )`);
+      await rawClient.$executeRaw(Prisma.sql`
+        INSERT INTO "TrafficCursor" ("id", "nodeId", "credential", "uploadTotal", "downloadTotal", "updatedAt")
+        VALUES ${Prisma.join(values, ', ')}
+        ON CONFLICT ("nodeId", "credential") DO UPDATE SET
+          "uploadTotal" = excluded."uploadTotal",
+          "downloadTotal" = excluded."downloadTotal",
+          "updatedAt" = excluded."updatedAt"
+      `);
+      return;
+    }
+    const delegate = (tx as unknown as { trafficCursor?: TrafficCursorDelegate }).trafficCursor;
+    if (!delegate) throw new Error('TrafficCursor delegate is unavailable');
+    for (const [credential, totals] of updates) {
+      await delegate.upsert({
+        where: { nodeId_credential: { nodeId, credential } },
+        create: { nodeId, credential, ...totals },
+        update: totals
+      });
+    }
   }
 
   private getSplitRates(data: HeartbeatData): { uploadRate: number; downloadRate: number } | null {
@@ -291,20 +537,26 @@ export class AgentService implements OnModuleDestroy {
     nodeId: string,
     heartbeatAt: Date,
     uploadRate: number,
-    downloadRate: number
+    downloadRate: number,
+    aggregate?: RateMetricAggregate
   ): Promise<void> {
     const bucketStart = new Date(Math.floor(heartbeatAt.getTime() / NODE_RATE_BUCKET_MS) * NODE_RATE_BUCKET_MS);
     const where = { nodeId_bucketStart: { nodeId, bucketStart } };
+    const sampleCount = aggregate?.sampleCount ?? 1;
+    const uploadRateSum = aggregate?.uploadRateSum ?? uploadRate;
+    const downloadRateSum = aggregate?.downloadRateSum ?? downloadRate;
+    const uploadRatePeak = aggregate?.uploadRatePeak ?? uploadRate;
+    const downloadRatePeak = aggregate?.downloadRatePeak ?? downloadRate;
     const existing = await delegate.findUnique({ where });
     if (existing) {
       await delegate.update({
         where: { id: existing.id },
         data: {
-          sampleCount: { increment: 1 },
-          uploadRateSum: { increment: uploadRate },
-          downloadRateSum: { increment: downloadRate },
-          uploadRatePeak: Math.max(existing.uploadRatePeak, uploadRate),
-          downloadRatePeak: Math.max(existing.downloadRatePeak, downloadRate)
+          sampleCount: { increment: sampleCount },
+          uploadRateSum: { increment: uploadRateSum },
+          downloadRateSum: { increment: downloadRateSum },
+          uploadRatePeak: Math.max(existing.uploadRatePeak, uploadRatePeak),
+          downloadRatePeak: Math.max(existing.downloadRatePeak, downloadRatePeak)
         }
       });
     } else {
@@ -312,11 +564,11 @@ export class AgentService implements OnModuleDestroy {
         data: {
           nodeId,
           bucketStart,
-          sampleCount: 1,
-          uploadRateSum: uploadRate,
-          downloadRateSum: downloadRate,
-          uploadRatePeak: uploadRate,
-          downloadRatePeak: downloadRate
+          sampleCount,
+          uploadRateSum,
+          downloadRateSum,
+          uploadRatePeak,
+          downloadRatePeak
         }
       });
     }
@@ -329,17 +581,16 @@ export class AgentService implements OnModuleDestroy {
     const now = Date.now();
     if (now < this.nextRateMetricCleanupAt) return;
     this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_INTERVAL_MS;
-    let result: { count: number };
     try {
-      result = await delegate.deleteMany({
+      const result = await this.enqueueAgentWrite('rate-cleanup', () => delegate.deleteMany({
         where: { bucketStart: { lt: new Date(now - NODE_RATE_RETENTION_MS) } }
-      });
+      }));
+      if (result.count > 0) {
+        this.logger.log(`rate metric cleanup removed ${result.count} expired bucket(s)`);
+      }
     } catch (err) {
       this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_RETRY_MS;
       throw err;
-    }
-    if (result.count > 0) {
-      this.logger.log(`rate metric cleanup removed ${result.count} expired bucket(s)`);
     }
   }
 
@@ -375,6 +626,7 @@ export class AgentService implements OnModuleDestroy {
     const nextPollSecs = Math.max(5, Math.min(300, node?.pollIntervalSecs ?? settings?.defaultPollIntervalSecs ?? 15));
     const needUpdate = data.appliedConfigVersion !== desired.version;
     return {
+      protocolVersion: AGENT_PROTOCOL_VERSION,
       needUpdate,
       version: desired.version,
       singboxConfig: needUpdate ? desired.singboxConfig : null,
@@ -386,8 +638,8 @@ export class AgentService implements OnModuleDestroy {
   // config_apply_result 回执处理：失败原因落 configError（成功清空），供管理端展示
   async handleConfigApplyResult(nodeId: string, data: ConfigApplyResultData): Promise<void> {
     const message = data.success ? null : (data.message?.slice(0, 8192) ?? 'unknown error');
-    await this.prisma.node
-      .update({ where: { id: nodeId }, data: { configError: message } })
+    await this.enqueueAgentWrite('config-result', () => this.prisma.node
+      .update({ where: { id: nodeId }, data: { configError: message } }))
       .catch((err) => this.logger.warn(`config_apply_result: ${err}`));
     if (data.success) {
       this.logger.log(`config applied: node=${nodeId} version=${data.version}`);
@@ -419,7 +671,7 @@ export class AgentService implements OnModuleDestroy {
       message: data.results.find((result) => !result.success)?.message ?? (data.success ? 'ok' : 'probe failed'),
       completedAt
     });
-    await this.prisma.node.update({
+    await this.enqueueAgentWrite('probe-result', () => this.prisma.node.update({
       where: { id: nodeId },
       data: {
         lastProbeResult: JSON.stringify({
@@ -429,7 +681,7 @@ export class AgentService implements OnModuleDestroy {
           completedAt
         })
       }
-    });
+    }));
     this.logger.log(
       `agent probe completed: node=${nodeId} task=${data.taskId} success=${data.success} results=${data.results.length}`
     );
@@ -907,10 +1159,10 @@ export class AgentService implements OnModuleDestroy {
       })
       .map((node) => node.id);
     if (staleIds.length) {
-      await this.prisma.node.updateMany({
+      await this.enqueueAgentWrite('stale-sweep', () => this.prisma.node.updateMany({
         where: { id: { in: staleIds }, status: 'ONLINE' },
         data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
-      });
+      }));
     }
   }
 
@@ -924,7 +1176,11 @@ export class AgentService implements OnModuleDestroy {
     this.pendingTasks.clear();
     this.taskResults.clear();
     this.configCache.clear();
-    this.heartbeatTails.clear();
+    this.pendingHeartbeats.clear();
+    for (const timer of this.heartbeatRetryTimers.values()) clearTimeout(timer);
+    this.heartbeatRetryTimers.clear();
+    this.rateMetricBuckets.clear();
+    if (this.rateMetricFlushTimer) clearTimeout(this.rateMetricFlushTimer);
   }
 }
 

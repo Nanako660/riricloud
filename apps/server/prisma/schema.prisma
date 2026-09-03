@@ -67,6 +67,7 @@ model Node {
   entryLines  Line[]        @relation("LineEntryNode")
   exitLines   Line[]        @relation("LineExitNode")
   trafficLogs TrafficLog[]
+  trafficCursors TrafficCursor[]
   rateMetrics NodeRateMetric[]
 
   @@index([status])
@@ -88,6 +89,21 @@ model NodeRateMetric {
   @@unique([nodeId, bucketStart])
   @@index([nodeId, bucketStart])
   @@index([bucketStart])
+}
+
+// Sing-box 累计流量游标：按节点与原始用户凭证保存上次已观察的总量。
+model TrafficCursor {
+  id           String   @id @default(uuid())
+  nodeId       String
+  credential   String
+  uploadTotal  BigInt   @default(0)
+  downloadTotal BigInt  @default(0)
+  updatedAt    DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, credential])
+  @@index([nodeId, updatedAt])
 }
 
 model Plan {

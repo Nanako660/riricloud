@@ -14,9 +14,16 @@
 
 ### Added
 
+- 新增协议 v2 的累计流量账务链路：Master 按节点与用户凭证保存 `TrafficCursor`，支持断线重试幂等计费、超大整数累计值和未知凭证基线。
+
 ### Changed
 
+- 将 Agent 流量上报从周期增量改为 `QueryStats(reset=false)` 累计快照，WS/HTTP 统一使用 `trafficSnapshots`；该协议变更计划在 v0.5.0 发布，要求 Master 与 Agent 同步升级。
+- 优化 SQLite 写入链路：Agent 相关写入进入单写者队列，同节点积压心跳合并为最新值，速率指标按五分钟桶聚合并批量写入，失败任务指数退避重试。
+
 ### Fixed
+
+- 修复 Master 重试或心跳中间丢失时可能重复扣减流量、以及 Agent 暂时离线导致累计统计被清零的问题。
 
 
 ## [0.4.22] - 2026-09-03

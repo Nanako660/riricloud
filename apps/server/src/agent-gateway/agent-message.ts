@@ -11,6 +11,8 @@ export type AgentMessageType =
   | 'restart_agent_task'
   | 'restart_agent_result';
 
+export const AGENT_PROTOCOL_VERSION = 2;
+
 export type AgentTransportMode = 'WS' | 'HTTP';
 
 export interface AgentMessage<T = unknown> {
@@ -22,19 +24,21 @@ export interface AuthResultData {
   success: boolean;
   message: string;
   nodeId: string | null;
+  protocolVersion: number;
 }
 
-export interface HeartbeatTrafficRecord {
+export interface HeartbeatTrafficSnapshot {
   userUuid: string;
-  upload: number;
-  download: number;
+  uploadTotal: string;
+  downloadTotal: string;
 }
 
 export interface HeartbeatData {
+  protocolVersion: number;
   cpuUsage: number;
   memoryUsage: number;
   bandwidthRate: number;
-  trafficRecords: HeartbeatTrafficRecord[];
+  trafficSnapshots: HeartbeatTrafficSnapshot[];
   // 可选字段：拆分后的节点网卡上行/下行速率（bytes/s），旧版 Agent 不上报
   uploadRate?: number;
   downloadRate?: number;
@@ -123,6 +127,7 @@ export type AgentTaskMessage =
   | { type: 'restart_agent_task'; data: RestartAgentTaskData };
 
 export interface AgentPollResponse {
+  protocolVersion: number;
   needUpdate: boolean;
   version: number;
   singboxConfig: Record<string, unknown> | null;
@@ -155,18 +160,30 @@ function isSafeNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+const MAX_UINT64 = 18446744073709551615n;
+
+function isUint64String(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^(0|[1-9]\d{0,19})$/.test(value)) return false;
+  try {
+    return BigInt(value) <= MAX_UINT64;
+  } catch {
+    return false;
+  }
+}
+
 function isProbeType(value: unknown): value is ProbeType {
   return value === 'tcp' || value === 'dns' || value === 'icmp';
 }
 
 function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (!isJsonObject(value)) return false;
+  if (value.protocolVersion !== AGENT_PROTOCOL_VERSION) return false;
   if (!isFiniteNumber(value.cpuUsage) || value.cpuUsage < 0 || value.cpuUsage > 100) return false;
   if (!isFiniteNumber(value.memoryUsage) || value.memoryUsage < 0 || value.memoryUsage > 100) return false;
   if (!isFiniteNumber(value.bandwidthRate) || value.bandwidthRate < 0) return false;
   if (value.uploadRate !== undefined && (!isFiniteNumber(value.uploadRate) || value.uploadRate < 0)) return false;
   if (value.downloadRate !== undefined && (!isFiniteNumber(value.downloadRate) || value.downloadRate < 0)) return false;
-  if (!Array.isArray(value.trafficRecords)) return false;
+  if (!Array.isArray(value.trafficSnapshots) || value.trafficSnapshots.length > 1024) return false;
   if (
     value.kernelRunning !== undefined &&
     typeof value.kernelRunning !== 'boolean'
@@ -181,12 +198,12 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (value.agentVersion !== undefined && !isNonEmptyString(value.agentVersion, 128)) return false;
   if (value.osArch !== undefined && !isNonEmptyString(value.osArch, 128)) return false;
   if (value.kernelVersion !== undefined && !isNonEmptyString(value.kernelVersion, 128)) return false;
-  return value.trafficRecords.every((record) => {
+  return value.trafficSnapshots.every((record) => {
     if (!isJsonObject(record)) return false;
     return (
       isNonEmptyString(record.userUuid, 256) &&
-      isSafeNonNegativeInteger(record.upload) &&
-      isSafeNonNegativeInteger(record.download)
+      isUint64String(record.uploadTotal) &&
+      isUint64String(record.downloadTotal)
     );
   });
 }

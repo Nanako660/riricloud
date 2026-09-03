@@ -16,6 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
+	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
@@ -29,9 +30,10 @@ type message struct {
 }
 
 type authResult struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	NodeID  string `json:"nodeId"`
+	Success         bool   `json:"success"`
+	Message         string `json:"message"`
+	NodeID          string `json:"nodeId"`
+	ProtocolVersion int    `json:"protocolVersion"`
 }
 
 type configSync struct {
@@ -40,24 +42,25 @@ type configSync struct {
 }
 
 type heartbeatTraffic struct {
-	UserUUID string `json:"userUuid"`
-	Upload   uint64 `json:"upload"`
-	Download uint64 `json:"download"`
+	UserUUID      string `json:"userUuid"`
+	UploadTotal   uint64 `json:"uploadTotal,string"`
+	DownloadTotal uint64 `json:"downloadTotal,string"`
 }
 
 type heartbeatData struct {
-	CPUUsage       float64            `json:"cpuUsage"`
-	MemoryUsage    float64            `json:"memoryUsage"`
-	BandwidthRate  float64            `json:"bandwidthRate"`
-	UploadRate     float64            `json:"uploadRate"`
-	DownloadRate   float64            `json:"downloadRate"`
-	KernelRunning  bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
-	AppliedVersion int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
-	LastError      string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
-	AgentVersion   string             `json:"agentVersion"`
-	OSArch         string             `json:"osArch"`
-	KernelVersion  string             `json:"kernelVersion"`
-	TrafficRecords []heartbeatTraffic `json:"trafficRecords"`
+	ProtocolVersion  int                `json:"protocolVersion"`
+	CPUUsage         float64            `json:"cpuUsage"`
+	MemoryUsage      float64            `json:"memoryUsage"`
+	BandwidthRate    float64            `json:"bandwidthRate"`
+	UploadRate       float64            `json:"uploadRate"`
+	DownloadRate     float64            `json:"downloadRate"`
+	KernelRunning    bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
+	AppliedVersion   int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
+	LastError        string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
+	AgentVersion     string             `json:"agentVersion"`
+	OSArch           string             `json:"osArch"`
+	KernelVersion    string             `json:"kernelVersion"`
+	TrafficSnapshots []heartbeatTraffic `json:"trafficSnapshots"`
 }
 
 // configApplyResult config_sync 的处理回执（Agent -> Master）
@@ -186,6 +189,9 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 	if !auth.Success {
 		return fmt.Errorf("auth rejected: %s", auth.Message)
+	}
+	if auth.ProtocolVersion != protocol.Version {
+		return fmt.Errorf("unsupported master protocol version %d, expected %d", auth.ProtocolVersion, protocol.Version)
 	}
 	authed = true
 	c.log.WithField("nodeId", auth.NodeID).Info("authenticated")
@@ -357,29 +363,30 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 			// 采集含 1 秒采样窗口，放行到 goroutine 避免阻塞 ticker
 			sample := telemetry.Collect()
 			kernel := c.singboxMgr.Status()
-			trafficRecords, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
+			trafficSnapshots, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
 			if err != nil {
 				c.log.WithError(err).Debug("collect sing-box user traffic failed")
 			}
 			payload := heartbeatData{
-				CPUUsage:       sample.CPUUsage,
-				MemoryUsage:    sample.MemoryUsage,
-				BandwidthRate:  sample.BandwidthRate,
-				UploadRate:     sample.UploadRate,
-				DownloadRate:   sample.DownloadRate,
-				KernelRunning:  kernel.Running,
-				AppliedVersion: kernel.AppliedConfigVersion,
-				LastError:      kernel.LastError,
-				AgentVersion:   c.version,
-				OSArch:         c.osArch,
-				KernelVersion:  kernel.Version,
-				TrafficRecords: make([]heartbeatTraffic, 0, len(trafficRecords)),
+				ProtocolVersion:  protocol.Version,
+				CPUUsage:         sample.CPUUsage,
+				MemoryUsage:      sample.MemoryUsage,
+				BandwidthRate:    sample.BandwidthRate,
+				UploadRate:       sample.UploadRate,
+				DownloadRate:     sample.DownloadRate,
+				KernelRunning:    kernel.Running,
+				AppliedVersion:   kernel.AppliedConfigVersion,
+				LastError:        kernel.LastError,
+				AgentVersion:     c.version,
+				OSArch:           c.osArch,
+				KernelVersion:    kernel.Version,
+				TrafficSnapshots: make([]heartbeatTraffic, 0, len(trafficSnapshots)),
 			}
-			for _, record := range trafficRecords {
-				payload.TrafficRecords = append(payload.TrafficRecords, heartbeatTraffic{
-					UserUUID: record.UserID,
-					Upload:   record.Upload,
-					Download: record.Download,
+			for _, record := range trafficSnapshots {
+				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{
+					UserUUID:      record.UserID,
+					UploadTotal:   record.UploadTotal,
+					DownloadTotal: record.DownloadTotal,
 				})
 			}
 			data, err := json.Marshal(payload)

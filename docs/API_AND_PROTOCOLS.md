@@ -152,6 +152,8 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 }
 ```
 
+当前 Master-Agent 协议版本为 **v2**。所有心跳和 HTTP 轮询请求必须携带 `protocolVersion: 2`；Master 拒绝 v1 或缺失版本字段，发布 v0.5.0 时必须先完成所有 Agent 的同步升级，不允许新旧协议混合运行。累计流量字段使用十进制字符串，避免 JavaScript `Number` 的安全整数限制。
+
 ### 2.2 消息类型枚举
 
 #### 1. 认证与握手响应 (`auth_result`) —— Master -> Agent
@@ -161,7 +163,8 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
   "data": {
     "success": true,
     "message": "Node authenticated successfully",
-    "nodeId": "node-uuid-xxx"
+    "nodeId": "node-uuid-xxx",
+    "protocolVersion": 2
   }
 }
 ```
@@ -252,6 +255,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 {
   "type": "heartbeat",
   "data": {
+    "protocolVersion": 2,
     "cpuUsage": 12.5,
     "memoryUsage": 38.2,
     "bandwidthRate": 1048576,
@@ -260,17 +264,17 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "kernelRunning": true,
     "appliedConfigVersion": 3,
     "lastError": "",
-    "trafficRecords": [
-      { "userUuid": "user-uuid-1", "upload": 52428800, "download": 104857600 },
-      { "userUuid": "user-uuid-2", "upload": 1024000, "download": 2048000 }
+    "trafficSnapshots": [
+      { "userUuid": "user-uuid-1", "uploadTotal": "52428800", "downloadTotal": "104857600" },
+      { "userUuid": "user-uuid-2", "uploadTotal": "1024000", "downloadTotal": "2048000" }
     ]
   }
 }
 ```
 
-> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `uploadRate` / `downloadRate` / `trafficRecords` 均已实现 ⭐。Agent 通过 gopsutil 以 1 秒差分拆分网卡上行与下行速率，并保留 `bandwidthRate = uploadRate + downloadRate`；计数器回绕或采样异常时对应速率为 0。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=true)` 读取并清零本周期用户计数，`trafficRecords` 只携带正数增量；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
+> **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `uploadRate` / `downloadRate` / `trafficSnapshots` 均已实现 ⭐。Agent 通过 gopsutil 以 1 秒差分拆分网卡上行与下行速率，并保留 `bandwidthRate = uploadRate + downloadRate`；计数器回绕或采样异常时对应速率为 0。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=false)` 读取累计用户计数，Master 按节点与原始凭证维护 `TrafficCursor` 并计算增量，因此 Agent 不会因断线、重试或 Master 暂时不可用而清零统计数据。`uploadTotal` / `downloadTotal` 使用十进制字符串；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
 >
-> **落库约束**：Master 对同一节点的心跳按顺序处理；节点遥测、速率聚合与流量账务分开落库。`TrafficLog`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 仍在同一短事务内完成，速率历史保留 30 天并由低频巡检清理。
+> **落库约束**：Master 对同一节点的心跳按顺序处理，积压时仅保留最新遥测和累计快照；累计值相等不生成流水，计数器下降则按重启/重置处理并记录告警。未知凭证只建立游标基线，不计费。`TrafficLog`、`Subscription.trafficUsedBytes`、`User.trafficUsedBytes` 与 `TrafficCursor` 在同一短事务内提交；用户与订阅配额按批次聚合更新。节点遥测、速率聚合与流量账务分开落库，速率历史保留 30 天并由低频巡检清理。
 >
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
@@ -334,6 +338,7 @@ Content-Type: application/json
 
 ```json
 {
+  "protocolVersion": 2,
   "cpuUsage": 12.5,
   "memoryUsage": 38.2,
   "bandwidthRate": 1048576,
@@ -345,7 +350,7 @@ Content-Type: application/json
   "agentVersion": "0.3.0",
   "osArch": "linux/amd64",
   "kernelVersion": "1.11.0",
-  "trafficRecords": [],
+  "trafficSnapshots": [],
   "configApplyResults": [
     { "version": 3, "success": true, "message": "ok" }
   ],
@@ -361,6 +366,7 @@ Content-Type: application/json
 
 ```json
 {
+  "protocolVersion": 2,
   "needUpdate": true,
   "version": 4,
   "singboxConfig": { "log": { "level": "info" }, "inbounds": [], "outbounds": [{ "type": "direct", "tag": "direct" }] },
@@ -371,7 +377,7 @@ Content-Type: application/json
 }
 ```
 
-当 `needUpdate=false` 时 `singboxConfig` 为 `null`；`tasks` 中的升级/探针/Agent 重启任务在 Agent 侧异步执行，并在下一次轮询的回执数组中提交。Master 会在回执到达前保留已投递任务，网络丢包后按 60 秒重试，回执成功后任务状态变为 `COMPLETED`。`nextPollSecs` 由节点配置给出，服务端限制在 5~300 秒。
+当 `needUpdate=false` 时 `singboxConfig` 为 `null`；`tasks` 中的升级/探针/Agent 重启任务在 Agent 侧异步执行，并在下一次轮询的回执数组中提交。Master 会在回执到达前保留已投递任务，网络丢包后按 60 秒重试，回执成功后任务状态变为 `COMPLETED`。`nextPollSecs` 由节点配置给出，服务端限制在 5~300 秒。Master 返回的 `protocolVersion` 必须为 `2`，Agent 收到其他版本时拒绝继续通信并等待升级。
 
 ### 2.3.3 健康判定
 

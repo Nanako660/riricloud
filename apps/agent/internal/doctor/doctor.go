@@ -113,7 +113,7 @@ func checkHTTPHandshake(ctx context.Context, cfg *config.Config) Check {
 	if err != nil {
 		return Check{Name: "Master 握手", Detail: err.Error()}
 	}
-	body := strings.NewReader(`{"cpuUsage":0,"memoryUsage":0,"bandwidthRate":0,"trafficRecords":[],"agentVersion":"doctor"}`)
+	body := strings.NewReader(`{"protocolVersion":2,"cpuUsage":0,"memoryUsage":0,"bandwidthRate":0,"trafficSnapshots":[],"agentVersion":"doctor"}`)
 	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, base+"/api/v1/agent/poll", body)

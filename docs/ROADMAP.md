@@ -6,7 +6,7 @@
 
 ## 📅 阶段任务拆解
 
-> **当前进度**：Phase 1 ~ Phase 6 全部里程碑已落地（基线版本 `v0.4.5`）。节点与线路解耦、中继拓扑、Master 内置 Agent、管理员初始化/重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发闭环已全量就绪。下方标注 ⭐ 的条目为已实现部分；按用户流量统计已通过 Sing-box V2Ray API 恢复，使用按心跳周期清零的用户增量计数。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
+> **当前进度**：Phase 1 ~ Phase 6 全部里程碑已落地（基线版本 `v0.4.5`），流量账务与 SQLite 写入链路优化正在面向 `v0.5.0` 实施。节点与线路解耦、中继拓扑、Master 内置 Agent、管理员初始化/重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发闭环已全量就绪。当前流量统计使用协议 v2 累计快照与 Master 侧 `TrafficCursor` 差分，不再按心跳周期清零。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
 
 ### Phase 1: 基础设施与 Monorepo 脚手架搭建
 - [x] ⭐ 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
@@ -46,7 +46,7 @@
 - [x] ⭐ 实现 WebSocket 客户端（指数退避断线重连、心跳定时器）。
 - [x] ⭐ 实现 Sing-box 内核管理（进程拉起、PID 监控、异常退出自动拉起、优雅停止与配置热应用）：supervisor 单协程托管，配置变化优雅重启、崩溃按指数退避重拉；二进制路径 `SINGBOX_BINARY_PATH`（默认走 PATH）。
 - [x] ⭐ 实现动态 JSON 配置文件组装与持久化。（临时文件 + rename 原子写入）
-- [x] ⭐ 实现系统性能指标（CPU/内存/网络IO）与按用户流量定时上报。（Agent 通过启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box 本地 gRPC StatsService 读取用户增量，Master 事务扣减 Subscription 并同步 User 镜像）
+- [x] ⭐ 实现系统性能指标（CPU/内存/网络IO）与按用户流量定时上报。（Agent 通过启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box 本地 gRPC StatsService 使用 `reset=false` 读取累计值，Master 通过 `TrafficCursor` 差分后事务扣减 Subscription 并同步 User 镜像）
 - [x] ⭐ 扩展 `upgrade_task` / `upgrade_result` 与 `probe_task` / `probe_result` 消息，Master 对上行消息进行运行时校验。
 - [x] ⭐ 实现安全流式下载、SHA-256 校验、原子替换、Sing-box 启动失败回滚、Agent 自更新重启与 TCP/DNS/ICMP 探针。
 - [x] ⭐ 实现升级窗口 supervisor 抑制，避免替换期间重新拉起旧 Sing-box 二进制。

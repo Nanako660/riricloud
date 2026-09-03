@@ -18,6 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
+	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
@@ -76,12 +77,13 @@ type restartAgentResult struct {
 }
 
 type pollTrafficRecord struct {
-	UserUUID string `json:"userUuid"`
-	Upload   uint64 `json:"upload"`
-	Download uint64 `json:"download"`
+	UserUUID      string `json:"userUuid"`
+	UploadTotal   uint64 `json:"uploadTotal,string"`
+	DownloadTotal uint64 `json:"downloadTotal,string"`
 }
 
 type pollPayload struct {
+	ProtocolVersion     int                 `json:"protocolVersion"`
 	CPUUsage            float64             `json:"cpuUsage"`
 	MemoryUsage         float64             `json:"memoryUsage"`
 	BandwidthRate       float64             `json:"bandwidthRate"`
@@ -93,7 +95,7 @@ type pollPayload struct {
 	AgentVersion        string              `json:"agentVersion"`
 	OSArch              string              `json:"osArch"`
 	KernelVersion       string              `json:"kernelVersion"`
-	TrafficRecords      []pollTrafficRecord `json:"trafficRecords"`
+	TrafficSnapshots    []pollTrafficRecord `json:"trafficSnapshots"`
 	ConfigApplyResults  []json.RawMessage   `json:"configApplyResults,omitempty"`
 	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`
 	ProbeResults        []json.RawMessage   `json:"probeResults,omitempty"`
@@ -101,11 +103,12 @@ type pollPayload struct {
 }
 
 type pollResponse struct {
-	NeedUpdate    bool            `json:"needUpdate"`
-	Version       int64           `json:"version"`
-	SingboxConfig json.RawMessage `json:"singboxConfig"`
-	Tasks         []taskMessage   `json:"tasks"`
-	NextPollSecs  int             `json:"nextPollSecs"`
+	ProtocolVersion int             `json:"protocolVersion"`
+	NeedUpdate      bool            `json:"needUpdate"`
+	Version         int64           `json:"version"`
+	SingboxConfig   json.RawMessage `json:"singboxConfig"`
+	Tasks           []taskMessage   `json:"tasks"`
+	NextPollSecs    int             `json:"nextPollSecs"`
 }
 
 type pendingResult struct {
@@ -183,29 +186,30 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	}
 	sample := telemetry.Collect()
 	kernel := c.singboxMgr.Status()
-	trafficRecords, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
+	trafficSnapshots, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
 	if err != nil {
 		c.log.WithError(err).Debug("collect sing-box user traffic failed")
 	}
 	payload := pollPayload{
-		CPUUsage:       sample.CPUUsage,
-		MemoryUsage:    sample.MemoryUsage,
-		BandwidthRate:  sample.BandwidthRate,
-		UploadRate:     sample.UploadRate,
-		DownloadRate:   sample.DownloadRate,
-		KernelRunning:  kernel.Running,
-		AppliedVersion: kernel.AppliedConfigVersion,
-		LastError:      kernel.LastError,
-		AgentVersion:   c.version,
-		OSArch:         c.osArch,
-		KernelVersion:  kernel.Version,
-		TrafficRecords: make([]pollTrafficRecord, 0, len(trafficRecords)),
+		ProtocolVersion:  protocol.Version,
+		CPUUsage:         sample.CPUUsage,
+		MemoryUsage:      sample.MemoryUsage,
+		BandwidthRate:    sample.BandwidthRate,
+		UploadRate:       sample.UploadRate,
+		DownloadRate:     sample.DownloadRate,
+		KernelRunning:    kernel.Running,
+		AppliedVersion:   kernel.AppliedConfigVersion,
+		LastError:        kernel.LastError,
+		AgentVersion:     c.version,
+		OSArch:           c.osArch,
+		KernelVersion:    kernel.Version,
+		TrafficSnapshots: make([]pollTrafficRecord, 0, len(trafficSnapshots)),
 	}
-	for _, record := range trafficRecords {
-		payload.TrafficRecords = append(payload.TrafficRecords, pollTrafficRecord{
-			UserUUID: record.UserID,
-			Upload:   record.Upload,
-			Download: record.Download,
+	for _, record := range trafficSnapshots {
+		payload.TrafficSnapshots = append(payload.TrafficSnapshots, pollTrafficRecord{
+			UserUUID:      record.UserID,
+			UploadTotal:   record.UploadTotal,
+			DownloadTotal: record.DownloadTotal,
 		})
 	}
 	sentResults := c.appendPendingResults(&payload)
@@ -231,6 +235,9 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	var response pollResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 20*1024*1024)).Decode(&response); err != nil {
 		return fmt.Errorf("decode poll response: %w", err)
+	}
+	if response.ProtocolVersion != protocol.Version {
+		return fmt.Errorf("unsupported master protocol version %d, expected %d", response.ProtocolVersion, protocol.Version)
 	}
 	c.removePendingResults(sentResults)
 	if response.NextPollSecs >= 5 && response.NextPollSecs <= 300 {
