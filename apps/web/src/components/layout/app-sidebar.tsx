@@ -30,7 +30,6 @@ export function AppSidebar() {
       items: [
         { to: '/', label: '仪表盘', icon: Gauge, end: true },
         { to: '/subscription', label: '我的订阅', icon: WalletCards, end: false },
-        { to: '/lines', label: '可用线路', icon: GitBranch, end: false },
         { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false },
         { to: '/profile', label: '个人中心', icon: Wallet, end: false }
       ]

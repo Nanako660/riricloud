@@ -48,11 +48,10 @@
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认模板 Badge、策略组/规则集/DNS 摘要、删除确认 |
 | **`UI-19`** | 模板管理 | 订阅模板编辑弹窗 | `/admin/templates`（点击“新建模板/编辑”） | `apps/web/src/pages/admin/templates/components/template-form-dialog.tsx` | JSON/YAML 等宽编辑区、校验错误、默认模板 Switch、弹窗滚动 |
 | **`UI-20`** | 用户订阅 | 套餐市场 | `/market` | `apps/web/src/pages/user/market/index.tsx` | 套餐权益网格、当前套餐标记、低价套餐禁止直接降级、订购/升配二次确认、窄屏单列 |
-| **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、流量数据自动刷新、标准/伪静态 Token URL 复制/重置、取消保留权益提示、可用线路 |
+| **`UI-21`** | 用户订阅 | 我的订阅详情 | `/subscription` | `apps/web/src/pages/user/subscription/index.tsx` | 流量进度、状态 Badge、流量数据自动刷新、标准/伪静态 Token URL 复制/重置、取消保留权益提示、可用线路紧凑列表（名称/协议/在线状态/倍率） |
 | **`UI-22`** | 节点运维 | 远程升级弹窗 | `/admin/nodes/:id`（点击“升级中心”） | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | 当前/推荐版本对比、主控内置来源、自定义 URL/SHA-256 校验、导入主控、HTTP/WS 任务等待、下发中禁用状态、错误 Toast |
 | **`UI-23`** | 线路管理 | 线路管理列表 | `/admin/lines` | `apps/web/src/pages/admin/lines/index.tsx` | 类型/状态/标签筛选、排序、批量启停、倍率/中继信息、覆盖启用状态、删除确认 |
 | **`UI-24`** | 线路管理 | 新建/编辑线路双页签弹窗 | `/admin/lines`（点击“新建线路/编辑线路”） | `apps/web/src/pages/admin/lines/components/line-form-dialog.tsx` | 默认“入站配置”页签包含协议/入口节点/监听地址与端口、平面展开的 Transport/TLS/Reality/ACME/专属参数、标准 TLS/ACME 的 ALPN 预设多选、ShadowTLS v3 + SS2022 内层字段、可增删请求头、Reality 密钥生成；Reality 不显示 ALPN；“线路高级设置”页签包含出口拓扑、覆盖/倍率/状态并统一保存 |
-| **`UI-25`** | 用户订阅 | 可用线路 | `/lines` | `apps/web/src/pages/user/lines/index.tsx` | 线路倍率、等级、标签、中继机制、入口地址与底层在线状态 |
 | **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、有效期状态、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
 | **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路 Donut 图、排行表格、明暗主题与移动端局部横向滚动 |
 | **`UI-28`** | 用户管理 | 单用户流量明细下钻 | `/admin/users`（点击操作列“流量明细”） | `apps/web/src/pages/admin/users/components/user-traffic-dialog.tsx` | 用户配额画像、周期走势图、线路占比、明细表格、无记录 EmptyState、桌面 Dialog/移动 Sheet、明暗主题 |
@@ -89,12 +88,11 @@ flowchart TD
     PathCheck -->|设置模块\npages/admin/settings/*| Sett[精准走查: UI-14]
     PathCheck -->|套餐模块\npages/admin/plans/*| Plans[精准走查: UI-16, UI-17]
     PathCheck -->|模板模块\npages/admin/templates/*| Templates[精准走查: UI-18, UI-19]
-    PathCheck -->|用户订阅\npages/user/*| UserSubs[精准走查: UI-20, UI-21, UI-25, UI-29]
+    PathCheck -->|用户订阅\npages/user/*| UserSubs[精准走查: UI-20, UI-21, UI-29]
     PathCheck -->|个人中心\npages/user/profile/*| Profile[精准走查: UI-29]
     PathCheck -->|卡密管理\npages/admin/redeem-codes/*| Redeem[精准走查: UI-30]
     PathCheck -->|节点升级\npages/admin/nodes/components/upgrade-node-dialog.tsx| Upgrade[精准走查: UI-22]
     PathCheck -->|线路管理\npages/admin/lines/*| Lines[精准走查: UI-23 ~ UI-24]
-    PathCheck -->|用户线路\npages/user/lines/*| UserLines[精准走查: UI-25]
     PathCheck -->|证书管理\npages/admin/certificates/*| Certificates[精准走查: UI-26]
 ```
 
@@ -115,12 +113,11 @@ flowchart TD
 | `apps/web/src/components/layout/site-runtime.tsx`, `apps/web/src/lib/public-settings.ts` | `UI-01` ~ `UI-03`, `UI-14`, `UI-15`, `UI-21` | **增量** |
 | `apps/web/src/pages/admin/plans/**` | `UI-16`, `UI-17` | **增量** |
 | `apps/web/src/pages/admin/templates/**` | `UI-18`, `UI-19` | **增量** |
-| `apps/web/src/pages/user/**` | `UI-20`, `UI-21`, `UI-25`, `UI-29` | **增量** |
+| `apps/web/src/pages/user/**` | `UI-20`, `UI-21`, `UI-29` | **增量** |
 | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | `UI-29` | **增量** |
 | `apps/web/src/pages/admin/redeem-codes/**` | `UI-30` | **增量** |
 | `apps/web/src/pages/admin/nodes/components/upgrade-node-dialog.tsx` | `UI-22` | **增量** |
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
-| `apps/web/src/pages/user/lines/**` | `UI-25` | **增量** |
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 
 ---
@@ -159,5 +156,5 @@ flowchart TD
 
 ## 5. 维护与更新约定
 
-1. **新增页面/模态框时**：必须在同一 PR 中向本文件「2. 全量 UI 验证索引台账」追加新的 `UI-xx` 索引项与源码路径映射；当前套餐/订阅相关视图登记为 `UI-16` 至 `UI-25`，用户中心与卡密管理登记为 `UI-29` 至 `UI-30`，管理员订阅履约已归入用户管理的 `UI-11` 至 `UI-13`。
+1. **新增页面/模态框时**：必须在同一 PR 中向本文件「2. 全量 UI 验证索引台账」追加新的 `UI-xx` 索引项与源码路径映射；当前套餐/订阅相关视图登记为 `UI-16` 至 `UI-24`，用户中心与卡密管理登记为 `UI-29` 至 `UI-30`，管理员订阅履约已归入用户管理的 `UI-11` 至 `UI-13`。
 2. **重构/删除页面时**：必须同步更新索引台账，保持文档与代码绝对一致。

@@ -121,7 +121,7 @@ export default function DashboardPage() {
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
-              <p className="text-muted-foreground text-xs">将该链接导入 Clash Meta、Sing-box 或 Shadowrocket，即可同步所有授权线路。</p>
+              <p className="text-muted-foreground text-xs">将该链接导入 Clash Meta、Sing-box 或 Shadowrocket，即可同步所有可用线路。</p>
             </div>
           ) : (
             <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-5">

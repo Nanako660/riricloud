@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
   CalendarClock,
-  ChevronRight,
   Gauge,
   GitBranch,
   HardDrive,
@@ -63,7 +62,7 @@ export default function UserSubscriptionPage() {
   if (!data?.subscription) {
     return (
       <PageContainer>
-        <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与授权线路。" />
+        <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
         <EmptyState
           title="还没有有效订阅"
           description="前往套餐市场选择适合的套餐，开通后将自动生成专属订阅凭证与线路权限。"
@@ -100,7 +99,7 @@ export default function UserSubscriptionPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与授权线路。" />
+      <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
 
       {/* 卡片 1：当前套餐与用量指标 */}
       <Card>
@@ -240,30 +239,24 @@ export default function UserSubscriptionPage() {
             <CopyButton value={url} />
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            将该链接导入支持的代理客户端即可同步所有授权线路；套餐或线路变更时客户端将自动热更新。
+            将该链接导入支持的代理客户端即可同步所有可用线路；套餐或线路变更时客户端将自动热更新。
           </p>
         </CardContent>
       </Card>
 
-      {/* 卡片 3：可用线路概览 */}
+      {/* 卡片 3：可用线路摘要 */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <GitBranch className="h-4 w-4" />
             可用线路（{data.lines.length}）
           </CardTitle>
-          <Button asChild variant="ghost" size="sm" className="gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <Link to="/lines">
-              查看拓扑详情
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
         </CardHeader>
         <CardContent>
           {data.lines.length ? (
             <div className="grid gap-3 md:grid-cols-2">
               {data.lines.map((line) => (
-                <LineCard key={line.id} line={line} variant="compact" />
+                <LineCard key={line.id} line={line} />
               ))}
             </div>
           ) : (

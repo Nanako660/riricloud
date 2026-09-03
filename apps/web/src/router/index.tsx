@@ -107,12 +107,6 @@ export const router = createBrowserRouter([
             })
           },
           {
-            path: '/lines',
-            lazy: async () => ({
-              Component: (await import('@/pages/user/lines')).default
-            })
-          },
-          {
             path: '/profile',
             lazy: async () => ({
               Component: (await import('@/pages/user/profile')).default
