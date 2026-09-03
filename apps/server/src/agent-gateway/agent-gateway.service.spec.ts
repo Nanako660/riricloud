@@ -6,28 +6,26 @@ import type { HeartbeatData } from './agent-message';
 
 describe('AgentGatewayService', () => {
   let service: AgentGatewayService;
-  const txNodeUpdate = jest.fn(async () => undefined);
-  const txUserFindUnique = jest.fn();
-  const txTrafficCreate = jest.fn(async () => undefined);
+  const txUserFindMany = jest.fn();
+  const txTrafficCreateMany = jest.fn(async () => undefined);
   const txUserUpdate = jest.fn(async () => undefined);
-  const txSubscriptionFindUnique = jest.fn();
+  const txSubscriptionFindMany = jest.fn();
   const txSubscriptionUpdate = jest.fn(async () => undefined);
   const txRateFindUnique = jest.fn();
   const txRateCreate = jest.fn(async () => undefined);
   const txRateUpdate = jest.fn(async () => undefined);
-  const txRateDeleteMany = jest.fn(async () => undefined);
   const tx = {
-    node: { update: txNodeUpdate },
-    user: { findUnique: txUserFindUnique, update: txUserUpdate },
-    trafficLog: { create: txTrafficCreate },
-    line: { findFirst: jest.fn() },
-    subscription: { findUnique: txSubscriptionFindUnique, update: txSubscriptionUpdate },
-    nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate, deleteMany: txRateDeleteMany }
+    user: { findMany: txUserFindMany, update: txUserUpdate },
+    trafficLog: { createMany: txTrafficCreateMany },
+    subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate },
+    nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate }
   };
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
     node: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-    user: { findMany: jest.fn() }
+    user: { findMany: jest.fn() },
+    line: { findFirst: jest.fn() },
+    nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) }
   };
 
   beforeAll(async () => {
@@ -38,9 +36,11 @@ describe('AgentGatewayService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.user.findMany.mockResolvedValue([]);
-    txSubscriptionFindUnique.mockResolvedValue(null);
+    txUserFindMany.mockResolvedValue([]);
+    txSubscriptionFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
-    tx.line.findFirst.mockResolvedValue(null);
+    prisma.line.findFirst.mockResolvedValue(null);
+    (service as unknown as { nextRateMetricCleanupAt: number }).nextRateMetricCleanupAt = 0;
   });
 
   const user = { uuid: 'uuid-1', email: 'user@example.com', password: 'secret', isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) };
@@ -141,14 +141,18 @@ describe('AgentGatewayService', () => {
     expect(singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-proxy-entry'], outbound: 'relay-out-proxy' }] });
   });
 
-  it('心跳遥测与流量扣减在同一事务内', async () => {
-    txUserFindUnique.mockResolvedValue({ id: 'user-1', uuid: user.uuid });
-    tx.line.findFirst.mockResolvedValue({ id: 'line-1' });
+  it('心跳遥测独立落库，流量账务在单独事务内完成', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    prisma.line.findFirst.mockResolvedValue({ id: 'line-1' });
     const heartbeat: HeartbeatData = { cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512, trafficRecords: [{ userUuid: user.uuid, upload: 100, download: 200 }] };
     await service.handleHeartbeat('node-1', heartbeat);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(txTrafficCreate).toHaveBeenCalledWith({
-      data: { nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200) }
+    expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'node-1' },
+      data: expect.objectContaining({ cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512 })
+    }));
+    expect(txTrafficCreateMany).toHaveBeenCalledWith({
+      data: [{ nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200) }]
     });
     expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(300) } } });
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
@@ -163,7 +167,7 @@ describe('AgentGatewayService', () => {
       downloadRate: 340,
       trafficRecords: []
     });
-    expect(txNodeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ uploadRate: 120, downloadRate: 340, bandwidthRate: 460 })
     }));
     expect(txRateCreate).toHaveBeenCalledWith({
@@ -177,13 +181,13 @@ describe('AgentGatewayService', () => {
         downloadRatePeak: 340
       })
     });
-    expect(txRateDeleteMany).toHaveBeenCalledWith({ where: { bucketStart: { lt: expect.any(Date) } } });
+    expect(prisma.nodeRateMetric.deleteMany).not.toHaveBeenCalled();
   });
 
   it('订阅存在时扣减 Subscription 并同步 User 镜像', async () => {
-    txUserFindUnique.mockResolvedValue({ id: 'user-1', uuid: user.uuid });
-    tx.line.findFirst.mockResolvedValue({ id: 'line-1' });
-    txSubscriptionFindUnique.mockResolvedValue({ id: 'sub-1' });
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    prisma.line.findFirst.mockResolvedValue({ id: 'line-1' });
+    txSubscriptionFindMany.mockResolvedValue([{ id: 'sub-1', userId: 'user-1' }]);
     const heartbeat: HeartbeatData = {
       cpuUsage: 12,
       memoryUsage: 30,
@@ -199,6 +203,44 @@ describe('AgentGatewayService', () => {
       where: { id: 'user-1' },
       data: { trafficUsedBytes: { increment: BigInt('9007199254740995') } }
     });
+  });
+
+  it('同一节点的并发心跳按顺序执行', async () => {
+    let releaseFirst!: () => void;
+    const firstUpdate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const nodeUpdate = prisma.node.update as jest.Mock;
+    nodeUpdate.mockImplementationOnce(async () => firstUpdate);
+
+    const first = service.handleHeartbeat('node-serial', {
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficRecords: []
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = service.handleHeartbeat('node-serial', {
+      cpuUsage: 4,
+      memoryUsage: 5,
+      bandwidthRate: 6,
+      trafficRecords: []
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(nodeUpdate).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(nodeUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it('速率历史清理按低频周期执行', async () => {
+    const deleteMany = prisma.nodeRateMetric.deleteMany as jest.Mock;
+    deleteMany.mockResolvedValue({ count: 3 });
+
+    await service.cleanupOldRateMetrics();
+    await service.cleanupOldRateMetrics();
+
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    expect(deleteMany).toHaveBeenCalledWith({ where: { bucketStart: { lt: expect.any(Date) } } });
   });
 
   it('节点不存在时配置同步抛出 NotFoundException', async () => {
@@ -300,7 +342,7 @@ describe('AgentGatewayService', () => {
       osArch: 'linux/amd64',
       kernelVersion: '1.11.0'
     });
-    expect(txNodeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ agentVersion: '0.3.0', osArch: 'linux/amd64', kernelVersion: '1.11.0' })
     }));
   });

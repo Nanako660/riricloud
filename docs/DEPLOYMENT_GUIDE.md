@@ -116,6 +116,8 @@ printf '%s\n' 'new-password' | docker compose exec -T master /nodejs/bin/node /a
 
 Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控制 Master 面板监听端口；本机 Agent 动态使用的 TCP/UDP 线路端口会直接监听宿主机，不需要映射上万条端口。Compose 不固定 `container_name`，可用项目名同时运行多个实例。生产环境应设置 `MASTER_LOCAL_HOST`，或设置 `RIRICLOUD_PUBLIC_URL` 让 bootstrap 自动推导本机线路对外地址。Compose 默认引用 `latest`，`pnpm docker:up` 会注入当前版本和 Git 构建元数据。
 
+Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。
+
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash

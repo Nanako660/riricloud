@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
@@ -102,6 +103,7 @@ function addDays(base: Date, days: number): Date {
 
 @Injectable()
 export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(SubscriptionService.name);
   private expiryTimer?: NodeJS.Timeout;
 
   constructor(
@@ -115,7 +117,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     if (this.subscriptionDelegate()) {
       // 用进程内巡检保持零外部依赖；unref 不阻止测试进程自然退出。
-      this.expiryTimer = setInterval(() => void this.expireSubscriptions(), 60000);
+      this.expiryTimer = setInterval(() => {
+        void this.expireSubscriptions().catch((err) => {
+          this.logger.warn(`subscription expiry sweep failed: ${err}`);
+        });
+      }, 60000);
       this.expiryTimer.unref();
     }
   }
