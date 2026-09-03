@@ -54,7 +54,7 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
           {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="exitNodeId" label="出口节点" options={nodeOptions} />}
           {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="exitPort" label="出口监听端口" type="number" placeholder="留空自动分配" />}
         </FieldGrid>
-        {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }, { value: 'TARGET_LINE', label: '桥接已有线路：协议转换' }]} onValueChange={changeRelayMode} />}
+        {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }, { value: 'TARGET_LINE', label: '协议转换：桥接已有线路' }]} onValueChange={changeRelayMode} />}
         {type === 'RELAY' && relayMode === 'TARGET_LINE' && <div className="space-y-3">
           <SelectField
             form={form}

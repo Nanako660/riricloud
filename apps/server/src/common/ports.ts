@@ -7,9 +7,9 @@ export function getStatsApiListen(): string {
   return process.env.STATS_API_LISTEN?.trim() || DEFAULT_STATS_API_LISTEN;
 }
 
-// 选用 20000~29999：保持五位数，并避开常见服务端口与 Linux 常用临时端口范围。
+// 选用 20000~65535：保持五位数，并将随机上限扩展到合法端口最大值。
 export const RANDOM_SERVICE_PORT_MIN = 20000;
-export const RANDOM_SERVICE_PORT_MAX = 29999;
+export const RANDOM_SERVICE_PORT_MAX = 65535;
 
 const RANDOM_SERVICE_PORT_COUNT = RANDOM_SERVICE_PORT_MAX - RANDOM_SERVICE_PORT_MIN + 1;
 
