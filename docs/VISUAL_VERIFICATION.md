@@ -55,7 +55,7 @@
 | **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、有效期状态、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
 | **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路 Donut 图、排行表格、明暗主题与移动端局部横向滚动 |
 | **`UI-28`** | 用户管理 | 单用户流量明细下钻 | `/admin/users`（点击操作列“流量明细”） | `apps/web/src/pages/admin/users/components/user-traffic-dialog.tsx` | 用户配额画像、周期走势图、线路占比、明细表格、无记录 EmptyState、桌面 Dialog/移动 Sheet、明暗主题 |
-| **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | 余额与收支摘要、卡密兑换、流水分页、密码修改、用户代理凭据展示/复制与重置确认；移动端单列、表格局部滚动、明暗主题 |
+| **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | 余额与收支摘要、卡密兑换、流水分页、密码修改、用户代理凭据展示/复制与重置确认；移动端单列、流水表格保持完整字段与可读列宽并在容器内横向滚动、明暗主题 |
 | **`UI-30`** | 卡密管理 | 卡密管理列表与批量生成/作废交互 | `/admin/redeem-codes` | `apps/web/src/pages/admin/redeem-codes/**` | 状态筛选、元/分单位提示、批量生成表单、生成结果换行复制、有效期状态、未使用卡密作废确认、移动端表格局部滚动与弹窗内滚动 |
 
 ---

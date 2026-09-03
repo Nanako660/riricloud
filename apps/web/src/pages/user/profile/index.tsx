@@ -59,7 +59,7 @@ export default function ProfilePage() {
     <PageContainer>
       <PageHeader title="个人中心" description="管理账户余额、登录安全与代理连接凭据。" />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle>账户资产</CardTitle><CardDescription>余额以人民币分为最小单位记录。</CardDescription></CardHeader>
           <CardContent className="space-y-5">
             <div className="rounded-lg border bg-muted/20 p-4"><p className="text-xs text-muted-foreground">可用余额</p><p className="mt-1 text-3xl font-bold tracking-tight">{formatCurrency(wallet.data.balance)}</p></div>
@@ -67,10 +67,10 @@ export default function ProfilePage() {
             <Form {...redeemForm}><form onSubmit={redeemForm.handleSubmit(onRedeem)} className="space-y-3"><FormField control={redeemForm.control} name="code" render={({ field }) => <FormItem><FormLabel>卡密充值</FormLabel><FormControl><Input placeholder="输入充值卡密" autoComplete="off" {...field} /></FormControl><FormDescription>兑换成功后余额会立即到账。</FormDescription><FormMessage /></FormItem>} /><Button type="submit" disabled={redeem.isPending}>{redeem.isPending ? '兑换中…' : '立即兑换'}</Button></form></Form>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle>收支明细</CardTitle><CardDescription>记录每一次充值、消费和管理员调账。</CardDescription></CardHeader>
-          <CardContent className="space-y-3">
-            <Table><TableHeader><TableRow><TableHead>时间</TableHead><TableHead>类型</TableHead><TableHead>说明</TableHead><TableHead className="text-right">金额</TableHead><TableHead className="text-right">余额</TableHead></TableRow></TableHeader><TableBody>{transactions.data?.data.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString('zh-CN')}</TableCell><TableCell><Badge variant={item.amount >= 0 ? 'secondary' : 'outline'}>{transactionLabels[item.type] ?? item.type}</Badge></TableCell><TableCell>{item.description || '—'}</TableCell><TableCell className={`text-right font-medium tabular-nums ${item.amount >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>{item.amount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(item.balanceAfter)}</TableCell></TableRow>)}</TableBody></Table>
+          <CardContent className="min-w-0 space-y-3">
+            <Table className="min-w-[680px]"><TableHeader><TableRow><TableHead className="whitespace-nowrap">时间</TableHead><TableHead className="whitespace-nowrap">类型</TableHead><TableHead className="min-w-[140px] whitespace-nowrap">说明</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">金额</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">余额</TableHead></TableRow></TableHeader><TableBody>{transactions.data?.data.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString('zh-CN')}</TableCell><TableCell className="whitespace-nowrap"><Badge className="whitespace-nowrap" variant={item.amount >= 0 ? 'secondary' : 'outline'}>{transactionLabels[item.type] ?? item.type}</Badge></TableCell><TableCell className="min-w-[140px] max-w-[240px] break-words">{item.description || '—'}</TableCell><TableCell className={`min-w-[104px] whitespace-nowrap text-right font-medium tabular-nums ${item.amount >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>{item.amount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}</TableCell><TableCell className="min-w-[104px] whitespace-nowrap text-right tabular-nums">{formatCurrency(item.balanceAfter)}</TableCell></TableRow>)}</TableBody></Table>
             {!transactions.data?.data.length && <p className="py-8 text-center text-sm text-muted-foreground">暂无收支记录</p>}
             <Pagination className="border-t pt-3"><PaginationInfo page={page} totalPages={totalPages} /><PaginationPrevious onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} /><PaginationNext onClick={() => setPage((current) => Math.min(Math.max(totalPages, 1), current + 1))} disabled={page >= Math.max(totalPages, 1)} /></Pagination>
           </CardContent>
