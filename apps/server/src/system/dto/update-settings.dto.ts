@@ -57,7 +57,7 @@ export class UpdateSettingsDto {
   @IsOptional()
   siteName?: string;
 
-  @ApiPropertyOptional({ example: '多节点代理管理面板' })
+  @ApiPropertyOptional({ example: '欢迎使用本服务' })
   @IsString()
   @MaxLength(120)
   @IsOptional()

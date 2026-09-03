@@ -110,7 +110,7 @@ export type PublicSystemSettings = Pick<
 
 export const DEFAULTS: SystemSettings = {
   siteName: 'RiriCloud',
-  siteDescription: '多节点代理管理面板',
+  siteDescription: '',
   publicBaseUrl: '',
   logoUrl: '',
   faviconUrl: '',
@@ -313,6 +313,8 @@ export class SettingsService {
   private readString(map: Map<string, string>, key: keyof SystemSettings): string {
     const value = map.get(key);
     const trimmed = typeof value === 'string' ? value.trim() : '';
+    // 清理旧版本内置副标题，避免已有数据库继续展示开发默认文案。
+    if (key === 'siteDescription' && trimmed === '多节点代理管理面板') return '';
     return trimmed || DEFAULTS[key] as string;
   }
 

@@ -193,7 +193,7 @@ export default function AdminSettingsPage() {
 
             <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
                <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
-               <SettingsInput name="siteDescription" label="副标题描述" placeholder="多节点代理管理面板" />
+               <SettingsInput name="siteDescription" label="副标题描述" placeholder="留空则不显示副标题" />
                <div className="space-y-2 md:col-span-2"><SettingsInput name="publicBaseUrl" label="全站访问 URL" placeholder="https://panel.example.com" description="用于生成 Agent 安装命令、升级地址和二进制下载地址；留空时自动匹配当前访问域名。" /><SetOriginButton name="publicBaseUrl" /></div>
               <SettingsInput name="logoUrl" label="Logo URL" placeholder="https://cdn.example.com/logo.svg" description="留空时使用默认云朵图标。" />
               <SettingsInput name="faviconUrl" label="Favicon URL" placeholder="https://cdn.example.com/favicon.ico" />

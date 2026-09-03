@@ -28,8 +28,8 @@
 
 | 索引编号 | 模块分类 | 页面 / 交互单元 | 路由 / 触发方式 | 对应源码路径 | 核心验证检查点 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 卡片居中性、Logo 渲染、输入框聚焦态、登录后跳转与错误 Toast |
-| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**` | 表单字段对齐、密码确认校验、返回登录跳转链接 |
+| **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 卡片居中性、Logo 渲染、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、输入框聚焦态、登录后跳转与错误 Toast |
+| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**` | 表单字段对齐、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、密码确认校验、返回登录跳转链接 |
 | **`UI-03`** | 控制台 | 根路径重定向 | `/` | `apps/web/src/router/index.tsx` | 登录后访问根路径使用 replace 自动跳转至 `/subscription`，不渲染已下线的仪表盘页面 |
 | **`UI-04`** | 用户订阅 | 公告与客户端使用指引 | `/subscription` | `apps/web/src/components/shared/announcement-card.tsx`, `apps/web/src/components/shared/client-guide-card.tsx` | 公告 Markdown 安全渲染、关闭状态本地记忆、无订阅与有订阅状态下均展示客户端三步指引，明暗主题与移动端不溢出 |
 | **`UI-05`** | 节点管理 | 节点管理列表 | `/admin/nodes` | `apps/web/src/pages/admin/nodes/index.tsx` | 节点数据表格、内核运行状态 Badge、CPU/内存/带宽遥测实时刷新、心跳时间 |

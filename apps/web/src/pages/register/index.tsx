@@ -64,6 +64,7 @@ export default function RegisterPage() {
   });
 
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
+  const siteDescription = infoQuery.data?.siteDescription?.trim();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-3 sm:p-4">
@@ -74,7 +75,7 @@ export default function RegisterPage() {
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
           <CardTitle>注册</CardTitle>
-          <CardDescription>{infoQuery.data?.siteDescription || '创建账号即可开始使用'}</CardDescription>
+          {siteDescription ? <CardDescription>{siteDescription}</CardDescription> : null}
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -86,7 +87,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel>邮箱</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="user@example.com" autoComplete="username" {...field} />
+                      <Input type="email" placeholder="请输入常用邮箱" autoComplete="username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -99,7 +100,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel>密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="至少 8 位" autoComplete="new-password" {...field} />
+                      <Input type="password" placeholder="请设置 8-64 位密码" autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -112,7 +113,7 @@ export default function RegisterPage() {
                   <FormItem>
                     <FormLabel>确认密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="再次输入密码" autoComplete="new-password" {...field} />
+                      <Input type="password" placeholder="请再次输入密码" autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

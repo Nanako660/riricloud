@@ -410,7 +410,7 @@ model SystemSetting {
 | 键 | value 格式 | 缺省默认 | 用途 |
 | :--- | :--- | :--- | :--- |
 | `siteName` | 纯文本（1~32 字符） | `"RiriCloud"` | 站点名称，展示于登录页/注册页/侧边栏 |
-| `siteDescription` | 纯文本（≤120 字符） | `"多节点代理管理面板"` | 登录页和品牌区域副标题 |
+| `siteDescription` | 纯文本（≤120 字符） | `""` | 登录页和品牌区域副标题；留空时不展示 |
 | `publicBaseUrl` | HTTP/HTTPS URL 或空字符串 | `""` | 全站对外访问基准地址；用于 Agent 安装、升级和二进制下载地址 |
 | `logoUrl` / `faviconUrl` | URL 或空字符串 | `""` | Logo 与 Favicon 地址 |
 | `siteAnnouncement` | Markdown 文本（≤10000 字符） | `""` | 用户订阅控制台公告横幅 |
