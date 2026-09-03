@@ -119,7 +119,7 @@ export class PlansService {
     return {
       name: dto.name.trim(),
       description: dto.description?.trim() || null,
-      price: dto.price ?? 0,
+      price: toCents(dto.price ?? 0),
       durationDays: dto.durationDays,
       trafficLimitBytes: BigInt(dto.trafficLimitBytes),
       lineMatchMode: dto.lineMatchMode ?? 'ALL',
@@ -135,7 +135,7 @@ export class PlansService {
     return {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
-      ...(dto.price !== undefined ? { price: dto.price } : {}),
+      ...(dto.price !== undefined ? { price: toCents(dto.price) } : {}),
       ...(dto.durationDays !== undefined ? { durationDays: dto.durationDays } : {}),
       ...(dto.trafficLimitBytes !== undefined ? { trafficLimitBytes: BigInt(dto.trafficLimitBytes) } : {}),
       ...(dto.lineMatchMode !== undefined ? { lineMatchMode: dto.lineMatchMode } : {}),
@@ -150,6 +150,7 @@ export class PlansService {
   private toView(plan: PlanViewInput) {
     return {
       ...plan,
+      price: fromCents(plan.price),
       trafficLimitBytes: Number(plan.trafficLimitBytes),
       lineTags: parseStringArray(plan.lineTagsJson),
       lineIds: parseStringArray(plan.lineIdsJson),
@@ -157,4 +158,15 @@ export class PlansService {
       lineIdsJson: undefined
     };
   }
+}
+
+function toCents(value: number): number {
+  if (!Number.isFinite(value) || value < 0) throw new Error('套餐价格必须为非负数');
+  const cents = Math.round(value * 100);
+  if (!Number.isSafeInteger(cents) || cents > 2147483647) throw new Error('套餐价格超出范围');
+  return cents;
+}
+
+function fromCents(value: number): number {
+  return Number((value / 100).toFixed(2));
 }

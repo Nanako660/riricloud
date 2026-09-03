@@ -27,6 +27,7 @@ import type { QuerySubscriptionDto } from './dto/query-subscription.dto';
 import type { Prisma } from '@prisma/client';
 import type { SubscriptionTemplateConfig } from './builders';
 import { SettingsService } from '../system/settings.service';
+import { WalletService } from '../wallet/wallet.service';
 
 type SubscriptionPlan = {
   id: string;
@@ -37,6 +38,7 @@ type SubscriptionPlan = {
   lineTagsJson: string;
   lineIdsJson: string;
   isPublic?: boolean;
+  price?: number;
   template?: SubscriptionTemplateConfig | null;
 };
 
@@ -106,7 +108,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly linesService: LinesService,
     @Optional() private readonly agentGateway?: AgentService,
-    @Optional() private readonly settingsService?: SettingsService
+    @Optional() private readonly settingsService?: SettingsService,
+    @Optional() private readonly walletService?: WalletService
   ) {}
 
   onModuleInit() {
@@ -185,6 +188,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       const subscription = current
         ? await tx.subscription.update({ where: { id: current.id }, data })
         : await tx.subscription.create({ data: { ...data, userId } });
+      await this.chargePlan(tx, userId, plan.price, 'PLAN_BUY', '订购套餐', subscription.id);
       await this.syncUserMirror(tx, userId, subscription);
       return subscription;
     });
@@ -196,8 +200,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const delegate = this.requireSubscriptionDelegate();
     const plan = await this.prisma.plan.findUnique({ where: { id: planId }, include: { template: true } });
     if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
-    const current = await delegate.findUnique({ where: { userId } });
+    const current = await delegate.findUnique({ where: { userId }, include: { plan: { select: { price: true } } } });
     if (!current || !this.isSubscriptionActive(current)) throw new ConflictException('当前没有可升配的有效订阅');
+    if (typeof current.plan?.price !== 'number') throw new NotFoundException('当前套餐不存在');
+    if (plan.price < current.plan.price) throw new ConflictException('不能升级到价格更低的套餐');
     const subscription = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.subscription.update({
         where: { id: current.id },
@@ -211,6 +217,36 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           canceledAt: null
         }
       });
+      await this.chargePlan(tx, userId, plan.price, 'PLAN_UPGRADE', '升配套餐', updated.id);
+      await this.syncUserMirror(tx, userId, updated);
+      return updated;
+    });
+    void this.agentGateway?.pushConfigToAll();
+    return this.get(subscription.id);
+  }
+
+  async renew(userId: string) {
+    const delegate = this.requireSubscriptionDelegate();
+    const current = await delegate.findUnique({ where: { userId } });
+    if (!current || !['ACTIVE', 'CANCELED'].includes(current.status)) {
+      throw new ConflictException('当前没有可续费的订阅');
+    }
+    const plan = await this.prisma.plan.findUnique({ where: { id: current.planId } });
+    if (!plan) throw new NotFoundException('套餐不存在');
+    const now = new Date();
+    const baseExpireAt = current.expireAt && current.expireAt.getTime() > now.getTime() ? current.expireAt : now;
+    const subscription = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.subscription.update({
+        where: { id: current.id },
+        data: {
+          status: 'ACTIVE',
+          trafficLimitBytes: plan.trafficLimitBytes,
+          trafficUsedBytes: BigInt(0),
+          expireAt: addDays(baseExpireAt, plan.durationDays),
+          canceledAt: null
+        }
+      });
+      await this.chargePlan(tx, userId, plan.price, 'PLAN_RENEW', '续费套餐', updated.id);
       await this.syncUserMirror(tx, userId, updated);
       return updated;
     });
@@ -466,6 +502,19 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return subscription;
   }
 
+  private async chargePlan(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    price: number,
+    type: 'PLAN_BUY' | 'PLAN_RENEW' | 'PLAN_UPGRADE',
+    description: string,
+    referenceId: string
+  ) {
+    if (!price || price <= 0) return;
+    if (!this.walletService) throw new BadRequestException('钱包服务不可用');
+    await this.walletService.applyBalanceChange(tx, userId, -price, type, description, referenceId);
+  }
+
   private async syncUserMirror(tx: Prisma.TransactionClient, userId: string, subscription: SubscriptionRecord) {
     await tx.user.update({
       where: { id: userId },
@@ -486,6 +535,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       plan: subscription.plan
         ? {
             ...subscription.plan,
+            ...(typeof subscription.plan.price === 'number' ? { price: subscription.plan.price / 100 } : {}),
             trafficLimitBytes: Number(subscription.plan.trafficLimitBytes)
           }
         : undefined

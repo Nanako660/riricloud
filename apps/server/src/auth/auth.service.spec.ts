@@ -7,6 +7,7 @@ import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { WalletService } from '../wallet/wallet.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -19,6 +20,7 @@ describe('AuthService', () => {
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
   const subscriptionService = { subscribe: jest.fn() };
+  const walletService = { adjustBalance: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -28,7 +30,8 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: { sign: jest.fn().mockReturnValue('token') } },
         { provide: AgentGatewayService, useValue: agentGateway },
         { provide: SettingsService, useValue: settingsService },
-        { provide: SubscriptionService, useValue: subscriptionService }
+        { provide: SubscriptionService, useValue: subscriptionService },
+        { provide: WalletService, useValue: walletService }
       ]
     }).compile();
     service = moduleRef.get(AuthService);
@@ -154,6 +157,14 @@ describe('AuthService', () => {
       await service.register({ email: 'plan@example.com', password: 'password123' });
       expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1');
       expect(agentGateway.pushConfigToAll).not.toHaveBeenCalled();
+    });
+
+    it('配置初始余额时写入 SYSTEM_GIFT 流水', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, defaultBalance: 2500 });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'u-gift', email: 'gift@example.com', role: 'USER' });
+      await service.register({ email: 'gift@example.com', password: 'password123' });
+      expect(walletService.adjustBalance).toHaveBeenCalledWith('u-gift', 2500, 'SYSTEM_GIFT', '新用户注册赠金');
     });
   });
 });

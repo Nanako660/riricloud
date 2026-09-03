@@ -7,9 +7,10 @@ import { AdminSubscriptionController } from './admin-subscription.controller';
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionService } from './subscription.service';
 import { UserSubscriptionController } from './user-subscription.controller';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
-  imports: [AgentGatewayModule, PlansModule, LinesModule, SystemModule],
+  imports: [AgentGatewayModule, PlansModule, LinesModule, SystemModule, WalletModule],
   controllers: [SubscriptionController, UserSubscriptionController, AdminSubscriptionController],
   providers: [SubscriptionService],
   exports: [SubscriptionService]

@@ -6,6 +6,7 @@ export interface AdminUser {
   id: string;
   email: string;
   role: 'ADMIN' | 'USER';
+  balance: number;
   trafficLimitBytes: number;
   trafficUsedBytes: number;
   expireAt: string | null;
@@ -143,6 +144,12 @@ export function useUserMutations() {
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置订阅链接失败'))
   });
 
+  const adjustBalance = useMutation({
+    mutationFn: async ({ id, amount, description }: { id: string; amount: number; description?: string }) => (await api.post(`/admin/users/${id}/adjust-balance`, { amount, description })).data,
+    onSuccess: () => { toast.success('余额已调整'); void invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '余额调整失败'))
+  });
+
   const deleteUser = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/users/${id}`)).data,
     ...invalidateSub
@@ -173,6 +180,7 @@ export function useUserMutations() {
     updateSubscription,
     assignSubscription,
     resetSubscriptionToken,
+    adjustBalance,
     deleteUser,
     bulkActive
   };

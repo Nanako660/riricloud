@@ -9,6 +9,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { LinesService } from '../lines/lines.service';
+import { WalletService } from '../wallet/wallet.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -49,6 +51,7 @@ const ADMIN_USER_SELECT = {
   id: true,
   email: true,
   role: true,
+  balance: true,
   trafficLimitBytes: true,
   trafficUsedBytes: true,
   expireAt: true,
@@ -73,7 +76,8 @@ export class UsersService {
     private prisma: PrismaService,
     private settingsService: SettingsService,
     private agentGateway: AgentService,
-    @Optional() private linesService?: LinesService
+    @Optional() private linesService?: LinesService,
+    @Optional() private walletService?: WalletService
   ) {}
 
   // 重置订阅令牌：旧链接立即失效，返回新 token
@@ -96,6 +100,30 @@ export class UsersService {
       await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken } });
     }
     return subscriptionToken;
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+    if (!user || !(await bcrypt.compare(dto.oldPassword, user.passwordHash))) {
+      throw new UnauthorizedException('旧密码错误');
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) } });
+    return { updated: true };
+  }
+
+  async resetUuid(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!user) throw new UnauthorizedException();
+    const uuid = randomUUID();
+    await this.prisma.user.update({ where: { id: userId }, data: { uuid } });
+    void this.agentGateway.pushConfigToAll();
+    return { uuid };
+  }
+
+  async adjustBalance(userId: string, amount: number, description?: string) {
+    if (!this.walletService) throw new BadRequestException('钱包服务不可用');
+    const result = await this.walletService.adjustBalance(userId, amount, 'ADMIN_ADJUST', description ?? '管理员调账');
+    return { userId, ...result };
   }
 
   // ---------- 管理员接口 ----------

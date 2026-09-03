@@ -23,3 +23,11 @@ export function formatBytes(bytes: number | bigint | null | undefined, decimals 
 export function formatRate(bytesPerSecond: number | null | undefined, decimals = 1): string {
   return `${formatBytes(bytesPerSecond, decimals)}/s`;
 }
+
+export function formatCurrency(cents: number | null | undefined): string {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format((cents ?? 0) / 100);
+}
+
+export function formatYuan(yuan: number | null | undefined): string {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(yuan ?? 0);
+}

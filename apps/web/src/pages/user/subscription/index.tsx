@@ -31,12 +31,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useUserSubscription, useUserSubscriptionMutations } from './use-user-subscription';
 import { usePublicSettings } from '@/lib/public-settings';
-import { formatBytes } from '@/lib/utils';
+import { formatBytes, formatCurrency } from '@/lib/utils';
 import { buildSubscriptionUrl } from '@/lib/subscription-url';
+import { QuickRedeemForm } from '@/components/shared/quick-redeem-form';
+import { useWallet } from '@/pages/user/profile/use-profile';
 
 export default function UserSubscriptionPage() {
   const { data, isPending, isError } = useUserSubscription();
-  const { cancel, resetToken } = useUserSubscriptionMutations();
+  const { cancel, resetToken, renew } = useUserSubscriptionMutations();
+  const wallet = useWallet();
   const publicSettings = usePublicSettings();
 
   if (isPending) {
@@ -111,15 +114,13 @@ export default function UserSubscriptionPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               {formatBytes(sub.trafficLimitBytes)} 流量配额 · {sub.plan.durationDays} 天周期 ·{' '}
-              {sub.plan.price === 0 ? '免费套餐' : `¥${sub.plan.price}`}
+              {sub.plan.price === 0 ? '免费套餐' : formatCurrency(Math.round(sub.plan.price * 100))}
             </p>
           </div>
-          <Button asChild size="sm" variant="outline" className="w-full sm:w-auto gap-1.5 shrink-0">
-            <Link to="/market">
-              <ShoppingBag className="h-4 w-4" />
-              升配或变更套餐
-            </Link>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            {['ACTIVE', 'CANCELED'].includes(sub.status) && <AlertDialog><AlertDialogTrigger asChild><Button size="sm" variant="outline" className="w-full gap-1.5 sm:w-auto" disabled={renew.isPending}><RefreshCw className="h-4 w-4" />续费此套餐</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>续费当前套餐？</AlertDialogTitle><AlertDialogDescription>将扣除 {formatCurrency(Math.round(sub.plan.price * 100))}，周期顺延 {sub.plan.durationDays} 天并重置当期流量。</AlertDialogDescription>{wallet.data && wallet.data.balance < Math.round(sub.plan.price * 100) && <QuickRedeemForm />}</AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction disabled={!wallet.data || wallet.data.balance < Math.round(sub.plan.price * 100) || renew.isPending} onClick={() => renew.mutate()}>确认续费</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+            <Button asChild size="sm" variant="outline" className="w-full gap-1.5 sm:w-auto shrink-0"><Link to="/market"><ShoppingBag className="h-4 w-4" />升配或变更套餐</Link></Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-0">
           <div className="grid gap-3 sm:grid-cols-3">
@@ -273,4 +274,3 @@ export default function UserSubscriptionPage() {
     </PageContainer>
   );
 }
-

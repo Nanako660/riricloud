@@ -16,7 +16,7 @@ import type { AdminLine } from '../../lines/use-lines';
 const schema = z.object({
   name: z.string().min(1, '请输入套餐名称'),
   description: z.string().optional(),
-  price: z.coerce.number().int().min(0),
+  price: z.coerce.number().min(0).multipleOf(0.01, '最多保留两位小数'),
   durationDays: z.coerce.number().int().min(1),
   trafficLimitGB: z.coerce.number().positive('流量必须大于 0'),
   lineMatchMode: z.enum(['ALL', 'TAGS', 'EXPLICIT']),
@@ -86,7 +86,7 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
   return <ResponsiveDialog open={open} onOpenChange={onOpenChange}><ResponsiveDialogContent><DialogHeader><DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle><DialogDescription>配置配额、有效期和线路匹配范围。</DialogDescription></DialogHeader><form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-name">套餐名称</Label><Input id="plan-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>
     <div className="space-y-2 sm:col-span-2"><Label htmlFor="plan-description">描述</Label><Input id="plan-description" {...form.register('description')} /></div>
-    <div className="space-y-2"><Label htmlFor="plan-price">价格</Label><Input id="plan-price" type="number" min="0" {...form.register('price')} /></div>
+    <div className="space-y-2"><Label htmlFor="plan-price">价格（元）</Label><Input id="plan-price" type="number" min="0" step="0.01" {...form.register('price')} />{form.formState.errors.price && <p className="text-xs text-destructive">{form.formState.errors.price.message}</p>}</div>
     <div className="space-y-2"><Label htmlFor="plan-days">有效期（天）</Label><Input id="plan-days" type="number" min="1" {...form.register('durationDays')} /></div>
     <div className="space-y-2"><Label htmlFor="plan-traffic">流量（GiB）</Label><Input id="plan-traffic" type="number" min="1" step="0.1" {...form.register('trafficLimitGB')} /></div>
     <div className="space-y-2"><Label htmlFor="plan-sort">排序</Label><Input id="plan-sort" type="number" min="0" {...form.register('sortOrder')} /></div>

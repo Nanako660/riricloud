@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2 } from 'lucide-react';
+import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2, WalletCards } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { toast } from 'sonner';
@@ -27,8 +27,9 @@ import { useAdminPlans } from '../plans/use-plans';
 import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
+import { BalanceFormDialog } from './components/balance-form-dialog';
 
-import { formatBytes } from '@/lib/utils';
+import { formatBytes, formatCurrency } from '@/lib/utils';
 
 // 状态色规范：激活=success、封禁=destructive（FRONTEND_UI_GUIDELINES §状态色）
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -67,6 +68,7 @@ export default function AdminUsersPage() {
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status']>('ALL');
   const [planFilter, setPlanFilter] = React.useState('ALL');
   const [trafficUser, setTrafficUser] = React.useState<AdminUser | null>(null);
+  const [adjusting, setAdjusting] = React.useState<AdminUser | null>(null);
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -97,6 +99,11 @@ export default function AdminUsersPage() {
         cell: ({ row }) => row.original.subscription?.plan ? (
           <Badge variant="outline">{row.original.subscription.plan.name}</Badge>
         ) : <span className="text-muted-foreground">未绑定</span>
+      },
+      {
+        accessorKey: 'balance',
+        header: '账户余额',
+        cell: ({ row }) => <span className="whitespace-nowrap font-medium tabular-nums">{formatCurrency(row.original.balance)}</span>
       },
       {
         id: 'subscriptionStatus',
@@ -168,6 +175,10 @@ export default function AdminUsersPage() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>流量明细</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="调整余额" onClick={() => setAdjusting(u)}><WalletCards className="h-4 w-4" /></Button></TooltipTrigger>
+                <TooltipContent>调整余额</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -306,6 +317,7 @@ export default function AdminUsersPage() {
 
       <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} />
       <UserTrafficDialog user={trafficUser} open={!!trafficUser} onOpenChange={(open) => !open && setTrafficUser(null)} />
+      <BalanceFormDialog user={adjusting} open={!!adjusting} onOpenChange={(open) => !open && setAdjusting(null)} />
 
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>

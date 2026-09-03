@@ -13,6 +13,8 @@ import { LinesModule } from './lines/lines.module';
 import { BinariesModule } from './binaries/binaries.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { TrafficModule } from './traffic/traffic.module';
+import { WalletModule } from './wallet/wallet.module';
+import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
 
 // Web 静态托管在 main.ts 以中间件方式注册（@nestjs/serve-static 与 Express 5 不兼容）
 @Module({
@@ -30,7 +32,9 @@ import { TrafficModule } from './traffic/traffic.module';
     AgentGatewayModule,
     BinariesModule,
     CertificatesModule,
-    TrafficModule
+    TrafficModule,
+    WalletModule,
+    RedeemCodesModule
   ]
 })
 export class AppModule {}

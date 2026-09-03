@@ -31,6 +31,11 @@ export function useUserSubscriptionMutations() {
     onSuccess: () => { toast.success('套餐已升配'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '升配失败'))
   });
+  const renew = useMutation({
+    mutationFn: async () => (await api.post('/user/subscription/renew')).data,
+    onSuccess: () => { toast.success('订阅续费成功'); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '续费失败'))
+  });
   const cancel = useMutation({
     mutationFn: async () => (await api.post('/user/subscription/cancel')).data,
     onSuccess: () => { toast.success('订阅已取消，到期前仍可使用'); invalidate(); },
@@ -41,5 +46,5 @@ export function useUserSubscriptionMutations() {
     onSuccess: () => { toast.success('订阅链接已重置'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置失败'))
   });
-  return { subscribe, upgrade, cancel, resetToken };
+  return { subscribe, upgrade, renew, cancel, resetToken };
 }

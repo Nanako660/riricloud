@@ -85,6 +85,12 @@ export const router = createBrowserRouter([
                   Component: (await import('@/pages/admin/templates')).default
                 })
               },
+              {
+                path: '/admin/redeem-codes',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/redeem-codes')).default
+                })
+              },
               { path: '/admin/subscriptions', element: <Navigate to="/admin/users" replace /> }
             ]
           },
@@ -105,10 +111,16 @@ export const router = createBrowserRouter([
             lazy: async () => ({
               Component: (await import('@/pages/user/lines')).default
             })
+          },
+          {
+            path: '/profile',
+            lazy: async () => ({
+              Component: (await import('@/pages/user/profile')).default
+            })
           }
         ]
       }
     ]
-  },
+          },
   { path: '*', element: <Navigate to="/" replace /> }
 ]);

@@ -135,6 +135,13 @@ export class UpdateSettingsDto {
   @IsOptional()
   defaultTrafficLimitBytes?: number;
 
+  @ApiPropertyOptional({ example: 1000, description: '新用户注册初始余额，单位为分' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  defaultBalance?: number;
+
   @ApiPropertyOptional({ example: 30, description: '0 表示永久有效' })
   @Type(() => Number)
   @IsInt()

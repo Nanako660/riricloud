@@ -17,6 +17,7 @@ model User {
   email             String    @unique
   passwordHash      String
   role              String    @default("USER") // Role 枚举：ADMIN | USER
+  balance           Int       @default(0) // 账户余额，单位为分
   trafficLimitBytes BigInt    @default(107374182400) // 100 GiB
   trafficUsedBytes  BigInt    @default(0)
   expireAt          DateTime?
@@ -29,6 +30,8 @@ model User {
 
   trafficLogs  TrafficLog[]
   subscription Subscription?
+  balanceTransactions BalanceTransaction[]
+  redeemedCodes RedeemCode[] @relation("RedeemedCodes")
 
   @@index([role])
   @@index([isActive])
@@ -213,6 +216,48 @@ model Subscription {
 
   @@index([status])
   @@index([expireAt])
+}
+
+// 钱包余额流水，amount 为带符号的最小货币单位（分）。
+model BalanceTransaction {
+  id             String    @id @default(uuid())
+  userId         String
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  type           String
+  description    String?
+  referenceId    String?
+  redeemCodeId   String?   @unique
+  createdAt      DateTime  @default(now())
+
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redeemCode     RedeemCode? @relation(fields: [redeemCodeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([referenceId])
+}
+
+// 管理员生成的充值卡密；code 始终以大写形式落库。
+model RedeemCode {
+  id                String    @id @default(uuid())
+  code              String    @unique
+  amount            Int
+  status            String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
+  expiresAt         DateTime?
+  note              String?
+  redeemedAt        DateTime?
+  redeemedByUserId  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  redeemedBy        User?              @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  balanceTransaction BalanceTransaction?
+
+  @@index([status, createdAt])
+  @@index([expiresAt])
+  @@index([redeemedByUserId])
 }
 
 model NodeInbound {

@@ -28,6 +28,7 @@ export const SETTING_KEYS = {
   REGISTRATION_ENABLED: 'registrationEnabled',
   DEFAULT_PLAN_ID: 'defaultPlanId',
   DEFAULT_TRAFFIC_LIMIT_BYTES: 'defaultTrafficLimitBytes',
+  DEFAULT_BALANCE: 'defaultBalance',
   DEFAULT_VALIDITY_DAYS: 'defaultValidityDays',
   EMAIL_DOMAIN_MODE: 'emailDomainMode',
   EMAIL_DOMAIN_LIST: 'emailDomainList',
@@ -63,6 +64,7 @@ export interface SystemSettings {
   registrationEnabled: boolean;
   defaultPlanId: string | null;
   defaultTrafficLimitBytes: number;
+  defaultBalance: number;
   defaultValidityDays: number;
   emailDomainMode: EmailDomainMode;
   emailDomainList: string[];
@@ -121,6 +123,7 @@ export const DEFAULTS: SystemSettings = {
   registrationEnabled: false,
   defaultPlanId: null,
   defaultTrafficLimitBytes: 107374182400,
+  defaultBalance: 0,
   defaultValidityDays: 0,
   emailDomainMode: 'none',
   emailDomainList: [],
@@ -159,6 +162,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   registrationEnabled: '是否开放注册',
   defaultPlanId: '新用户默认套餐',
   defaultTrafficLimitBytes: '新用户默认流量配额（字节）',
+  defaultBalance: '新用户注册初始余额（分）',
   defaultValidityDays: '新用户默认有效天数',
   emailDomainMode: '邮箱域名过滤模式',
   emailDomainList: '邮箱域名过滤列表',
@@ -203,6 +207,7 @@ export class SettingsService {
       registrationEnabled: this.readBoolean(map, 'registrationEnabled'),
       defaultPlanId: this.readNullableString(map, 'defaultPlanId'),
       defaultTrafficLimitBytes: this.readInteger(map, 'defaultTrafficLimitBytes', 1, Number.MAX_SAFE_INTEGER),
+      defaultBalance: this.readInteger(map, 'defaultBalance', 0, Number.MAX_SAFE_INTEGER),
       defaultValidityDays: this.readInteger(map, 'defaultValidityDays', 0, 3650),
       emailDomainMode: this.readEnum(map, 'emailDomainMode', ['none', 'whitelist', 'blacklist']),
       emailDomainList: this.readStringArray(map, 'emailDomainList').map(normalizeDomain).filter(Boolean),

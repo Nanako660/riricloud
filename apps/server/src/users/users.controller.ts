@@ -1,7 +1,8 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UsersService } from './users.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -29,5 +30,15 @@ export class UsersController {
   async resetSubscriptionToken(@CurrentUser() user: { id: string }) {
     const subscriptionToken = await this.usersService.resetSubscriptionToken(user.id);
     return { subscriptionToken };
+  }
+
+  @Post('change-password')
+  changePassword(@CurrentUser() user: { id: string }, @Body() dto: ChangePasswordDto) {
+    return this.usersService.changePassword(user.id, dto);
+  }
+
+  @Post('reset-uuid')
+  resetUuid(@CurrentUser() user: { id: string }) {
+    return this.usersService.resetUuid(user.id);
   }
 }
