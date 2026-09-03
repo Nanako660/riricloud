@@ -29,16 +29,17 @@ describe('BinaryResourcesService', () => {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
-      updateMany: jest.fn()
+      updateMany: jest.fn(),
+      upsert: jest.fn()
     },
-    binaryAsset: { findUnique: jest.fn(), upsert: jest.fn() },
-    binaryAssetFile: { deleteMany: jest.fn(), createMany: jest.fn() },
+    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
+    binaryAssetFile: { deleteMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
     binaryDeploymentTask: { findMany: jest.fn() },
     binaryAuditLog: { create: jest.fn() },
     $transaction: jest.fn()
   };
   prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
-  const binaries = { refresh: jest.fn(async () => undefined) };
+  const binaries = { refresh: jest.fn(async () => undefined), getAsset: jest.fn() };
 
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'riricloud-binary-resources-'));
@@ -52,6 +53,8 @@ describe('BinaryResourcesService', () => {
     prisma.binaryRelease.findUnique.mockResolvedValue(null);
     prisma.binaryRelease.create.mockResolvedValue(release());
     prisma.binaryRelease.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...release(), ...data }));
+    prisma.binaryRelease.upsert.mockResolvedValue(release());
+    prisma.binaryAsset.findFirst.mockResolvedValue(null);
     prisma.binaryAsset.upsert.mockResolvedValue({ id: 'asset-1' });
     prisma.binaryAssetFile.deleteMany.mockResolvedValue({ count: 0 });
     prisma.binaryAssetFile.createMany.mockResolvedValue({ count: 0 });
@@ -198,5 +201,35 @@ describe('BinaryResourcesService', () => {
     const entries = await readdir(join(root, 'nested'));
     expect(entries).toEqual(['binary']);
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('旧目录认领遇到同版本同目标已有不同哈希资产时保持幂等', async () => {
+    const legacyPath = join(dataDir, 'legacy-agent');
+    await writeFile(legacyPath, 'legacy-agent-content');
+    const legacyAsset = {
+      target: 'agent-linux-amd64',
+      filename: 'riri-agent',
+      path: legacyPath,
+      sha256: digest(Buffer.from('legacy-agent-content')),
+      size: Buffer.byteLength('legacy-agent-content')
+    };
+    binaries.getAsset.mockImplementation((target: string) => {
+      if (target === legacyAsset.target) return legacyAsset;
+      throw new Error('asset unavailable');
+    });
+    prisma.binaryRelease.upsert.mockResolvedValue({ id: 'release-1' });
+    prisma.binaryAsset.upsert.mockResolvedValue({ id: 'existing-asset', sha256: 'different-hash' });
+    prisma.binaryAsset.create.mockRejectedValue(Object.assign(new Error('duplicate asset'), { code: 'P2002' }));
+
+    await expect(
+      (service as unknown as { syncLegacyAssets: () => Promise<void> }).syncLegacyAssets()
+    ).resolves.toBeUndefined();
+
+    expect(prisma.binaryAsset.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { releaseId_target: { releaseId: 'release-1', target: legacyAsset.target } }
+    }));
+    expect(prisma.binaryAsset.create).not.toHaveBeenCalled();
+    expect(prisma.binaryAssetFile.create).not.toHaveBeenCalled();
+    await rm(legacyPath, { force: true });
   });
 });
