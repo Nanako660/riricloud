@@ -114,7 +114,7 @@ export function UserSubscriptionFields({
           render={({ field }) => (
             <FormItem>
               <FormLabel>配额（GiB）</FormLabel>
-              <FormControl><Input type="number" min={0.1} step="0.1" {...field} /></FormControl>
+              <FormControl><Input type="number" min={0.1} step="any" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )}
@@ -125,7 +125,7 @@ export function UserSubscriptionFields({
           render={({ field }) => (
             <FormItem>
               <FormLabel>已用流量（GiB）</FormLabel>
-              <FormControl><Input type="number" min={0} step="0.1" {...field} /></FormControl>
+              <FormControl><Input type="number" min={0} step="any" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )}

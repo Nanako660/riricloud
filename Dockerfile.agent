@@ -51,10 +51,11 @@ WORKDIR /manifest
 COPY --from=agent-build /out/riri-agent ./agent/riri-agent
 COPY --from=singbox-build /sing-box ./singbox/sing-box
 COPY --from=singbox-build /libcronet.so ./singbox/libcronet.so
-RUN node -e '
+# 使用 Dockerfile heredoc 保持 manifest 生成脚本为单条 RUN 指令。
+RUN node - "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION" <<'NODE'
   const fs = require("fs");
   const crypto = require("crypto");
-  const [appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(1);
+  const [appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(2);
   const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: `/usr/local/bin/${name}`, sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
   const resources = [
     { kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-linux-${arch}`, os: "linux", arch, files: [info("riri-agent", "main", "/manifest/agent/riri-agent")] }] },
@@ -62,7 +63,7 @@ RUN node -e '
   ];
   fs.mkdirSync("/manifest/binaries", { recursive: true });
   fs.writeFileSync("/manifest/binaries/manifest.json", `${JSON.stringify({ schemaVersion: 1, applicationVersion: appVersion, resources }, null, 2)}\n`);
-' "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION"
+NODE
 
 FROM gcr.io/distroless/cc-debian12 AS runtime
 

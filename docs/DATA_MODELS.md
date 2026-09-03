@@ -111,7 +111,7 @@ model Node {
   communicationMode AgentTransportMode @default(WS)      // 当前/期望通信模式
   pollIntervalSecs Int           @default(15)             // HTTP 轮询建议周期（秒）
   status          NodeStatus    @default(OFFLINE)        // 实时状态
-  lastSeenAt      DateTime?                              // 最近心跳时间
+  lastSeenAt      DateTime?                              // 最近心跳时间；Master 重启后的短暂订阅恢复宽限会据此判断心跳是否仍在健康窗口内
 
   // 实时遥测指标
   cpuUsage        Float         @default(0)             // CPU 使用率 (0~100)
@@ -535,7 +535,7 @@ model SystemSetting {
 | **SHADOWTLS** | v3 使用 `User.email`（name） | 外层使用用户密码；内层使用线路固定的 SS2022 服务端密钥 | v3 支持用户列表 |
 | **MIXED/SOCKS/HTTP**| `User.email`（username） | `User.password ?? User.uuid`（若启用认证） | 是 |
 
-**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；HYSTERIA2/TUIC 视为 UDP，可与 TCP 线路共存于同一端口。Line 的入口端口和出口端口都会参与占用检查；未提供端口时，服务端从 `20000~29999` 随机生成五位端口。编辑已有 Line 会保留原端口，显式修改仍按上述规则校验。
+**端口冲突规则**：同节点同传输层（TCP/UDP）端口互斥；HYSTERIA2/TUIC 视为 UDP，可与 TCP 线路共存于同一端口。Line 的入口端口和出口端口都会参与占用检查；未提供端口时，服务端从 `20000~65535` 随机生成五位端口。编辑已有 Line 会保留原端口，显式修改仍按上述规则校验。
 
 ### 3.2 `Node.configOverride` 高级模式（v0.3.0）
 
@@ -548,7 +548,7 @@ model SystemSetting {
 | 字段 / 规则 | 说明 |
 | :--- | :--- |
 | `type=DIRECT` | 入口节点与出口节点相同，入口端口与出口端口相同；Agent 在该节点生成 Line 协议入站 |
-| `type=RELAY` | 必须指定入口/出口节点与 `relayMode`；入口或出口端口省略时从 `20000~29999` 随机生成，并按 TCP/UDP 传输层检查冲突 |
+| `type=RELAY` | 必须指定入口/出口节点与 `relayMode`；入口或出口端口省略时从 `20000~65535` 随机生成，并按 TCP/UDP 传输层检查冲突 |
 | `tag` | 可选的入站 Tag 基础名；为空时使用 `line-<id>`，中继线路自动派生 `<tag>-entry` 与 `<tag>-exit`，同节点冲突返回 `409` |
 | `listen` | 线路派生入站的监听地址，默认 `0.0.0.0`；直连和中继入口/出口复用该地址 |
 | `relayMode=BLIND_FORWARD` | 入口节点生成 `direct` inbound，并用 `override_address` / `override_port` 指向出口节点的 Line 端口，保持端到端协议加密 |

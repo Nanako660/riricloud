@@ -88,7 +88,7 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
           render={({ field }) => (
             <FormItem>
               <FormLabel>流量配额（GiB）</FormLabel>
-              <FormControl><Input type="number" min={1} step="0.1" {...field} /></FormControl>
+              <FormControl><Input type="number" min={1} step="any" {...field} /></FormControl>
               <FormMessage />
             </FormItem>
           )}

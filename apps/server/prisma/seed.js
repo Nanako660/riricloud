@@ -9,7 +9,7 @@ const { buildDefaultTemplateData } = require('./default-template');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
-const RANDOM_SERVICE_PORT_MAX = 29999;
+const RANDOM_SERVICE_PORT_MAX = 65535;
 
 async function findAvailableServicePort(nodeId, reservedPorts = []) {
   const reserved = new Set(reservedPorts);

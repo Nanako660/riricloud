@@ -217,8 +217,11 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
   };
 }
 
+const RANDOM_SERVICE_PORT_MIN = 20000;
+const RANDOM_SERVICE_PORT_MAX = 65535;
+
 function randomPort() {
-  return Math.floor(Math.random() * 10000) + 20000;
+  return Math.floor(Math.random() * (RANDOM_SERVICE_PORT_MAX - RANDOM_SERVICE_PORT_MIN + 1)) + RANDOM_SERVICE_PORT_MIN;
 }
 
 function randomTag() {

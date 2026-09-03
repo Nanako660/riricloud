@@ -24,6 +24,14 @@ import { SettingsService } from '../system/settings.service';
 import { isLineAuthorized } from '../common/line-access';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
+const availabilityNodeSummary = {
+  select: {
+    ...nodeSummary.select,
+    lastSeenAt: true,
+    communicationMode: true,
+    pollIntervalSecs: true
+  }
+} as const;
 const certificateSummary = {
   select: { id: true, name: true, subject: true, issuer: true, sansJson: true, validFrom: true, validTo: true }
 } as const;
@@ -42,7 +50,14 @@ const targetLineSummary = {
   }
 } as const;
 const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary, targetLine: targetLineSummary, certificate: certificateSummary } as const;
+const availabilityLineInclude = {
+  ...lineInclude,
+  entryNode: availabilityNodeSummary,
+  exitNode: availabilityNodeSummary
+} as const;
 type LineWithRelations = Prisma.LineGetPayload<{ include: typeof lineInclude }>;
+type LineWithAvailabilityRelations = Prisma.LineGetPayload<{ include: typeof availabilityLineInclude }>;
+type AvailabilityNode = LineWithAvailabilityRelations['entryNode'];
 
 type LineInput = {
   name?: string;
@@ -72,9 +87,12 @@ type LineInput = {
 };
 
 const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
+const NODE_RECONNECT_GRACE_MS = 60_000;
 
 @Injectable()
 export class LinesService {
+  private readonly processStartedAt = Date.now();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentGateway: AgentService,
@@ -194,15 +212,42 @@ export class LinesService {
           ...(extraIds.length ? [{ id: { in: extraIds } }] : [])
         ]
       },
-      include: lineInclude,
+      include: availabilityLineInclude,
       orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }]
     });
+    const now = Date.now();
+    const heartbeatTimeoutMs = (settings?.heartbeatTimeoutSecs ?? 15) * 1000;
     return rows
       .filter((line) => line.status === undefined || line.status === 'ACTIVE')
-      .filter((line) => line.entryNode.status === 'ONLINE' && line.exitNode.status === 'ONLINE')
+      .filter((line) => this.isNodeAvailableForSubscription(line.entryNode, now, heartbeatTimeoutMs))
+      .filter((line) => this.isNodeAvailableForSubscription(line.exitNode, now, heartbeatTimeoutMs))
       .filter((line) => line.relayMode !== 'TARGET_LINE' || line.targetLine?.status === 'ACTIVE')
       .filter((line) => isLineAuthorized(plan, line, extraIds))
-      .map((line) => this.toView(line));
+      .map((line) => this.toView(this.stripAvailabilityFields(line)));
+  }
+
+  private isNodeAvailableForSubscription(node: AvailabilityNode, now: number, heartbeatTimeoutMs: number): boolean {
+    if (node.status === 'ONLINE') return true;
+    if (node.status !== 'OFFLINE' || !node.lastSeenAt) return false;
+    if (now - this.processStartedAt >= NODE_RECONNECT_GRACE_MS) return false;
+
+    const thresholdMs = node.communicationMode === 'HTTP'
+      ? Math.max(heartbeatTimeoutMs, node.pollIntervalSecs * 3_000)
+      : heartbeatTimeoutMs;
+    return this.processStartedAt - node.lastSeenAt.getTime() <= thresholdMs;
+  }
+
+  private stripAvailabilityFields(line: LineWithAvailabilityRelations): LineWithRelations {
+    const publicLine = { ...line } as LineWithRelations & {
+      entryNode: Record<string, unknown>;
+      exitNode: Record<string, unknown>;
+    };
+    for (const node of [publicLine.entryNode, publicLine.exitNode]) {
+      delete node.lastSeenAt;
+      delete node.communicationMode;
+      delete node.pollIntervalSecs;
+    }
+    return publicLine;
   }
 
   private async findRaw(id: string): Promise<LineWithRelations> {

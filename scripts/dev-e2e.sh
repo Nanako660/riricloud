@@ -204,15 +204,22 @@ DB_WAS_PRESENT=0
 if [ -f apps/server/prisma/dev.db ]; then
   DB_WAS_PRESENT=1
 fi
-say "检查并应用数据库迁移…"
-pnpm --filter @riricloud/server exec -- prisma migrate deploy || die "数据库迁移失败"
-if [ "$DB_WAS_PRESENT" = "0" ]; then
-  say "初始化种子数据…"
-  pnpm --filter @riricloud/server exec -- prisma db seed || die "数据库种子失败"
+SERVER_ALREADY_UP=0
+if server_up; then
+  # 运行中的 Master 可能持有 SQLite WAL 写锁，迁移必须在启动服务前完成。
+  SERVER_ALREADY_UP=1
+  say "主控端已在 $SERVER_URL 运行，跳过数据库迁移并直接复用"
+else
+  say "检查并应用数据库迁移…"
+  pnpm --filter @riricloud/server exec prisma migrate deploy || die "数据库迁移失败"
+  if [ "$DB_WAS_PRESENT" = "0" ]; then
+    say "初始化种子数据…"
+    pnpm --filter @riricloud/server exec prisma db seed || die "数据库种子失败"
+  fi
 fi
 
-if server_up; then
-  say "主控端已在 $SERVER_URL 运行，直接复用"
+if [ "$SERVER_ALREADY_UP" = "1" ]; then
+  :
 else
   if [ -z "$SERVER_PORT_OVERRIDE" ]; then
     SERVER_PORT_START="$SERVER_PORT"

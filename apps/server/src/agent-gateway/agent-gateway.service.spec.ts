@@ -591,14 +591,22 @@ describe('AgentGatewayService', () => {
   });
 
   it('WS 与 HTTP 使用不同的离线窗口', async () => {
+    const wsLastSeenAt = new Date(Date.now() - 16_000);
+    const httpLastSeenAt = new Date(Date.now() - 46_000);
+    const httpFreshLastSeenAt = new Date(Date.now() - 44_000);
     prisma.node.findMany.mockResolvedValue([
-      { id: 'ws-stale', communicationMode: 'WS', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 16_000) },
-      { id: 'http-stale', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 46_000) },
-      { id: 'http-fresh', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: new Date(Date.now() - 44_000) }
+      { id: 'ws-stale', communicationMode: 'WS', pollIntervalSecs: 15, lastSeenAt: wsLastSeenAt },
+      { id: 'http-stale', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: httpLastSeenAt },
+      { id: 'http-fresh', communicationMode: 'HTTP', pollIntervalSecs: 15, lastSeenAt: httpFreshLastSeenAt }
     ]);
     await service.sweepStaleNodes();
     expect(prisma.node.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: { in: expect.arrayContaining(['ws-stale', 'http-stale']) }, status: 'ONLINE' },
+      where: {
+        OR: [
+          { id: 'ws-stale', status: 'ONLINE', lastSeenAt: wsLastSeenAt },
+          { id: 'http-stale', status: 'ONLINE', lastSeenAt: httpLastSeenAt }
+        ]
+      },
       data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
     }));
   });
