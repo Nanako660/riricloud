@@ -62,9 +62,14 @@ if [ "$AUTO_SEED" = true ]; then
   node prisma/seed.js
 fi
 
+MASTER_ENTRY="dist/main.js"
+if [ ! -f "$MASTER_ENTRY" ] && [ -f "dist/src/main.js" ]; then
+  MASTER_ENTRY="dist/src/main.js"
+fi
+
 if [ "$MASTER_AGENT_ENABLED" != true ]; then
   echo "starting riri-master on port ${PORT} (embedded Agent disabled) ..."
-  exec node dist/main.js
+  exec node "$MASTER_ENTRY"
 fi
 
 [ -x "$MASTER_AGENT_BINARY_PATH" ] || { echo "缺少内置 Agent：$MASTER_AGENT_BINARY_PATH" >&2; exit 1; }
@@ -83,7 +88,7 @@ SINGBOX_CONFIG_PATH="$MASTER_AGENT_CONFIG_PATH"
 mkdir -p "$(dirname "$MASTER_AGENT_CONFIG_PATH")"
 
 echo "starting riri-master on port ${PORT} with embedded Agent ..."
-node dist/main.js &
+node "$MASTER_ENTRY" &
 MASTER_PID=$!
 AGENT_PID=
 

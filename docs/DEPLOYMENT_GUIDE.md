@@ -109,7 +109,7 @@ artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_
 
 运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。
 
-主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
+主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。容器入口（`docker-entrypoint.js`）与发行包启动脚本（`start.sh`）均具备编译产物路径容错机制，优先引导 `dist/main.js` 并兼容 `dist/src/main.js` 布局。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
 
 ```bash
 docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com
