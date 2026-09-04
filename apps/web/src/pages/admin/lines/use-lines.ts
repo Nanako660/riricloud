@@ -89,7 +89,33 @@ export function useLineMutations() {
     onSuccess: () => { toast.success('线路顺序已更新'); invalidate(); },
     onError: (error: unknown) => onError(error, '调整顺序失败')
   });
-  return { create, update, remove, duplicate, testResolve, batchStatus, reorder };
+  const speedtest = useMutation({
+    mutationFn: async (id: string) => (await api.post<{
+      lineId: string;
+      lineName: string;
+      latencyMs: number | null;
+      status: 'SUCCESS' | 'TIMEOUT' | 'ERROR';
+      message: string;
+    }>(`/admin/lines/${id}/speedtest`)).data,
+    onSuccess: (data) => {
+      if (data.status === 'SUCCESS') {
+        toast.success(`测速完成：${data.latencyMs ?? '—'} ms`);
+      } else {
+        toast.error(`测速失败：${data.message}`);
+      }
+      invalidate();
+    },
+    onError: (error: unknown) => onError(error, '测速请求失败')
+  });
+  const speedtestAll = useMutation({
+    mutationFn: async () => (await api.post<{ total: number; success: number; failed: number }>('/admin/lines/speedtest-all')).data,
+    onSuccess: (data) => {
+      toast.success(`全量测速已完成：共 ${data.total} 条，成功 ${data.success} 条，失败 ${data.failed} 条`);
+      invalidate();
+    },
+    onError: (error: unknown) => onError(error, '批量测速请求失败')
+  });
+  return { create, update, remove, duplicate, testResolve, batchStatus, reorder, speedtest, speedtestAll };
 }
 
 export function useRealityKeypair() {

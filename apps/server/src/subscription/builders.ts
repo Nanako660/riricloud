@@ -504,7 +504,7 @@ const REALITY_CLIENT_DEFAULTS = {
   fp: 'chrome'
 };
 
-interface SubEntry {
+export interface SubEntry {
   label: string;
   node: SubNode;
   inbound: SubInbound;
@@ -1085,7 +1085,7 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
 // Sing-box 客户端 JSON
 // ==============================
 
-function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, unknown> {
+export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, unknown> {
   const serverHost = endpointHost(entry);
   const port = endpointPort(entry);
 

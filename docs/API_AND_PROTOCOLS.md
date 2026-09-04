@@ -78,13 +78,15 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/出口的角色、线路协议和派生监听端口；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
 
 #### 线路管理
-- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`targetLineId`/`targetLine` 目标摘要、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort` 和原始 `endpointOverrides`。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
-- `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数、证书简要信息和端点解析结果。⭐
+- `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`targetLineId`/`targetLine` 目标摘要、`topology`（入口/出口节点与端口）、最终生效的 `serverHost/serverPort`、原始 `endpointOverrides` 以及测速快照（`lastLatencyMs`、`lastTestedAt`、`lastTestStatus`、`lastTestMessage`）。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
+- `GET /admin/lines/:id`：查询线路详情及入口/出口节点关联、协议参数、证书简要信息、端点解析结果与最新测速快照。⭐
 - `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, exitNodeId?, exitPort?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路入口/出口节点与端口必须一致；普通中继线路必须指定入口、出口和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，服务端自动同步 `exitNodeId`/`exitPort` 为目标线路的入口节点/端口。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~65535` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
 - `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
 - `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/出口节点与端口，不建立真实连接。⭐
+- `POST /admin/lines/:id/speedtest`：对单条线路执行即时测速（优先端到端 204 探测，不可用时降级为入口 TCP 握手），响应 `{ lineId, lineName, latencyMs, status, message, testedAt, mode }`，并持久化到 Line 最新快照。⭐
+- `POST /admin/lines/speedtest-all`：受控并发（限制并发度 4）批量测试所有已启用的线路，响应 `{ total, success, failed }`。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
 

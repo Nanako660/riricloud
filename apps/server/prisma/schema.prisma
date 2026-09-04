@@ -165,6 +165,10 @@ model Line {
   sortOrder               Int      @default(0)
   isPublic                Boolean  @default(true)
   status                  String   @default("ACTIVE") // ACTIVE | DISABLED
+  lastLatencyMs           Int?     // 最近测速延迟（毫秒），null 为未测速或失败
+  lastTestedAt            DateTime? // 最近一次测速时间
+  lastTestStatus          String?  // 最近测速状态：SUCCESS | TIMEOUT | ERROR
+  lastTestMessage         String?  // 最近测速诊断详情
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 

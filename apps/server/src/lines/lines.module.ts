@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { AgentGatewayModule } from '../agent-gateway/agent-gateway.module';
 import { LinesController } from './lines.controller';
 import { LinesService } from './lines.service';
+import { LineSpeedtestService } from './line-speedtest.service';
 import { SystemModule } from '../system/system.module';
 
 @Module({
   imports: [AgentGatewayModule, SystemModule],
   controllers: [LinesController],
-  providers: [LinesService],
-  exports: [LinesService]
+  providers: [LinesService, LineSpeedtestService],
+  exports: [LinesService, LineSpeedtestService]
 })
 export class LinesModule {}

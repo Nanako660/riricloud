@@ -10,6 +10,10 @@ export interface UserLine {
   name: string;
   protocolType: string;
   trafficRate: number;
+  lastLatencyMs?: number | null;
+  lastTestedAt?: string | null;
+  lastTestStatus?: string | null;
+  lastTestMessage?: string | null;
   exitNode: { status: string };
 }
 
