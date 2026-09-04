@@ -106,6 +106,24 @@ describe('TrafficService', () => {
     expect(result.summary.activeLinesCount).toBe(1);
   });
 
+  it('盲转发出口的历史未分配记录回退到承载中继线路', async () => {
+    prisma.line.count.mockResolvedValue(1);
+    prisma.trafficLog.findMany.mockResolvedValue([
+      { nodeId: 'node-2', userId: 'user-1', upload: 10n, download: 20n, recordedAt: new Date('2026-08-31T04:00:00Z'), line: null }
+    ]);
+    prisma.line.findMany.mockResolvedValue([{
+      ...line({ id: 'relay-line', name: '盲转线路', type: 'RELAY', trafficRate: 2 }),
+      entryNodeId: 'node-1',
+      exitNodeId: 'node-2',
+      relayMode: 'BLIND_FORWARD'
+    }]);
+
+    const result = await service.getOverview('7d');
+
+    expect(result.lineRankings[0]).toMatchObject({ lineId: 'relay-line', lineName: '盲转线路', total: 30, billedTotal: 60 });
+    expect(result.summary.activeLinesCount).toBe(1);
+  });
+
   it('用户明细只聚合指定用户并返回当前配额画像', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'user-1',

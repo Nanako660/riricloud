@@ -176,6 +176,7 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
 当节点首次连接成功、或主控端发生用户/线路变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
 `inbounds`、`outbounds` 与 `route` 均由该节点承担的启用 Line 自动派生；直连/协议代理线路生成协议入站，盲转发线路生成 `direct` 入站，`TARGET_LINE` 在入口生成当前线路协议入站与目标线路协议 outbound/route，在目标节点复用目标直连线路入站而不重复监听端口。监听地址使用 Line 的 `listen`，Tag 使用 Line 的自定义 Tag 或自动派生的稳定角色 Tag，`configOverride` 再按顶层深合并应用（含 `inbounds` 则整组替换）。历史 `NodeInbound` 不参与新配置生成。
+`PROTOCOL_PROXY` 与 `TARGET_LINE` 的跨节点出站统一使用系统内部中继凭证，不借用任何普通用户凭证；对应出口入站仅注入该内部凭证（`TARGET_LINE` 追加到目标直连入站）。内部凭证固定为 `email=__riricloud_relay_transit__`、`uuid=00000000-0000-4000-8000-000000000002`、密码 `riricloud-internal-relay-transit-secret`，仅允许在 Master 生成的节点配置中使用。`experimental.v2ray_api.stats` 除 `users` 外还下发 `inbounds` 入站 Tag 列表，供 Agent 进行入站级统计。
 Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {
@@ -241,6 +242,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。
 
+> 中继注入规则：协议代理/异构桥接出站使用上述内部中继凭证，出口节点的内部凭证流量仅维护 `TrafficCursor`，不生成 `TrafficLog`，不扣减任何普通用户或订阅配额。
+
 中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路生成与 Line 协议对应的入口入站、出口 outbound 以及 route rule；`TARGET_LINE` 则将 outbound 的协议、参数、目标地址和端口取自所引用的直连线路。
 ```json
 {
@@ -278,7 +281,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 
 > **实现状态**：`cpuUsage` / `memoryUsage` / `bandwidthRate` / `uploadRate` / `downloadRate` / `trafficSnapshots` 均已实现 ⭐。Agent 通过 gopsutil 以 1 秒差分拆分网卡上行与下行速率，并保留 `bandwidthRate = uploadRate + downloadRate`；计数器回绕或采样异常时对应速率为 0。Agent 通过 Sing-box `experimental.v2ray_api` 的本地 gRPC `StatsService.QueryStats(reset=false)` 读取累计用户计数，Master 按节点与原始凭证维护 `TrafficCursor` 并计算增量，因此 Agent 不会因断线、重试或 Master 暂时不可用而清零统计数据。`uploadTotal` / `downloadTotal` 使用十进制字符串；统计用户名称当前使用入站配置中的邮箱，Master 同时兼容按 UUID 或邮箱回查用户。共享密码模式的 Shadowsocks 入站没有可区分的用户身份，不产生按用户记录。
 >
-> **落库约束**：Master 对同一节点的心跳按顺序处理，积压时仅保留最新遥测和累计快照；累计值相等不生成流水，计数器下降则按重启/重置处理并记录告警。未知凭证只建立游标基线，不计费。`TrafficLog`、`Subscription.trafficUsedBytes`、`User.trafficUsedBytes` 与 `TrafficCursor` 在同一短事务内提交；用户与订阅配额按批次聚合更新。节点遥测、速率聚合与流量账务分开落库，速率历史保留 30 天并由低频巡检清理。
+> **落库约束**：Master 对同一节点的心跳按顺序处理，积压时仅保留最新遥测和累计快照；累计值相等不生成流水，计数器下降则按重启/重置处理并记录告警。未知凭证只建立游标基线，不计费。`TrafficLog.upload/download` 始终记录物理增量，用户与订阅配额按归属线路的 `trafficRate` 折算值批量扣减；没有归属线路时倍率按 `1.0` 处理。协议代理/异构桥接的内部凭证只更新 `TrafficCursor`，不生成流水或扣费。Master 写入流水时优先关联 ACTIVE 入口线路；没有入口线路时回退到 ACTIVE `RELAY + BLIND_FORWARD` 出口承载线路。`TrafficLog`、`Subscription.trafficUsedBytes`、`User.trafficUsedBytes` 与 `TrafficCursor` 在同一短事务内提交。节点遥测、速率聚合与流量账务分开落库，速率历史保留 30 天并由低频巡检清理。
 >
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 

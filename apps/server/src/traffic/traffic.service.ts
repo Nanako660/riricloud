@@ -26,6 +26,12 @@ type TrafficLine = {
   trafficRate: number;
 };
 
+type FallbackTrafficLine = TrafficLine & {
+  entryNodeId: string;
+  exitNodeId: string;
+  relayMode: string | null;
+};
+
 type TrafficRow = {
   nodeId: string;
   userId: string;
@@ -325,7 +331,7 @@ export class TrafficService {
     }) as unknown as Promise<TrafficRow[]>;
   }
 
-  private async findFallbackLines(): Promise<Array<TrafficLine & { entryNodeId: string }>> {
+  private async findFallbackLines(): Promise<FallbackTrafficLine[]> {
     return this.prisma.line.findMany({
       where: { status: 'ACTIVE' },
       select: {
@@ -334,20 +340,26 @@ export class TrafficService {
         protocolType: true,
         type: true,
         trafficRate: true,
-        entryNodeId: true
+        entryNodeId: true,
+        exitNodeId: true,
+        relayMode: true
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
-    }) as unknown as Promise<Array<TrafficLine & { entryNodeId: string }>>;
+    }) as unknown as Promise<FallbackTrafficLine[]>;
   }
 
   private aggregate(
     rows: TrafficRow[],
-    fallbackLines: Array<TrafficLine & { entryNodeId: string }>,
+    fallbackLines: FallbackTrafficLine[],
     config: RangeConfig
   ): Aggregation {
-    const fallbackByNode = new Map<string, TrafficLine>();
+    const fallbackByEntryNode = new Map<string, TrafficLine>();
+    const fallbackByBlindExitNode = new Map<string, TrafficLine>();
     for (const line of fallbackLines) {
-      if (!fallbackByNode.has(line.entryNodeId)) fallbackByNode.set(line.entryNodeId, line);
+      if (!fallbackByEntryNode.has(line.entryNodeId)) fallbackByEntryNode.set(line.entryNodeId, line);
+      if (line.type === 'RELAY' && line.relayMode === 'BLIND_FORWARD' && !fallbackByBlindExitNode.has(line.exitNodeId)) {
+        fallbackByBlindExitNode.set(line.exitNodeId, line);
+      }
     }
     const aggregation: Aggregation = {
       totalUpload: 0n,
@@ -363,7 +375,7 @@ export class TrafficService {
       const upload = row.upload < 0n ? 0n : row.upload;
       const download = row.download < 0n ? 0n : row.download;
       const total = upload + download;
-      const line = row.line ?? fallbackByNode.get(row.nodeId) ?? null;
+      const line = row.line ?? fallbackByEntryNode.get(row.nodeId) ?? fallbackByBlindExitNode.get(row.nodeId) ?? null;
       const trafficRate = this.getTrafficRate(line);
       const billedTotal = this.toNumber(total) * trafficRate;
       const lineKey = line?.id ?? UNASSIGNED_LINE_KEY;
