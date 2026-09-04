@@ -263,6 +263,32 @@ export class UpdateSettingsDto {
   @MaxLength(20000)
   @IsOptional()
   customHeadHtml?: string;
+
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  lineSpeedtestEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 30, minimum: 1, maximum: 1440 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  @IsOptional()
+  lineSpeedtestIntervalMins?: number;
+
+  @ApiPropertyOptional({ example: 'http://cp.cloudflare.com/generate_204' })
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  @IsOptional()
+  lineSpeedtestTargetUrl?: string;
+
+  @ApiPropertyOptional({ example: 3000, minimum: 500, maximum: 30000 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(500)
+  @Max(30000)
+  @IsOptional()
+  lineSpeedtestTimeoutMs?: number;
 }
 
 export class ResetSettingsDto {

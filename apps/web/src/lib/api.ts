@@ -81,6 +81,10 @@ export interface ApiLine {
   sortOrder: number;
   isPublic: boolean;
   status: LineStatus;
+  lastLatencyMs?: number | null;
+  lastTestedAt?: string | null;
+  lastTestStatus?: 'SUCCESS' | 'TIMEOUT' | 'ERROR' | null;
+  lastTestMessage?: string | null;
   entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
   exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
   targetLine?: {

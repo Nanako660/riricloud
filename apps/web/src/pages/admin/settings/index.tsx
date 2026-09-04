@@ -72,6 +72,10 @@ interface SystemSettings {
   jwtSessionDays: number;
   customCss: string;
   customHeadHtml: string;
+  lineSpeedtestEnabled: boolean;
+  lineSpeedtestIntervalMins: number;
+  lineSpeedtestTargetUrl: string;
+  lineSpeedtestTimeoutMs: number;
 }
 
 const settingsSchema = z.object({
@@ -107,7 +111,11 @@ const settingsSchema = z.object({
   probePresetTargets: probePresetTargetsSchema,
   jwtSessionDays: z.coerce.number().int().min(1).max(30),
   customCss: z.string().max(50000),
-  customHeadHtml: z.string().max(20000)
+  customHeadHtml: z.string().max(20000),
+  lineSpeedtestEnabled: z.boolean(),
+  lineSpeedtestIntervalMins: z.coerce.number().int().min(1).max(1440),
+  lineSpeedtestTargetUrl: z.string().refine(isBlankOrUrl, '请输入有效的测速目标 URL'),
+  lineSpeedtestTimeoutMs: z.coerce.number().int().min(500).max(30000)
 });
 
 export type SettingsForm = z.infer<typeof settingsSchema>;
@@ -131,7 +139,9 @@ export default function AdminSettingsPage() {
       emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
-      jwtSessionDays: 1, customCss: '', customHeadHtml: ''
+      jwtSessionDays: 1, customCss: '', customHeadHtml: '',
+      lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
+      lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000
     })
   });
 
@@ -230,6 +240,20 @@ export default function AdminSettingsPage() {
               <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
               <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL" placeholder="https://downloads.example.com/riricloud" description="留空时优先使用 RIRICLOUD_PUBLIC_URL。" />
+              <div className="rounded-lg border bg-muted/20 p-4 md:col-span-2 space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold">线路自动测速</h4>
+                  <p className="text-xs text-muted-foreground">主控后台定时对所有已启用的线路执行连通性与端到端延迟探测，结果同步至管理端与用户端线路卡片。</p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SettingsSwitch name="lineSpeedtestEnabled" label="开启线路自动定时测速" description="关闭后将仅在管理端点击「测速」时手动触发。" className="sm:col-span-2" />
+                  <SettingsInput name="lineSpeedtestIntervalMins" label="自动测速执行周期（分钟）" type="number" min={1} max={1440} description="建议 15 ~ 60 分钟。" />
+                  <SettingsInput name="lineSpeedtestTimeoutMs" label="单次测速超时阈值（毫秒）" type="number" min={500} max={30000} description="默认 3000ms。" />
+                  <div className="sm:col-span-2">
+                    <SettingsInput name="lineSpeedtestTargetUrl" label="测速探测目标 URL" placeholder="http://cp.cloudflare.com/generate_204" description="端到端测速时通过代理请求的目标地址，建议使用轻量无内容的 204 返回站点。" />
+                  </div>
+                </div>
+              </div>
               <ProbePresetEditor />
             </CardContent></Card></TabsContent>
 
@@ -317,7 +341,11 @@ function toForm(settings: SystemSettings): SettingsForm {
     probePresetTargets: settings.probePresetTargets.map(toProbePresetFormValue),
     jwtSessionDays: settings.jwtSessionDays,
     customCss: settings.customCss,
-    customHeadHtml: settings.customHeadHtml
+    customHeadHtml: settings.customHeadHtml,
+    lineSpeedtestEnabled: settings.lineSpeedtestEnabled,
+    lineSpeedtestIntervalMins: settings.lineSpeedtestIntervalMins,
+    lineSpeedtestTargetUrl: settings.lineSpeedtestTargetUrl,
+    lineSpeedtestTimeoutMs: settings.lineSpeedtestTimeoutMs
   };
 }
 
@@ -355,7 +383,11 @@ function toPayload(values: SettingsForm) {
     probePresetTargets: values.probePresetTargets.map(toProbePresetTarget),
     jwtSessionDays: values.jwtSessionDays,
     customCss: values.customCss,
-    customHeadHtml: values.customHeadHtml
+    customHeadHtml: values.customHeadHtml,
+    lineSpeedtestEnabled: values.lineSpeedtestEnabled,
+    lineSpeedtestIntervalMins: values.lineSpeedtestIntervalMins,
+    lineSpeedtestTargetUrl: values.lineSpeedtestTargetUrl,
+    lineSpeedtestTimeoutMs: values.lineSpeedtestTimeoutMs
   };
 }
 

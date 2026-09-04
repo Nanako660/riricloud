@@ -46,7 +46,11 @@ export const SETTING_KEYS = {
   PROBE_PRESET_TARGETS: 'probePresetTargets',
   JWT_SESSION_DAYS: 'jwtSessionDays',
   CUSTOM_CSS: 'customCss',
-  CUSTOM_HEAD_HTML: 'customHeadHtml'
+  CUSTOM_HEAD_HTML: 'customHeadHtml',
+  LINE_SPEEDTEST_ENABLED: 'lineSpeedtestEnabled',
+  LINE_SPEEDTEST_INTERVAL_MINS: 'lineSpeedtestIntervalMins',
+  LINE_SPEEDTEST_TARGET_URL: 'lineSpeedtestTargetUrl',
+  LINE_SPEEDTEST_TIMEOUT_MS: 'lineSpeedtestTimeoutMs'
 } as const;
 
 export interface SystemSettings {
@@ -83,6 +87,10 @@ export interface SystemSettings {
   jwtSessionDays: number;
   customCss: string;
   customHeadHtml: string;
+  lineSpeedtestEnabled: boolean;
+  lineSpeedtestIntervalMins: number;
+  lineSpeedtestTargetUrl: string;
+  lineSpeedtestTimeoutMs: number;
 }
 
 export type SystemSettingsPatch = {
@@ -144,7 +152,11 @@ export const DEFAULTS: SystemSettings = {
   ],
   jwtSessionDays: 1,
   customCss: '',
-  customHeadHtml: ''
+  customHeadHtml: '',
+  lineSpeedtestEnabled: true,
+  lineSpeedtestIntervalMins: 30,
+  lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204',
+  lineSpeedtestTimeoutMs: 3000
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -180,7 +192,11 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   probePresetTargets: '默认网络探针目标列表',
   jwtSessionDays: 'JWT 会话有效天数',
   customCss: '自定义 CSS 样式',
-  customHeadHtml: '自定义 HTML/JS 头部代码'
+  customHeadHtml: '自定义 HTML/JS 头部代码',
+  lineSpeedtestEnabled: '是否开启线路自动定时测速',
+  lineSpeedtestIntervalMins: '线路自动测速执行周期（分钟）',
+  lineSpeedtestTargetUrl: '线路测速测试目标 URL',
+  lineSpeedtestTimeoutMs: '线路测速单次超时阈值（毫秒）'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -225,7 +241,11 @@ export class SettingsService {
       probePresetTargets: this.readProbePresets(map),
       jwtSessionDays: this.readInteger(map, 'jwtSessionDays', 1, 30),
       customCss: this.readString(map, 'customCss'),
-      customHeadHtml: this.readString(map, 'customHeadHtml')
+      customHeadHtml: this.readString(map, 'customHeadHtml'),
+      lineSpeedtestEnabled: this.readBoolean(map, 'lineSpeedtestEnabled'),
+      lineSpeedtestIntervalMins: this.readInteger(map, 'lineSpeedtestIntervalMins', 1, 1440),
+      lineSpeedtestTargetUrl: this.readString(map, 'lineSpeedtestTargetUrl'),
+      lineSpeedtestTimeoutMs: this.readInteger(map, 'lineSpeedtestTimeoutMs', 500, 30000)
     };
   }
 

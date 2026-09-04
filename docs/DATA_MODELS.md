@@ -233,6 +233,10 @@ model Line {
   sortOrder       Int      @default(0)
   isPublic        Boolean  @default(true)
   status          String   @default("ACTIVE") // ACTIVE | DISABLED
+  lastLatencyMs   Int?     // 最近测速延迟（毫秒），null 为未测速或失败
+  lastTestedAt    DateTime? // 最近一次测速时间
+  lastTestStatus  String?  // 最近测速状态：SUCCESS | TIMEOUT | ERROR
+  lastTestMessage String?  // 最近测速诊断详情
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -484,6 +488,10 @@ model SystemSetting {
 | `jwtSessionDays` | 十进制整数（1~30） | `"1"` | 新签发 JWT 的会话有效天数 |
 | `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
 | `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
+| `lineSpeedtestEnabled` | `"true"` / `"false"` | `"true"` | 是否开启后台线路自动定时测速 |
+| `lineSpeedtestIntervalMins` | 十进制整数（1~1440） | `"30"` | 线路自动测速执行周期（分钟） |
+| `lineSpeedtestTargetUrl` | HTTP/HTTPS URL | `"http://cp.cloudflare.com/generate_204"` | 线路测速探测目标 URL |
+| `lineSpeedtestTimeoutMs` | 十进制整数（500~30000） | `"3000"` | 单次测速连接超时阈值（毫秒） |
 
 读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点只返回品牌、公告、客服、订阅基准、短链接开关和前端运行时样式字段。`publicBaseUrl` 仅供主控生成 Agent 运维地址，不公开给普通用户。短链接开关不改变数据库模型，也不要求 Prisma 迁移；关闭或缺失时前端继续生成标准 `/api/v1/sub/<UUID>` 地址。
 

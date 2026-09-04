@@ -1,5 +1,6 @@
 import { Activity } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { LineLatencyChip } from '@/components/shared/line-latency-chip';
 import { cn } from '@/lib/utils';
 import type { UserLine } from '@/pages/user/subscription/use-user-subscription';
 
@@ -8,7 +9,7 @@ interface LineCardProps {
   className?: string;
 }
 
-// 用户只需确认线路名称、协议、倍率和当前在线状态，拓扑细节由订阅客户端负责展示。
+// 用户只需确认线路名称、协议、倍率、延迟和当前在线状态，拓扑细节由订阅客户端负责展示。
 export function LineCard({ line, className }: LineCardProps) {
   const isOnline = line.exitNode.status === 'ONLINE';
 
@@ -22,6 +23,12 @@ export function LineCard({ line, className }: LineCardProps) {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        <LineLatencyChip
+          latencyMs={line.lastLatencyMs}
+          status={line.lastTestStatus}
+          message={line.lastTestMessage}
+          testedAt={line.lastTestedAt}
+        />
         <Badge variant="outline" className="text-xs">{line.trafficRate}x</Badge>
         <Badge variant={isOnline ? 'default' : 'secondary'} className="gap-1 text-xs">
           <Activity className="size-3" />
