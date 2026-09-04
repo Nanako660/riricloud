@@ -17,7 +17,7 @@ async function findAvailableServicePort(nodeId, reservedPorts = []) {
     const port = randomInt(RANDOM_SERVICE_PORT_MIN, RANDOM_SERVICE_PORT_MAX + 1);
     if (reserved.has(port)) continue;
     const line = await prisma.line.findFirst({
-      where: { OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }] }
+      where: { OR: [{ entryNodeId: nodeId, entryPort: port }, { landingNodeId: nodeId, landingPort: port }] }
     });
     if (!line) return port;
   }
@@ -29,7 +29,7 @@ async function isServicePortAvailable(nodeId, port, excludedLineId) {
   const line = await prisma.line.findFirst({
     where: {
       ...(excludedLineId ? { id: { not: excludedLineId } } : {}),
-      OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }]
+      OR: [{ entryNodeId: nodeId, entryPort: port }, { landingNodeId: nodeId, landingPort: port }]
     }
   });
   return !line;
@@ -152,8 +152,8 @@ async function main() {
     paramsJson: JSON.stringify(protocolParams),
     entryNodeId: localNode.id,
     entryPort: directPort,
-    exitNodeId: localNode.id,
-    exitPort: directPort,
+    landingNodeId: null,
+    landingPort: null,
     endpointOverrideEnabled: false,
     serverHost: localHost,
     serverPort: directPort,
@@ -168,7 +168,7 @@ async function main() {
   };
   const existingRelayLine = await prisma.line.findFirst({ where: { name: 'Master 本机盲转示例' } });
   const relayEntryPort = await resolveServicePort(localNode.id, existingRelayLine, existingRelayLine?.entryPort, [directPort]);
-  const relayExitPort = await resolveServicePort(localNode.id, existingRelayLine, existingRelayLine?.exitPort, [directPort, relayEntryPort]);
+  const relayLandingPort = await resolveServicePort(localNode.id, existingRelayLine, existingRelayLine?.landingPort, [directPort, relayEntryPort]);
   const relayLineData = {
     ...directLineData,
     name: 'Master 本机盲转示例',
@@ -176,7 +176,8 @@ async function main() {
     type: 'RELAY',
     relayMode: 'BLIND_FORWARD',
     entryPort: relayEntryPort,
-    exitPort: relayExitPort,
+    landingNodeId: localNode.id,
+    landingPort: relayLandingPort,
     serverPort: relayEntryPort,
     tagsJson: JSON.stringify(['local', 'relay']),
     sortOrder: 1

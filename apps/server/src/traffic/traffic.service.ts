@@ -28,7 +28,7 @@ type TrafficLine = {
 
 type FallbackTrafficLine = TrafficLine & {
   entryNodeId: string;
-  exitNodeId: string;
+  landingNodeId: string | null;
   relayMode: string | null;
 };
 
@@ -345,7 +345,7 @@ export class TrafficService {
         type: true,
         trafficRate: true,
         entryNodeId: true,
-        exitNodeId: true,
+        landingNodeId: true,
         relayMode: true
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
@@ -358,11 +358,11 @@ export class TrafficService {
     config: RangeConfig
   ): Aggregation {
     const fallbackByEntryNode = new Map<string, TrafficLine>();
-    const fallbackByBlindExitNode = new Map<string, TrafficLine>();
+    const fallbackByBlindLandingNode = new Map<string, TrafficLine>();
     for (const line of fallbackLines) {
       if (!fallbackByEntryNode.has(line.entryNodeId)) fallbackByEntryNode.set(line.entryNodeId, line);
-      if (line.type === 'RELAY' && line.relayMode === 'BLIND_FORWARD' && !fallbackByBlindExitNode.has(line.exitNodeId)) {
-        fallbackByBlindExitNode.set(line.exitNodeId, line);
+      if (line.type === 'RELAY' && line.relayMode === 'BLIND_FORWARD' && line.landingNodeId && !fallbackByBlindLandingNode.has(line.landingNodeId)) {
+        fallbackByBlindLandingNode.set(line.landingNodeId, line);
       }
     }
     const aggregation: Aggregation = {
@@ -379,7 +379,7 @@ export class TrafficService {
       const upload = row.upload < 0n ? 0n : row.upload;
       const download = row.download < 0n ? 0n : row.download;
       const total = upload + download;
-      const line = row.line ?? fallbackByEntryNode.get(row.nodeId) ?? fallbackByBlindExitNode.get(row.nodeId) ?? null;
+      const line = row.line ?? fallbackByEntryNode.get(row.nodeId) ?? fallbackByBlindLandingNode.get(row.nodeId) ?? null;
       const trafficRate = this.getTrafficRate(line);
       const billedTotal = this.toNumber(total) * trafficRate;
       const lineKey = line?.id ?? UNASSIGNED_LINE_KEY;

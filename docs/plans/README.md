@@ -28,6 +28,7 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [中转线路与单节点多线路流量统计归属根除修复](./archive/2026-09-05-root-cause-relay-and-multi-line-traffic-fix.md) | `0.6.6` | 2026-09-05 | — |
+| [重构线路端点拓扑：引入 Entry-Landing 架构并废除 exitPort](./archive/2026-09-05-line-topology-landing-refactor.md) | `v0.5.0` | 2026-09-05 | — |
 | [线路测速功能（端到端测速、自动定时检测与延迟 Chip 标签展示）](./archive/2026-09-05-line-speedtest.md) | `0.5.0` | 2026-09-05 | — |
 | [订阅流量周期重置与用户额外线路](./archive/2026-09-04-subscription-traffic-reset-extra-lines.md) | `0.5.0` | 2026-09-04 | — |
 | [订阅模板全链路闭环优化与现代化工作台](./archive/2026-09-04-subscription-template-full-refactor.md) | `0.6.2` | 2026-09-04 | — |

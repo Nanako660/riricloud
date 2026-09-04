@@ -44,16 +44,23 @@ const targetLineSummary = {
     status: true,
     entryNodeId: true,
     entryPort: true,
-    exitNodeId: true,
-    exitPort: true,
+    landingNodeId: true,
+    landingPort: true,
     entryNode: nodeSummary
   }
 } as const;
-const lineInclude = { entryNode: nodeSummary, exitNode: nodeSummary, targetLine: targetLineSummary, certificate: certificateSummary } as const;
+const availabilityTargetLineSummary = {
+  select: {
+    ...targetLineSummary.select,
+    entryNode: availabilityNodeSummary
+  }
+} as const;
+const lineInclude = { entryNode: nodeSummary, landingNode: nodeSummary, targetLine: targetLineSummary, certificate: certificateSummary } as const;
 const availabilityLineInclude = {
   ...lineInclude,
   entryNode: availabilityNodeSummary,
-  exitNode: availabilityNodeSummary
+  landingNode: availabilityNodeSummary,
+  targetLine: availabilityTargetLineSummary
 } as const;
 type LineWithRelations = Prisma.LineGetPayload<{ include: typeof lineInclude }>;
 type LineWithAvailabilityRelations = Prisma.LineGetPayload<{ include: typeof availabilityLineInclude }>;
@@ -69,8 +76,8 @@ type LineInput = {
   relayMode?: RelayMode | null;
   entryNodeId?: string | null;
   entryPort?: number | null;
-  exitNodeId?: string | null;
-  exitPort?: number | null;
+  landingNodeId?: string | null;
+  landingPort?: number | null;
   targetLineId?: string | null;
   certificateId?: string | null;
   endpointOverrideEnabled?: boolean;
@@ -158,7 +165,7 @@ export class LinesService {
       certificateId: current.certificateId,
       relayMode: current.relayMode as RelayMode | null,
       entryNodeId: current.entryNodeId,
-      exitNodeId: current.exitNodeId,
+      landingNodeId: current.landingNodeId,
       targetLineId: current.targetLineId,
       tags: this.parseTags(current.tagsJson),
       trafficRate: current.trafficRate,
@@ -193,7 +200,9 @@ export class LinesService {
       line: view,
       endpoint: { serverHost: view.serverHost, serverPort: view.serverPort, serverName: view.serverName, host: view.host },
       entry: { nodeId: line.entryNodeId, nodeName: line.entryNode.name, port: line.entryPort },
-      exit: { nodeId: line.exitNodeId, nodeName: line.exitNode.name, port: line.exitPort }
+      landing: view.topology.landing
+        ? { nodeId: view.topology.landing.node.id, nodeName: view.topology.landing.node.name, port: view.topology.landing.port }
+        : null
     };
   }
 
@@ -220,13 +229,14 @@ export class LinesService {
     return rows
       .filter((line) => line.status === undefined || line.status === 'ACTIVE')
       .filter((line) => this.isNodeAvailableForSubscription(line.entryNode, now, heartbeatTimeoutMs))
-      .filter((line) => this.isNodeAvailableForSubscription(line.exitNode, now, heartbeatTimeoutMs))
-      .filter((line) => line.relayMode !== 'TARGET_LINE' || line.targetLine?.status === 'ACTIVE')
+      .filter((line) => !line.landingNode || this.isNodeAvailableForSubscription(line.landingNode, now, heartbeatTimeoutMs))
+      .filter((line) => line.relayMode !== 'TARGET_LINE' || (line.targetLine?.status === 'ACTIVE' && this.isNodeAvailableForSubscription(line.targetLine.entryNode, now, heartbeatTimeoutMs)))
       .filter((line) => isLineAuthorized(plan, line, extraIds))
       .map((line) => this.toView(this.stripAvailabilityFields(line)));
   }
 
   private isNodeAvailableForSubscription(node: AvailabilityNode, now: number, heartbeatTimeoutMs: number): boolean {
+    if (!node) return false;
     if (node.status === 'ONLINE') return true;
     if (node.status !== 'OFFLINE' || !node.lastSeenAt) return false;
     if (now - this.processStartedAt >= NODE_RECONNECT_GRACE_MS) return false;
@@ -240,9 +250,11 @@ export class LinesService {
   private stripAvailabilityFields(line: LineWithAvailabilityRelations): LineWithRelations {
     const publicLine = { ...line } as LineWithRelations & {
       entryNode: Record<string, unknown>;
-      exitNode: Record<string, unknown>;
+      landingNode?: Record<string, unknown> | null;
+      targetLine?: { entryNode?: Record<string, unknown> } | null;
     };
-    for (const node of [publicLine.entryNode, publicLine.exitNode]) {
+    for (const node of [publicLine.entryNode, publicLine.landingNode, publicLine.targetLine?.entryNode]) {
+      if (!node) continue;
       delete node.lastSeenAt;
       delete node.communicationMode;
       delete node.pollIntervalSecs;
@@ -293,60 +305,60 @@ export class LinesService {
       throw new BadRequestException('ShadowTLS 仅支持直连或盲转发，不支持协议代理中继');
     }
 
-    let entryNodeId = input.entryNodeId !== undefined ? input.entryNodeId : current?.entryNodeId;
-    let exitNodeId = input.exitNodeId !== undefined ? input.exitNodeId : current?.exitNodeId;
+    const entryNodeId = input.entryNodeId !== undefined ? input.entryNodeId : current?.entryNodeId;
+    if (!entryNodeId) throw new BadRequestException('必须指定入口节点');
+
+    let landingNodeId: string | null = null;
+    let landingPort: number | null = null;
     let targetLineId: string | null = null;
     let targetLine: { id: string; type: string; protocolType: string; entryNodeId: string; entryPort: number } | null = null;
-    if (type === 'RELAY' && relayMode === 'TARGET_LINE') {
-      if (!entryNodeId) throw new BadRequestException('桥接中继线路必须指定入口节点');
-      targetLineId = input.targetLineId !== undefined ? input.targetLineId : current?.targetLineId ?? null;
-      if (!targetLineId) throw new BadRequestException('桥接中继线路必须指定目标线路');
-      targetLine = await this.prisma.line.findUnique({
-        where: { id: targetLineId },
-        select: { id: true, type: true, protocolType: true, entryNodeId: true, entryPort: true }
-      });
-      if (!targetLine) throw new NotFoundException('目标线路不存在');
-      if (targetLine.type !== 'DIRECT') throw new BadRequestException('桥接目标必须是直连线路');
-      if (!PROTOCOL_PROXY_TARGET_TYPES.includes(targetLine.protocolType as (typeof PROTOCOL_PROXY_TARGET_TYPES)[number])) {
-        throw new BadRequestException('目标线路协议不支持作为桥接出口');
+
+    if (type === 'DIRECT') {
+      landingNodeId = null;
+      landingPort = null;
+      targetLineId = null;
+    } else if (type === 'RELAY') {
+      if (relayMode === 'TARGET_LINE') {
+        targetLineId = input.targetLineId !== undefined ? input.targetLineId : current?.targetLineId ?? null;
+        if (!targetLineId) throw new BadRequestException('桥接中继线路必须指定目标线路');
+        targetLine = await this.prisma.line.findUnique({
+          where: { id: targetLineId },
+          select: { id: true, type: true, protocolType: true, entryNodeId: true, entryPort: true }
+        });
+        if (!targetLine) throw new NotFoundException('目标线路不存在');
+        if (targetLine.type !== 'DIRECT') throw new BadRequestException('桥接目标必须是直连线路');
+        if (!PROTOCOL_PROXY_TARGET_TYPES.includes(targetLine.protocolType as (typeof PROTOCOL_PROXY_TARGET_TYPES)[number])) {
+          throw new BadRequestException('目标线路协议不支持作为桥接出口');
+        }
+        if (targetLine.entryNodeId === entryNodeId) throw new BadRequestException('桥接目标必须位于其他节点');
+        landingNodeId = null;
+        landingPort = null;
+      } else {
+        landingNodeId = input.landingNodeId !== undefined ? input.landingNodeId : current?.landingNodeId ?? null;
+        if (!landingNodeId) throw new BadRequestException('中继线路必须指定落地节点');
       }
-      if (targetLine.entryNodeId === entryNodeId) throw new BadRequestException('桥接目标必须位于其他节点');
-      exitNodeId = targetLine.entryNodeId;
-    } else {
-      if (!entryNodeId) entryNodeId = exitNodeId;
-      if (!exitNodeId) exitNodeId = entryNodeId;
-    }
-    if (!entryNodeId || !exitNodeId) throw new BadRequestException('必须指定入口节点和出口节点');
-    if (type === 'DIRECT' && entryNodeId !== exitNodeId) {
-      throw new BadRequestException('直连线路的入口节点必须与出口节点一致');
     }
 
-    const [entryNode, exitNode] = await Promise.all([
+    const [entryNode, landingNode] = await Promise.all([
       this.prisma.node.findUnique({ where: { id: entryNodeId } }),
-      entryNodeId === exitNodeId ? Promise.resolve(null) : this.prisma.node.findUnique({ where: { id: exitNodeId } })
+      landingNodeId ? this.prisma.node.findUnique({ where: { id: landingNodeId } }) : Promise.resolve(null)
     ]);
     if (!entryNode) throw new NotFoundException('入口节点不存在');
-    if (entryNodeId !== exitNodeId && !exitNode) throw new NotFoundException('出口节点不存在');
+    if (landingNodeId && !landingNode) throw new NotFoundException('落地节点不存在');
 
     const entryPort = input.entryPort !== undefined && input.entryPort !== null
       ? input.entryPort
       : current?.entryPort ?? await this.findAvailablePort(entryNodeId, protocolType, current?.id);
-    const requestedExitPort = input.exitPort !== undefined && input.exitPort !== null ? input.exitPort : current?.exitPort;
-    const exitPort = type === 'DIRECT'
-      ? entryPort
-      : targetLine
-        ? targetLine.entryPort
-        : requestedExitPort ?? await this.findAvailablePort(exitNodeId, protocolType, current?.id);
-    if (type === 'DIRECT' && requestedExitPort !== undefined && requestedExitPort !== null && requestedExitPort !== entryPort) {
-      throw new BadRequestException('直连线路的入口与出口端口必须一致');
-    }
-    if (type === 'RELAY' && entryNodeId === exitNodeId && entryPort === exitPort) {
-      throw new BadRequestException('同节点中继线路的入口与出口端口必须不同');
+
+    if (type === 'RELAY' && relayMode !== 'TARGET_LINE' && landingNodeId) {
+      const requestedLandingPort = input.landingPort !== undefined && input.landingPort !== null ? input.landingPort : current?.landingPort;
+      landingPort = requestedLandingPort ?? await this.findAvailablePort(landingNodeId, protocolType, current?.id);
+      if (entryNodeId === landingNodeId && entryPort === landingPort) {
+        throw new BadRequestException('同节点中继线路的入口与落地端口必须不同');
+      }
+      await this.assertPortAvailable(landingNodeId, landingPort, protocolType, current?.id);
     }
     await this.assertPortAvailable(entryNodeId, entryPort, protocolType, current?.id);
-    if (!(type === 'RELAY' && relayMode === 'TARGET_LINE') && (type === 'RELAY' || exitNodeId !== entryNodeId || exitPort !== entryPort)) {
-      await this.assertPortAvailable(exitNodeId, exitPort, protocolType, current?.id);
-    }
 
     const name = input.name !== undefined ? input.name.trim() : current?.name;
     if (!name) throw new BadRequestException('线路名称不能为空');
@@ -371,7 +383,7 @@ export class LinesService {
       tag: customTag,
       type,
       entryNodeId,
-      exitNodeId
+      landingNodeId
     });
 
     return {
@@ -384,8 +396,8 @@ export class LinesService {
       paramsJson: JSON.stringify(params),
       entryNodeId,
       entryPort,
-      exitNodeId,
-      exitPort,
+      landingNodeId,
+      landingPort,
       targetLineId,
       certificateId,
       endpointOverrideEnabled: input.endpointOverrideEnabled ?? current?.endpointOverrideEnabled ?? false,
@@ -406,7 +418,7 @@ export class LinesService {
     const rows = await this.prisma.line.findMany({
       where: {
         ...(currentId ? { id: { not: currentId } } : {}),
-        OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }]
+        OR: [{ entryNodeId: nodeId, entryPort: port }, { landingNodeId: nodeId, landingPort: port }]
       },
       select: { protocolType: true }
     });
@@ -422,7 +434,7 @@ export class LinesService {
         const rows = await this.prisma.line.findMany({
           where: {
             ...(currentId ? { id: { not: currentId } } : {}),
-            OR: [{ entryNodeId: nodeId, entryPort: port }, { exitNodeId: nodeId, exitPort: port }]
+            OR: [{ entryNodeId: nodeId, entryPort: port }, { landingNodeId: nodeId, landingPort: port }]
           },
           select: { protocolType: true }
         });
@@ -439,25 +451,25 @@ export class LinesService {
     tag: string | null;
     type: LineType;
     entryNodeId: string;
-    exitNodeId: string;
+    landingNodeId?: string | null;
   }) {
     if (!input.tag) return;
     const existing = await this.prisma.line.findMany({
       where: input.id ? { id: { not: input.id } } : undefined,
-      select: { id: true, tag: true, type: true, entryNodeId: true, exitNodeId: true }
+      select: { id: true, tag: true, type: true, entryNodeId: true, landingNodeId: true }
     });
     const candidate = resolveLineTags({ id: input.id ?? 'pending', tag: input.tag, type: input.type });
     const candidateTags = new Map<string, string>();
     if (candidate.direct) candidateTags.set(input.entryNodeId, candidate.direct);
     if (candidate.entry) candidateTags.set(input.entryNodeId, candidate.entry);
-    if (candidate.exit) candidateTags.set(input.exitNodeId, candidate.exit);
+    if (candidate.landing && input.landingNodeId) candidateTags.set(input.landingNodeId, candidate.landing);
 
     for (const line of existing) {
       const tags = resolveLineTags(line);
       const existingTags = new Map<string, string>();
       if (tags.direct) existingTags.set(line.entryNodeId, tags.direct);
       if (tags.entry) existingTags.set(line.entryNodeId, tags.entry);
-      if (tags.exit) existingTags.set(line.exitNodeId, tags.exit);
+      if (tags.landing && line.landingNodeId) existingTags.set(line.landingNodeId, tags.landing);
       for (const [nodeId, tag] of candidateTags) {
         if (existingTags.get(nodeId) === tag) {
           throw new ConflictException(`节点 ${nodeId} 的线路 Tag「${tag}」已被占用`);
@@ -509,6 +521,13 @@ export class LinesService {
     const serverHost = line.endpointOverrideEnabled && line.serverHost ? line.serverHost : line.entryNode.serverHost;
     const serverPort = line.endpointOverrideEnabled && line.serverPort ? line.serverPort : line.entryPort;
     const params = sanitizeInboundParams(this.parseObject(line.paramsJson));
+    const landing = line.type === 'RELAY'
+      ? (line.relayMode === 'TARGET_LINE' && line.targetLine
+          ? { node: line.targetLine.entryNode, port: line.targetLine.entryPort }
+          : line.landingNode && line.landingPort
+            ? { node: line.landingNode, port: line.landingPort }
+            : null)
+      : null;
     return {
       ...line,
       protocolType: line.protocolType as ProtocolType,
@@ -526,19 +545,18 @@ export class LinesService {
       tags: this.parseTags(line.tagsJson),
       topology: {
         entry: { node: line.entryNode, port: line.entryPort },
-        exit: { node: line.exitNode, port: line.exitPort }
+        landing
       },
-      // 兼容旧版消费方的只读目标摘要；新代码应使用 protocolType/params/exitNode。
-      targetInbound: {
+      targetInbound: landing ? {
         id: line.id,
-        nodeId: line.exitNodeId,
-        type: line.protocolType,
-        tag: resolveLineTags(line).exit ?? resolveLineTags(line).direct ?? `line-${line.id}`,
+        nodeId: landing.node.id,
+        type: line.targetLine?.protocolType ?? line.protocolType,
+        tag: resolveLineTags(line).landing ?? resolveLineTags(line).direct ?? `line-${line.id}`,
         listen: line.listen,
-        port: line.exitPort,
+        port: landing.port,
         params,
-        node: line.exitNode
-      },
+        node: landing.node
+      } : null,
       certificate: line.certificate ? {
         id: line.certificate.id,
         name: line.certificate.name,

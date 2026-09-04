@@ -293,7 +293,7 @@ export class AgentService implements OnModuleDestroy {
     });
     const line = await findFirst({ entryNodeId: nodeId, status: 'ACTIVE' })
       ?? await findFirst({
-        exitNodeId: nodeId,
+        landingNodeId: nodeId,
         type: 'RELAY',
         relayMode: 'BLIND_FORWARD',
         status: 'ACTIVE'
@@ -909,7 +909,7 @@ export class AgentService implements OnModuleDestroy {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
           include: {
-            exitNode: true,
+            landingNode: true,
             certificate: true,
             targetLine: { include: { entryNode: true } },
             relaySources: {
@@ -918,7 +918,7 @@ export class AgentService implements OnModuleDestroy {
             }
           }
         },
-        exitLines: {
+        landingLines: {
           where: { status: 'ACTIVE' },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
           include: {
@@ -988,13 +988,13 @@ export class AgentService implements OnModuleDestroy {
       paramsJson: string;
       entryNodeId: string;
       entryPort: number;
-      exitNodeId: string;
-      exitPort: number;
+      landingNodeId: string | null;
+      landingPort: number | null;
       tagsJson: string;
       isPublic: boolean;
       status: string;
       entryNode?: { status: string };
-      exitNode: { serverHost: string; status?: string };
+      landingNode?: { serverHost: string; status?: string } | null;
       certificate: { certificatePem: string; privateKeyPem: string } | null;
       targetLine?: {
         id: string;
@@ -1003,15 +1003,15 @@ export class AgentService implements OnModuleDestroy {
         paramsJson: string;
         entryPort: number;
         status: string;
-        entryNode: { serverHost: string };
+        entryNode: { serverHost: string; status?: string };
       } | null;
       relaySources?: Array<{ id: string; tagsJson: string; isPublic: boolean; status: string }>;
     };
     const lines = new Map<string, ConfigLine>();
     for (const line of node.entryLines ?? []) lines.set(line.id, line);
-    for (const line of node.exitLines ?? []) {
+    for (const line of node.landingLines ?? []) {
       if (!lines.has(line.id)) {
-        lines.set(line.id, { ...line, exitNode: { serverHost: node.serverHost } });
+        lines.set(line.id, { ...line, landingNode: { serverHost: node.serverHost, status: node.status } });
       }
     }
 
@@ -1044,9 +1044,13 @@ export class AgentService implements OnModuleDestroy {
       const params = this.buildLineParams(line);
       const lineTags = resolveLineTags(line);
       const isEntry = line.entryNodeId === nodeId;
-      const isExit = line.exitNodeId === nodeId;
+      const isLanding = line.landingNodeId === nodeId;
       const otherNodeOnline = isEntry
-        ? line.exitNode.status === 'ONLINE'
+        ? (line.type === 'DIRECT'
+            ? true
+            : line.relayMode === 'TARGET_LINE'
+              ? line.targetLine?.entryNode.status === 'ONLINE'
+              : line.landingNode?.status === 'ONLINE')
         : line.entryNode?.status === 'ONLINE';
       if (node.status !== 'ONLINE' || !otherNodeOnline) continue;
       const users = usersForLine(line);
@@ -1072,14 +1076,14 @@ export class AgentService implements OnModuleDestroy {
         continue;
       }
 
-      if (isEntry && line.relayMode === 'BLIND_FORWARD') {
+      if (isEntry && line.relayMode === 'BLIND_FORWARD' && line.landingNode && line.landingPort) {
         inbounds.push({
           type: 'direct',
           tag: lineTags.entry ?? `relay-${line.id}-entry`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           listen_port: line.entryPort,
-          override_address: line.exitNode.serverHost,
-          override_port: line.exitPort
+          override_address: line.landingNode.serverHost,
+          override_port: line.landingPort
         });
       }
 
@@ -1122,8 +1126,8 @@ export class AgentService implements OnModuleDestroy {
           id: line.id,
           protocolType: targetLine.protocolType,
           paramsJson: targetLine.paramsJson,
-          exitPort: targetLine.entryPort,
-          exitNode: targetLine.entryNode
+          landingPort: targetLine.entryPort,
+          landingNode: targetLine.entryNode
         });
         if (!outbound) {
           inbounds.splice(-relayInbounds.length, relayInbounds.length);
@@ -1133,15 +1137,15 @@ export class AgentService implements OnModuleDestroy {
         relayRules.push({ inbound: [relayTag], outbound: `relay-out-${line.id}` });
       }
 
-      if (isExit && !(line.type === 'RELAY' && line.relayMode === 'TARGET_LINE')) {
+      if (isLanding && !(line.type === 'RELAY' && line.relayMode === 'TARGET_LINE') && line.landingPort) {
         const exitUsers = line.type === 'RELAY' && line.relayMode === 'PROTOCOL_PROXY'
           ? [this.internalRelayTransitUser()]
           : users;
         inbounds.push(...buildServerInbounds({
           type: protocolType,
-          tag: lineTags.exit ?? `line-${line.id}-exit`,
+          tag: lineTags.landing ?? `line-${line.id}-landing`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
-          port: line.exitPort,
+          port: line.landingPort,
           params,
           users: exitUsers,
           lineId: line.id
@@ -1212,10 +1216,11 @@ export class AgentService implements OnModuleDestroy {
       id: string;
       protocolType: string;
       paramsJson: string;
-      exitPort: number;
-      exitNode: { serverHost: string };
+      landingPort?: number | null;
+      landingNode?: { serverHost: string } | null;
     }
   ): Record<string, unknown> | undefined {
+    if (!line.landingNode || !line.landingPort) return undefined;
     const protocolType = line.protocolType as ProtocolType;
     const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
     const tls = (params.tls ?? {}) as Record<string, unknown>;
@@ -1229,8 +1234,8 @@ export class AgentService implements OnModuleDestroy {
     const outbound: Record<string, unknown> = {
       type: protocolType.toLowerCase(),
       tag: `relay-out-${line.id}`,
-      server: line.exitNode.serverHost,
-      server_port: line.exitPort
+      server: line.landingNode.serverHost,
+      server_port: line.landingPort
     };
 
     switch (protocolType) {

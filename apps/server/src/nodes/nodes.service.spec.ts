@@ -8,7 +8,7 @@ import { NodesService } from './nodes.service';
 describe('NodesService', () => {
   let service: NodesService;
   const baseNode = { id: 'node-1', name: '东京节点', serverHost: '198.51.100.10', isLocal: false, configOverride: null, agentToken: 'token', status: 'ONLINE', lastSeenAt: null, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, kernelRunning: true, configError: null, lastProbeResult: null, agentVersion: null, osArch: null, kernelVersion: null, createdAt: new Date(), updatedAt: new Date() };
-  const nodeWithLines = { ...baseNode, entryLines: [], exitLines: [] };
+  const nodeWithLines = { ...baseNode, entryLines: [], landingLines: [] };
   const prisma = {
     node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() }
   };
@@ -23,11 +23,11 @@ describe('NodesService', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('节点列表返回线路反向列表和派生端口，而不是可编辑入站', async () => {
-    const line = { id: 'line-1', name: '跨节点线路', type: 'RELAY', relayMode: 'BLIND_FORWARD', protocolType: 'VLESS', entryNodeId: baseNode.id, entryPort: 25001, exitNodeId: 'node-2', exitPort: 25002, serverHost: null, serverPort: null, trafficRate: 1, tagsJson: '[]', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE', entryNode: baseNode, exitNode: { ...baseNode, id: 'node-2', name: '香港节点' } };
+    const line = { id: 'line-1', name: '跨节点线路', type: 'RELAY', relayMode: 'BLIND_FORWARD', protocolType: 'VLESS', entryNodeId: baseNode.id, entryPort: 25001, landingNodeId: 'node-2', landingPort: 25002, serverHost: null, serverPort: null, trafficRate: 1, tagsJson: '[]', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE', entryNode: baseNode, landingNode: { ...baseNode, id: 'node-2', name: '香港节点' } };
     prisma.node.findMany.mockResolvedValue([{ ...nodeWithLines, entryLines: [line] }]);
     const [result] = await service.list();
     expect(result.lines).toHaveLength(1);
-    expect(result.servicePorts).toEqual(expect.arrayContaining([{ lineId: 'line-1', lineName: '跨节点线路', protocolType: 'VLESS', role: 'ENTRY', port: 25001 }]));
+    expect(result.servicePorts).toEqual(expect.arrayContaining([{ lineId: 'line-1', lineName: '跨节点线路', protocolType: 'VLESS', role: 'TRANSIT', port: 25001 }]));
     expect(result).not.toHaveProperty('inbounds');
   });
 

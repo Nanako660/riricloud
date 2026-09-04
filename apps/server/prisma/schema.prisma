@@ -69,7 +69,7 @@ model Node {
   // NodeInbound 为历史迁移兼容表，新线路配置不再依赖它。
   inbounds              NodeInbound[]
   entryLines            Line[]                 @relation("LineEntryNode")
-  exitLines             Line[]                 @relation("LineExitNode")
+  landingLines          Line[]                 @relation("LineLandingNode")
   trafficLogs           TrafficLog[]
   trafficCursors        TrafficCursor[]
   rateMetrics           NodeRateMetric[]
@@ -150,8 +150,8 @@ model Line {
   paramsJson              String   @default("{}") // 协议专属参数 JSON
   entryNodeId             String
   entryPort               Int
-  exitNodeId              String
-  exitPort                Int
+  landingNodeId           String?
+  landingPort             Int?
   targetLineId            String?
   certificateId           String?
   endpointOverrideEnabled Boolean  @default(false)
@@ -173,7 +173,7 @@ model Line {
   updatedAt               DateTime @updatedAt
 
   entryNode       Node            @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
-  exitNode        Node            @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  landingNode     Node?           @relation("LineLandingNode", fields: [landingNodeId], references: [id], onDelete: Cascade)
   targetLine      Line?           @relation("LineRelayTarget", fields: [targetLineId], references: [id], onDelete: Restrict)
   relaySources    Line[]          @relation("LineRelayTarget")
   certificate     Certificate?    @relation(fields: [certificateId], references: [id], onDelete: SetNull)
@@ -181,7 +181,7 @@ model Line {
   extraLineGrants UserLineGrant[]
 
   @@index([entryNodeId])
-  @@index([exitNodeId])
+  @@index([landingNodeId])
   @@index([targetLineId])
   @@index([certificateId])
   @@index([protocolType])

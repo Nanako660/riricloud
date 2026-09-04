@@ -15,8 +15,8 @@ import { appendPublicPath, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../c
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
-  entryLines: { include: { exitNode: nodeSummary }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
-  exitLines: { include: { entryNode: nodeSummary }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }
+  entryLines: { include: { landingNode: nodeSummary, targetLine: { include: { entryNode: nodeSummary } } }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+  landingLines: { include: { entryNode: nodeSummary }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }
 } satisfies Prisma.NodeInclude;
 type NodeWithLines = Prisma.NodeGetPayload<{ include: typeof nodeLinesInclude }>;
 
@@ -247,8 +247,8 @@ export class NodesService {
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {
-    const { entryLines, exitLines, lastProbeResult, ...rest } = node;
-    const toLine = (line: (typeof entryLines)[number], role: 'ENTRY' | 'EXIT') => ({
+    const { entryLines, landingLines, lastProbeResult, ...rest } = node;
+    const toLine = (line: (typeof entryLines)[number] | (typeof landingLines)[number], role: 'DIRECT' | 'TRANSIT' | 'LANDING') => ({
       id: line.id,
       name: line.name,
       type: line.type,
@@ -256,8 +256,9 @@ export class NodesService {
       protocolType: line.protocolType,
       entryNodeId: line.entryNodeId,
       entryPort: line.entryPort,
-      exitNodeId: line.exitNodeId,
-      exitPort: line.exitPort,
+      landingNodeId: line.landingNodeId,
+      landingPort: line.landingPort,
+      targetLineId: line.targetLineId,
       serverHost: line.serverHost,
       serverPort: line.serverPort,
       trafficRate: line.trafficRate,
@@ -268,23 +269,37 @@ export class NodesService {
       status: line.status,
       role,
       entryNode: 'entryNode' in line ? line.entryNode : undefined,
-      exitNode: 'exitNode' in line ? line.exitNode : undefined
+      landingNode: 'landingNode' in line ? line.landingNode : undefined,
+      targetLine: 'targetLine' in line ? line.targetLine : undefined
     });
-    const entry = entryLines.map((line) => toLine(line, 'ENTRY'));
-    const exit = exitLines.map((line) => toLine(line as unknown as (typeof entryLines)[number], 'EXIT'));
-    const all = new Map<string, Record<string, unknown>>();
-    for (const line of [...entry, ...exit]) {
-      const existing = all.get(line.id);
-      all.set(line.id, existing ? { ...existing, role: 'ENTRY_AND_EXIT' } : line);
+
+    const linesMap = new Map<string, ReturnType<typeof toLine>>();
+    const servicePorts: Array<{ lineId: string; lineName: string; protocolType: string; role: 'DIRECT' | 'TRANSIT' | 'LANDING'; port: number }> = [];
+
+    for (const line of entryLines) {
+      if (line.type === 'DIRECT') {
+        const item = toLine(line, 'DIRECT');
+        linesMap.set(line.id, item);
+        servicePorts.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'DIRECT', port: line.entryPort });
+      } else {
+        const item = toLine(line, 'TRANSIT');
+        linesMap.set(line.id, item);
+        servicePorts.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'TRANSIT', port: line.entryPort });
+      }
     }
-    const lines = [...all.values()];
-    const servicePorts = lines.flatMap((line) => {
-      const ports: Array<Record<string, unknown>> = [];
-      if (line.entryNodeId === node.id) ports.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'ENTRY', port: line.entryPort });
-      if (line.exitNodeId === node.id) ports.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'EXIT', port: line.exitPort });
-      return ports;
-    });
-    return { ...rest, lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines: entry, exitLines: exit, servicePorts };
+
+    for (const line of landingLines) {
+      if (!linesMap.has(line.id)) {
+        const item = toLine(line, 'LANDING');
+        linesMap.set(line.id, item);
+      }
+      if (line.type === 'RELAY' && line.relayMode !== 'TARGET_LINE' && line.landingPort) {
+        servicePorts.push({ lineId: line.id, lineName: line.name, protocolType: line.protocolType, role: 'LANDING', port: line.landingPort });
+      }
+    }
+
+    const lines = [...linesMap.values()];
+    return { ...rest, lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines, landingLines, servicePorts };
   }
 
   private parseTags(value: string) {

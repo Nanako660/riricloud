@@ -172,11 +172,15 @@ export function UserSubscriptionFields({
           return (
             <FormItem>
               <FormLabel>额外线路授权</FormLabel>
-              <FormDescription>授权长期保留；线路需启用且入口、出口节点在线后才会生效。</FormDescription>
+              <FormDescription>授权长期保留；线路需启用且相关节点在线后才会生效。</FormDescription>
               <FormControl>
                 <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">
                   {lineOptions.length ? lineOptions.map((line) => {
-                    const available = line.status === 'ACTIVE' && line.entryNode.status === 'ONLINE' && line.exitNode.status === 'ONLINE';
+                    const targetLandingNode = line.relayMode === 'TARGET_LINE' ? line.targetLine?.entryNode : line.landingNode;
+                    const available = line.status === 'ACTIVE' && line.entryNode.status === 'ONLINE' && (!targetLandingNode || targetLandingNode.status === 'ONLINE');
+                    const topologyText = line.type === 'DIRECT'
+                      ? `${line.entryNode.name} · ${line.protocolType}`
+                      : `${line.entryNode.name} ➔ ${targetLandingNode?.name ?? '未绑定'} · ${line.protocolType}`;
                     return (
                       <div key={line.id} className="flex items-start gap-2">
                         <Checkbox
@@ -187,7 +191,7 @@ export function UserSubscriptionFields({
                         <Label htmlFor={`user-extra-line-${line.id}`} className="min-w-0 cursor-pointer text-sm font-normal">
                           <span className="block truncate font-medium">{line.name}</span>
                           <span className="block text-xs text-muted-foreground">
-                            {line.entryNode.name} → {line.exitNode.name} · {available ? '当前可用' : '等待线路或节点恢复'}
+                            {topologyText} · {available ? '当前可用' : '等待线路或节点恢复'}
                             {!line.isPublic ? ' · 隐藏线路' : ''}
                           </span>
                         </Label>

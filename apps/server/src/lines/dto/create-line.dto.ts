@@ -56,23 +56,23 @@ export class CreateLineDto {
   @IsOptional()
   entryPort?: number;
 
-  @ApiPropertyOptional({ format: 'uuid', description: '出口节点；直连线路与入口节点相同' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '中继落地节点；普通中继必填，直连与桥接中继置空' })
   @IsUUID()
   @IsOptional()
-  exitNodeId?: string;
+  landingNodeId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', description: '桥接已有直连线路时的目标线路；服务端自动同步出口节点与端口' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '桥接已有直连线路时的目标线路' })
   @IsUUID()
   @IsOptional()
-  targetLineId?: string;
+  targetLineId?: string | null;
 
-  @ApiPropertyOptional({ example: 24444, minimum: 1, maximum: 65535, description: '出口监听端口，中继线路省略时随机分配' })
+  @ApiPropertyOptional({ example: 24444, minimum: 1, maximum: 65535, nullable: true, description: '中继落地监听端口，普通中继省略时随机分配，直连与桥接置空' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(65535)
   @IsOptional()
-  exitPort?: number;
+  landingPort?: number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '标准 TLS 证书 ID；关联后由 Master 将 PEM 内嵌下发至 Agent' })
   @IsUUID()

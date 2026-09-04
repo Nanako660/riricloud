@@ -61,8 +61,8 @@ export interface ApiLine {
   params: Record<string, unknown>;
   entryNodeId: string;
   entryPort: number;
-  exitNodeId: string;
-  exitPort: number;
+  landingNodeId?: string | null;
+  landingPort?: number | null;
   certificateId: string | null;
   endpointOverrideEnabled: boolean;
   serverHost: string;
@@ -86,7 +86,7 @@ export interface ApiLine {
   lastTestStatus?: 'SUCCESS' | 'TIMEOUT' | 'ERROR' | null;
   lastTestMessage?: string | null;
   entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
-  exitNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
   targetLine?: {
     id: string;
     name: string;
@@ -95,8 +95,8 @@ export interface ApiLine {
     status: LineStatus;
     entryNodeId: string;
     entryPort: number;
-    exitNodeId: string;
-    exitPort: number;
+    landingNodeId?: string | null;
+    landingPort?: number | null;
     entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
   } | null;
   certificate: {
@@ -110,7 +110,7 @@ export interface ApiLine {
   } | null;
   topology: {
     entry: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
-    exit: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number };
+    landing?: { node: { id: string; name: string; serverHost: string; status: string; isLocal: boolean }; port: number } | null;
   };
 }
 

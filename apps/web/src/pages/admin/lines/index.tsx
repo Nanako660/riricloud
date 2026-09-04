@@ -109,13 +109,42 @@ export default function AdminLinesPage() {
       <Card>
         <CardContent className="p-0">
           {lines.length ? <Table className="min-w-[980px]">
-            <TableHeader><TableRow><TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead><TableHead>线路</TableHead><TableHead>类型</TableHead><TableHead>接入端点</TableHead><TableHead>目标入站</TableHead><TableHead>标签 / 倍率</TableHead><TableHead>延迟</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead><TableHead>线路</TableHead><TableHead>类型</TableHead><TableHead>接入端点</TableHead><TableHead>节点拓扑</TableHead><TableHead>标签 / 倍率</TableHead><TableHead>延迟</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
             <TableBody>{lines.map((line, index) => <TableRow key={line.id}>
               <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>
               <TableCell><div className="font-medium">{line.name}</div><div className="text-xs text-muted-foreground">Lv.{line.level}</div></TableCell>
               <TableCell><Badge variant="outline" title={line.relayMode === 'TARGET_LINE' ? relayDescription(line) : undefined}>{typeLabels[line.type]}{line.relayMode ? ` · ${relayDescription(line)}` : ''}</Badge></TableCell>
               <TableCell className="min-w-36"><div className="font-mono text-xs">{line.serverHost}:{line.serverPort}</div><div className="text-xs text-muted-foreground">{line.endpointOverrideEnabled ? '覆盖已启用' : '复用底层设置'}</div>{line.serverName && <div className="text-xs text-muted-foreground">SNI {line.serverName}</div>}{line.host && <div className="text-xs text-muted-foreground">Host {line.host}</div>}</TableCell>
-              <TableCell><div>{line.exitNode.name}</div><div className="text-xs text-muted-foreground">{line.relayMode === 'TARGET_LINE' && line.targetLine ? `${line.protocolType} ➔ ${line.targetLine.protocolType}` : line.protocolType} · 出口 {line.exitPort}</div></TableCell>
+              <TableCell>
+                {line.type === 'DIRECT' ? (
+                  <>
+                    <div>{line.entryNode.name}</div>
+                    <div className="text-xs text-muted-foreground">{line.protocolType} · 监听 {line.entryPort}</div>
+                  </>
+                ) : line.relayMode === 'TARGET_LINE' ? (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <span>{line.entryNode.name}</span>
+                      <span className="text-muted-foreground">➔</span>
+                      <span>{line.targetLine?.entryNode.name ?? '未绑定'}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {line.protocolType} ➔ {line.targetLine?.protocolType ?? '未知'} · 落地 {line.targetLine?.entryPort ?? '—'}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <span>{line.entryNode.name}</span>
+                      <span className="text-muted-foreground">➔</span>
+                      <span>{line.landingNode?.name ?? '未绑定'}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {line.protocolType} · 落地 {line.landingPort ?? '—'}
+                    </div>
+                  </>
+                )}
+              </TableCell>
               <TableCell><div className="flex max-w-40 flex-wrap gap-1">{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
               <TableCell><LineLatencyChip latencyMs={line.lastLatencyMs} status={line.lastTestStatus} message={line.lastTestMessage} testedAt={line.lastTestedAt} /></TableCell>
               <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge>{!line.isPublic && <span className="text-xs text-muted-foreground">不公开</span>}</div></TableCell>
@@ -126,7 +155,7 @@ export default function AdminLinesPage() {
       </Card>
       <LineFormDialog open={formOpen} onOpenChange={setFormOpen} line={editing} nodes={nodes ?? []} lines={lines} certificates={certificates?.data ?? []} pending={busy} onSubmit={(payload) => editing ? update.mutate({ id: editing.id, ...payload }, { onSuccess: () => setFormOpen(false) }) : create.mutate(payload, { onSuccess: () => setFormOpen(false) })} />
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除线路「{deleting?.name}」？</AlertDialogTitle><AlertDialogDescription>删除后该线路不会再参与套餐匹配，已导入的订阅将在下次刷新时移除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleting && remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="h-3.5 w-3.5" />直连线路直接连接目标入站；中继线路由入口节点承接用户连接后转发至目标出口。</div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="h-3.5 w-3.5" />直连线路直接连接单节点入站；中继线路由入口节点承接用户连接后转发至落地节点。</div>
     </PageContainer>
   );
 }

@@ -57,23 +57,23 @@ export class UpdateLineDto {
   @IsOptional()
   entryPort?: number | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '中继落地节点；直连与桥接中继传 null 清空' })
   @IsUUID()
   @IsOptional()
-  exitNodeId?: string | null;
+  landingNodeId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '桥接已有直连线路时的目标线路；服务端自动同步出口节点与端口' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '桥接已有直连线路时的目标线路' })
   @IsUUID()
   @IsOptional()
   targetLineId?: string | null;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 65535, nullable: true })
+  @ApiPropertyOptional({ minimum: 1, maximum: 65535, nullable: true, description: '中继落地监听端口' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(65535)
   @IsOptional()
-  exitPort?: number | null;
+  landingPort?: number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '标准 TLS 证书 ID；传 null 清除关联' })
   @IsUUID()

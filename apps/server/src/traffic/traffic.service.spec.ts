@@ -114,7 +114,7 @@ describe('TrafficService', () => {
     prisma.line.findMany.mockResolvedValue([{
       ...line({ id: 'relay-line', name: '盲转线路', type: 'RELAY', trafficRate: 2 }),
       entryNodeId: 'node-1',
-      exitNodeId: 'node-2',
+      landingNodeId: 'node-2',
       relayMode: 'BLIND_FORWARD'
     }]);
 

@@ -11,7 +11,7 @@ interface LineCardProps {
 
 // 用户只需确认线路名称、协议、倍率、延迟和当前在线状态，拓扑细节由订阅客户端负责展示。
 export function LineCard({ line, className }: LineCardProps) {
-  const isOnline = line.exitNode.status === 'ONLINE';
+  const isOnline = line.entryNode?.status === 'ONLINE' && (!line.landingNode || line.landingNode.status === 'ONLINE');
 
   return (
     <div className={cn('flex min-w-0 flex-col justify-between gap-2.5 rounded-md border bg-card/50 p-3 transition-colors hover:bg-muted/20', className)}>

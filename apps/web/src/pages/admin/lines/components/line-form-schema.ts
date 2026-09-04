@@ -57,8 +57,8 @@ export const lineFormSchema = z.object({
   targetLineId: z.string().optional(),
   entryNodeId: z.string().optional(),
   entryPort: optionalPort,
-  exitNodeId: z.string().optional(),
-  exitPort: optionalPort,
+  landingNodeId: z.string().optional(),
+  landingPort: optionalPort,
   certificateId: z.string(),
 
   transportType: z.enum(['tcp', 'ws', 'grpc', 'http', 'httpupgrade']),
@@ -122,8 +122,8 @@ export const lineFormSchema = z.object({
   status: z.enum(['ACTIVE', 'DISABLED'])
 }).superRefine((value, ctx) => {
   if (!value.entryNodeId) ctx.addIssue({ code: 'custom', path: ['entryNodeId'], message: '请选择入口节点' });
-  if (value.type === 'RELAY' && value.relayMode !== 'TARGET_LINE' && !value.exitNodeId) {
-    ctx.addIssue({ code: 'custom', path: ['exitNodeId'], message: '中继线路必须选择出口节点' });
+  if (value.type === 'RELAY' && value.relayMode !== 'TARGET_LINE' && !value.landingNodeId) {
+    ctx.addIssue({ code: 'custom', path: ['landingNodeId'], message: '中继线路必须选择落地节点' });
   }
   if (value.type === 'RELAY' && !value.relayMode) {
     ctx.addIssue({ code: 'custom', path: ['relayMode'], message: '请选择中继机制' });
@@ -200,7 +200,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
   const isQuic = protocolType === 'HYSTERIA2' || protocolType === 'TUIC';
   return {
     name: '', tag: '', listen: '0.0.0.0', type: 'DIRECT', protocolType, relayMode: 'BLIND_FORWARD', targetLineId: '',
-    entryNodeId: '', entryPort: undefined, exitNodeId: '', exitPort: undefined,
+    entryNodeId: '', entryPort: undefined, landingNodeId: '', landingPort: undefined,
     certificateId: MANUAL_CERTIFICATE_ID,
     transportType: 'tcp', wsPath: '/ws', wsHost: '', wsHeaders: [], wsMaxEarlyData: undefined,
     wsEarlyDataHeaderName: '', grpcServiceName: 'grpc', httpPath: '/http', httpHost: '', httpHeaders: [],
@@ -237,7 +237,7 @@ export function newLineFormValues(protocolType: ProtocolType = 'VLESS'): LineFor
     ...defaultLineFormValues(protocolType),
     tag: randomTag(),
     entryPort: port,
-    exitPort: port
+    landingPort: undefined
   };
 }
 
@@ -264,8 +264,8 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     targetLineId: line.targetLineId ?? '',
     entryNodeId: line.entryNodeId,
     entryPort: line.entryPort,
-    exitNodeId: line.exitNodeId,
-    exitPort: line.exitPort,
+    landingNodeId: line.landingNodeId ?? '',
+    landingPort: line.landingPort ?? undefined,
     certificateId: line.certificateId ?? MANUAL_CERTIFICATE_ID,
     transportType,
     wsPath: asString(rawTransport.path, defaults.wsPath),
@@ -437,8 +437,10 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
 }
 
 export function toLinePayload(values: LineFormValues) {
-  const entryNodeId = values.entryNodeId || values.exitNodeId || '';
-  const exitNodeId = values.type === 'DIRECT' ? entryNodeId : values.exitNodeId || '';
+  const entryNodeId = values.entryNodeId || '';
+  const isRelayWithLanding = values.type === 'RELAY' && values.relayMode !== 'TARGET_LINE';
+  const landingNodeId = isRelayWithLanding ? values.landingNodeId || null : null;
+  const landingPort = isRelayWithLanding ? values.landingPort ?? null : null;
   return {
     name: values.name.trim(),
     tag: values.tag.trim() || null,
@@ -450,8 +452,8 @@ export function toLinePayload(values: LineFormValues) {
     targetLineId: values.type === 'RELAY' && values.relayMode === 'TARGET_LINE' ? values.targetLineId || null : null,
     entryNodeId,
     entryPort: values.entryPort,
-    exitNodeId,
-    exitPort: values.type === 'DIRECT' ? values.entryPort : values.exitPort,
+    landingNodeId,
+    landingPort,
     certificateId: values.tlsMode === 'tls' && values.certificateId !== MANUAL_CERTIFICATE_ID ? values.certificateId : null,
     endpointOverrideEnabled: values.endpointOverrideEnabled,
     serverHost: values.serverHost.trim() || null,

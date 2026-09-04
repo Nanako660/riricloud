@@ -14,7 +14,8 @@ export interface UserLine {
   lastTestedAt?: string | null;
   lastTestStatus?: string | null;
   lastTestMessage?: string | null;
-  exitNode: { status: string };
+  entryNode?: { name?: string; status: string };
+  landingNode?: { name?: string; status: string } | null;
 }
 
 export function useUserSubscription() {

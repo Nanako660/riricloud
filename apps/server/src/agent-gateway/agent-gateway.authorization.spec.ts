@@ -34,13 +34,13 @@ describe('AgentService per-line authorization', () => {
     paramsJson: vlessParams,
     entryNodeId: 'node-1',
     entryPort: id === 'public-line' ? 24443 : 24444,
-    exitNodeId: 'node-1',
-    exitPort: id === 'public-line' ? 24443 : 24444,
+    landingNodeId: null,
+    landingPort: null,
     tagsJson,
     isPublic,
     status: 'ACTIVE',
     entryNode: { status: 'ONLINE' },
-    exitNode: { serverHost: '198.51.100.10', status: 'ONLINE' },
+    landingNode: null,
     certificate: null
   });
   const prisma = {
@@ -60,7 +60,7 @@ describe('AgentService per-line authorization', () => {
       status: 'ONLINE',
       configOverride: null,
       entryLines: [publicLine, hiddenLine],
-      exitLines: []
+      landingLines: []
     });
     prisma.subscription.findMany.mockResolvedValue([
       {

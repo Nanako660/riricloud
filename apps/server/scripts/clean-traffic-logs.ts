@@ -9,17 +9,17 @@ async function main(): Promise<void> {
       type: true,
       relayMode: true,
       entryNodeId: true,
-      exitNodeId: true
+      landingNodeId: true
     }
   });
   const directByNode = new Map<string, string[]>();
   const blindExitByNode = new Map<string, string[]>();
   for (const line of lines) {
-    if (line.type === 'DIRECT' && line.entryNodeId === line.exitNodeId) {
+    if (line.type === 'DIRECT') {
       directByNode.set(line.entryNodeId, [...(directByNode.get(line.entryNodeId) ?? []), line.id]);
     }
-    if (line.type === 'RELAY' && line.relayMode === 'BLIND_FORWARD') {
-      blindExitByNode.set(line.exitNodeId, [...(blindExitByNode.get(line.exitNodeId) ?? []), line.id]);
+    if (line.type === 'RELAY' && line.relayMode === 'BLIND_FORWARD' && line.landingNodeId) {
+      blindExitByNode.set(line.landingNodeId, [...(blindExitByNode.get(line.landingNodeId) ?? []), line.id]);
     }
   }
 

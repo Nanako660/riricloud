@@ -165,11 +165,11 @@ describe('CertificatesService', () => {
     };
     prisma.certificate.findUnique.mockResolvedValue(current);
     prisma.certificate.update.mockResolvedValue({ ...current, name: '新证书' });
-    prisma.line.findMany.mockResolvedValue([{ entryNodeId: 'node-entry', exitNodeId: 'node-exit' }]);
+    prisma.line.findMany.mockResolvedValue([{ entryNodeId: 'node-entry', landingNodeId: 'node-landing' }]);
 
     const result = await service.update('certificate-1', { name: '新证书' });
     expect(agentGateway.pushConfig).toHaveBeenCalledWith('node-entry');
-    expect(agentGateway.pushConfig).toHaveBeenCalledWith('node-exit');
-    expect(result.affectedNodeIds).toEqual(['node-entry', 'node-exit']);
+    expect(agentGateway.pushConfig).toHaveBeenCalledWith('node-landing');
+    expect(result.affectedNodeIds).toEqual(['node-entry', 'node-landing']);
   });
 });
