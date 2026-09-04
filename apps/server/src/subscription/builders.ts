@@ -329,9 +329,12 @@ export function buildClashRuleProvidersInternal(rules: TemplateRuleItem[]): {
     while (used.has(name)) name = `${base}-${suffix++}`;
     used.add(name);
     ruleToProviderMap.set(index, name);
+    const rawBehavior = typeof rule.behavior === 'string' ? rule.behavior.toLowerCase().trim() : '';
+    const behavior = rawBehavior === 'ipcidr' ? 'ipcidr' : rawBehavior === 'domain' ? 'domain' : 'classical';
     providers[name] = {
       type: 'http',
-      behavior: rule.behavior === 'ipcidr' ? 'ipcidr' : 'domain',
+      behavior,
+      path: `./ruleset/${name}.yaml`,
       format: 'yaml',
       url: rule.url.trim(),
       interval: 86400
@@ -463,13 +466,12 @@ function buildClashRules(rules: TemplateRuleItem[], primaryGroup: string): { rul
     const { target, noResolve } = cleanTargetAndNoResolve(rule.target, primaryGroup);
     const type = ruleType(rule.type, 'domain-suffix');
     if (type === 'remote-rule-set') {
+      for (const value of stringArray(rule.rules)) {
+        output.push(`DOMAIN-SUFFIX,${value},${target}`);
+      }
       const provider = ruleToProviderMap.get(index);
       if (provider) {
         output.push(`RULE-SET,${provider},${target}`);
-      } else {
-        for (const value of stringArray(rule.rules)) {
-          output.push(`DOMAIN-SUFFIX,${value},${target}`);
-        }
       }
       continue;
     }
@@ -478,9 +480,8 @@ function buildClashRules(rules: TemplateRuleItem[], primaryGroup: string): { rul
       continue;
     }
     if (type === 'geoip') {
-      const suffix = noResolve ? ',no-resolve' : '';
       for (const value of stringArray(rule.rules)) {
-        output.push(`GEOIP,${value.toUpperCase()},${target}${suffix}`);
+        output.push(`GEOIP,${value.toUpperCase()},${target}`);
       }
       continue;
     }
@@ -1323,7 +1324,17 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
       routeRules.push({ action: 'route', outbound: routeOutbound });
       continue;
     }
-    if (type === 'geosite' || type === 'remote-rule-set') {
+    if (type === 'remote-rule-set') {
+      if (values.length) {
+        routeRules.push({ domain_suffix: values, outbound: routeOutbound });
+      }
+      const ruleSet = singboxRuleSetTags.get(index);
+      if (ruleSet?.length) {
+        routeRules.push({ rule_set: ruleSet, outbound: routeOutbound });
+      }
+      continue;
+    }
+    if (type === 'geosite') {
       const ruleSet = singboxRuleSetTags.get(index);
       if (ruleSet?.length) {
         routeRules.push({ rule_set: ruleSet, outbound: routeOutbound });
