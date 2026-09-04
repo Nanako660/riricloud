@@ -281,7 +281,27 @@ function parseYamlObject(value: string): Record<string, unknown> {
 }
 
 function ruleType(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : fallback;
+  const raw = typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : fallback;
+  if (raw === 'rule-set' || raw === 'rule_set' || raw === 'remote_rule_set') return 'remote-rule-set';
+  if (raw === 'ip-cidr6' || raw === 'ip_cidr6' || raw === 'ip_cidr') return 'ip-cidr';
+  if (raw === 'domain_suffix') return 'domain-suffix';
+  if (raw === 'domain_keyword') return 'domain-keyword';
+  if (raw === 'process_name') return 'process-name';
+  if (raw === 'geo-ip') return 'geoip';
+  return raw;
+}
+
+function cleanTargetAndNoResolve(rawTarget: unknown, fallback: string): { target: string; noResolve: boolean } {
+  const t = typeof rawTarget === 'string' && rawTarget.trim() ? rawTarget.trim() : fallback;
+  const parts = t.split(',').map((p) => p.trim()).filter(Boolean);
+  const target = parts[0] || fallback;
+  let noResolve = false;
+  for (const part of parts.slice(1)) {
+    if (part.toLowerCase() === 'no-resolve') {
+      noResolve = true;
+    }
+  }
+  return { target, noResolve };
 }
 
 function safeRuleName(value: unknown, fallback: string): string {
@@ -294,8 +314,12 @@ function slug(value: string, fallback: string): string {
   return normalized || fallback;
 }
 
-export function buildClashRuleProviders(rules: TemplateRuleItem[]): Record<string, Record<string, unknown>> {
+export function buildClashRuleProvidersInternal(rules: TemplateRuleItem[]): {
+  providers: Record<string, Record<string, unknown>>;
+  ruleToProviderMap: Map<number, string>;
+} {
   const providers: Record<string, Record<string, unknown>> = {};
+  const ruleToProviderMap = new Map<number, string>();
   const used = new Set<string>();
   for (const [index, rule] of rules.entries()) {
     if (rule.enabled === false || ruleType(rule.type, '') !== 'remote-rule-set' || typeof rule.url !== 'string' || !rule.url.trim()) continue;
@@ -304,6 +328,7 @@ export function buildClashRuleProviders(rules: TemplateRuleItem[]): Record<strin
     let suffix = 2;
     while (used.has(name)) name = `${base}-${suffix++}`;
     used.add(name);
+    ruleToProviderMap.set(index, name);
     providers[name] = {
       type: 'http',
       behavior: rule.behavior === 'ipcidr' ? 'ipcidr' : 'domain',
@@ -312,7 +337,11 @@ export function buildClashRuleProviders(rules: TemplateRuleItem[]): Record<strin
       interval: 86400
     };
   }
-  return providers;
+  return { providers, ruleToProviderMap };
+}
+
+export function buildClashRuleProviders(rules: TemplateRuleItem[]): Record<string, Record<string, unknown>> {
+  return buildClashRuleProvidersInternal(rules).providers;
 }
 
 export function buildSingboxRouteRuleSets(rules: TemplateRuleItem[]): Array<Record<string, unknown>> {
@@ -427,20 +456,46 @@ export function buildSemanticSingboxDns(value: unknown, primaryGroup: string, ru
 }
 
 function buildClashRules(rules: TemplateRuleItem[], primaryGroup: string): { rules: string[]; providers: Record<string, Record<string, unknown>> } {
-  const providers = buildClashRuleProviders(rules);
-  const remoteProviderNames = Object.keys(providers);
-  let remoteIndex = 0;
-  const output = rules.filter((rule) => rule.enabled !== false).flatMap((rule) => {
+  const { providers, ruleToProviderMap } = buildClashRuleProvidersInternal(rules);
+  const output: string[] = [];
+  for (const [index, rule] of rules.entries()) {
+    if (rule.enabled === false) continue;
+    const { target, noResolve } = cleanTargetAndNoResolve(rule.target, primaryGroup);
     const type = ruleType(rule.type, 'domain-suffix');
-    const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
     if (type === 'remote-rule-set') {
-      const provider = remoteProviderNames[remoteIndex++];
-      return provider ? [`RULE-SET,${provider},${target}`] : stringArray(rule.rules).map((value) => `DOMAIN-SUFFIX,${value},${target}`);
+      const provider = ruleToProviderMap.get(index);
+      if (provider) {
+        output.push(`RULE-SET,${provider},${target}`);
+      } else {
+        for (const value of stringArray(rule.rules)) {
+          output.push(`DOMAIN-SUFFIX,${value},${target}`);
+        }
+      }
+      continue;
     }
-    if (type === 'match' || type === 'final') return [`MATCH,${target}`];
-    const clashType = type === 'ip-cidr' || type === 'ip_cidr' ? 'IP-CIDR' : type === 'domain-keyword' ? 'DOMAIN-KEYWORD' : type === 'domain' ? 'DOMAIN' : type === 'geosite' ? 'GEOSITE' : 'DOMAIN-SUFFIX';
-    return stringArray(rule.rules).map((value) => `${clashType},${value},${target}`);
-  });
+    if (type === 'match' || type === 'final') {
+      output.push(`MATCH,${target}`);
+      continue;
+    }
+    if (type === 'geoip') {
+      const suffix = noResolve ? ',no-resolve' : '';
+      for (const value of stringArray(rule.rules)) {
+        output.push(`GEOIP,${value.toUpperCase()},${target}${suffix}`);
+      }
+      continue;
+    }
+    if (type === 'process-name') {
+      for (const value of stringArray(rule.rules)) {
+        output.push(`PROCESS-NAME,${value},${target}`);
+      }
+      continue;
+    }
+    const clashType = type === 'ip-cidr' ? 'IP-CIDR' : type === 'domain-keyword' ? 'DOMAIN-KEYWORD' : type === 'domain' ? 'DOMAIN' : type === 'geosite' ? 'GEOSITE' : 'DOMAIN-SUFFIX';
+    const noResolveSuffix = (clashType === 'IP-CIDR' && noResolve) ? ',no-resolve' : '';
+    for (const value of stringArray(rule.rules)) {
+      output.push(`${clashType},${value},${target}${noResolveSuffix}`);
+    }
+  }
   return { rules: output.length ? output : [`MATCH,${primaryGroup}`], providers };
 }
 
@@ -1257,22 +1312,46 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
   const configuredRules = templateRules(template) as TemplateRuleItem[];
   const singboxRuleSets = buildSingboxRouteRuleSets(configuredRules);
   const singboxRuleSetTags = buildSingboxRuleSetTags(configuredRules);
-  const routeRules: Array<Record<string, unknown>> = configuredRules
-    .filter((rule) => rule.enabled !== false)
-    .flatMap((rule, index): Array<Record<string, unknown>> => {
-      const target = routeTarget(typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup);
-      const values = stringArray(rule.rules);
-      const type = ruleType(rule.type, 'domain_suffix');
-      if (type === 'match' || type === 'final') return [{ action: 'route', outbound: target }];
-      if (type === 'geosite' || type === 'remote-rule-set') {
-        const ruleSet = singboxRuleSetTags.get(index);
-        return ruleSet?.length ? [{ rule_set: ruleSet, outbound: target }] : [];
+  const routeRules: Array<Record<string, unknown>> = [];
+  for (const [index, rule] of configuredRules.entries()) {
+    if (rule.enabled === false) continue;
+    const { target } = cleanTargetAndNoResolve(rule.target, primaryGroup);
+    const routeOutbound = routeTarget(target);
+    const values = stringArray(rule.rules);
+    const type = ruleType(rule.type, 'domain-suffix');
+    if (type === 'match' || type === 'final') {
+      routeRules.push({ action: 'route', outbound: routeOutbound });
+      continue;
+    }
+    if (type === 'geosite' || type === 'remote-rule-set') {
+      const ruleSet = singboxRuleSetTags.get(index);
+      if (ruleSet?.length) {
+        routeRules.push({ rule_set: ruleSet, outbound: routeOutbound });
       }
-      if (type === 'ip-cidr' || type === 'ip_cidr') return [{ ip_cidr: values, outbound: target }];
-      if (type === 'domain') return [{ domain: values, outbound: target }];
-      if (type === 'domain-keyword') return [{ domain_keyword: values, outbound: target }];
-      return [{ domain_suffix: values, outbound: target }];
-    });
+      continue;
+    }
+    if (type === 'geoip') {
+      routeRules.push({ geoip: values.map((v) => v.toLowerCase()), outbound: routeOutbound });
+      continue;
+    }
+    if (type === 'process-name') {
+      routeRules.push({ process_name: values, outbound: routeOutbound });
+      continue;
+    }
+    if (type === 'ip-cidr') {
+      routeRules.push({ ip_cidr: values, outbound: routeOutbound });
+      continue;
+    }
+    if (type === 'domain') {
+      routeRules.push({ domain: values, outbound: routeOutbound });
+      continue;
+    }
+    if (type === 'domain-keyword') {
+      routeRules.push({ domain_keyword: values, outbound: routeOutbound });
+      continue;
+    }
+    routeRules.push({ domain_suffix: values, outbound: routeOutbound });
+  }
   const config: Record<string, unknown> = {
     log: { level: 'info' },
     dns: buildSemanticSingboxDns(templateDns(template), primaryGroup, singboxRuleSets.map((rule) => String(rule.tag))),

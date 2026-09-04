@@ -180,4 +180,52 @@ describe('builders template proxy-groups resolution', () => {
       expect.objectContaining({ tag: '负载均衡', type: 'urltest', tolerance: 80 })
     ]));
   });
+
+  it('正确解析 geoip, process-name, rule-set 别名并净化 ,no-resolve 目标出站名', () => {
+    const template = {
+      proxyGroupsJson: JSON.stringify([
+        { name: '🚀 节点选择', type: 'select', proxies: 'all' },
+        { name: '🎯 全球直连', type: 'select', proxies: ['DIRECT'] },
+        { name: '🛑 广告拦截', type: 'select', proxies: ['REJECT'] }
+      ]),
+      ruleSetsJson: JSON.stringify([
+        { name: 'RemoteAds', type: 'rule-set', url: 'https://rules.example/ads.yaml', singboxUrl: 'https://rules.example/ads.srs', target: '🛑 广告拦截' },
+        { name: 'BilibiliProcess', type: 'process-name', rules: ['tv.danmaku.bili'], target: '🚀 节点选择' },
+        { name: 'TencentIP', type: 'ip-cidr', rules: ['182.254.116.0/24'], target: '🎯 全球直连,no-resolve' },
+        { name: 'ChinaIP', type: 'geoip', rules: ['CN'], target: '🎯 全球直连,no-resolve' },
+        { name: 'FinalMatch', type: 'match', target: '🚀 节点选择' }
+      ]),
+      dnsConfigJson: '{}'
+    };
+
+    // 1. Clash 验证
+    const clashYaml = buildClashYaml(user, mockNodes, template);
+    const clashConfig = parse(clashYaml) as { rules: string[]; 'rule-providers': Record<string, Record<string, unknown>> };
+    expect(clashConfig['rule-providers']).toHaveProperty('remoteads');
+    expect(clashConfig.rules).toContain('RULE-SET,remoteads,🛑 广告拦截');
+    expect(clashConfig.rules).toContain('PROCESS-NAME,tv.danmaku.bili,🚀 节点选择');
+    expect(clashConfig.rules).toContain('IP-CIDR,182.254.116.0/24,🎯 全球直连,no-resolve');
+    expect(clashConfig.rules).toContain('GEOIP,CN,🎯 全球直连,no-resolve');
+    expect(clashConfig.rules).toContain('MATCH,🚀 节点选择');
+
+    // 2. Sing-box 验证
+    const singboxJson = buildSingboxJson(user, mockNodes, template);
+    const singboxConfig = JSON.parse(singboxJson) as {
+      route: {
+        rule_set?: Array<{ tag: string; url: string }>;
+        rules: Array<Record<string, unknown>>;
+      };
+    };
+    expect(singboxConfig.route.rule_set).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tag: 'remoteads', url: 'https://rules.example/ads.srs' })
+    ]));
+    // 目标出站名必须被清洗为 direct，绝不能带上 ,no-resolve
+    expect(singboxConfig.route.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rule_set: ['remoteads'], outbound: '🛑 广告拦截' }),
+      expect.objectContaining({ process_name: ['tv.danmaku.bili'], outbound: '🚀 节点选择' }),
+      expect.objectContaining({ ip_cidr: ['182.254.116.0/24'], outbound: '🎯 全球直连' }),
+      expect.objectContaining({ geoip: ['cn'], outbound: '🎯 全球直连' }),
+      expect.objectContaining({ action: 'route', outbound: '🚀 节点选择' })
+    ]));
+  });
 });
