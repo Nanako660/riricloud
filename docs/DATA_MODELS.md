@@ -560,7 +560,7 @@ model SystemSetting {
 | `serverHost/serverPort` | 用户端实际连接地址/端口覆盖；线路 API 顶层字段返回最终生效值，`endpointOverrides` 返回原始值 |
 | `serverName/host` | 订阅编译与协议代理中继分别覆盖 SNI 与传输层 Host；开关关闭时回退到 `Line.paramsJson` |
 | `protocolType/paramsJson` | Line 自己拥有协议和协议参数；响应字段为 `protocolType` + 脱敏后的 `params`，管理端通过可视化分组表单编辑 |
-| `trafficRate` | 订阅展示倍率，非 1 时线路名称追加 `[Nx]` |
+| `trafficRate` | 线路流量倍率；`TrafficLog.upload/download` 记录物理原始字节，Agent 心跳入账时以该倍率折算 `billedBytes` 扣减 `Subscription.trafficUsedBytes` 与兼容的 `User.trafficUsedBytes`，大盘同时展示物理值与折算值；订阅展示倍率非 1 时线路名称追加 `[Nx]` |
 | `tagsJson/level/sortOrder/isPublic/status` | 线路标签、等级、排序、公开性与启停状态；只在线且公开的启用线路可进入套餐匹配，额外授权线路可绕过公开性与套餐规则但仍须启用且入口/出口在线 |
 
 线路 API 为旧客户端保留只读 `targetInbound` 摘要，但它由 Line 的出口节点、出口端口和协议参数派生，不再对应 `NodeInbound` 外键。
@@ -588,7 +588,7 @@ model SystemSetting {
 
 `User.trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`subscriptionToken` 暂时保留为兼容镜像。订阅模块存在时以 `Subscription` 为准，每次订购、升配、管理员修改或 Token 重置在同一事务中同步镜像；旧迁移/旧测试缺少订阅表时沿用原 User 配额路径。
 
-用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 使用 `QueryStats(reset=false)` 上报累计值。Master 以 `nodeId + credential` 查询 `TrafficCursor` 计算增量：首次出现计入当前值，累计值上升只计入差额，累计值下降视为内核重启/计数器重置并计入当前值，同时记录告警，累计值相等则不生成流水。未知凭证只更新游标，不计费；用户之后恢复时只计算新增流量。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。
+用户流量由在线 Agent 从 Sing-box `experimental.v2ray_api` 使用 `QueryStats(reset=false)` 上报累计值。Master 以 `nodeId + credential` 查询 `TrafficCursor` 计算增量：首次出现计入当前值，累计值上升只计入差额，累计值下降视为内核重启/计数器重置并计入当前值，同时记录告警，累计值相等则不生成流水。Master 解析节点线路时优先选择 ACTIVE 入口线路；节点没有入口线路时，回退到其作为 ACTIVE `RELAY + BLIND_FORWARD` 出口的承载线路。普通用户流水的 `upload/download` 保留物理字节，配额扣减按归属线路的 `trafficRate` 计算 `billedBytes`；没有归属线路时倍率按 `1.0` 处理。协议代理/异构桥接使用固定内部中继凭证，内部凭证只更新游标，不创建 `TrafficLog`，不扣减普通用户或订阅配额。未知普通凭证同样只更新游标，不计费；用户之后恢复时只计算新增流量。订阅存在时，`Subscription.trafficUsedBytes` 是计费与资格判断的真实来源，`User.trafficUsedBytes` 仅作为兼容镜像；未绑定订阅的旧用户继续使用 User 字段。
 
 每次账务事务同时提交 `TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 和 `User.trafficUsedBytes`。同一节点积压的心跳允许合并为最新快照，用户与订阅配额按批次聚合更新，因而重试和中间样本丢失不会重复计费或丢失累计差额。节点实时遥测与速率聚合独立落库，历史速率桶由低频巡检按保留周期清理，不在每个心跳事务内执行删除。
 

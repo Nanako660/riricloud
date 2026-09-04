@@ -14,6 +14,15 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [0.6.2] - 2026-09-04
+
+### Added
+
 - 新增订阅模板现代化工作台：策略组/分流规则可视化卡片与 CodeMirror 源码双模编辑、Clash/Sing-box 实时渲染预览、模板复制与快速预览抽屉。
 - 新增模板预览接口 `POST /api/v1/admin/subscription-templates/preview` 与克隆接口 `POST /api/v1/admin/subscription-templates/:id/duplicate`，无真实线路时使用多协议 Mock 节点池。
 
@@ -21,6 +30,7 @@
 
 - 订阅编译器升级为语义化 DNS 与 Sing-box 1.8+ Rule-Set 结构，自动生成 Clash `rule-providers`、Sing-box `route.rule_set`，策略组支持标签、协议、倍率复合过滤及故障转移/负载均衡输入。
 - 模板默认状态改为事务同步 `SubscriptionTemplate.isDefault` 与 `SystemSetting.defaultTemplateId`；订阅接口增加 `templateId` 调试参数，启动时自动规范化存量模板 JSON。
+- 协议代理与异构桥接改用专用内部中继凭证，并在 `config_sync` 的 Stats API 中下发入站 Tag 列表。
 
 ### Fixed
 
@@ -35,6 +45,9 @@
 - 优化 DNS 高级覆写中的 YAML/JSON 编辑器改为填充面板剩余高度，保留编辑器内部滚动。
 - 修复移动端用户流量明细弹窗被桌面端最大高度限制导致底部内容被遮罩截断的问题，并为线路明细表增加横向滚动。
 - 修复个人中心账号信息与修改登录密码卡片在移动端窄屏下被长内容撑宽、输入框和复制按钮被裁切的问题。
+- 修复盲转发出口流量无法归属中继线路、协议代理首用户被错误扣费、流量倍率未参与配额扣减，以及历史无归属流水无法按盲转出口回退的问题。
+- 新增 `apps/server/scripts/clean-traffic-logs.ts`，可幂等回填唯一可确认线路的历史无归属流水。
+
 
 
 ## [0.6.1] - 2026-09-04

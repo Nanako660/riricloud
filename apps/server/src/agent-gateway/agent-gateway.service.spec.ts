@@ -1,6 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  INTERNAL_RELAY_TRANSIT_EMAIL,
+  INTERNAL_RELAY_TRANSIT_SECRET,
+  INTERNAL_RELAY_TRANSIT_UUID
+} from '../common/constants';
 import { AgentGatewayService } from './agent-gateway.service';
 import type { HeartbeatData } from './agent-message';
 
@@ -100,7 +105,11 @@ describe('AgentGatewayService', () => {
     expect(singboxConfig.experimental).toEqual({
       v2ray_api: {
         listen: '127.0.0.1:10085',
-        stats: { enabled: true, users: ['user@example.com'] }
+        stats: {
+          enabled: true,
+          users: ['user@example.com'],
+          inbounds: ['line-line-1', 'line-line-hy2', 'line-line-ss', 'line-line-shadowtls', 'line-line-shadowtls-inner']
+        }
       }
     });
     expect(inbounds).toEqual(expect.arrayContaining([
@@ -161,8 +170,26 @@ describe('AgentGatewayService', () => {
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-proxy-entry', listen_port: 25101 })]));
-    expect(singboxConfig.outbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-out-proxy', server: '198.51.100.20', server_port: 25102, uuid: user.uuid })]));
+    expect(singboxConfig.outbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-out-proxy', server: '198.51.100.20', server_port: 25102, uuid: INTERNAL_RELAY_TRANSIT_UUID })]));
     expect(singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-proxy-entry'], outbound: 'relay-out-proxy' }] });
+
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'node-2',
+      serverHost: '198.51.100.20',
+      status: 'ONLINE',
+      configOverride: null,
+      entryLines: [],
+      exitLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }]
+    });
+    const exitConfig = await service.buildConfigSync('node-2');
+    expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tag: 'relay-proxy-exit',
+        users: [{ uuid: INTERNAL_RELAY_TRANSIT_UUID, name: INTERNAL_RELAY_TRANSIT_EMAIL, flow: 'xtls-rprx-vision' }]
+      })
+    ]));
+    expect((exitConfig.singboxConfig.experimental as { v2ray_api: { stats: { users: string[] } } }).v2ray_api.stats.users)
+      .toContain(INTERNAL_RELAY_TRANSIT_EMAIL);
   });
 
   it('目标线路桥接生成入口协议、目标协议出口，并复用目标直连入站', async () => {
@@ -214,7 +241,7 @@ describe('AgentGatewayService', () => {
       expect.objectContaining({ type: 'vless', tag: 'relay-bridge-entry', listen_port: 25001 })
     ]));
     expect(entryConfig.singboxConfig.outbounds).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'hysteria2', tag: 'relay-out-bridge', server: '198.51.100.20', server_port: 25002, password: user.password })
+      expect.objectContaining({ type: 'hysteria2', tag: 'relay-out-bridge', server: '198.51.100.20', server_port: 25002, password: INTERNAL_RELAY_TRANSIT_SECRET })
     ]));
     expect(entryConfig.singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-bridge-entry'], outbound: 'relay-out-bridge' }] });
 
@@ -223,7 +250,14 @@ describe('AgentGatewayService', () => {
     });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'hysteria2', listen_port: 25002, users: [{ name: user.email, password: user.password }] })
+      expect.objectContaining({
+        type: 'hysteria2',
+        listen_port: 25002,
+        users: expect.arrayContaining([
+          { name: user.email, password: user.password },
+          { name: INTERNAL_RELAY_TRANSIT_EMAIL, password: INTERNAL_RELAY_TRANSIT_SECRET }
+        ])
+      })
     ]));
     expect(exitConfig.singboxConfig.inbounds).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ listen_port: 25002, tag: 'relay-bridge-exit' })
@@ -295,6 +329,58 @@ describe('AgentGatewayService', () => {
       where: { id: 'user-1' },
       data: { trafficUsedBytes: { increment: BigInt('9007199254740995') } }
     });
+  });
+
+  it('盲转发出口节点优先回退到承载线路并按线路倍率扣费', async () => {
+    txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: user.uuid, email: user.email }]);
+    prisma.line.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'blind-line', trafficRate: 1.5 });
+    txTrafficCursorFindMany.mockResolvedValue([]);
+
+    await service.handleHeartbeat('node-2', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '50' }]
+    });
+
+    expect(txTrafficCreateMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ nodeId: 'node-2', lineId: 'blind-line', upload: 100n, download: 50n })]
+    });
+    expect(txUserUpdate).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { trafficUsedBytes: { increment: 225n } }
+    });
+  });
+
+  it('内部中继凭证只更新游标，不创建流水或扣减任何用户配额', async () => {
+    txTrafficCursorFindMany.mockResolvedValue([
+      { credential: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: 100n, downloadTotal: 100n },
+      { credential: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: 100n, downloadTotal: 100n }
+    ]);
+
+    await service.handleHeartbeat('node-2', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [
+        { userUuid: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: '10', downloadTotal: '20' },
+        { userUuid: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: '30', downloadTotal: '40' }
+      ]
+    });
+
+    expect(txTrafficCreateMany).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
+    expect(txSubscriptionUpdate).not.toHaveBeenCalled();
+    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(2);
+    expect(txTrafficCursorUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { nodeId_credential: { nodeId: 'node-2', credential: INTERNAL_RELAY_TRANSIT_EMAIL } },
+      update: { uploadTotal: 10n, downloadTotal: 20n }
+    }));
+    expect((service as unknown as { trafficCounterResetCount: number }).trafficCounterResetCount).toBe(0);
   });
 
   it('心跳跨过流量周期边界时先重置再计入新周期，且只重置一次', async () => {

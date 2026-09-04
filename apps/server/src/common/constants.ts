@@ -27,6 +27,11 @@ export type LineType = (typeof LINE_TYPES)[number];
 export const RELAY_MODES = ['BLIND_FORWARD', 'PROTOCOL_PROXY', 'TARGET_LINE'] as const;
 export type RelayMode = (typeof RELAY_MODES)[number];
 
+// 协议代理/异构桥接在出口节点使用的专用凭证，不对应任何普通用户。
+export const INTERNAL_RELAY_TRANSIT_EMAIL = '__riricloud_relay_transit__';
+export const INTERNAL_RELAY_TRANSIT_UUID = '00000000-0000-4000-8000-000000000002';
+export const INTERNAL_RELAY_TRANSIT_SECRET = 'riricloud-internal-relay-transit-secret';
+
 // 可被协议重加密中继或目标线路桥接作为出口的协议；纯本地代理和传输层协议没有对应的统一出站。
 export const PROTOCOL_PROXY_TARGET_TYPES = [
   'VLESS',

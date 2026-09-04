@@ -13,7 +13,12 @@ import {
 } from '../common/inbound';
 import { resolveLineTags } from '../common/line-tags';
 import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
-import { type ProtocolType } from '../common/constants';
+import {
+  INTERNAL_RELAY_TRANSIT_EMAIL,
+  INTERNAL_RELAY_TRANSIT_SECRET,
+  INTERNAL_RELAY_TRANSIT_UUID,
+  type ProtocolType
+} from '../common/constants';
 import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
@@ -67,6 +72,11 @@ type TrafficCursorDelegate = {
     downloadTotal: bigint;
   }>>;
   upsert: (args: Record<string, unknown>) => Promise<unknown>;
+};
+
+type ResolvedTrafficLine = {
+  id: string;
+  trafficRate: number;
 };
 
 type PendingTask = AgentTaskMessage & { deliveredAt: number };
@@ -267,6 +277,29 @@ export class AgentService implements OnModuleDestroy {
     }
   }
 
+  private async resolveActiveLineForNode(nodeId: string): Promise<ResolvedTrafficLine | null> {
+    const lineDelegate = (this.prisma as unknown as {
+      line?: {
+        findFirst: (args: Record<string, unknown>) => Promise<{ id: string; trafficRate?: number | null } | null>;
+      };
+    }).line;
+    if (!lineDelegate) return null;
+
+    const findFirst = (where: Record<string, unknown>) => lineDelegate.findFirst({
+      where,
+      select: { id: true, trafficRate: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+    });
+    const line = await findFirst({ entryNodeId: nodeId, status: 'ACTIVE' })
+      ?? await findFirst({
+        exitNodeId: nodeId,
+        type: 'RELAY',
+        relayMode: 'BLIND_FORWARD',
+        status: 'ACTIVE'
+      });
+    return line ? { id: line.id, trafficRate: this.normalizeTrafficRate(line.trafficRate) } : null;
+  }
+
   private async persistHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode): Promise<void> {
     const heartbeatAt = new Date();
     await this.prisma.node.update({
@@ -294,17 +327,8 @@ export class AgentService implements OnModuleDestroy {
     });
     const trafficSnapshots = data.trafficSnapshots ?? [];
     if (trafficSnapshots.length) {
-      const lineDelegate = (this.prisma as unknown as {
-        line?: { findFirst: (args: Record<string, unknown>) => Promise<{ id: string } | null> };
-      }).line;
-      const activeEntryLine = lineDelegate
-        ? await lineDelegate.findFirst({
-            where: { entryNodeId: nodeId, status: 'ACTIVE' },
-            select: { id: true },
-            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
-          })
-          : null;
-      const reset = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, activeEntryLine?.id, heartbeatAt);
+      const resolvedLine = await this.resolveActiveLineForNode(nodeId);
+      const reset = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, resolvedLine, heartbeatAt);
       if (reset) void this.pushConfigToAll();
     }
   }
@@ -312,7 +336,7 @@ export class AgentService implements OnModuleDestroy {
   private async persistTrafficSnapshots(
     nodeId: string,
     records: HeartbeatData['trafficSnapshots'],
-    lineId?: string,
+    line?: ResolvedTrafficLine | null,
     observedAt = new Date()
   ): Promise<boolean> {
     let resetCount = 0;
@@ -359,6 +383,9 @@ export class AgentService implements OnModuleDestroy {
       const totalsByUser = new Map<string, bigint>();
       const cursorUpdates = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const [credential, current] of snapshotsByCredential) {
+        cursorUpdates.set(credential, current);
+        if (this.isInternalRelayCredential(credential)) continue;
+
         const previous = cursorByCredential.get(credential);
         const previousUpload = previous?.uploadTotal ?? 0n;
         const previousDownload = previous?.downloadTotal ?? 0n;
@@ -370,7 +397,6 @@ export class AgentService implements OnModuleDestroy {
         }
         const upload = uploadReset ? current.uploadTotal : current.uploadTotal - previousUpload;
         const download = downloadReset ? current.downloadTotal : current.downloadTotal - previousDownload;
-        cursorUpdates.set(credential, current);
         const user = usersByCredential.get(credential);
         if (!user) {
           this.logger.warn('heartbeat: unknown user credential');
@@ -378,8 +404,9 @@ export class AgentService implements OnModuleDestroy {
         }
         const total = upload + download;
         if (total === 0n) continue;
-        logs.push({ nodeId, userId: user.id, ...(lineId ? { lineId } : {}), upload, download, recordedAt: observedAt });
-        totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + total);
+        logs.push({ nodeId, userId: user.id, ...(line?.id ? { lineId: line.id } : {}), upload, download, recordedAt: observedAt });
+        const billedBytes = this.calculateBilledBytes(total, line?.trafficRate ?? 1);
+        totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + billedBytes);
       }
       const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
       const subscriptionByUser = new Map<string, string>();
@@ -433,6 +460,35 @@ export class AgentService implements OnModuleDestroy {
       await this.batchUpsertTrafficCursors(tx, nodeId, cursorUpdates);
     });
     return resetCount > 0;
+  }
+
+  private isInternalRelayCredential(credential: string): boolean {
+    return credential === INTERNAL_RELAY_TRANSIT_UUID || credential === INTERNAL_RELAY_TRANSIT_EMAIL;
+  }
+
+  private normalizeTrafficRate(value: number | null | undefined): number {
+    return value !== undefined && value !== null && Number.isFinite(value) && value >= 0 ? value : 1;
+  }
+
+  // 将数据库中的浮点倍率转成十进制定点数，避免大整数流量先转 Number 后丢失精度。
+  private calculateBilledBytes(total: bigint, trafficRate: number): bigint {
+    if (total <= 0n) return 0n;
+    const rate = this.normalizeTrafficRate(trafficRate);
+    if (rate === 1) return total;
+
+    const [coefficient, exponentText] = rate.toString().toLowerCase().split('e');
+    const [integerPart, fractionPart = ''] = coefficient.split('.');
+    let numerator = BigInt(`${integerPart}${fractionPart}`);
+    const exponent = exponentText ? Number(exponentText) : 0;
+    const scale = fractionPart.length - exponent;
+    let denominator = 1n;
+    if (scale >= 0) {
+      denominator = 10n ** BigInt(scale);
+    } else {
+      numerator *= 10n ** BigInt(-scale);
+    }
+    const product = total * numerator;
+    return (product * 2n + denominator) / (denominator * 2n);
   }
 
   private enqueueAgentWrite<T>(label: string, task: () => Promise<T>): Promise<T> {
@@ -962,6 +1018,9 @@ export class AgentService implements OnModuleDestroy {
             .map((user) => [user.uuid, user] as const)
         ).values()]
         : users;
+      const targetInboundUsers = line.type === 'DIRECT' && line.relaySources?.length
+        ? [...inboundUsers, this.internalRelayTransitUser()]
+        : inboundUsers;
       if (line.type === 'DIRECT' && isEntry) {
         inbounds.push(...buildServerInbounds({
           type: protocolType,
@@ -969,7 +1028,7 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
-          users: inboundUsers
+          users: targetInboundUsers
         }));
         continue;
       }
@@ -996,7 +1055,7 @@ export class AgentService implements OnModuleDestroy {
           users
         });
         inbounds.push(...relayInbounds);
-        const outbound = this.buildProtocolRelayOutbound(line, users);
+        const outbound = this.buildProtocolRelayOutbound(line);
         if (!outbound) {
           inbounds.splice(-relayInbounds.length, relayInbounds.length);
           continue;
@@ -1024,7 +1083,7 @@ export class AgentService implements OnModuleDestroy {
           paramsJson: targetLine.paramsJson,
           exitPort: targetLine.entryPort,
           exitNode: targetLine.entryNode
-        }, users);
+        });
         if (!outbound) {
           inbounds.splice(-relayInbounds.length, relayInbounds.length);
           continue;
@@ -1034,16 +1093,23 @@ export class AgentService implements OnModuleDestroy {
       }
 
       if (isExit && !(line.type === 'RELAY' && line.relayMode === 'TARGET_LINE')) {
+        const exitUsers = line.type === 'RELAY' && line.relayMode === 'PROTOCOL_PROXY'
+          ? [this.internalRelayTransitUser()]
+          : users;
         inbounds.push(...buildServerInbounds({
           type: protocolType,
           tag: lineTags.exit ?? `line-${line.id}-exit`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.exitPort,
           params,
-          users
+          users: exitUsers
         }));
       }
     }
+
+    const statsUsers = new Set([...authorizedUsers.values()].map((user) => user.email).filter(Boolean));
+    const hasTransitInbound = inbounds.some((inbound) => Array.isArray(inbound.users) && (inbound.users as Array<Record<string, unknown>>).some((user) => user.name === INTERNAL_RELAY_TRANSIT_EMAIL));
+    if (hasTransitInbound) statsUsers.add(INTERNAL_RELAY_TRANSIT_EMAIL);
 
     let singboxConfig: Record<string, unknown> = {
       log: { level: 'info', timestamp: true },
@@ -1054,7 +1120,8 @@ export class AgentService implements OnModuleDestroy {
           listen: getStatsApiListen(),
           stats: {
             enabled: true,
-             users: [...new Set([...authorizedUsers.values()].map((user) => user.email).filter(Boolean))]
+            users: [...statsUsers],
+            inbounds: inbounds.map((inbound) => inbound.tag).filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
           }
         }
       },
@@ -1099,12 +1166,10 @@ export class AgentService implements OnModuleDestroy {
       paramsJson: string;
       exitPort: number;
       exitNode: { serverHost: string };
-    },
-    users: InboundUserCredential[]
+    }
   ): Record<string, unknown> | undefined {
     const protocolType = line.protocolType as ProtocolType;
     const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
-    const firstUser = users[0] ?? { uuid: randomUUID(), email: 'relay', credential: randomUUID() };
     const tls = (params.tls ?? {}) as Record<string, unknown>;
     const reality = tls.reality as Record<string, unknown> | undefined;
     const fallbackServerName = typeof tls.serverName === 'string'
@@ -1122,26 +1187,26 @@ export class AgentService implements OnModuleDestroy {
 
     switch (protocolType) {
       case 'VLESS':
-        outbound.uuid = firstUser.uuid;
+        outbound.uuid = INTERNAL_RELAY_TRANSIT_UUID;
         if (typeof params.flow === 'string') outbound.flow = params.flow;
         break;
       case 'VMESS':
-        outbound.uuid = firstUser.uuid;
+        outbound.uuid = INTERNAL_RELAY_TRANSIT_UUID;
         outbound.alter_id = typeof params.alterId === 'number' ? params.alterId : 0;
         outbound.security = 'auto';
         break;
       case 'TROJAN':
-        outbound.password = firstUser.credential;
+        outbound.password = INTERNAL_RELAY_TRANSIT_SECRET;
         break;
       case 'HYSTERIA2':
-        outbound.password = firstUser.credential;
+        outbound.password = INTERNAL_RELAY_TRANSIT_SECRET;
         if (typeof params.upMbps === 'number') outbound.up_mbps = params.upMbps;
         if (typeof params.downMbps === 'number') outbound.down_mbps = params.downMbps;
         if (params.obfs) outbound.obfs = params.obfs;
         break;
       case 'TUIC':
-        outbound.uuid = firstUser.uuid;
-        outbound.password = firstUser.credential;
+        outbound.uuid = INTERNAL_RELAY_TRANSIT_UUID;
+        outbound.password = INTERNAL_RELAY_TRANSIT_SECRET;
         outbound.congestion_control = typeof params.congestionControl === 'string' ? params.congestionControl : 'bbr';
         if (params.zeroRttHandshake === true) outbound.zero_rtt_handshake = true;
         break;
@@ -1151,14 +1216,14 @@ export class AgentService implements OnModuleDestroy {
           ? buildShadowsocksClientPassword(
             outbound.method as string,
             typeof params.password === 'string' ? params.password : '',
-            firstUser.credential,
-            firstUser.uuid
+            INTERNAL_RELAY_TRANSIT_SECRET,
+            INTERNAL_RELAY_TRANSIT_UUID
           )
           : normalizeShadowsocksPassword(outbound.method as string, typeof params.password === 'string' ? params.password : '');
         break;
       case 'NAIVE':
-        outbound.username = firstUser.email;
-        outbound.password = firstUser.credential;
+        outbound.username = INTERNAL_RELAY_TRANSIT_EMAIL;
+        outbound.password = INTERNAL_RELAY_TRANSIT_SECRET;
         break;
       case 'SHADOWTLS':
         return undefined;
@@ -1179,6 +1244,14 @@ export class AgentService implements OnModuleDestroy {
     );
     if (clientTransport) outbound.transport = clientTransport;
     return outbound;
+  }
+
+  private internalRelayTransitUser(): InboundUserCredential {
+    return {
+      uuid: INTERNAL_RELAY_TRANSIT_UUID,
+      email: INTERNAL_RELAY_TRANSIT_EMAIL,
+      credential: INTERNAL_RELAY_TRANSIT_SECRET
+    };
   }
 
   // 向指定节点推送配置（reload 触发）

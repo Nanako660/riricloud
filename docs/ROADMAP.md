@@ -6,7 +6,7 @@
 
 ## 📅 阶段任务拆解
 
-> **当前进度**：Phase 1 ~ Phase 6 全部里程碑已落地（基线版本 `v0.4.5`），流量账务与 SQLite 写入链路优化正在面向 `v0.5.0` 实施。节点与线路解耦、中继拓扑、Master 内置 Agent、管理员初始化/重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发闭环已全量就绪。当前流量统计使用协议 v2 累计快照与 Master 侧 `TrafficCursor` 差分，不再按心跳周期清零。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
+> **当前进度**：Phase 1 ~ Phase 6 基线与 Phase 4.5 中继流量归属/倍率计费重构已落地，当前应用版本为 `v0.6.2`；流量账务与 SQLite 写入链路优化仍面向 `v0.5.0` 规划收尾。节点与线路解耦、中继拓扑、Master 内置 Agent、管理员初始化/重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发闭环已全量就绪。当前流量统计使用协议 v2 累计快照与 Master 侧 `TrafficCursor` 差分，不再按心跳周期清零。视觉验证按项目约束仅在 Antigravity 环境按需执行，不接入常规门禁。
 
 ### Phase 1: 基础设施与 Monorepo 脚手架搭建
 - [x] ⭐ 初始化 pnpm Monorepo 根工程 (`package.json`, `pnpm-workspace.yaml`, `.gitignore`)。
@@ -98,6 +98,12 @@
 - [x] ⭐ 节点升级按资源 ID/平台资产分发，保留旧升级与下载接口，并持久化重试、失败、回滚和 WS/HTTP 恢复。
 - [x] ⭐ Sing-box 与 `libcronet.so` 成组升级并整体回滚；构建 manifest、Master bundle、release 与 Docker 资源版本独立于应用版本。
 - [x] ⭐ 同步数据模型、API/WS、架构、部署、版本、前端规范、视觉台账和 CHANGELOG 文档。
+
+### Phase 4.5: 中继线路流量归属与倍率计费重构（v0.6.2）
+- [x] ⭐ 协议代理与异构桥接使用专用内部中继凭证，出口流量不再二次扣费。
+- [x] ⭐ 盲转发出口智能回退至承载线路，物理流水与倍率折算配额分离记账。
+- [x] ⭐ 历史大盘回退查询增强，提供幂等的无归属流量流水清洗脚本。
+- [x] ⭐ 补充 Gateway、TrafficService 与 SQLite 集成回归测试，并同步协议/数据模型文档。
 
 ### Phase 5: 部署自动化与端到端联调验收
 - [x] ⭐ 移除旧节点安装脚本与 `GET /api/v1/install.sh`，改为面板生成的原生 CLI 下载/安装命令；Agent 自己注册跨平台系统服务。
