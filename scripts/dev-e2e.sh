@@ -235,6 +235,7 @@ else
     STATS_API_LISTEN="127.0.0.1:$STATS_API_PORT"
     say "StatsService 默认端口不可用，改用 $STATS_API_LISTEN"
   fi
+  rm -f apps/server/*.tsbuildinfo
   say "启动主控端（日志：$LOG_DIR/server.log）…"
   PORT="$SERVER_PORT" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
   SERVER_PID=$!

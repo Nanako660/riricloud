@@ -10,6 +10,6 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "sourceMap": true,
-    "incremental": true
+    "incremental": false
   }
 }
