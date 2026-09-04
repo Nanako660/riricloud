@@ -90,13 +90,13 @@ describe('AgentService per-line authorization', () => {
     const hiddenInbound = inbounds.find((inbound) => inbound.tag === 'line-hidden-line');
 
     expect(publicInbound?.users).toEqual([
-      { uuid: userOne.uuid, name: userOne.email, flow: 'xtls-rprx-vision' },
-      { uuid: userTwo.uuid, name: userTwo.email, flow: 'xtls-rprx-vision' }
+      { uuid: userOne.uuid, name: `${userOne.email}::public-line`, flow: 'xtls-rprx-vision' },
+      { uuid: userTwo.uuid, name: `${userTwo.email}::public-line`, flow: 'xtls-rprx-vision' }
     ]);
     expect(hiddenInbound?.users).toEqual([
-      { uuid: userTwo.uuid, name: userTwo.email, flow: 'xtls-rprx-vision' }
+      { uuid: userTwo.uuid, name: `${userTwo.email}::hidden-line`, flow: 'xtls-rprx-vision' }
     ]);
     expect((result.singboxConfig.experimental as { v2ray_api: { stats: { users: string[] } } }).v2ray_api.stats.users)
-      .toEqual([userOne.email, userTwo.email]);
+      .toEqual([`${userOne.email}::public-line`, `${userTwo.email}::public-line`, `${userTwo.email}::hidden-line`]);
   });
 });

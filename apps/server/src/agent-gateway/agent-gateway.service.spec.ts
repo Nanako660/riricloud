@@ -22,8 +22,10 @@ describe('AgentGatewayService', () => {
   const txRateFindUnique = jest.fn();
   const txRateCreate = jest.fn(async () => undefined);
   const txRateUpdate = jest.fn(async () => undefined);
+  const txLineFindMany = jest.fn();
   const tx = {
     user: { findMany: txUserFindMany, update: txUserUpdate },
+    line: { findMany: txLineFindMany },
     trafficLog: { createMany: txTrafficCreateMany },
     subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate, updateMany: txSubscriptionUpdateMany },
     trafficCursor: { findMany: txTrafficCursorFindMany, upsert: txTrafficCursorUpsert },
@@ -62,6 +64,7 @@ describe('AgentGatewayService', () => {
     txSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     txTrafficCursorFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
+    txLineFindMany.mockResolvedValue([]);
     prisma.line.findFirst.mockResolvedValue(null);
     deploymentFindUnique.mockResolvedValue(null);
     deploymentFindFirst.mockResolvedValue(null);
@@ -107,7 +110,7 @@ describe('AgentGatewayService', () => {
         listen: '127.0.0.1:10085',
         stats: {
           enabled: true,
-          users: ['user@example.com'],
+          users: ['user@example.com::line-1', 'user@example.com::line-hy2', 'user@example.com::line-shadowtls'],
           inbounds: ['line-line-1', 'line-line-hy2', 'line-line-ss', 'line-line-shadowtls', 'line-line-shadowtls-inner']
         }
       }
@@ -254,7 +257,7 @@ describe('AgentGatewayService', () => {
         type: 'hysteria2',
         listen_port: 25002,
         users: expect.arrayContaining([
-          { name: user.email, password: user.password },
+          { name: `${user.email}::${targetLine.id}`, password: user.password },
           { name: INTERNAL_RELAY_TRANSIT_EMAIL, password: INTERNAL_RELAY_TRANSIT_SECRET }
         ])
       })
@@ -805,5 +808,49 @@ describe('AgentGatewayService', () => {
     expect(deploymentCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ assetId: 'asset-1', releaseId: 'release-1', status: 'QUEUED', payloadJson: expect.stringContaining('libcronet.so') })
     }));
+  });
+
+  it('单节点承载多线路时，心跳上报复合凭证可精确拆分归属并按各线路倍率独立扣除额度', async () => {
+    const userOne = { id: 'user-1', uuid: '11111111-1111-4111-8111-111111111111', email: 'one@example.com' };
+    const directLine = { id: 'line-direct', trafficRate: 1 };
+    const relayLine = { id: 'line-relay', trafficRate: 2 };
+
+    txUserFindMany.mockResolvedValue([userOne]);
+    txLineFindMany.mockResolvedValue([directLine, relayLine]);
+    txTrafficCursorFindMany.mockResolvedValue([
+      { credential: `${userOne.email}::line-direct`, uploadTotal: 100n, downloadTotal: 200n },
+      { credential: `${userOne.email}::line-relay`, uploadTotal: 50n, downloadTotal: 50n }
+    ]);
+    txSubscriptionFindMany.mockResolvedValue([
+      { id: 'sub-1', userId: userOne.id, startedAt: new Date('2026-09-01'), trafficPeriodStartAt: new Date('2026-09-01'), plan: { durationDays: 30, trafficResetMode: 'BILLING_CYCLE' } }
+    ]);
+
+    await service.poll('token-node-1', {
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [
+        // 直连产生 100 增量（物理 100，倍率 1x -> 计费 100）
+        { userUuid: `${userOne.email}::line-direct`, uploadTotal: '150', downloadTotal: '250' },
+        // 中继产生 100 增量（物理 100，倍率 2x -> 计费 200）
+        { userUuid: `${userOne.email}::line-relay`, uploadTotal: '100', downloadTotal: '100' }
+      ]
+    });
+
+    expect(txTrafficCreateMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ lineId: 'line-direct', userId: userOne.id, upload: 50n, download: 50n }),
+        expect.objectContaining({ lineId: 'line-relay', userId: userOne.id, upload: 50n, download: 50n })
+      ])
+    });
+
+    // 计费总量：直连 100 * 1 + 中转 100 * 2 = 300
+    expect(txUserUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: userOne.id },
+        data: { trafficUsedBytes: { increment: 300n } }
+      })
+    );
   });
 });

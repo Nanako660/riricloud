@@ -156,4 +156,22 @@ describe('TrafficService', () => {
   it('查询不存在用户时抛出 NotFoundException', async () => {
     await expect(service.getUserDetail('missing', 'today')).rejects.toThrow(NotFoundException);
   });
+
+  it('大盘明细表全量对齐所有 ACTIVE 线路，无流水的线路显示为 0 B 并稳定排在末尾', async () => {
+    prisma.line.count.mockResolvedValue(2);
+    prisma.user.count.mockResolvedValue(1);
+    prisma.line.findMany.mockResolvedValue([
+      line({ id: 'active-with-traffic', name: '活跃有流量线路' }),
+      line({ id: 'active-zero-traffic', name: '活跃零流量线路' })
+    ]);
+    prisma.trafficLog.findMany.mockResolvedValue([
+      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 100n, recordedAt: localDay(2, 0), line: line({ id: 'active-with-traffic' }) }
+    ]);
+
+    const result = await service.getOverview('today');
+
+    expect(result.lineRankings).toHaveLength(2);
+    expect(result.lineRankings[0]).toMatchObject({ lineId: 'active-with-traffic', total: 200 });
+    expect(result.lineRankings[1]).toMatchObject({ lineId: 'active-zero-traffic', upload: 0, download: 0, total: 0, billedTotal: 0, percentage: 0 });
+  });
 });

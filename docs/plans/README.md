@@ -27,6 +27,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [中转线路与单节点多线路流量统计归属根除修复](./archive/2026-09-05-root-cause-relay-and-multi-line-traffic-fix.md) | `0.6.6` | 2026-09-05 | — |
 | [订阅流量周期重置与用户额外线路](./archive/2026-09-04-subscription-traffic-reset-extra-lines.md) | `0.5.0` | 2026-09-04 | — |
 | [订阅模板全链路闭环优化与现代化工作台](./archive/2026-09-04-subscription-template-full-refactor.md) | `0.6.2` | 2026-09-04 | — |
 | [中转线路流量统计归属与倍率计费重构](./archive/2026-09-04-relay-traffic-accounting.md) | `0.6.2` | 2026-09-04 | — |

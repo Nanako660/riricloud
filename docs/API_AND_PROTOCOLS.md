@@ -175,8 +175,7 @@ ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
 
 #### 2. 配置全量同步 (`config_sync`) —— Master -> Agent
 当节点首次连接成功、或主控端发生用户/线路变动时，Master 向 Agent 实时推送最新的 Sing-box 运行配置。
-`inbounds`、`outbounds` 与 `route` 均由该节点承担的启用 Line 自动派生；直连/协议代理线路生成协议入站，盲转发线路生成 `direct` 入站，`TARGET_LINE` 在入口生成当前线路协议入站与目标线路协议 outbound/route，在目标节点复用目标直连线路入站而不重复监听端口。监听地址使用 Line 的 `listen`，Tag 使用 Line 的自定义 Tag 或自动派生的稳定角色 Tag，`configOverride` 再按顶层深合并应用（含 `inbounds` 则整组替换）。历史 `NodeInbound` 不参与新配置生成。
-`PROTOCOL_PROXY` 与 `TARGET_LINE` 的跨节点出站统一使用系统内部中继凭证，不借用任何普通用户凭证；对应出口入站仅注入该内部凭证（`TARGET_LINE` 追加到目标直连入站）。内部凭证固定为 `email=__riricloud_relay_transit__`、`uuid=00000000-0000-4000-8000-000000000002`、密码 `riricloud-internal-relay-transit-secret`，仅允许在 Master 生成的节点配置中使用。`experimental.v2ray_api.stats` 除 `users` 外还下发 `inbounds` 入站 Tag 列表，供 Agent 进行入站级统计。
+`PROTOCOL_PROXY` 与 `TARGET_LINE` 的跨节点出站统一使用系统内部中继凭证，不借用任何普通用户凭证；对应出口入站仅注入该内部凭证（`TARGET_LINE` 追加到目标直连入站）。内部凭证固定为 `email=__riricloud_relay_transit__`、`uuid=00000000-0000-4000-8000-000000000002`、密码 `riricloud-internal-relay-transit-secret`，仅允许在 Master 生成的节点配置中使用。Master 在生成各协议入站时，普通用户的 `name` 字段编码为复合标签 `<email_or_uuid>::<lineId>`，使 Sing-box 的 V2Ray stats API 原生支持按线路精准切分用户流量统计；内部中继凭证保持固定不变。Agent 上报该复合凭证后，Master 端自动拆解用户与所属线路，精准落库 `TrafficLog` 并按线路倍率折算扣除套餐配额，彻底解决单节点多入站与中转线路归属问题。`experimental.v2ray_api.stats` 的 `users` 自动注册所有生成的复合标签，并下发 `inbounds` 入站 Tag 列表。
 Agent 收到后原子落盘（临时文件 + rename），并与最近一次配置做字节比对：内容变化则优雅重启内核使配置生效（sing-box 无原生 reload，重启即热应用）；内容相同且内核存活则跳过，避免无谓重启。
 ```json
 {

@@ -1,6 +1,43 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
-import { ProtocolType } from './constants';
+import {
+  INTERNAL_RELAY_TRANSIT_EMAIL,
+  INTERNAL_RELAY_TRANSIT_UUID,
+  ProtocolType,
+  TRAFFIC_CREDENTIAL_DELIMITER
+} from './constants';
+
+export { TRAFFIC_CREDENTIAL_DELIMITER };
+
+// 格式化入站用户名：若提供 lineId 且非系统内部中继凭证，则注入复合标识以供 Sing-box 区分线路
+export function formatInboundUserName(
+  user: { email?: string; uuid?: string },
+  lineId?: string
+): string {
+  const baseName = user.email || user.uuid || '';
+  if (!lineId || !baseName) return baseName;
+  if (baseName === INTERNAL_RELAY_TRANSIT_EMAIL || baseName === INTERNAL_RELAY_TRANSIT_UUID) {
+    return baseName;
+  }
+  return `${baseName}${TRAFFIC_CREDENTIAL_DELIMITER}${lineId}`;
+}
+
+// 解析 Agent 上报的凭证快照，分离原始用户凭证与线路 ID（若存在）
+export function parseTrafficCredential(credential: string): {
+  rawCredential: string;
+  lineId: string | null;
+} {
+  const delimiterIndex = credential.indexOf(TRAFFIC_CREDENTIAL_DELIMITER);
+  if (delimiterIndex <= 0) {
+    return { rawCredential: credential, lineId: null };
+  }
+  const rawCredential = credential.slice(0, delimiterIndex);
+  const lineId = credential.slice(delimiterIndex + TRAFFIC_CREDENTIAL_DELIMITER.length);
+  return {
+    rawCredential,
+    lineId: lineId.length > 0 ? lineId : null
+  };
+}
 
 // ==============================
 // 传输层 (Transport) 参数定义
@@ -765,8 +802,9 @@ export function buildServerInbound(input: {
   port: number;
   params: Record<string, unknown>;
   users: InboundUserCredential[];
+  lineId?: string;
 }): Record<string, unknown> {
-  const { type, tag, listen, port, params, users } = input;
+  const { type, tag, listen, port, params, users, lineId } = input;
   // VLESS 需要在运行时修复旧版明文 + Vision 数据；其余协议已在入站 CRUD 边界完成归一化，
   // 中继组装还可能只携带客户端侧 TLS 参数，不能在这里重复要求 Agent 证书路径。
   const rawVlessTls = params.tls;
@@ -793,7 +831,7 @@ export function buildServerInbound(input: {
         listen_port: port,
         users: users.map((u) => ({
           uuid: u.uuid,
-          name: u.email,
+          name: formatInboundUserName(u, lineId),
           ...(normalized.flow ? { flow: normalized.flow } : {})
         })),
         ...(transport ? { transport } : {}),
@@ -812,7 +850,7 @@ export function buildServerInbound(input: {
         listen_port: port,
         users: users.map((u) => ({
           uuid: u.uuid,
-          name: u.email,
+          name: formatInboundUserName(u, lineId),
           alterId: p.alterId ?? 0
         })),
         ...(transport ? { transport } : {}),
@@ -831,7 +869,7 @@ export function buildServerInbound(input: {
         listen_port: port,
         users: users.map((u) => ({
           password: u.credential,
-          name: u.email
+          name: formatInboundUserName(u, lineId)
         })),
         ...(transport ? { transport } : {}),
         ...(tls ? { tls } : {})
@@ -850,7 +888,7 @@ export function buildServerInbound(input: {
         ...(p.downMbps && p.downMbps > 0 ? { down_mbps: p.downMbps } : {}),
         ...(p.ignoreClientBandwidth ? { ignore_client_bandwidth: true } : {}),
         ...(p.obfs ? { obfs: p.obfs } : {}),
-        users: users.map((u) => ({ name: u.email, password: u.credential })),
+        users: users.map((u) => ({ name: formatInboundUserName(u, lineId), password: u.credential })),
         ...(tls ? { tls } : {})
       };
     }
@@ -863,7 +901,7 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
-        users: users.map((u) => ({ uuid: u.uuid, name: u.email, password: u.credential })),
+        users: users.map((u) => ({ uuid: u.uuid, name: formatInboundUserName(u, lineId), password: u.credential })),
         congestion_control: p.congestionControl || 'bbr',
         ...(p.zeroRttHandshake ? { zero_rtt_handshake: true } : {}),
         ...(p.heartbeat ? { heartbeat: p.heartbeat } : {}),
@@ -883,7 +921,7 @@ export function buildServerInbound(input: {
           method: p.method,
           password,
           users: users.map((u) => ({
-            name: u.email,
+            name: formatInboundUserName(u, lineId),
             password: resolveShadowsocksUserPassword(p.method, u.credential, u.uuid)
           }))
         };
@@ -907,7 +945,7 @@ export function buildServerInbound(input: {
         listen,
         listen_port: port,
         network: p.network || 'tcp',
-        users: users.map((u) => ({ username: u.email, password: u.credential })),
+        users: users.map((u) => ({ username: formatInboundUserName(u, lineId), password: u.credential })),
         ...(tls ? { tls } : {})
       };
     }
@@ -922,7 +960,7 @@ export function buildServerInbound(input: {
         listen_port: port,
         detour: `${tag}-inner`,
         version: 3,
-        users: users.map((u) => ({ name: u.email, password: u.credential })),
+        users: users.map((u) => ({ name: formatInboundUserName(u, lineId), password: u.credential })),
         handshake: { server: host, server_port: destPort },
         strict_mode: p.strictMode !== false
       };
@@ -939,7 +977,7 @@ export function buildServerInbound(input: {
         listen_port: port
       };
       if (p.usersEnabled && users.length) {
-        inboundObj.users = users.map((u) => ({ username: u.email, password: u.credential }));
+        inboundObj.users = users.map((u) => ({ username: formatInboundUserName(u, lineId), password: u.credential }));
       }
       return inboundObj;
     }
