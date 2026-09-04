@@ -159,7 +159,12 @@ async function main() {
   }
 
   const port = String(process.env.PORT ?? '3000');
-  const server = trackChild(spawn(process.execPath, ['dist/main.js'], {
+  const mainEntry = fs.existsSync('/app/dist/main.js')
+    ? 'dist/main.js'
+    : fs.existsSync('/app/dist/src/main.js')
+      ? 'dist/src/main.js'
+      : 'dist/main.js';
+  const server = trackChild(spawn(process.execPath, [mainEntry], {
     cwd: '/app',
     env: process.env,
     stdio: 'inherit'
