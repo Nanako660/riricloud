@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { generateKeyPairSync, randomInt } = require('node:crypto');
 const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
-const { buildDefaultTemplateData } = require('./default-template');
+const { buildDefaultTemplateData, migrateLegacyTemplates } = require('./default-template');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -97,6 +97,7 @@ function hasInvalidVlessFlow(params) {
 async function main() {
   const userEmail = process.env.SEED_USER_EMAIL || 'demo@riricloud.local';
   const userPassword = process.env.SEED_USER_PASSWORD || 'riri-user-demo';
+  await migrateLegacyTemplates(prisma);
   // 完整 seed 仍保留本地演示默认值；生产启动入口只调用无默认值的 bootstrap。
   const { admin } = await ensureAdmin(prisma, { allowDemoDefaults: true });
 

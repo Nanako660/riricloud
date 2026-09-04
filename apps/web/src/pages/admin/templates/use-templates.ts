@@ -17,13 +17,20 @@ export interface SubscriptionTemplate {
 
 export interface TemplatePayload {
   name: string;
-  description?: string;
+  description?: string | null;
   proxyGroups: unknown[];
   ruleSets: unknown[];
   dnsConfig: Record<string, unknown>;
   customInjectYaml?: string | null;
   customInjectJson?: string | null;
   isDefault: boolean;
+}
+
+export interface TemplatePreviewResponse {
+  format: 'clash' | 'singbox';
+  content: string;
+  stats: { totalNodes: number; matchedNodes: number; proxyGroupsCount: number; rulesCount: number };
+  warnings: string[];
 }
 
 export function useAdminTemplates() {
@@ -49,5 +56,26 @@ export function useTemplateMutations() {
     onSuccess: () => { toast.success('模板已删除'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '删除失败'))
   });
-  return { create, update, remove };
+  const duplicate = useDuplicateTemplate();
+  return { create, update, remove, duplicate };
+}
+
+export function useTemplatePreview() {
+  return useMutation({
+    mutationFn: async ({ format, template }: { format: 'clash' | 'singbox'; template: TemplatePayload }) =>
+      (await api.post<TemplatePreviewResponse>('/admin/subscription-templates/preview', { format, template })).data,
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '预览渲染失败'))
+  });
+}
+
+export function useDuplicateTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.post<SubscriptionTemplate>(`/admin/subscription-templates/${id}/duplicate`)).data,
+    onSuccess: () => {
+      toast.success('模板副本已创建');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
+    },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '复制模板失败'))
+  });
 }

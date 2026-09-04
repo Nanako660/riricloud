@@ -15,10 +15,11 @@ export class SubscriptionController {
   async getSubscription(
     @Param('token') token: string,
     @Query('type') type: string | undefined,
+    @Query('templateId') templateId: string | undefined,
     @Headers('user-agent') userAgent: string | undefined,
     @Res({ passthrough: true }) res: Response
   ) {
-    const result = await this.subscriptionService.getSubscription(token, { type, userAgent });
+    const result = await this.subscriptionService.getSubscription(token, { type, templateId, userAgent });
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Profile-Update-Interval', String(result.updateIntervalHours));
     if (result.userInfoHeader) res.setHeader('Subscription-Userinfo', result.userInfoHeader);

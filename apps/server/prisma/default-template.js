@@ -255,30 +255,17 @@ const DEFAULT_TEMPLATE = {
   ],
   "dnsConfig": {
     "enable": true,
-    "ipv6": false,
-    "enhanced-mode": "fake-ip",
-    "fake-ip-range": "198.18.0.1/16",
-    "default-nameserver": [
-      "223.5.5.5",
-      "119.29.29.29"
-    ],
-    "nameserver": [
+    "fakeIp": true,
+    "directDns": [
       "https://223.5.5.5/dns-query",
-      "https://1.1.1.1/dns-query",
-      "https://8.8.8.8/dns-query"
+      "223.5.5.5"
     ],
-    "fallback": [
+    "proxyDns": [
       "https://1.1.1.1/dns-query",
       "https://8.8.8.8/dns-query",
       "https://9.9.9.9/dns-query"
     ],
-    "fallback-filter": {
-      "geoip": true,
-      "geoip-code": "CN",
-      "ipcidr": [
-        "240.0.0.0/4"
-      ]
-    }
+    "ipv6": false,
   },
   "customInjectYaml": "mixed-port: 7890\nallow-lan: false\nmode: rule\nlog-level: info\nipv6: false\ntun:\n  enable: true\n  stack: mixed\n  dns-hijack:\n    - 'any:53'\n  auto-route: true\n  auto-detect-interface: true\nprofile:\n  store-selected: true\n  store-fake-ip: true",
   "customInjectJson": "{\n  \"log\": {\n    \"level\": \"info\"\n  },\n  \"experimental\": {\n    \"clash_api\": {\n      \"external_controller\": \"127.0.0.1:9090\",\n      \"secret\": \"\"\n    }\n  }\n}"
@@ -298,7 +285,89 @@ function buildDefaultTemplateData(isDefault = true) {
   };
 }
 
+function parseJson(value, fallback) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeDnsConfig(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value;
+  const strings = (candidate) => Array.isArray(candidate)
+    ? candidate.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+    : [];
+  const directDns = strings(source.directDns);
+  const proxyDns = strings(source.proxyDns);
+  if (directDns.length || proxyDns.length || Object.prototype.hasOwnProperty.call(source, 'fakeIp')) {
+    return {
+      ...(typeof source.enable === 'boolean' ? { enable: source.enable } : {}),
+      ...(typeof source.fakeIp === 'boolean' ? { fakeIp: source.fakeIp } : {}),
+      ...(directDns.length ? { directDns } : {}),
+      ...(proxyDns.length ? { proxyDns } : {}),
+      ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
+    };
+  }
+  const nameserver = strings(source.nameserver);
+  const fallback = strings(source.fallback);
+  const defaultNameserver = strings(source['default-nameserver']);
+  return {
+    enable: source.enable !== false,
+    fakeIp: source['enhanced-mode'] === 'fake-ip' || source['fake-ip-range'] !== undefined,
+    directDns: nameserver.length ? [nameserver[0]] : defaultNameserver,
+    proxyDns: fallback.length ? fallback : nameserver.slice(1),
+    ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
+  };
+}
+
+function normalizeRuleSets(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((rule) => {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return rule;
+    const next = { ...rule };
+    if (typeof next.type === 'string') {
+      const type = next.type.toLowerCase();
+      if (type === 'remote' || type === 'remote-rule-set') {
+        next.type = 'remote-rule-set';
+        if (!next.singboxUrl && typeof next.url === 'string') next.singboxUrl = next.url;
+      } else if (type === 'ip_cidr') {
+        next.type = 'ip-cidr';
+      } else if (type === 'domain_suffix') {
+        next.type = 'domain-suffix';
+      } else if (type === 'domain_keyword') {
+        next.type = 'domain-keyword';
+      } else {
+        next.type = type;
+      }
+    }
+    return next;
+  });
+}
+
+async function migrateLegacyTemplates(prisma) {
+  if (!prisma.subscriptionTemplate || typeof prisma.subscriptionTemplate.findMany !== 'function') return 0;
+  const templates = await prisma.subscriptionTemplate.findMany({
+    select: { id: true, dnsConfigJson: true, ruleSetsJson: true }
+  });
+  let migrated = 0;
+  for (const template of templates) {
+    const dnsConfigJson = JSON.stringify(normalizeDnsConfig(parseJson(template.dnsConfigJson, {})));
+    const ruleSetsJson = JSON.stringify(normalizeRuleSets(parseJson(template.ruleSetsJson, [])));
+    if (dnsConfigJson === template.dnsConfigJson && ruleSetsJson === template.ruleSetsJson) continue;
+    await prisma.subscriptionTemplate.update({
+      where: { id: template.id },
+      data: { dnsConfigJson, ruleSetsJson }
+    });
+    migrated += 1;
+  }
+  if (migrated) console.log(`default template migration: normalized ${migrated} template(s)`);
+  return migrated;
+}
+
 async function ensureDefaultTemplate(prisma) {
+  await migrateLegacyTemplates(prisma);
   const builtin = await prisma.subscriptionTemplate.findFirst({
     where: { isBuiltin: true },
     orderBy: [{ createdAt: 'asc' }]
@@ -326,4 +395,4 @@ async function ensureDefaultTemplate(prisma) {
   return { template, created: true };
 }
 
-module.exports = { DEFAULT_TEMPLATE, buildDefaultTemplateData, ensureDefaultTemplate };
+module.exports = { DEFAULT_TEMPLATE, buildDefaultTemplateData, ensureDefaultTemplate, migrateLegacyTemplates };

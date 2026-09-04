@@ -596,7 +596,11 @@ model SystemSetting {
 
 ### 3.5 `SubscriptionTemplate` 模板数据
 
-`proxyGroupsJson` 与 `ruleSetsJson` 分别保存 Clash 策略组和分流规则数组；`dnsConfigJson` 保存 DNS/Fake-IP 设置；`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。模板服务校验覆写语法并维护唯一默认模板，套餐未绑定模板时使用默认模板。订阅编译器对策略组支持 `select`、`url-test`、`fallback`、`load-balance` 配置输入，支持 `all` 动态节点展开、控制项（`DIRECT` / `REJECT`）与策略组层级引用，并按节点名称或入站 tag 正则过滤线路。
+`proxyGroupsJson` 与 `ruleSetsJson` 分别保存策略组和分流规则数组；`dnsConfigJson` 使用平台无关的语义结构：`{ enable?, fakeIp?, directDns?: string[], proxyDns?: string[], ipv6? }`。启动 bootstrap/seed 会扫描存量记录，将旧的 Clash `enhanced-mode`、`nameserver`、`fallback` 等字段转换为该结构；不改变 SQLite 表结构。`customInjectYaml` 与 `customInjectJson` 是客户端配置顶层对象覆写。
+
+策略组支持 `select`、`url-test`、`fallback`、`load-balance`，并可组合 `filter`、`includeTags`、`excludeTags`、`protocols`、`maxRate`，多条件按 AND 匹配。规则项支持 `domain`、`domain-suffix`、`domain-keyword`、`ip-cidr`、`geosite`、`match`、`remote-rule-set`；远程规则集可分别提供 Clash `url` 与 Sing-box `singboxUrl`/`format`。编译器为 Clash 自动生成 `rule-providers`/`RULE-SET`，为 Sing-box 1.8+ 自动生成 `route.rule_set` 顶层 remote 定义与引用。
+
+模板服务校验覆写语法并以事务同步唯一默认模板：设置模板 `isDefault=true` 会更新 `SystemSetting.defaultTemplateId`，系统设置切换该 ID 会同步模板表，其余模板取消默认；取消当前默认时清空系统设置并回退到其他 `isDefault=true` 模板。
 
 `apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。
 

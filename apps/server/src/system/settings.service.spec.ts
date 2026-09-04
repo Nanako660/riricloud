@@ -4,9 +4,15 @@ import { DEFAULTS, SETTING_KEYS, SettingsService } from './settings.service';
 
 describe('SettingsService', () => {
   let service: SettingsService;
-  const prisma = {
-    systemSetting: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
-    $transaction: jest.fn(async (operations: Promise<unknown>[]) => Promise.all(operations))
+  type PrismaMock = {
+    systemSetting: Record<string, jest.Mock>;
+    subscriptionTemplate: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
+  };
+  const prisma: PrismaMock = {
+    systemSetting: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+    subscriptionTemplate: { updateMany: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+    $transaction: jest.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma))
   };
 
   beforeAll(async () => {
@@ -76,6 +82,15 @@ describe('SettingsService', () => {
         description: '是否使用 Nginx 伪静态短订阅链接'
       }
     });
+  });
+
+  it('切换全局默认模板时同步模板默认标记', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue({ id: 'template-1' });
+    prisma.systemSetting.upsert.mockResolvedValue({});
+    prisma.systemSetting.findMany.mockResolvedValue([]);
+    await service.updateSettings({ defaultTemplateId: 'template-1' });
+    expect(prisma.subscriptionTemplate.updateMany).toHaveBeenCalledWith({ data: { isDefault: false } });
+    expect(prisma.subscriptionTemplate.update).toHaveBeenCalledWith({ where: { id: 'template-1' }, data: { isDefault: true } });
   });
 
   it('读取全站访问 URL 设置', async () => {

@@ -112,4 +112,72 @@ describe('builders template proxy-groups resolution', () => {
     expect(strategyOutbounds.get('🎯 全球直连')).toEqual(['direct', '🚀 节点选择']);
     expect(strategyOutbounds.get('🛑 广告拦截')).toEqual(['block', 'direct']);
   });
+
+  it('将旧式 DNS 配置编译为 Sing-box 1.8+ servers/rules/fakeip 结构', () => {
+    const config = JSON.parse(buildSingboxJson(user, mockNodes, {
+      proxyGroupsJson: JSON.stringify([{ name: '节点选择', type: 'select', proxies: 'all' }]),
+      ruleSetsJson: JSON.stringify([{ name: '中国站点', type: 'geosite', rules: ['cn'], target: 'DIRECT' }]),
+      dnsConfigJson: JSON.stringify({ enable: true, 'enhanced-mode': 'fake-ip', nameserver: ['223.5.5.5', 'https://1.1.1.1/dns-query'], fallback: ['https://8.8.8.8/dns-query'], ipv6: false })
+    })) as { dns: Record<string, unknown>; route: Record<string, unknown> };
+
+    expect(config.dns).toEqual(expect.objectContaining({
+      servers: expect.arrayContaining([
+        expect.objectContaining({ tag: 'dns_direct', address: '223.5.5.5', detour: 'direct' }),
+        expect.objectContaining({ tag: 'dns_proxy', address: 'https://8.8.8.8/dns-query', detour: '节点选择' }),
+        expect.objectContaining({ tag: 'dns_fakeip', address: 'fakeip' })
+      ]),
+      fakeip: { enabled: true, inet4_range: '198.18.0.0/15' },
+      independent_cache: true
+    }));
+    expect(config.dns).not.toHaveProperty('enhanced-mode');
+    expect(config.route.rule_set).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'geosite-cn', type: 'remote', format: 'binary' })]));
+    expect(config.route.rules).toEqual(expect.arrayContaining([expect.objectContaining({ rule_set: ['geosite-cn'], outbound: 'direct' })]));
+  });
+
+  it('为 Clash 远程规则集生成 rule-providers 和 RULE-SET 引用', () => {
+    const config = parse(buildClashYaml(user, mockNodes, {
+      proxyGroupsJson: JSON.stringify([{ name: '节点选择', type: 'select', proxies: 'all' }]),
+      ruleSetsJson: JSON.stringify([{ name: 'ads-remote', type: 'remote-rule-set', url: 'https://rules.example/ad.yaml', singboxUrl: 'https://rules.example/ad.srs', target: 'REJECT' }]),
+      dnsConfigJson: '{}'
+    })) as Record<string, unknown>;
+    const providers = config['rule-providers'] as Record<string, Record<string, unknown>>;
+    expect(providers).toEqual(expect.objectContaining({
+      'ads-remote': expect.objectContaining({ type: 'http', behavior: 'domain', url: 'https://rules.example/ad.yaml', interval: 86400 })
+    }));
+    expect(config.rules).toContain('RULE-SET,ads-remote,REJECT');
+  });
+
+  it('按线路标签、协议和倍率执行 AND 过滤，并保留 fallback/load-balance 类型', () => {
+    const nodes: SubLine[] = [
+      { ...mockNodes[0], id: 'vip-vless', name: 'VIP 香港', protocolType: 'VLESS', tags: ['vip', 'gaming'], trafficRate: 1 },
+      { ...mockNodes[1], id: 'economy-hy2', name: '经济 日本', protocolType: 'HYSTERIA2', tags: ['economy'], trafficRate: 0.5 },
+      { ...mockNodes[1], id: 'premium-hy2', name: '高级 美国', protocolType: 'HYSTERIA2', tags: ['premium'], trafficRate: 2 }
+    ];
+    const config = parse(buildClashYaml(user, nodes, {
+      proxyGroupsJson: JSON.stringify([
+        { name: 'VIP VLESS', type: 'fallback', includeTags: ['vip'], protocols: ['VLESS'], maxRate: 1, proxies: 'all' },
+        { name: '经济 UDP', type: 'load-balance', includeTags: ['economy'], protocols: ['HYSTERIA2'], maxRate: 1, proxies: 'all' }
+      ]),
+      ruleSetsJson: '[]',
+      dnsConfigJson: '{}'
+    })) as { 'proxy-groups': Array<{ name: string; type: string; proxies: string[] }> };
+    const groups = new Map(config['proxy-groups'].map((group) => [group.name, group]));
+    expect(groups.get('VIP VLESS')).toEqual(expect.objectContaining({ type: 'fallback', proxies: ['VIP 香港'] }));
+    expect(groups.get('经济 UDP')).toEqual(expect.objectContaining({ type: 'load-balance', proxies: ['经济 日本 [0.5x]'] }));
+  });
+
+  it('将 Sing-box fallback/load-balance 映射为可探测的 urltest 出站', () => {
+    const config = JSON.parse(buildSingboxJson(user, mockNodes, {
+      proxyGroupsJson: JSON.stringify([
+        { name: '故障转移', type: 'fallback', proxies: 'all' },
+        { name: '负载均衡', type: 'load-balance', proxies: 'all', tolerance: 80 }
+      ]),
+      ruleSetsJson: '[]',
+      dnsConfigJson: '{}'
+    })) as { outbounds: Array<Record<string, unknown>> };
+    expect(config.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tag: '故障转移', type: 'urltest', interruptible: true }),
+      expect.objectContaining({ tag: '负载均衡', type: 'urltest', tolerance: 80 })
+    ]));
+  });
 });
