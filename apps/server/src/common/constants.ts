@@ -32,6 +32,9 @@ export const INTERNAL_RELAY_TRANSIT_EMAIL = '__riricloud_relay_transit__';
 export const INTERNAL_RELAY_TRANSIT_UUID = '00000000-0000-4000-8000-000000000002';
 export const INTERNAL_RELAY_TRANSIT_SECRET = 'riricloud-internal-relay-transit-secret';
 
+// 入站用户凭证与线路 ID 的复合分隔符（用于 Sing-box 原生按线路区分用户流量）
+export const TRAFFIC_CREDENTIAL_DELIMITER = '::';
+
 // 可被协议重加密中继或目标线路桥接作为出口的协议；纯本地代理和传输层协议没有对应的统一出站。
 export const PROTOCOL_PROXY_TARGET_TYPES = [
   'VLESS',

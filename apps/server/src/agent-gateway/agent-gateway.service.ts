@@ -9,6 +9,7 @@ import {
   buildShadowsocksClientPassword,
   buildServerInbounds,
   normalizeShadowsocksPassword,
+  parseTrafficCredential,
   type InboundUserCredential
 } from '../common/inbound';
 import { resolveLineTags } from '../common/line-tags';
@@ -354,8 +355,19 @@ export class AgentService implements OnModuleDestroy {
         current.downloadTotal = current.downloadTotal > downloadTotal ? current.downloadTotal : downloadTotal;
       }
       const credentials = [...snapshotsByCredential.keys()];
+      const parsedByCredential = new Map<string, { rawCredential: string; lineId: string | null }>();
+      const rawCredentials = new Set<string>();
+      const referencedLineIds = new Set<string>();
+
+      for (const cred of credentials) {
+        const parsed = parseTrafficCredential(cred);
+        parsedByCredential.set(cred, parsed);
+        rawCredentials.add(parsed.rawCredential);
+        if (parsed.lineId) referencedLineIds.add(parsed.lineId);
+      }
+
       const users = await tx.user.findMany({
-        where: { OR: [{ uuid: { in: credentials } }, { email: { in: credentials } }] },
+        where: { OR: [{ uuid: { in: [...rawCredentials] } }, { email: { in: [...rawCredentials] } }] },
         select: { id: true, uuid: true, email: true }
       });
       const usersByCredential = new Map<string, { id: string; uuid: string; email: string }>();
@@ -363,6 +375,17 @@ export class AgentService implements OnModuleDestroy {
         usersByCredential.set(user.uuid, user);
         usersByCredential.set(user.email, user);
       });
+
+      const lineDelegate = (tx as unknown as {
+        line?: { findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; trafficRate?: number | null }>> };
+      }).line;
+      const loadedLines = lineDelegate && referencedLineIds.size > 0
+        ? await lineDelegate.findMany({
+            where: { id: { in: [...referencedLineIds] } },
+            select: { id: true, trafficRate: true }
+          })
+        : [];
+      const linesById = new Map(loadedLines.map((l) => [l.id, { id: l.id, trafficRate: this.normalizeTrafficRate(l.trafficRate) }]));
 
       const cursor = (tx as unknown as { trafficCursor?: TrafficCursorDelegate }).trafficCursor;
       if (!cursor) throw new Error('TrafficCursor delegate is unavailable');
@@ -384,7 +407,8 @@ export class AgentService implements OnModuleDestroy {
       const cursorUpdates = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const [credential, current] of snapshotsByCredential) {
         cursorUpdates.set(credential, current);
-        if (this.isInternalRelayCredential(credential)) continue;
+        const parsed = parsedByCredential.get(credential) ?? { rawCredential: credential, lineId: null };
+        if (this.isInternalRelayCredential(parsed.rawCredential)) continue;
 
         const previous = cursorByCredential.get(credential);
         const previousUpload = previous?.uploadTotal ?? 0n;
@@ -397,15 +421,29 @@ export class AgentService implements OnModuleDestroy {
         }
         const upload = uploadReset ? current.uploadTotal : current.uploadTotal - previousUpload;
         const download = downloadReset ? current.downloadTotal : current.downloadTotal - previousDownload;
-        const user = usersByCredential.get(credential);
+        const user = usersByCredential.get(parsed.rawCredential);
         if (!user) {
           this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
         const total = upload + download;
         if (total === 0n) continue;
-        logs.push({ nodeId, userId: user.id, ...(line?.id ? { lineId: line.id } : {}), upload, download, recordedAt: observedAt });
-        const billedBytes = this.calculateBilledBytes(total, line?.trafficRate ?? 1);
+
+        const activeLine = parsed.lineId
+          ? (linesById.get(parsed.lineId) ?? { id: parsed.lineId, trafficRate: 1 })
+          : line;
+        const targetLineId = activeLine?.id;
+        const targetTrafficRate = activeLine?.trafficRate ?? 1;
+
+        logs.push({
+          nodeId,
+          userId: user.id,
+          ...(targetLineId ? { lineId: targetLineId } : {}),
+          upload,
+          download,
+          recordedAt: observedAt
+        });
+        const billedBytes = this.calculateBilledBytes(total, targetTrafficRate);
         totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + billedBytes);
       }
       const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
@@ -1028,7 +1066,8 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
-          users: targetInboundUsers
+          users: targetInboundUsers,
+          lineId: line.id
         }));
         continue;
       }
@@ -1052,7 +1091,8 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
-          users
+          users,
+          lineId: line.id
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound(line);
@@ -1074,7 +1114,8 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
-          users
+          users,
+          lineId: line.id
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound({
@@ -1102,14 +1143,21 @@ export class AgentService implements OnModuleDestroy {
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.exitPort,
           params,
-          users: exitUsers
+          users: exitUsers,
+          lineId: line.id
         }));
       }
     }
 
-    const statsUsers = new Set([...authorizedUsers.values()].map((user) => user.email).filter(Boolean));
-    const hasTransitInbound = inbounds.some((inbound) => Array.isArray(inbound.users) && (inbound.users as Array<Record<string, unknown>>).some((user) => user.name === INTERNAL_RELAY_TRANSIT_EMAIL));
-    if (hasTransitInbound) statsUsers.add(INTERNAL_RELAY_TRANSIT_EMAIL);
+    const statsUsers = new Set<string>();
+    for (const inbound of inbounds) {
+      if (Array.isArray(inbound.users)) {
+        for (const user of inbound.users as Array<Record<string, unknown>>) {
+          const name = typeof user.name === 'string' ? user.name : typeof user.username === 'string' ? user.username : null;
+          if (name) statsUsers.add(name);
+        }
+      }
+    }
 
     let singboxConfig: Record<string, unknown> = {
       log: { level: 'info', timestamp: true },

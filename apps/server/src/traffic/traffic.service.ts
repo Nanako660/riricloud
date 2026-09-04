@@ -114,7 +114,11 @@ export class TrafficService {
       this.getRateOverview(range)
     ]);
     const aggregation = this.aggregate(rows, fallbackLines, config);
-    const lineRankings = this.toLineRankings(aggregation.lineAggregates, aggregation.totalUpload + aggregation.totalDownload);
+    const lineRankings = this.toLineRankings(
+      aggregation.lineAggregates,
+      aggregation.totalUpload + aggregation.totalDownload,
+      fallbackLines
+    );
 
     return {
       timeRange: range,
@@ -401,9 +405,25 @@ export class TrafficService {
     return aggregation;
   }
 
-  private toLineRankings(lineAggregates: Map<string, LineAggregate>, totalPhysical: bigint): LineTrafficRankItem[] {
+  private toLineRankings(
+    lineAggregates: Map<string, LineAggregate>,
+    totalPhysical: bigint,
+    allActiveLines: FallbackTrafficLine[] = []
+  ): LineTrafficRankItem[] {
     const total = this.toNumber(totalPhysical);
-    return Array.from(lineAggregates.values())
+    const aggregates = new Map(lineAggregates);
+
+    for (const activeLine of allActiveLines) {
+      if (!aggregates.has(activeLine.id)) {
+        aggregates.set(activeLine.id, {
+          line: activeLine,
+          upload: 0n,
+          download: 0n
+        });
+      }
+    }
+
+    return Array.from(aggregates.values())
       .map(({ line, upload, download }) => {
         const physical = upload + download;
         const trafficRate = this.getTrafficRate(line);
@@ -419,7 +439,12 @@ export class TrafficService {
           percentage: total > 0 ? this.round2((this.toNumber(physical) / total) * 100) : 0
         };
       })
-      .sort((left, right) => right.billedTotal - left.billedTotal);
+      .sort((left, right) => {
+        if (right.billedTotal !== left.billedTotal) {
+          return right.billedTotal - left.billedTotal;
+        }
+        return left.lineName.localeCompare(right.lineName);
+      });
   }
 
   private toTimeSeries(series: SeriesAggregate[], config: RangeConfig): TrafficTimeSeriesPoint[] {
