@@ -14,15 +14,23 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [0.6.3] - 2026-09-04
+
+### Added
+
 - 增加订阅分流构建引擎对 `geoip`、`process-name`、`rule-set` 别名解析，以及对 `,no-resolve` 污染目标出站名的自动净化支持。
 - 重构生成现代化精细分流模板 (`08_full_template_payload.json`)，覆盖 18+ 细分服务策略并采用 blackmatrix7 双端规则集（Clash YAML + Sing-box SRS 二进制）与 Fake-IP 双流 DNS。
-
-### Changed
 
 ### Fixed
 
 - 修复订阅分流编译引擎中 `type: "geoip"`、`type: "process-name"` 与 `type: "rule-set"` 被错误降级为 `DOMAIN-SUFFIX` 的缺陷。
 - 修复因规则目标包含 `,no-resolve` 导致 Sing-box 生成无效 outbound tag 的问题。
+
 
 
 ## [0.6.2] - 2026-09-04
