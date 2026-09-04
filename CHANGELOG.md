@@ -18,7 +18,13 @@
 
 ### Fixed
 
+
+## [0.6.5] - 2026-09-04
+
+### Fixed
+
 - 修复 Docker 容器与主控自包含发行包因 NestJS 构建产物目录层级漂移导致的 `Cannot find module '/app/dist/main.js'` 启动失败问题：锁定 `tsconfig.build.json` 的 `rootDir` 为 `src` 并排除 `scripts`，并在容器与发行包启动入口增加自适应路径引导。
+
 
 
 ## [0.6.4] - 2026-09-04
