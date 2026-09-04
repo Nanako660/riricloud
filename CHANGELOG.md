@@ -19,6 +19,14 @@
 ### Fixed
 
 
+## [0.6.6] - 2026-09-04
+
+### Fixed
+
+- 修复 Docker Master 镜像因复制 TypeScript 增量构建元数据而静默跳过 Server 编译，导致容器启动时报 `Cannot find module '/app/dist/main.js'`；排除 `*.tsbuildinfo`，并在部署前暂存编译产物、增加镜像构建期入口文件断言。
+
+
+
 ## [0.6.5] - 2026-09-04
 
 ### Fixed
