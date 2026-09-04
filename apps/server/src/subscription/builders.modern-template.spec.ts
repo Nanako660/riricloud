@@ -69,7 +69,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Advertising/Advertising.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Advertising/Advertising.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -79,7 +79,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/OpenAI/OpenAI.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -89,7 +89,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Gemini/Gemini.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -99,7 +99,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/YouTube/YouTube.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/YouTube/YouTube.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -109,7 +109,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Telegram/Telegram.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Telegram/Telegram.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -119,7 +119,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Apple/Apple.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Apple/Apple.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -129,7 +129,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Steam/Steam.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -139,7 +139,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Cloudflare/Cloudflare.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Cloudflare/Cloudflare.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -149,7 +149,8 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/BiliBili/BiliBili.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/BiliBili/BiliBili.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
+        rules: ['bilibili.com', 'b23.tv', 'biliapi.net', 'bilivideo.com', 'hdslb.com'],
         enabled: true
       },
       {
@@ -159,7 +160,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/NetEaseMusic/NetEaseMusic.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/NetEaseMusic/NetEaseMusic.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -169,7 +170,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OneDrive/OneDrive.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/OneDrive/OneDrive.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -179,7 +180,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Nvidia/Nvidia.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Nvidia/Nvidia.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -189,7 +190,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/GitHub/GitHub.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -199,7 +200,7 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Pixiv/Pixiv.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/Pixiv/Pixiv.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
@@ -209,14 +210,14 @@ describe('builders with modernized template configuration', () => {
         url: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMax/ChinaMax.yaml',
         singboxUrl: 'https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Sing-Box/ChinaMax/ChinaMax.srs',
         format: 'binary',
-        behavior: 'domain',
+        behavior: 'classical',
         enabled: true
       },
       {
         name: 'China IP',
         type: 'geoip',
         rules: ['CN'],
-        target: '🎯 全球直连,no-resolve',
+        target: '🎯 全球直连',
         enabled: true
       },
       {
@@ -306,6 +307,11 @@ describe('builders with modernized template configuration', () => {
 
     // 4. 远程规则提供者校验
     const providers = config['rule-providers'];
+    expect(providers['bilibili']).toEqual(expect.objectContaining({
+      type: 'http',
+      behavior: 'classical',
+      path: './ruleset/bilibili.yaml'
+    }));
     expect(Object.keys(providers)).toEqual(expect.arrayContaining([
       'advertising',
       'chatgpt',
@@ -326,11 +332,13 @@ describe('builders with modernized template configuration', () => {
 
     // 5. 规则序列正确包含 RULE-SET、GEOIP、MATCH 且无出站名字污染
     expect(config.rules).toEqual(expect.arrayContaining([
+      'DOMAIN-SUFFIX,bilibili.com,📺 哔哩哔哩',
+      'RULE-SET,bilibili,📺 哔哩哔哩',
       'RULE-SET,chatgpt,🤖 ChatGPT',
       'RULE-SET,google-ai,🧠 Google AI',
       'RULE-SET,youtube,🎬 YouTube',
       'RULE-SET,steam,🎮 Steam',
-      'GEOIP,CN,🎯 全球直连,no-resolve',
+      'GEOIP,CN,🎯 全球直连',
       'MATCH,🐟 漏网之鱼'
     ]));
 

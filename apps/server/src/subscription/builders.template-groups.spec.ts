@@ -142,7 +142,7 @@ describe('builders template proxy-groups resolution', () => {
     })) as Record<string, unknown>;
     const providers = config['rule-providers'] as Record<string, Record<string, unknown>>;
     expect(providers).toEqual(expect.objectContaining({
-      'ads-remote': expect.objectContaining({ type: 'http', behavior: 'domain', url: 'https://rules.example/ad.yaml', interval: 86400 })
+      'ads-remote': expect.objectContaining({ type: 'http', behavior: 'classical', path: './ruleset/ads-remote.yaml', url: 'https://rules.example/ad.yaml', interval: 86400 })
     }));
     expect(config.rules).toContain('RULE-SET,ads-remote,REJECT');
   });
@@ -205,7 +205,7 @@ describe('builders template proxy-groups resolution', () => {
     expect(clashConfig.rules).toContain('RULE-SET,remoteads,🛑 广告拦截');
     expect(clashConfig.rules).toContain('PROCESS-NAME,tv.danmaku.bili,🚀 节点选择');
     expect(clashConfig.rules).toContain('IP-CIDR,182.254.116.0/24,🎯 全球直连,no-resolve');
-    expect(clashConfig.rules).toContain('GEOIP,CN,🎯 全球直连,no-resolve');
+    expect(clashConfig.rules).toContain('GEOIP,CN,🎯 全球直连');
     expect(clashConfig.rules).toContain('MATCH,🚀 节点选择');
 
     // 2. Sing-box 验证

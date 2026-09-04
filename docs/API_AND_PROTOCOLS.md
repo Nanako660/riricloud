@@ -496,13 +496,13 @@ Profile-Update-Interval: 24
 Master 订阅编译引擎（`builders.ts`）支持通过 `SubscriptionTemplate` 定义策略组、分流规则集与 DNS 配置：
 - **策略组编译 (`proxyGroupsJson`)**：支持 `select`、`url-test`、`fallback`、`load-balance` 等类型。在 Clash 编译为对应 `proxy-groups`，在 Sing-box 编译为 `selector` 或带探针属性的 `urltest` 出站；策略组中的 `all`/`$all`/`$nodes` 宏自动替换为可用线路列表，并保留 `DIRECT`（Sing-box 映射为 `direct`）、`REJECT`（Sing-box 映射为 `block`）与策略组之间的层级嵌套引用。
 - **规则类型与双端映射 (`ruleSetsJson`)**：
-  - `remote-rule-set`（兼容 `rule-set` 别名）：Clash 编译为 `rule-providers` (HTTP yaml/mrs) 与 `RULE-SET` 引用；Sing-box 编译为 `route.rule_set` (remote srs 二进制或 json source) 与 `route.rules` 中的 `rule_set` 匹配。
-  - `geoip`：Clash 编译为 `GEOIP,<CODE>,<TARGET>`；Sing-box 编译为 `{ geoip: [<code>], outbound: <target> }`。
+  - `remote-rule-set`（兼容 `rule-set` 别名）：Clash 编译为 `rule-providers` (HTTP yaml/mrs，默认行为 `behavior: classical` 并自动分配本地缓存 `path: ./ruleset/<name>.yaml`，完美兼容含 DOMAIN/DOMAIN-SUFFIX/IP-CIDR 等各大主流规则集格式) 与 `RULE-SET` 引用；同时若配置了 `rules` 列表，双端自动优先输出内联 `DOMAIN-SUFFIX`（Sing-box `domain_suffix`），提供零延迟极速冷启动与下载失败回退保护；Sing-box 编译为 `route.rule_set` (remote srs 二进制或 json source) 与 `route.rules` 中的 `rule_set` 匹配。
+  - `geoip`：Clash 编译为 `GEOIP,<CODE>,<TARGET>`（不追加 `,no-resolve`，确保 Fake-IP 模式下域名流量能正确触发本地 DNS 解析并命中 GeoIP 直连，防止非直连域名直坠 MATCH 漏网之鱼）；Sing-box 编译为 `{ geoip: [<code>], outbound: <target> }`。
   - `process-name`：Clash 编译为 `PROCESS-NAME,<NAME>,<TARGET>`；Sing-box 编译为 `{ process_name: [<name>], outbound: <target> }`。
   - `ip-cidr`（兼容 `ip-cidr6`）：Clash 编译为 `IP-CIDR`，Sing-box 编译为 `ip_cidr`。
   - `domain` / `domain-suffix` / `domain-keyword` / `geosite`：按各内核原生路由键双端精准对齐。
   - `match` / `final`：编译为末尾兜底规则（Clash `MATCH` / Sing-box `action: route`）。
-  - **目标出站名净化**：引擎自动净化目标字符串中携带的 `,no-resolve` 后缀（如 `🎯 全球直连,no-resolve`），提取纯净策略组名作为出站 tag，并在 Clash IP/GeoIP 规则末尾追加 `,no-resolve` 修饰符，防止生成无效出站 tag 导致客户端异常。
+  - **目标出站名净化**：引擎自动净化目标字符串中携带的 `,no-resolve` 后缀（如 `🎯 全球直连,no-resolve`），提取纯净策略组名作为出站 tag，并在 Clash IP-CIDR 规则中保留该修饰符，同时防止 `,no-resolve` 污染 GEOIP 规则导致 Fake-IP 域名分流击穿为漏网之鱼。
 - **语义化 DNS 与防污染编译 (`dnsConfigJson`)**：
   - 支持语义化 DNS 配置（`enable`、`fakeIp`、`directDns`、`proxyDns`、`ipv6`）及经典 Clash DNS 格式自动归一化。
   - 当 `fakeIp: true` 时，Clash 输出 `enhanced-mode: fake-ip` 与 `fake-ip-range`；Sing-box 输出 `dns_fakeip` 服务器定义、`fakeip` 范围（`198.18.0.0/15`）及 A/AAAA 查询劫持规则；国内 DoH DNS 直连，国外 DNS 走代理节点解析，根除 DNS 污染。
