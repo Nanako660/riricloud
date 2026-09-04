@@ -14,26 +14,27 @@ export function LineCard({ line, className }: LineCardProps) {
   const isOnline = line.exitNode.status === 'ONLINE';
 
   return (
-    <div className={cn('flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card/50 p-3 transition-colors hover:bg-muted/20', className)}>
-      <div className="min-w-0 space-y-1">
-        <p className="truncate text-sm font-medium">{line.name}</p>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className={cn('flex min-w-0 flex-col justify-between gap-2.5 rounded-md border bg-card/50 p-3 transition-colors hover:bg-muted/20', className)}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-sm font-medium" title={line.name}>
+          {line.name}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
           <Badge variant="outline" className="text-xs">{line.protocolType}</Badge>
-          <span>协议</span>
+          <Badge variant="outline" className="text-xs">{line.trafficRate}x</Badge>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex items-center gap-2">
+        <Badge variant={isOnline ? 'default' : 'secondary'} className="gap-1 text-xs">
+          <Activity className="size-3" />
+          {isOnline ? '在线' : '离线'}
+        </Badge>
         <LineLatencyChip
           latencyMs={line.lastLatencyMs}
           status={line.lastTestStatus}
           message={line.lastTestMessage}
           testedAt={line.lastTestedAt}
         />
-        <Badge variant="outline" className="text-xs">{line.trafficRate}x</Badge>
-        <Badge variant={isOnline ? 'default' : 'secondary'} className="gap-1 text-xs">
-          <Activity className="size-3" />
-          {isOnline ? '在线' : '离线'}
-        </Badge>
       </div>
     </div>
   );
