@@ -96,13 +96,13 @@ riricloud/agent:latest
 
 主控和 Agent Dockerfile 使用 Dockerfile heredoc 执行内置资源 `manifest.json` 的生成脚本，要求使用支持 `# syntax=docker/dockerfile:1` 的 BuildKit 构建器；脚本会继续为 Agent、Sing-box 和 `libcronet.so` 写入文件大小及 SHA-256。
 
-同一次构建默认还会把镜像导出到 `artifacts/docker/v<version>/<os>-<arch>/`：
+同一次构建默认还会把镜像导出到 `artifacts/docker/<os>-<arch>/`。该目录已加入 `.dockerignore`，不会再次进入 Docker 构建上下文：
 
 ```text
-artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
-artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
-artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
-artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
+artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
+artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
 ```
 
 导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。
@@ -125,10 +125,10 @@ v0.5.0 新增 `TrafficCursor` 表，并将 Master-Agent 流量协议升级为 v2
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash
-gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
+gzip -dc artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
 # 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
-(cd artifacts/docker/v<version>/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
+# gzip -dc artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
+(cd artifacts/docker/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
 ```
 
 仓库另提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像。该模板不包含 `build` 配置，并设置 `pull_policy: never`，适合离线或受限网络环境：
