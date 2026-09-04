@@ -14,14 +14,22 @@
 
 ### Added
 
-- 增加订阅分流双端引擎对 `remote-rule-set` 规则配置 `rules` 内联列表的支持，在生成远端提供者的同时生成优先内联 `DOMAIN-SUFFIX`（Sing-box `domain_suffix`），提供零延迟极速冷启动与高可用容灾兜底。
-
 ### Changed
+
+### Fixed
+
+
+## [0.6.4] - 2026-09-04
+
+### Added
+
+- 增加订阅分流双端引擎对 `remote-rule-set` 规则配置 `rules` 内联列表的支持，在生成远端提供者的同时生成优先内联 `DOMAIN-SUFFIX`（Sing-box `domain_suffix`），提供零延迟极速冷启动与高可用容灾兜底。
 
 ### Fixed
 
 - 修复 Clash 远程规则提供者因默认行为不兼容与缺少本地缓存路径导致的解析失败问题：`rule-providers` 行为默认对齐 `classical`（支持 DOMAIN/DOMAIN-SUFFIX/IP-CIDR 等复合语法）并自动填充 `path: ./ruleset/<name>.yaml`。
 - 修复在 Fake-IP 模式下 `GEOIP` 规则因附加 `,no-resolve` 导致域名请求跳过本地解析进而全量击穿为「漏网之鱼」的严重问题。
+
 
 
 ## [0.6.3] - 2026-09-04
