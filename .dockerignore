@@ -2,6 +2,7 @@
 .cache
 .tools
 .zcode
+artifacts
 node_modules
 **/node_modules
 .env

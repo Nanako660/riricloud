@@ -96,18 +96,18 @@ riricloud/agent:latest
 
 主控和 Agent Dockerfile 使用 Dockerfile heredoc 执行内置资源 `manifest.json` 的生成脚本，要求使用支持 `# syntax=docker/dockerfile:1` 的 BuildKit 构建器；脚本会继续为 Agent、Sing-box 和 `libcronet.so` 写入文件大小及 SHA-256。
 
-同一次构建默认还会把镜像导出到 `artifacts/docker/v<version>/<os>-<arch>/`：
+同一次构建默认还会把镜像导出到 `artifacts/docker/<os>-<arch>/`。该目录已加入 `.dockerignore`，不会再次进入 Docker 构建上下文：
 
 ```text
-artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
-artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
-artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
-artifacts/docker/v<version>/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
+artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
+artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
 ```
 
-导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。
+导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。镜像归档、校验文件和 manifest 全部成功生成后，脚本默认自动删除 Docker daemon 中本次导出的四个镜像标签，避免 WSL 中长期积累 Master/Agent 镜像；设置 `DOCKER_CLEANUP=false pnpm docker:export` 可保留本地镜像。该清理不会删除 `artifacts/docker/` 导出包、BuildKit 依赖缓存或其他无关镜像；若镜像仍被容器使用，脚本会告警并保留无法删除的镜像。
 
-运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Docker 构建上下文排除 TypeScript `*.tsbuildinfo`，避免增量元数据让干净镜像静默跳过编译；Server 编译完成后会在 `pnpm deploy --prod` 前暂存 `dist`，再显式复制到最终部署目录，确保 Docker 镜像包含编译入口；Docker 构建还会断言 `/out/server/dist/main.js` 或兼容的 `/out/server/dist/src/main.js` 存在。Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。
+运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Docker 构建上下文排除 TypeScript `*.tsbuildinfo` 与本地 `artifacts/` 产物，避免增量元数据和离线包拖大上下文；构建阶段使用 BuildKit cache mount 持久化 pnpm、Corepack、Go module/build 和 sing-box 下载缓存，源码变化时无需重复下载未变化的依赖；Server 编译完成后会在 `pnpm deploy --prod` 前暂存 `dist`，再显式复制到最终部署目录，确保 Docker 镜像包含编译入口；Docker 构建还会断言 `/out/server/dist/main.js` 或兼容的 `/out/server/dist/src/main.js` 存在。Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。Docker 构建缓存存储在 Docker BuildKit/ Docker Desktop 中，不由 WSL 项目目录下的 `.cache/` 自动提供；执行 `docker builder prune` 后首次构建仍会重新填充这些缓存。
 
 主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。容器入口（`docker-entrypoint.js`）与发行包启动脚本（`start.sh`）均具备编译产物路径容错机制，优先引导 `dist/main.js` 并兼容 `dist/src/main.js` 布局。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
 
@@ -125,10 +125,10 @@ v0.5.0 新增 `TrafficCursor` 表，并将 Master-Agent 流量协议升级为 v2
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash
-gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
+gzip -dc artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
 # 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# gzip -dc artifacts/docker/v<version>/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
-(cd artifacts/docker/v<version>/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
+# gzip -dc artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
+(cd artifacts/docker/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
 ```
 
 仓库另提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像。该模板不包含 `build` 配置，并设置 `pull_policy: never`，适合离线或受限网络环境：

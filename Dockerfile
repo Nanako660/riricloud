@@ -7,9 +7,12 @@ ARG RIRICLOUD_VERSION=dev
 WORKDIR /src
 
 COPY apps/agent/go.mod apps/agent/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
+    go mod download
 COPY apps/agent/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
+RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
     -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
     -o /out/riri-agent .
 
@@ -21,21 +24,27 @@ ARG SINGBOX_VERSION=1.14.0
 ARG CRONET_VERSION=v150.0.7871.63-2
 WORKDIR /src
 
-RUN apt-get update \
+RUN --mount=type=cache,id=riricloud-singbox-downloads,target=/tmp/singbox-cache,sharing=locked \
+    apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates curl tar \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
-	&& curl --fail --silent --show-error --location \
+	&& singbox_archive="/tmp/singbox-cache/sing-box-${SINGBOX_VERSION}.tar.gz" \
+	&& cronet_library="/tmp/singbox-cache/libcronet-linux-${TARGETARCH}-${CRONET_VERSION}.so" \
+	&& if [ ! -s "$singbox_archive" ]; then curl --fail --silent --show-error --location \
 	  "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
-	  --output sing-box.tar.gz \
-	&& tar -xzf sing-box.tar.gz \
-	&& curl --fail --silent --show-error --location \
+	  --output "${singbox_archive}.tmp" && mv "${singbox_archive}.tmp" "$singbox_archive"; fi \
+	&& if [ ! -s "$cronet_library" ]; then curl --fail --silent --show-error --location \
 	  "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${TARGETARCH}.so" \
-	  --output /libcronet.so \
+	  --output "${cronet_library}.tmp" && mv "${cronet_library}.tmp" "$cronet_library"; fi \
+	&& tar -xzf "$singbox_archive" \
+	&& cp "$cronet_library" /libcronet.so \
 	&& chmod 0755 /libcronet.so
 
 WORKDIR /src/sing-box-${SINGBOX_VERSION}
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
+RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
+	--mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
+	CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
 	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
 	-ldflags "-s -w" \
 	-o /sing-box ./cmd/sing-box
@@ -56,18 +65,24 @@ RUN apt-get update \
     && corepack enable
 
 # Install dependencies before copying source so Docker can reuse the pnpm layer.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/server/prisma/ apps/server/prisma/
 COPY apps/web/package.json apps/web/package.json
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
+    --mount=type=cache,id=riricloud-pnpm,target=/workspace/.cache/pnpm,sharing=locked \
+    pnpm install --frozen-lockfile
 
 COPY . .
-RUN pnpm --filter @riricloud/web build
-RUN pnpm --filter @riricloud/server build \
+RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
+    pnpm --filter @riricloud/web build
+RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
+    pnpm --filter @riricloud/server build \
     && mkdir -p /tmp/server-dist \
     && cp -a apps/server/dist/. /tmp/server-dist/
-RUN pnpm --filter @riricloud/server deploy --prod /out/server \
+RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
+    --mount=type=cache,id=riricloud-pnpm,target=/workspace/.cache/pnpm,sharing=locked \
+    pnpm --filter @riricloud/server deploy --prod /out/server \
     && mkdir -p /out/server/dist \
     && cp -a /tmp/server-dist/. /out/server/dist/ \
     && if [ ! -f /out/server/dist/main.js ] && [ ! -f /out/server/dist/src/main.js ]; then \
