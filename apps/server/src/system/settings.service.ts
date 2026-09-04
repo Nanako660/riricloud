@@ -258,15 +258,25 @@ export class SettingsService {
     ]>;
     if (!entries.length) throw new BadRequestException('未提供任何有效设置字段');
 
-    const operations = entries.map(([key, value]) => {
-      const normalized = this.normalizeForStorage(key, value);
-      return this.prisma.systemSetting.upsert({
-        where: { key },
-        update: { value: normalized },
-        create: { key, value: normalized, description: DESCRIPTIONS[key] }
-      });
+    await this.prisma.$transaction(async (tx) => {
+      for (const [key, value] of entries) {
+        const normalized = this.normalizeForStorage(key, value);
+        await tx.systemSetting.upsert({
+          where: { key },
+          update: { value: normalized },
+          create: { key, value: normalized, description: DESCRIPTIONS[key] }
+        });
+      }
+
+      const defaultTemplateId = entries.find(([key]) => key === 'defaultTemplateId')?.[1];
+      if (typeof defaultTemplateId === 'string' && defaultTemplateId.trim()) {
+        await tx.subscriptionTemplate.updateMany({ data: { isDefault: false } });
+        await tx.subscriptionTemplate.update({
+          where: { id: defaultTemplateId.trim() },
+          data: { isDefault: true }
+        });
+      }
     });
-    await this.prisma.$transaction(operations);
     return this.getSettings();
   }
 

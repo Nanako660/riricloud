@@ -14,9 +14,27 @@
 
 ### Added
 
+- 新增订阅模板现代化工作台：策略组/分流规则可视化卡片与 CodeMirror 源码双模编辑、Clash/Sing-box 实时渲染预览、模板复制与快速预览抽屉。
+- 新增模板预览接口 `POST /api/v1/admin/subscription-templates/preview` 与克隆接口 `POST /api/v1/admin/subscription-templates/:id/duplicate`，无真实线路时使用多协议 Mock 节点池。
+
 ### Changed
 
+- 订阅编译器升级为语义化 DNS 与 Sing-box 1.8+ Rule-Set 结构，自动生成 Clash `rule-providers`、Sing-box `route.rule_set`，策略组支持标签、协议、倍率复合过滤及故障转移/负载均衡输入。
+- 模板默认状态改为事务同步 `SubscriptionTemplate.isDefault` 与 `SystemSetting.defaultTemplateId`；订阅接口增加 `templateId` 调试参数，启动时自动规范化存量模板 JSON。
+
 ### Fixed
+
+- 修复订阅模板 JSON 源码模式缺少语法高亮、编辑区高度固定，以及快速预览未填充抽屉可用高度的问题。
+- 修复移动端模板编辑 Sheet 受桌面端最大高度限制导致底部露出遮罩空白的问题。
+- 修复模板 YAML 编辑器缺少语法高亮、填充高度编辑器无法纵向滚动，以及深色主题下仍显示浅色编辑区的问题。
+- 统一模板编辑器的 YAML/JSON 语言模式、内部滚动边界和明暗主题适配。
+- 修复实时预览与快速预览的 Clash YAML 未应用 YAML 语言模式，以及填充型 CodeMirror 滚动边界不稳定的问题。
+- 修复编辑订阅模板弹窗中嵌套 Tab 源码编辑器高度链不完整导致长 JSON 无法滚动的问题，使其与快速预览使用一致的可滚动编辑视口。
+- 优化模板编辑弹窗的 CodeMirror 滚轮与滚动条行为，建立明确的桌面弹窗高度并将滚动锁定到编辑器自身。
+- 修复模板编辑弹窗 Tabs 过度使用零高度约束造成内容下移、截断和布局错位的问题。
+- 优化 DNS 高级覆写中的 YAML/JSON 编辑器改为填充面板剩余高度，保留编辑器内部滚动。
+- 修复移动端用户流量明细弹窗被桌面端最大高度限制导致底部内容被遮罩截断的问题，并为线路明细表增加横向滚动。
+- 修复个人中心账号信息与修改登录密码卡片在移动端窄屏下被长内容撑宽、输入框和复制按钮被裁切的问题。
 
 
 ## [0.6.1] - 2026-09-04

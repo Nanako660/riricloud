@@ -5,10 +5,17 @@ import { TemplatesService } from './templates.service';
 
 describe('TemplatesService', () => {
   let service: TemplatesService;
-  const prisma = {
+  type PrismaMock = {
+    subscriptionTemplate: Record<string, jest.Mock>;
+    systemSetting: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
+  };
+  const prisma: PrismaMock = {
     subscriptionTemplate: {
       create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn()
-    }
+    },
+    systemSetting: { findUnique: jest.fn(), upsert: jest.fn() },
+    $transaction: jest.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma))
   };
 
   beforeAll(async () => {
@@ -30,7 +37,8 @@ describe('TemplatesService', () => {
       id: 't1', name: 'new', description: null, isDefault: true, proxyGroupsJson: '[]', ruleSetsJson: '[]', dnsConfigJson: '{}', customInjectYaml: null, customInjectJson: null
     });
     await service.create({ name: 'new', isDefault: true });
-    expect(prisma.subscriptionTemplate.updateMany).toHaveBeenCalledWith({ data: { isDefault: false } });
+    expect(prisma.subscriptionTemplate.updateMany).toHaveBeenCalledWith({ where: { id: { not: 't1' } }, data: { isDefault: false } });
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'defaultTemplateId' }, update: { value: 't1' } }));
   });
 
   it('默认模板不能删除', async () => {
@@ -42,5 +50,31 @@ describe('TemplatesService', () => {
     prisma.subscriptionTemplate.findUnique.mockResolvedValue({ isDefault: false, isBuiltin: true, _count: { plans: 0 } });
     await expect(service.remove('builtin-template')).rejects.toThrow('内嵌默认模板不能删除，只能修改');
     expect(prisma.subscriptionTemplate.delete).not.toHaveBeenCalled();
+  });
+
+  it('复制模板时重置默认和内嵌标记', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue({
+      id: 'source', name: '基础模板', description: 'desc', isDefault: true, isBuiltin: true,
+      proxyGroupsJson: '[]', ruleSetsJson: '[]', dnsConfigJson: '{}', customInjectYaml: null, customInjectJson: null
+    });
+    prisma.subscriptionTemplate.create.mockResolvedValue({
+      id: 'copy', name: '基础模板 (副本)', description: 'desc', isDefault: false, isBuiltin: false,
+      proxyGroupsJson: '[]', ruleSetsJson: '[]', dnsConfigJson: '{}', customInjectYaml: null, customInjectJson: null
+    });
+    await expect(service.duplicate('source')).resolves.toEqual(expect.objectContaining({ name: '基础模板 (副本)', isDefault: false, isBuiltin: false }));
+  });
+
+  it('无真实线路时可生成预览并返回统计', async () => {
+    await expect(service.previewTemplate({
+      format: 'singbox',
+      template: {
+        proxyGroups: [{ name: '节点选择', type: 'select', proxies: 'all' }],
+        ruleSets: [{ name: '兜底', type: 'match', target: '节点选择' }],
+        dnsConfig: { enable: true, fakeIp: true, directDns: ['223.5.5.5'], proxyDns: ['https://1.1.1.1/dns-query'] }
+      }
+    })).resolves.toEqual(expect.objectContaining({
+      format: 'singbox',
+      stats: expect.objectContaining({ totalNodes: 6, proxyGroupsCount: 1, rulesCount: 1 })
+    }));
   });
 });

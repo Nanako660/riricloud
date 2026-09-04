@@ -249,6 +249,19 @@ describe('SubscriptionService', () => {
       expect(prisma.subscriptionTemplate.findUnique).toHaveBeenCalledWith({ where: { id: 'template-1' } });
     });
 
+    it('支持通过 templateId 临时指定订阅模板进行调试', async () => {
+      prisma.user.findUnique.mockResolvedValue(activeUser);
+      prisma.node.findMany.mockResolvedValue([node({ inbounds: [inbound({})] })]);
+      prisma.subscriptionTemplate.findUnique.mockResolvedValue({
+        proxyGroupsJson: JSON.stringify([{ name: '调试策略', type: 'select', proxies: 'all' }]),
+        ruleSetsJson: '[]',
+        dnsConfigJson: '{}'
+      });
+      const result = await service.getSubscription('tok-1', { type: 'clash', templateId: 'template-debug' });
+      expect(parseYaml(result.body)['proxy-groups']).toEqual([{ name: '调试策略', type: 'select', proxies: ['东京节点 01'] }]);
+      expect(prisma.subscriptionTemplate.findUnique).toHaveBeenCalledWith({ where: { id: 'template-debug' } });
+    });
+
     it('用户未设置密码时 hy2 凭证回退 uuid', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...activeUser, password: null });
       prisma.node.findMany.mockResolvedValue([

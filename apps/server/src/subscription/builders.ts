@@ -71,6 +71,40 @@ export interface SubscriptionTemplateConfig {
   customInjectJson?: string | null;
 }
 
+export interface SemanticDnsConfig {
+  enable?: boolean;
+  fakeIp?: boolean;
+  directDns?: string[];
+  proxyDns?: string[];
+  ipv6?: boolean;
+}
+
+export interface TemplateRuleItem {
+  name?: string;
+  type?: 'domain' | 'domain-suffix' | 'domain-keyword' | 'ip-cidr' | 'geosite' | 'match' | 'final' | 'remote-rule-set' | string;
+  target?: string;
+  enabled?: boolean;
+  rules?: string[];
+  url?: string;
+  singboxUrl?: string;
+  format?: 'binary' | 'source' | string;
+  behavior?: 'domain' | 'ipcidr' | string;
+}
+
+export interface TemplateProxyGroupConfig {
+  name?: string;
+  type?: 'select' | 'url-test' | 'fallback' | 'load-balance' | string;
+  proxies?: string | string[];
+  filter?: string;
+  includeTags?: string[];
+  excludeTags?: string[];
+  protocols?: string[];
+  maxRate?: number;
+  url?: string;
+  interval?: number;
+  tolerance?: number;
+}
+
 function parseJson<T>(value: string | undefined, fallback: T): T {
   try {
     return value ? (JSON.parse(value) as T) : fallback;
@@ -79,14 +113,69 @@ function parseJson<T>(value: string | undefined, fallback: T): T {
   }
 }
 
+export function normalizeSemanticDnsConfig(value: unknown): SemanticDnsConfig {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const asStringArray = (candidate: unknown): string[] => Array.isArray(candidate)
+    ? candidate.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim())
+    : [];
+  const directDns = asStringArray(source.directDns);
+  const proxyDns = asStringArray(source.proxyDns);
+  if (directDns.length || proxyDns.length || 'fakeIp' in source) {
+    return {
+      ...(typeof source.enable === 'boolean' ? { enable: source.enable } : {}),
+      ...(typeof source.fakeIp === 'boolean' ? { fakeIp: source.fakeIp } : {}),
+      ...(directDns.length ? { directDns } : {}),
+      ...(proxyDns.length ? { proxyDns } : {}),
+      ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
+    };
+  }
+
+  const nameserver = asStringArray(source.nameserver);
+  const fallback = asStringArray(source.fallback);
+  const defaultNameserver = asStringArray(source['default-nameserver']);
+  const enhancedMode = source['enhanced-mode'];
+  return {
+    enable: source.enable !== false,
+    fakeIp: enhancedMode === 'fake-ip' || source['fake-ip-range'] !== undefined,
+    directDns: nameserver.length ? [nameserver[0]] : defaultNameserver,
+    proxyDns: fallback.length ? fallback : nameserver.slice(1),
+    ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim())
+    : [];
+}
+
 function matchesProxyFilter(entry: SubEntry, group: Record<string, unknown>): boolean {
   const filter = group.filter;
-  if (typeof filter !== 'string' || !filter.trim()) return true;
-  try {
-    return new RegExp(filter, 'i').test(entry.node.name) || new RegExp(filter, 'i').test(entry.inbound.tag);
-  } catch {
-    return false;
+  if (typeof filter === 'string' && filter.trim()) {
+    try {
+      const regex = new RegExp(filter, 'i');
+      if (!regex.test(entry.node.name) && !regex.test(entry.inbound.tag)) return false;
+    } catch {
+      return false;
+    }
   }
+
+  const tags = entry.line?.tags ?? entry.node.tags ?? [];
+  const includeTags = stringArray(group.includeTags).map((tag) => tag.toLowerCase());
+  const excludeTags = stringArray(group.excludeTags).map((tag) => tag.toLowerCase());
+  const normalizedTags = tags.map((tag) => tag.toLowerCase());
+  if (includeTags.length && !includeTags.every((tag) => normalizedTags.includes(tag))) return false;
+  if (excludeTags.some((tag) => normalizedTags.includes(tag))) return false;
+
+  const protocols = stringArray(group.protocols).map((protocol) => protocol.toUpperCase());
+  if (protocols.length && !protocols.includes(entry.inbound.type.toUpperCase())) return false;
+
+  if (typeof group.maxRate === 'number' && Number.isFinite(group.maxRate)) {
+    const rate = entry.line?.trafficRate ?? 1;
+    if (rate > group.maxRate) return false;
+  }
+  return true;
 }
 
 function templateGroups(template: SubscriptionTemplateConfig | undefined): Array<Record<string, unknown>> {
@@ -179,7 +268,7 @@ function templateRules(template: SubscriptionTemplateConfig | undefined): Array<
 
 function templateDns(template: SubscriptionTemplateConfig | undefined): Record<string, unknown> {
   const dns = parseJson<unknown>(template?.dnsConfigJson, {});
-  return dns && typeof dns === 'object' && !Array.isArray(dns) ? (dns as Record<string, unknown>) : {};
+  return { ...normalizeSemanticDnsConfig(dns) };
 }
 
 function parseYamlObject(value: string): Record<string, unknown> {
@@ -189,6 +278,170 @@ function parseYamlObject(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function ruleType(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : fallback;
+}
+
+function safeRuleName(value: unknown, fallback: string): string {
+  const name = typeof value === 'string' ? value.trim() : '';
+  return name || fallback;
+}
+
+function slug(value: string, fallback: string): string {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+export function buildClashRuleProviders(rules: TemplateRuleItem[]): Record<string, Record<string, unknown>> {
+  const providers: Record<string, Record<string, unknown>> = {};
+  const used = new Set<string>();
+  for (const [index, rule] of rules.entries()) {
+    if (rule.enabled === false || ruleType(rule.type, '') !== 'remote-rule-set' || typeof rule.url !== 'string' || !rule.url.trim()) continue;
+    const base = slug(safeRuleName(rule.name, `rule-set-${index + 1}`), `rule-set-${index + 1}`);
+    let name = base;
+    let suffix = 2;
+    while (used.has(name)) name = `${base}-${suffix++}`;
+    used.add(name);
+    providers[name] = {
+      type: 'http',
+      behavior: rule.behavior === 'ipcidr' ? 'ipcidr' : 'domain',
+      format: 'yaml',
+      url: rule.url.trim(),
+      interval: 86400
+    };
+  }
+  return providers;
+}
+
+export function buildSingboxRouteRuleSets(rules: TemplateRuleItem[]): Array<Record<string, unknown>> {
+  const definitions: Array<Record<string, unknown>> = [];
+  const used = new Set<string>();
+  const addDefinition = (tag: string, url: string, format: string) => {
+    let uniqueTag = tag;
+    let suffix = 2;
+    while (used.has(uniqueTag)) uniqueTag = `${tag}-${suffix++}`;
+    used.add(uniqueTag);
+    definitions.push({
+      tag: uniqueTag,
+      type: 'remote',
+      format: format === 'source' ? 'source' : 'binary',
+      url,
+      download_detour: 'direct'
+    });
+    return uniqueTag;
+  };
+
+  for (const [index, rule] of rules.entries()) {
+    if (rule.enabled === false) continue;
+    const type = ruleType(rule.type, '');
+    const values = stringArray(rule.rules);
+    const remoteUrl = typeof rule.singboxUrl === 'string' && rule.singboxUrl.trim() ? rule.singboxUrl.trim() : '';
+    if (type === 'remote-rule-set' && remoteUrl) {
+      addDefinition(slug(safeRuleName(rule.name, `rule-set-${index + 1}`), `rule-set-${index + 1}`), remoteUrl, rule.format ?? 'binary');
+      continue;
+    }
+    if (type === 'geosite') {
+      for (const value of values) {
+        const normalized = slug(value, `geosite-${index + 1}`);
+        addDefinition(`geosite-${normalized}`, `https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite-${normalized}.srs`, 'binary');
+      }
+    }
+  }
+  return definitions;
+}
+
+function buildSingboxRuleSetTags(rules: TemplateRuleItem[]): Map<number, string[]> {
+  const tags = new Map<number, string[]>();
+  const used = new Set<string>();
+  for (const [index, rule] of rules.entries()) {
+    if (rule.enabled === false) continue;
+    const type = ruleType(rule.type, '');
+    const values = stringArray(rule.rules);
+    const remoteUrl = typeof rule.singboxUrl === 'string' && rule.singboxUrl.trim() ? rule.singboxUrl.trim() : '';
+    if (type === 'remote-rule-set' && remoteUrl) {
+      const base = slug(safeRuleName(rule.name, `rule-set-${index + 1}`), `rule-set-${index + 1}`);
+      let tag = base;
+      let suffix = 2;
+      while (used.has(tag)) tag = `${base}-${suffix++}`;
+      used.add(tag);
+      tags.set(index, [tag]);
+    } else if (type === 'geosite') {
+      const result: string[] = [];
+      for (const value of values) {
+        const base = `geosite-${slug(value, `rule-${index + 1}`)}`;
+        let tag = base;
+        let suffix = 2;
+        while (used.has(tag)) tag = `${base}-${suffix++}`;
+        used.add(tag);
+        result.push(tag);
+      }
+      if (result.length) tags.set(index, result);
+    }
+  }
+  return tags;
+}
+
+export function buildSemanticClashDns(value: unknown): Record<string, unknown> {
+  const dns = normalizeSemanticDnsConfig(value);
+  if (dns.enable === false) return {};
+  const directDns = dns.directDns?.length ? dns.directDns : ['223.5.5.5'];
+  const proxyDns = dns.proxyDns?.length ? dns.proxyDns : ['https://1.1.1.1/dns-query'];
+  return {
+    enable: true,
+    ...(dns.ipv6 === false ? { ipv6: false } : {}),
+    ...(dns.fakeIp ? { 'enhanced-mode': 'fake-ip', 'fake-ip-range': '198.18.0.1/16' } : {}),
+    'default-nameserver': directDns,
+    nameserver: [...new Set([...directDns, ...proxyDns])],
+    fallback: proxyDns,
+    'fallback-filter': { geoip: true, 'geoip-code': 'CN', ipcidr: ['240.0.0.0/4'] }
+  };
+}
+
+export function buildSemanticSingboxDns(value: unknown, primaryGroup: string, ruleSetTags: string[] = []): Record<string, unknown> {
+  const dns = normalizeSemanticDnsConfig(value);
+  if (dns.enable === false) return {};
+  const directDns = dns.directDns?.length ? dns.directDns : ['223.5.5.5'];
+  const proxyDns = dns.proxyDns?.length ? dns.proxyDns : ['https://1.1.1.1/dns-query'];
+  const servers: Array<Record<string, unknown>> = [
+    { tag: 'dns_direct', address: directDns[0], detour: 'direct' },
+    { tag: 'dns_proxy', address: proxyDns[0], detour: primaryGroup }
+  ];
+  const rules: Array<Record<string, unknown>> = [
+    { outbound: 'any', server: 'dns_direct' }
+  ];
+  if (ruleSetTags.length) rules.push({ rule_set: ruleSetTags, server: 'dns_direct' });
+  if (dns.fakeIp) {
+    servers.push({ tag: 'dns_fakeip', address: 'fakeip' });
+    rules.push({ query_type: ['A', 'AAAA'], server: 'dns_fakeip' });
+  }
+  rules.push({ server: 'dns_proxy' });
+  return {
+    servers,
+    rules,
+    ...(dns.fakeIp ? { fakeip: { enabled: true, inet4_range: '198.18.0.0/15' } } : {}),
+    strategy: dns.ipv6 === false ? 'prefer_ipv4' : 'prefer_ipv4',
+    independent_cache: true
+  };
+}
+
+function buildClashRules(rules: TemplateRuleItem[], primaryGroup: string): { rules: string[]; providers: Record<string, Record<string, unknown>> } {
+  const providers = buildClashRuleProviders(rules);
+  const remoteProviderNames = Object.keys(providers);
+  let remoteIndex = 0;
+  const output = rules.filter((rule) => rule.enabled !== false).flatMap((rule) => {
+    const type = ruleType(rule.type, 'domain-suffix');
+    const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
+    if (type === 'remote-rule-set') {
+      const provider = remoteProviderNames[remoteIndex++];
+      return provider ? [`RULE-SET,${provider},${target}`] : stringArray(rule.rules).map((value) => `DOMAIN-SUFFIX,${value},${target}`);
+    }
+    if (type === 'match' || type === 'final') return [`MATCH,${target}`];
+    const clashType = type === 'ip-cidr' || type === 'ip_cidr' ? 'IP-CIDR' : type === 'domain-keyword' ? 'DOMAIN-KEYWORD' : type === 'domain' ? 'DOMAIN' : type === 'geosite' ? 'GEOSITE' : 'DOMAIN-SUFFIX';
+    return stringArray(rule.rules).map((value) => `${clashType},${value},${target}`);
+  });
+  return { rules: output.length ? output : [`MATCH,${primaryGroup}`], providers };
 }
 
 const REALITY_CLIENT_DEFAULTS = {
@@ -728,7 +981,7 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
 
   const names = proxies.map((p) => p.name as string);
   const defaultGroup = '节点选择';
-  const groups = templateGroups(template);
+  const groups = templateGroups(template) as TemplateProxyGroupConfig[];
   const allGroupNames = new Set(
     groups
       .map((g) => (typeof g.name === 'string' ? g.name.trim() : ''))
@@ -736,7 +989,7 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
   );
   const proxyGroups = groups.length
     ? groups.map((group) => {
-        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group));
+        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group as Record<string, unknown>));
         const groupNames = groupEntries
           .map((entry) => names[allEntries.indexOf(entry)])
           .filter((name): name is string => !!name && names.includes(name));
@@ -744,7 +997,7 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
         return {
           name: typeof group.name === 'string' && group.name.trim() ? group.name : defaultGroup,
           type,
-          proxies: resolveClashGroupProxies(group, groupNames, names, allGroupNames),
+          proxies: resolveClashGroupProxies(group as Record<string, unknown>, groupNames, names, allGroupNames),
           ...(typeof group.url === 'string' ? { url: group.url } : {}),
           ...(typeof group.interval === 'number' ? { interval: group.interval } : {}),
           ...(typeof group.tolerance === 'number' ? { tolerance: group.tolerance } : {})
@@ -752,19 +1005,8 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
       })
     : [{ name: defaultGroup, type: 'select', proxies: [...names, 'DIRECT'] }];
   const primaryGroup = (proxyGroups[0]?.name as string) || defaultGroup;
-  const configuredRules = templateRules(template);
-  const rules = configuredRules.length
-    ? configuredRules
-        .filter((rule) => rule.enabled !== false)
-        .flatMap((rule) => {
-          const type = typeof rule.type === 'string' ? rule.type.toUpperCase() : 'DOMAIN-SUFFIX';
-          const target = typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup;
-          const values = Array.isArray(rule.rules) ? rule.rules.filter((item): item is string => typeof item === 'string') : [];
-          return type === 'MATCH' || type === 'FINAL'
-            ? [`MATCH,${target}`]
-            : values.map((value) => `${type},${value},${target}`);
-        })
-    : [`MATCH,${primaryGroup}`];
+  const configuredRules = templateRules(template) as TemplateRuleItem[];
+  const clashRules = buildClashRules(configuredRules, primaryGroup);
   const config: Record<string, unknown> = {
     'mixed-port': 7890,
     'allow-lan': false,
@@ -772,8 +1014,9 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
     'log-level': 'info',
     proxies,
     'proxy-groups': proxyGroups,
-    rules,
-    ...(Object.keys(templateDns(template)).length ? { dns: templateDns(template) } : {})
+    rules: clashRules.rules,
+    ...(Object.keys(clashRules.providers).length ? { 'rule-providers': clashRules.providers } : {}),
+    ...(Object.keys(templateDns(template)).length ? { dns: buildSemanticClashDns(templateDns(template)) } : {})
   };
   if (template?.customInjectYaml?.trim()) {
     const parsed = parseYamlObject(template.customInjectYaml);
@@ -973,7 +1216,7 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
   ];
 
   const names = primaryOutbounds.map((outbound) => outbound.tag as string);
-  const groups = templateGroups(template);
+  const groups = templateGroups(template) as TemplateProxyGroupConfig[];
   const allGroupNames = new Set(
     groups
       .map((g) => (typeof g.name === 'string' ? g.name.trim() : ''))
@@ -981,20 +1224,22 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
   );
   const strategyOutbounds = groups.length
     ? groups.map((group) => {
-        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group));
+        const groupEntries = allEntries.filter((entry) => matchesProxyFilter(entry, group as Record<string, unknown>));
         const groupNames = groupEntries
           .map((entry) => names[allEntries.indexOf(entry)])
           .filter((name): name is string => !!name && names.includes(name));
-        const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'selector';
-        const outboundType = type === 'url-test' ? 'urltest' : 'selector';
+        const type = typeof group.type === 'string' ? group.type.toLowerCase() : 'select';
+        const outboundType = type === 'select' ? 'selector' : 'urltest';
         return {
           type: outboundType,
           tag: typeof group.name === 'string' && group.name.trim() ? group.name : '节点选择',
-          outbounds: resolveSingboxGroupOutbounds(group, groupNames, names, allGroupNames),
+          outbounds: resolveSingboxGroupOutbounds(group as Record<string, unknown>, groupNames, names, allGroupNames),
           ...(outboundType === 'urltest'
             ? {
                 url: typeof group.url === 'string' ? group.url : 'https://www.gstatic.com/generate_204',
-                interval: typeof group.interval === 'number' ? `${group.interval}s` : '5m'
+                interval: typeof group.interval === 'number' ? `${group.interval}s` : '5m',
+                ...(typeof group.tolerance === 'number' ? { tolerance: group.tolerance } : {}),
+                ...(type === 'fallback' ? { interruptible: true } : {})
               }
             : {})
         };
@@ -1009,22 +1254,33 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
   outbounds.push({ type: 'direct', tag: 'direct' });
   outbounds.push({ type: 'block', tag: 'block' });
   outbounds.push(...strategyOutbounds);
-  const routeRules: Array<Record<string, unknown>> = templateRules(template)
+  const configuredRules = templateRules(template) as TemplateRuleItem[];
+  const singboxRuleSets = buildSingboxRouteRuleSets(configuredRules);
+  const singboxRuleSetTags = buildSingboxRuleSetTags(configuredRules);
+  const routeRules: Array<Record<string, unknown>> = configuredRules
     .filter((rule) => rule.enabled !== false)
-    .flatMap((rule): Array<Record<string, unknown>> => {
+    .flatMap((rule, index): Array<Record<string, unknown>> => {
       const target = routeTarget(typeof rule.target === 'string' && rule.target.trim() ? rule.target : primaryGroup);
-      const values = Array.isArray(rule.rules) ? rule.rules.filter((item): item is string => typeof item === 'string') : [];
-      const type = typeof rule.type === 'string' ? rule.type.toLowerCase() : 'domain_suffix';
+      const values = stringArray(rule.rules);
+      const type = ruleType(rule.type, 'domain_suffix');
       if (type === 'match' || type === 'final') return [{ action: 'route', outbound: target }];
-      if (type === 'geosite') return [{ rule_set: values, outbound: target }];
+      if (type === 'geosite' || type === 'remote-rule-set') {
+        const ruleSet = singboxRuleSetTags.get(index);
+        return ruleSet?.length ? [{ rule_set: ruleSet, outbound: target }] : [];
+      }
       if (type === 'ip-cidr' || type === 'ip_cidr') return [{ ip_cidr: values, outbound: target }];
+      if (type === 'domain') return [{ domain: values, outbound: target }];
+      if (type === 'domain-keyword') return [{ domain_keyword: values, outbound: target }];
       return [{ domain_suffix: values, outbound: target }];
     });
   const config: Record<string, unknown> = {
     log: { level: 'info' },
-    dns: templateDns(template),
+    dns: buildSemanticSingboxDns(templateDns(template), primaryGroup, singboxRuleSets.map((rule) => String(rule.tag))),
     outbounds,
-    route: { rules: routeRules.length ? routeRules : [{ action: 'route', outbound: primaryGroup }] }
+    route: {
+      ...(singboxRuleSets.length ? { rule_set: singboxRuleSets } : {}),
+      rules: routeRules.length ? routeRules : [{ action: 'route', outbound: primaryGroup }]
+    }
   };
   if (template?.customInjectJson?.trim()) {
     const parsed = JSON.parse(template.customInjectJson) as Record<string, unknown>;

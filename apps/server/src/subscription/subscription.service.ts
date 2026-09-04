@@ -134,7 +134,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (this.expiryTimer) clearInterval(this.expiryTimer);
   }
 
-  async getSubscription(token: string, opts: { type?: string; userAgent?: string } = {}) {
+  async getSubscription(token: string, opts: { type?: string; userAgent?: string; templateId?: string } = {}) {
     const foundSubscription = await this.findByToken(token);
     const subscription = foundSubscription && foundSubscription.plan?.trafficResetMode
       ? (await this.ensureTrafficReset(foundSubscription)).subscription
@@ -171,7 +171,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
-    const template = await this.resolveTemplate(subscription?.plan?.template);
+    const template = await this.resolveTemplate(subscription?.plan?.template, opts.templateId);
     const settings = await this.settingsService?.getSettings();
     return {
       body: this.render(format, subscriptionSources, subUser, template),
@@ -628,8 +628,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async resolveTemplate(template?: SubscriptionTemplateConfig | null) {
-    if (template) return template;
+  private async resolveTemplate(template?: SubscriptionTemplateConfig | null, templateId?: string) {
     const templateDelegate = (this.prisma as unknown as {
       subscriptionTemplate?: {
         findUnique?: (args: Record<string, unknown>) => Promise<SubscriptionTemplateConfig | null>;
@@ -637,6 +636,12 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       };
     }).subscriptionTemplate;
     if (!templateDelegate) return undefined;
+    if (templateId?.trim() && templateDelegate.findUnique) {
+      const requested = await templateDelegate.findUnique({ where: { id: templateId.trim() } });
+      if (!requested) throw new NotFoundException('指定订阅模板不存在');
+      return requested;
+    }
+    if (template) return template;
     const settings = await this.settingsService?.getSettings();
     if (settings?.defaultTemplateId && templateDelegate.findUnique) {
       const configured = await templateDelegate.findUnique({ where: { id: settings.defaultTemplateId } });
