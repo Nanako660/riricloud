@@ -237,6 +237,40 @@ export_images() {
   echo "镜像导出完成：$EXPORT_DIR"
   echo "版本清单：$manifest_file"
   echo "校验文件：$checksum_file"
+
+  cleanup_exported_images
+}
+
+cleanup_exported_images() {
+  case "${DOCKER_CLEANUP:-true}" in
+    true|TRUE|1|yes|YES|on|ON)
+      local image
+      local cleanup_failed=0
+      echo "清理已导出的本地 Docker 镜像标签..."
+      for image in "$MASTER_VERSION_IMAGE" "$MASTER_LATEST_IMAGE" "$AGENT_VERSION_IMAGE" "$AGENT_LATEST_IMAGE"; do
+        if ! docker image inspect "$image" >/dev/null 2>&1; then
+          continue
+        fi
+
+        if docker image rm "$image" >/dev/null; then
+          echo "已清理：$image"
+        else
+          echo "警告：无法清理 $image，可能仍被容器使用；导出包已保留" >&2
+          cleanup_failed=1
+        fi
+      done
+
+      if [ "$cleanup_failed" -ne 0 ]; then
+        echo "部分 Docker 镜像未清理，请停止占用它们的容器后手动执行 docker image rm" >&2
+      fi
+      ;;
+    false|FALSE|0|no|NO|off|OFF)
+      echo "已跳过本地 Docker 镜像清理（DOCKER_CLEANUP=$DOCKER_CLEANUP）"
+      ;;
+    *)
+      die "DOCKER_CLEANUP must be true or false"
+      ;;
+  esac
 }
 
 compose() {

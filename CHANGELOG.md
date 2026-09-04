@@ -20,6 +20,7 @@
 
 - 修复 Docker 构建上下文包含 `artifacts/` 离线镜像产物导致上下文膨胀到数 GB、构建上传缓慢的问题。
 - 修复 Docker 构建阶段 pnpm 工作区安装与生产依赖部署使用不同缓存目录、导致每次源码变更重复下载依赖的问题；为 pnpm、Corepack、Go 和 sing-box 下载资源增加 BuildKit 缓存。
+- 优化 Docker 镜像导出流程：导出包、校验文件和 manifest 成功生成后默认清理本次导出的本地镜像标签，减少 WSL 中的镜像空间占用；支持通过 `DOCKER_CLEANUP=false` 保留本地镜像。
 
 
 ## [0.6.6] - 2026-09-04

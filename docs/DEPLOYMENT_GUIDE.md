@@ -105,7 +105,7 @@ artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manif
 artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
 ```
 
-导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。
+导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。镜像归档、校验文件和 manifest 全部成功生成后，脚本默认自动删除 Docker daemon 中本次导出的四个镜像标签，避免 WSL 中长期积累 Master/Agent 镜像；设置 `DOCKER_CLEANUP=false pnpm docker:export` 可保留本地镜像。该清理不会删除 `artifacts/docker/` 导出包、BuildKit 依赖缓存或其他无关镜像；若镜像仍被容器使用，脚本会告警并保留无法删除的镜像。
 
 运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Docker 构建上下文排除 TypeScript `*.tsbuildinfo` 与本地 `artifacts/` 产物，避免增量元数据和离线包拖大上下文；构建阶段使用 BuildKit cache mount 持久化 pnpm、Corepack、Go module/build 和 sing-box 下载缓存，源码变化时无需重复下载未变化的依赖；Server 编译完成后会在 `pnpm deploy --prod` 前暂存 `dist`，再显式复制到最终部署目录，确保 Docker 镜像包含编译入口；Docker 构建还会断言 `/out/server/dist/main.js` 或兼容的 `/out/server/dist/src/main.js` 存在。Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。Docker 构建缓存存储在 Docker BuildKit/ Docker Desktop 中，不由 WSL 项目目录下的 `.cache/` 自动提供；执行 `docker builder prune` 后首次构建仍会重新填充这些缓存。
 
