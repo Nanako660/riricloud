@@ -64,8 +64,16 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm --filter @riricloud/web build
-RUN pnpm --filter @riricloud/server build
+RUN pnpm --filter @riricloud/server build \
+    && mkdir -p /tmp/server-dist \
+    && cp -a apps/server/dist/. /tmp/server-dist/
 RUN pnpm --filter @riricloud/server deploy --prod /out/server \
+    && mkdir -p /out/server/dist \
+    && cp -a /tmp/server-dist/. /out/server/dist/ \
+    && if [ ! -f /out/server/dist/main.js ] && [ ! -f /out/server/dist/src/main.js ]; then \
+      echo "server build output missing from /out/server/dist" >&2; \
+      exit 1; \
+    fi \
     && cd /out/server \
     && DATABASE_URL=file:/tmp/riri-build.db node node_modules/prisma/build/index.js generate \
     && rm -f /tmp/riri-build.db \
