@@ -38,18 +38,28 @@ export function AppSidebar() {
     ...(isAdmin
       ? [
           {
-            label: '管理后台',
+            label: '业务运营',
             items: [
               { to: '/admin/users', label: '用户管理', icon: Users, end: false },
-              { to: '/admin/traffic', label: '流量统计', icon: Activity, end: false },
+              { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
+              { to: '/admin/redeem-codes', label: '卡密管理', icon: Ticket, end: false }
+            ]
+          },
+          {
+            label: '网络与节点',
+            items: [
               { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
-              { to: '/admin/binaries', label: '资源管理', icon: Binary, end: false },
               { to: '/admin/lines', label: '线路管理', icon: GitBranch, end: false },
               { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },
-              { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
               { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
-              { to: '/admin/redeem-codes', label: '卡密管理', icon: Ticket, end: false },
-              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false },
+              { to: '/admin/binaries', label: '资源管理', icon: Binary, end: false }
+            ]
+          },
+          {
+            label: '监控与系统',
+            items: [
+              { to: '/admin/traffic', label: '流量统计', icon: Activity, end: false },
+              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false }
             ]
           }
         ]
