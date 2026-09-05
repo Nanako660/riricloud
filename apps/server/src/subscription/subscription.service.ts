@@ -310,9 +310,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const delegate = this.requireSubscriptionDelegate();
     const current = await delegate.findUnique({ where: { userId } });
     if (!current) {
-      const token = randomUUID();
-      await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken: token } });
-      return { subscriptionToken: token };
+      throw new BadRequestException('该用户未绑定有效订阅，无法重置订阅链接');
     }
     return this.resetTokenBySubscription(current.id);
   }
@@ -409,11 +407,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const subscriptionToken = randomUUID();
     await this.prisma.$transaction(async (tx) => {
       await tx.subscription.delete({ where: { id } });
-      await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          subscriptionToken,
+          trafficLimitBytes: BigInt(0),
+          trafficUsedBytes: BigInt(0),
+          expireAt: null
+        }
+      });
+      await tx.userLineGrant.deleteMany({ where: { userId } });
     });
     void this.agentGateway?.pushConfigToAll();
     return { removed: true, id, userId };
   }
+
 
   async adminAssign(userId: string, dto: AdminUpdateSubDto) {
     if (!dto.planId) throw new BadRequestException('绑定订阅必须指定套餐');
@@ -507,13 +515,15 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resetDueTrafficPeriods(now = new Date()): Promise<number> {
+    const settings = await this.settingsService?.getSettings();
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
     const subscriptions = await this.prisma.subscription.findMany({
       where: { plan: { trafficResetMode: { in: TRAFFIC_RESET_MODES.filter((mode) => mode !== 'NONE') } } },
       include: { plan: true }
     });
     const due = subscriptions
       .map((subscription) => {
-        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays);
+        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays, timeZone);
         const previous = subscription.trafficPeriodStartAt;
         return { subscription, period, shouldReset: Boolean(period && previous && previous.getTime() < period.startAt.getTime()) };
       })
@@ -545,7 +555,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private async ensureTrafficReset(subscription: SubscriptionRecord, now = new Date()): Promise<{ subscription: SubscriptionRecord; changed: boolean }> {
     const plan = subscription.plan;
     const mode = plan?.trafficResetMode ?? 'NONE';
-    const period = plan ? getTrafficPeriod(mode, now, subscription.startedAt, plan.durationDays) : null;
+    const settings = await this.settingsService?.getSettings();
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
+    const period = plan ? getTrafficPeriod(mode, now, subscription.startedAt, plan.durationDays, timeZone) : null;
     if (!period) return { subscription, changed: false };
 
     const previous = subscription.trafficPeriodStartAt ?? null;
@@ -594,9 +606,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private getInitialTrafficPeriodStart(
     plan: { trafficResetMode?: string; durationDays: number },
     now: Date,
-    startedAt = now
+    startedAt = now,
+    timeZone = 'Asia/Shanghai'
   ): Date | null {
-    return getTrafficPeriod(plan.trafficResetMode ?? 'NONE', now, startedAt, plan.durationDays)?.startAt ?? null;
+    return getTrafficPeriod(plan.trafficResetMode ?? 'NONE', now, startedAt, plan.durationDays, timeZone)?.startAt ?? null;
   }
 
   private getExtraLineIds(subscription: SubscriptionRecord): string[] {
@@ -709,10 +722,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private toView(subscription: SubscriptionRecord) {
+  private toView(subscription: SubscriptionRecord, timeZone = 'Asia/Shanghai') {
     const trafficResetMode = subscription.plan?.trafficResetMode ?? 'NONE';
     const period = subscription.plan
-      ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays)
+      ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays, timeZone)
       : null;
     return {
       ...subscription,

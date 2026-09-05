@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import type { Plan } from '../../plans/use-plans';
-import { dateInputAfterDays, GB, type CreateUserForm, type EditAccountForm } from './user-form-schema';
+import type { CreateUserForm, EditAccountForm } from './user-form-schema';
 
 export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUserForm>; plans: Plan[] }) {
   return (
@@ -61,12 +61,6 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
                 onValueChange={(value) => {
                   const planId = value === 'none' ? '' : value;
                   field.onChange(planId);
-                  const plan = plans.find((item) => item.id === planId);
-                  if (plan) {
-                    form.setValue('quotaGB', plan.trafficLimitBytes / GB, { shouldValidate: true });
-                    form.setValue('permanent', false, { shouldValidate: true });
-                    form.setValue('expireAt', dateInputAfterDays(plan.durationDays), { shouldValidate: true });
-                  }
                 }}
               >
                 <FormControl><SelectTrigger><SelectValue placeholder="暂不绑定套餐" /></SelectTrigger></FormControl>
@@ -75,51 +69,12 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
                   {plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <FormDescription>可先创建无套餐账号，之后在“订阅管理”中绑定套餐。</FormDescription>
+              <FormDescription>选择套餐后将自动继承套餐配额与时长；亦可暂不绑定，创建无订阅账号。</FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField
-          control={form.control}
-          name="quotaGB"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>流量配额（GiB）</FormLabel>
-              <FormControl><Input type="number" min={1} step="any" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="permanent"
-          render={({ field }) => (
-            <div className="space-y-2">
-              <Label className="invisible" aria-hidden="true">占位</Label>
-              <FormItem className="flex h-9 flex-row items-center justify-between space-y-0 rounded-md border px-3 py-2 shadow-sm">
-                <FormLabel>永久有效</FormLabel>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-              </FormItem>
-            </div>
-          )}
-        />
-      </div>
-      {!form.watch('permanent') ? (
-        <FormField
-          control={form.control}
-          name="expireAt"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>到期日期</FormLabel>
-              <FormControl><Input type="date" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      ) : null}
     </div>
   );
 }

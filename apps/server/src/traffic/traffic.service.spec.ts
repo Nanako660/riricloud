@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { createDateInTimezone } from '../common/traffic-reset';
 import { TrafficService } from './traffic.service';
 
 describe('TrafficService', () => {
@@ -40,7 +41,7 @@ describe('TrafficService', () => {
     ...overrides
   });
 
-  const localDay = (hour: number, minute: number) => new Date(2026, 8, 2, hour, minute);
+  const localDay = (hour: number, minute: number) => createDateInTimezone(2026, 9, 2, hour, minute, 0, 'Asia/Shanghai');
 
   it('今日按小时分桶并为无数据时隙补零', async () => {
     prisma.line.count.mockResolvedValue(2);

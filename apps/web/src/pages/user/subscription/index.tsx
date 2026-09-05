@@ -38,7 +38,7 @@ import {
   useUserSubscriptionMutations
 } from './use-user-subscription';
 import { usePublicSettings } from '@/lib/public-settings';
-import { formatBytes, formatCurrency } from '@/lib/utils';
+import { formatBytes, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import { buildSubscriptionUrl } from '@/lib/subscription-url';
 import { QuickRedeemForm } from '@/components/shared/quick-redeem-form';
 import { useWallet } from '@/pages/user/profile/use-profile';
@@ -109,6 +109,7 @@ function ActiveSubscriptionContent({ subscription: sub, lines }: { subscription:
   const percent = sub.trafficLimitBytes ? Math.min(100, (sub.trafficUsedBytes / sub.trafficLimitBytes) * 100) : 0;
   const url = buildSubscriptionUrl({
     baseUrl: publicSettings.data?.subscriptionBaseUrl,
+    publicBaseUrl: publicSettings.data?.publicBaseUrl,
     shortLinksEnabled: publicSettings.data?.subscriptionShortLinksEnabled,
     origin: window.location.origin,
     token: sub.subscriptionToken
@@ -121,7 +122,7 @@ function ActiveSubscriptionContent({ subscription: sub, lines }: { subscription:
     const now = new Date();
     const diffDays = Math.ceil((expireDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     daysText = diffDays > 0 ? `剩余 ${diffDays} 天` : diffDays === 0 ? '今日到期' : '已过期';
-    expireFormatted = expireDate.toLocaleDateString('zh-CN');
+    expireFormatted = formatDate(expireDate);
   }
 
   return (
@@ -205,7 +206,7 @@ function ActiveSubscriptionContent({ subscription: sub, lines }: { subscription:
                 {sub.trafficResetMode === 'CALENDAR_MONTH' ? '自然月重置' : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE' ? '订阅周期重置' : '不自动重置'}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                {sub.nextTrafficResetAt ? `下次：${new Date(sub.nextTrafficResetAt).toLocaleString('zh-CN')}` : '流量累计不会自动清零'}
+                {sub.nextTrafficResetAt ? `下次：${formatDateTime(sub.nextTrafficResetAt)}` : '流量累计不会自动清零'}
               </p>
             </div>
 

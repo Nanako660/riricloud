@@ -30,7 +30,7 @@ import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
 import { BalanceFormDialog } from './components/balance-form-dialog';
 
-import { formatBytes, formatCurrency } from '@/lib/utils';
+import { formatBytes, formatCurrency, formatDate } from '@/lib/utils';
 
 // 状态色规范：激活=success、封禁=destructive（FRONTEND_UI_GUIDELINES §状态色）
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -41,17 +41,25 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-const subscriptionStatusLabels: Record<AdminUserSubscription['status'], string> = {
-  ACTIVE: 'ACTIVE',
-  CANCELED: 'CANCELED',
-  EXPIRED: 'EXPIRED',
-  REVOKED: 'REVOKED'
+const subscriptionStatusOptions: Array<{ value: AdminUserSubscription['status'] | 'NONE'; label: string }> = [
+  { value: 'ACTIVE', label: '有效 (ACTIVE)' },
+  { value: 'CANCELED', label: '已取消 (CANCELED)' },
+  { value: 'EXPIRED', label: '已过期 (EXPIRED)' },
+  { value: 'REVOKED', label: '已吊销 (REVOKED)' },
+  { value: 'NONE', label: '无订阅 (NONE)' }
+];
+
+const subscriptionBadgeLabels: Record<AdminUserSubscription['status'], string> = {
+  ACTIVE: '有效',
+  CANCELED: '已取消',
+  EXPIRED: '已过期',
+  REVOKED: '已吊销'
 };
 
 function SubscriptionStatusBadge({ status }: { status: AdminUserSubscription['status'] | null }) {
-  if (!status) return <Badge variant="outline">未绑定</Badge>;
+  if (!status) return <Badge variant="outline">无订阅</Badge>;
   const variant = status === 'ACTIVE' ? 'default' : status === 'REVOKED' ? 'destructive' : 'secondary';
-  return <Badge variant={variant}>{subscriptionStatusLabels[status]}</Badge>;
+  return <Badge variant={variant}>{subscriptionBadgeLabels[status] ?? status}</Badge>;
 }
 
 export default function AdminUsersPage() {
@@ -66,7 +74,7 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = React.useState<AdminUser[]>([]);
   const [roleFilter, setRoleFilter] = React.useState<'ALL' | 'USER' | 'ADMIN'>('ALL');
   const [activeFilter, setActiveFilter] = React.useState<'ALL' | 'true' | 'false'>('ALL');
-  const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status']>('ALL');
+  const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status'] | 'NONE'>('ALL');
   const [planFilter, setPlanFilter] = React.useState('ALL');
   const [trafficUser, setTrafficUser] = React.useState<AdminUser | null>(null);
   const [adjusting, setAdjusting] = React.useState<AdminUser | null>(null);
@@ -142,7 +150,7 @@ export default function AdminUsersPage() {
         header: '有效期',
         cell: ({ row }) =>
           row.original.expireAt ? (
-            <span className="tabular-nums">{new Date(row.original.expireAt).toLocaleDateString('zh-CN')}</span>
+            <span className="tabular-nums">{formatDate(row.original.expireAt)}</span>
           ) : (
             <span className="text-muted-foreground">永久</span>
           )
@@ -157,7 +165,7 @@ export default function AdminUsersPage() {
         header: '创建时间',
         cell: ({ row }) => (
           <span className="text-muted-foreground tabular-nums">
-            {new Date(row.original.createdAt).toLocaleDateString('zh-CN')}
+            {formatDate(row.original.createdAt)}
           </span>
         )
       },
@@ -192,11 +200,19 @@ export default function AdminUsersPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="重置订阅链接" disabled={resetSubscriptionToken.isPending} onClick={() => setResetting(u)}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+                  <span className="inline-block">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="重置订阅链接"
+                      disabled={!u.subscription || resetSubscriptionToken.isPending}
+                      onClick={() => setResetting(u)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent>重置订阅链接</TooltipContent>
+                <TooltipContent>{u.subscription ? '重置订阅链接' : '该用户暂无有效订阅'}</TooltipContent>
               </Tooltip>
               {!isSelf ? (
                 <>
@@ -285,12 +301,21 @@ export default function AdminUsersPage() {
                 <SelectContent><SelectItem value="ALL">全部账号</SelectItem><SelectItem value="true">已激活</SelectItem><SelectItem value="false">已封禁</SelectItem></SelectContent>
               </Select>
               <Select value={subscriptionFilter} onValueChange={(value) => setSubscriptionFilter(value as typeof subscriptionFilter)}>
-                <SelectTrigger className="w-full sm:w-[130px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
-                <SelectContent><SelectItem value="ALL">全部订阅</SelectItem>{Object.keys(subscriptionStatusLabels).map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">全部订阅</SelectItem>
+                  {subscriptionStatusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <Select value={planFilter} onValueChange={setPlanFilter}>
                 <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="套餐" /></SelectTrigger>
-                <SelectContent><SelectItem value="ALL">全部套餐</SelectItem>{(plans ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  <SelectItem value="ALL">全部套餐</SelectItem>
+                  <SelectItem value="NONE">无套餐</SelectItem>
+                  {(plans ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
+                </SelectContent>
               </Select>
               <Button size="sm" className="w-full gap-1.5 sm:w-auto" onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" />

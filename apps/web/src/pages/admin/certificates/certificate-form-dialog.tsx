@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { extractErrorMessage } from '@/lib/api';
+import { formatDate } from '@/lib/utils';
 import { useCertificateDetail, useCertificateMutations, type CertificatePayload } from './use-certificates';
 
 const certificateFormSchema = z.object({
@@ -26,10 +27,6 @@ const statusLabels = {
   EXPIRED: '已过期',
   NOT_YET_VALID: '尚未生效'
 } as const;
-
-function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString('zh-CN');
-}
 
 export function CertificateFormDialog({
   open,

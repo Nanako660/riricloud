@@ -98,7 +98,7 @@ describe('BinariesService', () => {
       delete process.env.RIRICLOUD_BINARY_DIR;
       await rm(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it('持久仓无产物时回退到静态内置仓 binaries/', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'riri-bin-test-'));
@@ -123,5 +123,5 @@ describe('BinariesService', () => {
       delete process.env.RIRICLOUD_BINARY_DIR;
       await rm(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 });

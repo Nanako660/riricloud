@@ -33,7 +33,7 @@ interface ListUsersParams {
   pageSize?: number;
   role?: 'ADMIN' | 'USER';
   isActive?: boolean;
-  subscriptionStatus?: AdminUserSubscription['status'];
+  subscriptionStatus?: AdminUserSubscription['status'] | 'NONE';
   planId?: string;
 }
 

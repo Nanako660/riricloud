@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -22,7 +22,7 @@ function formatRelativeTime(dateInput?: string | Date | null): string {
   if (diffMin < 60) return `${diffMin} 分钟前`;
   const diffHour = Math.floor(diffMin / 60);
   if (diffHour < 24) return `${diffHour} 小时前`;
-  return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatDateTime(date, undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: undefined });
 }
 
 export function LineLatencyChip({

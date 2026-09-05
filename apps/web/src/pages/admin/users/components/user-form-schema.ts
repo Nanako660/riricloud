@@ -7,20 +7,12 @@ const optionalPositiveInt = z.preprocess(
   z.coerce.number().int().min(1).optional()
 );
 
-export const createUserSchema = z
-  .object({
-    email: z.string().email('请输入有效的邮箱地址'),
-    password: z.string().min(8, '密码至少 8 位').max(64),
-    role: z.enum(['USER', 'ADMIN']).default('USER'),
-    planId: z.string().optional(),
-    quotaGB: z.coerce.number().min(1, '配额至少 1 GB').max(1048576, '过大'),
-    permanent: z.boolean().default(false),
-    expireAt: z.string().optional()
-  })
-  .refine((value) => value.permanent || !!value.expireAt, {
-    message: '请填写到期日期或选择永久有效',
-    path: ['expireAt']
-  });
+export const createUserSchema = z.object({
+  email: z.string().email('请输入有效的邮箱地址'),
+  password: z.string().min(8, '密码至少 8 位').max(64),
+  role: z.enum(['USER', 'ADMIN']).default('USER'),
+  planId: z.string().optional()
+});
 
 export const editAccountSchema = z.object({
   role: z.enum(['USER', 'ADMIN']),
@@ -31,7 +23,7 @@ export const editAccountSchema = z.object({
 export const subscriptionSchema = z.object({
   planId: z.string().optional(),
   status: z.enum(['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED']),
-  quotaGB: z.coerce.number().positive('配额必须大于 0'),
+  quotaGB: z.coerce.number().min(0, '配额不能为负数'),
   usedGB: z.coerce.number().min(0, '已用流量不能为负数'),
   expireAt: z.string().optional(),
   addDays: optionalPositiveInt,

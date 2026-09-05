@@ -129,7 +129,7 @@ describe('AuthService', () => {
         data: expect.objectContaining({
           email: 'new@example.com',
           role: 'USER',
-          trafficLimitBytes: BigInt(107374182400)
+          trafficLimitBytes: BigInt(0)
         })
       });
       expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);

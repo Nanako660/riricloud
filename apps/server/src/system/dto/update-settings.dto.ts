@@ -128,27 +128,12 @@ export class UpdateSettingsDto {
   @IsOptional()
   defaultPlanId?: string | null;
 
-  @ApiPropertyOptional({ example: 107374182400, description: '字节；必须大于 0' })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  defaultTrafficLimitBytes?: number;
-
   @ApiPropertyOptional({ example: 1000, description: '新用户注册初始余额，单位为分' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   @IsOptional()
   defaultBalance?: number;
-
-  @ApiPropertyOptional({ example: 30, description: '0 表示永久有效' })
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(3650)
-  @IsOptional()
-  defaultValidityDays?: number;
 
   @ApiPropertyOptional({ enum: ['none', 'whitelist', 'blacklist'], default: 'none' })
   @IsIn(['none', 'whitelist', 'blacklist'])
@@ -289,6 +274,11 @@ export class UpdateSettingsDto {
   @Max(30000)
   @IsOptional()
   lineSpeedtestTimeoutMs?: number;
+
+  @ApiPropertyOptional({ example: 'Asia/Shanghai', description: '系统统一时区，标准 IANA 时区标识符' })
+  @IsString()
+  @IsOptional()
+  systemTimezone?: string;
 }
 
 export class ResetSettingsDto {

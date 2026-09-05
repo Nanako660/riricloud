@@ -12,7 +12,7 @@ import type { AdminLine } from '../../lines/use-lines';
 import { useUserMutations, type AdminUser } from '../use-users';
 import { CreateUserFields, EditAccountFields } from './user-account-fields';
 import { UserSubscriptionFields } from './user-subscription-fields';
-import { createUserSchema, dateInputAfterDays, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
+import { createUserSchema, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -27,10 +27,7 @@ const emptyCreateValues: CreateUserForm = {
   email: '',
   password: '',
   role: 'USER',
-  planId: '',
-  quotaGB: 100,
-  permanent: false,
-  expireAt: dateInputAfterDays(30)
+  planId: ''
 };
 
 export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOptions }: UserFormDialogProps) {
@@ -41,7 +38,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
   const isSelf = user?.id === selfId;
   const accountForm = useForm<EditAccountForm>({ resolver: zodResolver(editAccountSchema), defaultValues: { role: 'USER', isActive: true, password: '' } });
   const createForm = useForm<CreateUserForm>({ resolver: zodResolver(createUserSchema), defaultValues: emptyCreateValues });
-  const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 100, usedGB: 0, expireAt: '', addDays: undefined, extraLineIds: [] } });
+  const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 0, usedGB: 0, expireAt: '', addDays: undefined, extraLineIds: [] } });
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +51,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
     subscriptionForm.reset({
       planId: subscription?.plan?.id ?? '',
       status: subscription?.status ?? 'ACTIVE',
-      quotaGB: (subscription?.trafficLimitBytes ?? 100 * GB) / GB,
+      quotaGB: (subscription?.trafficLimitBytes ?? 0) / GB,
       usedGB: (subscription?.trafficUsedBytes ?? 0) / GB,
       expireAt: subscription?.expireAt ? subscription.expireAt.slice(0, 10) : '',
       addDays: undefined,
@@ -72,9 +69,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
       email: values.email,
       password: values.password,
       role: values.role,
-      planId: values.planId || null,
-      trafficLimitBytes: Math.round(values.quotaGB * GB),
-      expireAt: values.permanent ? null : dateInputToIso(values.expireAt ?? '')
+      planId: values.planId || null
     }, { onSuccess: () => onOpenChange(false) });
   };
 
@@ -105,13 +100,18 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
     }
   };
 
+  const watchedPlanId = subscriptionForm.watch('planId');
+  const hasSubscription = Boolean(user?.subscription);
+  const canSaveSubscription = hasSubscription || Boolean(watchedPlanId);
+  const isRemovingSubscription = hasSubscription && !watchedPlanId;
+
   return (
     <>
       <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
         <ResponsiveDialogContent>
           <DialogHeader>
             <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
-            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，配额和有效期可继续微调。'}</DialogDescription>
+            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，套餐配额与时长由所选套餐决定。'}</DialogDescription>
           </DialogHeader>
           {isEdit ? (
             <Tabs key={user?.id} defaultValue="account" className="w-full">
@@ -131,7 +131,20 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
                 <Form {...subscriptionForm}>
                   <form className="space-y-4" onSubmit={subscriptionForm.handleSubmit(submitSubscription)}>
                     <UserSubscriptionFields form={subscriptionForm} plans={plans} lineOptions={lineOptions} subscription={user.subscription} onResetToken={() => setResetConfirmOpen(true)} resetPending={resetSubscriptionToken.isPending} />
-                    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={updateSubscription.isPending || assignSubscription.isPending}>{updateSubscription.isPending || assignSubscription.isPending ? '保存中…' : '保存订阅'}</Button></DialogFooter>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+                      <Button
+                        type="submit"
+                        disabled={!canSaveSubscription || updateSubscription.isPending || assignSubscription.isPending}
+                        variant={isRemovingSubscription ? 'destructive' : 'default'}
+                      >
+                        {updateSubscription.isPending || assignSubscription.isPending
+                          ? '保存中…'
+                          : isRemovingSubscription
+                            ? '彻底取消订阅'
+                            : '保存订阅'}
+                      </Button>
+                    </DialogFooter>
                   </form>
                 </Form>
               </TabsContent>

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
+import { createDateInTimezone, getTimeZoneParts } from '../common/traffic-reset';
 import {
   type LineTrafficRankItem,
   type RateBucketType,
@@ -38,7 +39,7 @@ type TrafficRow = {
   upload: bigint;
   download: bigint;
   recordedAt: Date;
-  line: TrafficLine | null;
+  line?: TrafficLine | null;
 };
 
 type RangeConfig = {
@@ -104,16 +105,21 @@ export class TrafficService {
     @Optional() private readonly settingsService?: SettingsService
   ) {}
 
+  private async getTimezone(): Promise<string> {
+    return (await this.settingsService?.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
+  }
+
   async getOverview(range: TrafficTimeRange = 'today'): Promise<TrafficOverviewResponse> {
-    const config = this.buildRange(range);
+    const timeZone = await this.getTimezone();
+    const config = this.buildRange(range, timeZone);
     const [rows, fallbackLines, totalLinesCount, totalUsersCount, rateOverview] = await Promise.all([
       this.findTrafficRows(config),
       this.findFallbackLines(),
       this.prisma.line.count(),
       this.prisma.user.count(),
-      this.getRateOverview(range)
+      this.getRateOverview(range, timeZone)
     ]);
-    const aggregation = this.aggregate(rows, fallbackLines, config);
+    const aggregation = this.aggregate(rows, fallbackLines, config, timeZone);
     const lineRankings = this.toLineRankings(
       aggregation.lineAggregates,
       aggregation.totalUpload + aggregation.totalDownload,
@@ -133,14 +139,14 @@ export class TrafficService {
         activeUsersCount: aggregation.activeUsers.size,
         totalUsersCount
       },
-      timeSeries: this.toTimeSeries(aggregation.series, config),
+      timeSeries: this.toTimeSeries(aggregation.series, config, timeZone),
       lineRankings,
       ...rateOverview
     };
   }
 
-  private async getRateOverview(range: TrafficTimeRange): Promise<Pick<TrafficOverviewResponse, 'rate' | 'rateSeries'>> {
-    const config = this.buildRateRange(range);
+  private async getRateOverview(range: TrafficTimeRange, timeZone = 'Asia/Shanghai'): Promise<Pick<TrafficOverviewResponse, 'rate' | 'rateSeries'>> {
+    const config = this.buildRateRange(range, timeZone);
     const [metrics, current] = await Promise.all([
       this.findRateMetrics(config),
       this.findCurrentRates(new Date())
@@ -182,7 +188,7 @@ export class TrafficService {
       const bucketDate = config.bucketDates[index];
       return {
         timestamp: bucketDate.toISOString(),
-        displayTime: this.formatRateDisplay(bucketDate, config.bucketType),
+        displayTime: this.formatRateDisplay(bucketDate, config.bucketType, timeZone),
         uploadRate: this.round2(bucket.sampleCount > 0 ? bucket.uploadRateSum / bucket.sampleCount : 0),
         downloadRate: this.round2(bucket.sampleCount > 0 ? bucket.downloadRateSum / bucket.sampleCount : 0),
         peakUploadRate: this.round2(peakUploadRate),
@@ -231,8 +237,8 @@ export class TrafficService {
     const nodeDelegate = (this.prisma as unknown as {
       node?: { findMany: (args: Record<string, unknown>) => Promise<Array<{
         status: string;
-        communicationMode?: string;
-        pollIntervalSecs?: number;
+        communicationMode?: string | null;
+        pollIntervalSecs?: number | null;
         lastSeenAt: Date | null;
         uploadRate: number | null;
         downloadRate: number | null;
@@ -259,7 +265,8 @@ export class TrafficService {
   }
 
   async getUserDetail(userId: string, range: TrafficTimeRange = 'today'): Promise<UserTrafficDetailResponse> {
-    const config = this.buildRange(range);
+    const timeZone = await this.getTimezone();
+    const config = this.buildRange(range, timeZone);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -286,7 +293,7 @@ export class TrafficService {
       this.findTrafficRows(config, userId),
       this.findFallbackLines()
     ]);
-    const aggregation = this.aggregate(rows, fallbackLines, config);
+    const aggregation = this.aggregate(rows, fallbackLines, config, timeZone);
     const lineBreakdown = this.toLineRankings(aggregation.lineAggregates, aggregation.totalUpload + aggregation.totalDownload);
     const quota = user.subscription ?? user;
     const limit = this.toNumber(quota.trafficLimitBytes);
@@ -312,7 +319,7 @@ export class TrafficService {
         periodTotal: this.toNumber(aggregation.totalUpload + aggregation.totalDownload),
         periodBilled: this.round2(aggregation.totalBilled)
       },
-      timeSeries: this.toTimeSeries(aggregation.series, config),
+      timeSeries: this.toTimeSeries(aggregation.series, config, timeZone),
       lineBreakdown
     };
   }
@@ -355,7 +362,8 @@ export class TrafficService {
   private aggregate(
     rows: TrafficRow[],
     fallbackLines: FallbackTrafficLine[],
-    config: RangeConfig
+    config: RangeConfig,
+    timeZone = 'Asia/Shanghai'
   ): Aggregation {
     const fallbackByEntryNode = new Map<string, TrafficLine>();
     const fallbackByBlindLandingNode = new Map<string, TrafficLine>();
@@ -395,7 +403,7 @@ export class TrafficService {
         if (line) aggregation.activeLines.add(line.id);
       }
 
-      const bucketIndex = this.getBucketIndex(row.recordedAt, config);
+      const bucketIndex = this.getBucketIndex(row.recordedAt, config, timeZone);
       if (bucketIndex >= 0 && bucketIndex < aggregation.series.length) {
         aggregation.series[bucketIndex].upload += upload;
         aggregation.series[bucketIndex].download += download;
@@ -447,14 +455,14 @@ export class TrafficService {
       });
   }
 
-  private toTimeSeries(series: SeriesAggregate[], config: RangeConfig): TrafficTimeSeriesPoint[] {
+  private toTimeSeries(series: SeriesAggregate[], config: RangeConfig, timeZone = 'Asia/Shanghai'): TrafficTimeSeriesPoint[] {
     return series.map((point, index) => {
       const upload = this.toNumber(point.upload);
       const download = this.toNumber(point.download);
       const bucketDate = config.bucketDates[index];
       return {
-        timestamp: this.formatTimestamp(bucketDate, config.bucketType),
-        displayTime: config.bucketType === 'hour' ? this.formatHour(bucketDate) : this.formatShortDate(bucketDate),
+        timestamp: this.formatTimestamp(bucketDate, config.bucketType, timeZone),
+        displayTime: config.bucketType === 'hour' ? this.formatHour(bucketDate, timeZone) : this.formatShortDate(bucketDate, timeZone),
         upload,
         download,
         total: upload + download,
@@ -463,41 +471,44 @@ export class TrafficService {
     });
   }
 
-  private buildRange(range: TrafficTimeRange): RangeConfig {
+  private buildRange(range: TrafficTimeRange, timeZone = 'Asia/Shanghai'): RangeConfig {
     const now = new Date();
     const bucketType: TrafficBucketType = range === 'today' || range === '24h' ? 'hour' : 'day';
     const bucketCount = range === 'today' || range === '24h' ? 24 : range === '7d' ? 7 : 30;
-    const bucketStart = range === 'today' ? this.startOfDay(now) : this.startOfBucket(now, bucketType);
+    const bucketStart = range === 'today' ? this.startOfDay(now, timeZone) : this.startOfBucket(now, bucketType, timeZone);
     if (range === '24h') bucketStart.setTime(bucketStart.getTime() - (bucketCount - 1) * HOUR_MS);
-    if (range === '7d' || range === '30d') bucketStart.setDate(bucketStart.getDate() - (bucketCount - 1));
+    if (range === '7d' || range === '30d') {
+      const parts = getTimeZoneParts(bucketStart, timeZone);
+      bucketStart.setTime(createDateInTimezone(parts.year, parts.month, parts.day - (bucketCount - 1), 0, 0, 0, timeZone).getTime());
+    }
     const bucketDates = Array.from({ length: bucketCount }, (_, index) => {
-      const date = new Date(bucketStart);
-      if (bucketType === 'hour') date.setTime(date.getTime() + index * HOUR_MS);
-      else date.setDate(date.getDate() + index);
-      return date;
+      if (bucketType === 'hour') return new Date(bucketStart.getTime() + index * HOUR_MS);
+      const parts = getTimeZoneParts(bucketStart, timeZone);
+      return createDateInTimezone(parts.year, parts.month, parts.day + index, 0, 0, 0, timeZone);
     });
     return {
       bucketType,
       bucketStart,
       bucketCount,
-      bucketKeys: bucketDates.map((date) => this.formatDate(date)),
+      bucketKeys: bucketDates.map((date) => this.formatDate(date, timeZone)),
       bucketDates,
       periodEnd: now
     };
   }
 
-  private buildRateRange(range: TrafficTimeRange): RateRangeConfig {
+  private buildRateRange(range: TrafficTimeRange, timeZone = 'Asia/Shanghai'): RateRangeConfig {
     const now = new Date();
     const bucketType: RateBucketType = range === 'today' || range === '24h' ? '5m' : range === '7d' ? '30m' : '1h';
     const bucketMs = bucketType === '5m' ? RATE_METRIC_BUCKET_MS : bucketType === '30m' ? 30 * MINUTE_MS : HOUR_MS;
     let start: Date;
     if (range === 'today') {
-      start = this.startOfDay(now);
+      start = this.startOfDay(now, timeZone);
     } else if (range === '24h') {
       start = new Date(now.getTime() - 24 * HOUR_MS);
     } else {
-      start = this.startOfDay(now);
-      start.setDate(start.getDate() - (range === '7d' ? 6 : 29));
+      const todayStart = this.startOfDay(now, timeZone);
+      const parts = getTimeZoneParts(todayStart, timeZone);
+      start = createDateInTimezone(parts.year, parts.month, parts.day - (range === '7d' ? 6 : 29), 0, 0, 0, timeZone);
     }
     const bucketStart = new Date(Math.floor(start.getTime() / bucketMs) * bucketMs);
     const bucketCount = Math.max(1, Math.floor((now.getTime() - bucketStart.getTime()) / bucketMs) + 1);
@@ -505,22 +516,20 @@ export class TrafficService {
     return { bucketType, bucketMs, bucketStart, bucketDates, periodEnd: now };
   }
 
-  private startOfBucket(date: Date, bucketType: TrafficBucketType): Date {
-    const result = new Date(date);
-    if (bucketType === 'hour') result.setMinutes(0, 0, 0);
-    else result.setHours(0, 0, 0, 0);
-    return result;
+  private startOfBucket(date: Date, bucketType: TrafficBucketType, timeZone = 'Asia/Shanghai'): Date {
+    const parts = getTimeZoneParts(date, timeZone);
+    if (bucketType === 'hour') return createDateInTimezone(parts.year, parts.month, parts.day, parts.hour, 0, 0, timeZone);
+    return createDateInTimezone(parts.year, parts.month, parts.day, 0, 0, 0, timeZone);
   }
 
-  private startOfDay(date: Date): Date {
-    const result = new Date(date);
-    result.setHours(0, 0, 0, 0);
-    return result;
+  private startOfDay(date: Date, timeZone = 'Asia/Shanghai'): Date {
+    const parts = getTimeZoneParts(date, timeZone);
+    return createDateInTimezone(parts.year, parts.month, parts.day, 0, 0, 0, timeZone);
   }
 
-  private getBucketIndex(date: Date, config: RangeConfig): number {
+  private getBucketIndex(date: Date, config: RangeConfig, timeZone = 'Asia/Shanghai'): number {
     if (config.bucketType === 'hour') return Math.floor((date.getTime() - config.bucketStart.getTime()) / HOUR_MS);
-    return config.bucketKeys.indexOf(this.formatDate(date));
+    return config.bucketKeys.indexOf(this.formatDate(date, timeZone));
   }
 
   private getTrafficRate(line: TrafficLine | null): number {
@@ -531,26 +540,30 @@ export class TrafficService {
     return Number.isFinite(value) && value >= 0 ? value : 0;
   }
 
-  private formatRateDisplay(date: Date, bucketType: RateBucketType): string {
-    const day = `${this.pad(date.getMonth() + 1)}-${this.pad(date.getDate())}`;
-    if (bucketType === '1h') return `${day} ${this.formatHour(date)}`;
-    return `${day} ${this.pad(date.getHours())}:${this.pad(date.getMinutes())}`;
+  private formatRateDisplay(date: Date, bucketType: RateBucketType, timeZone = 'Asia/Shanghai'): string {
+    const parts = getTimeZoneParts(date, timeZone);
+    const day = `${this.pad(parts.month)}-${this.pad(parts.day)}`;
+    if (bucketType === '1h') return `${day} ${this.formatHour(date, timeZone)}`;
+    return `${day} ${this.pad(parts.hour)}:${this.pad(parts.minute)}`;
   }
 
-  private formatTimestamp(date: Date, bucketType: TrafficBucketType): string {
-    return bucketType === 'hour' ? `${this.formatDate(date)} ${this.formatHour(date)}` : this.formatDate(date);
+  private formatTimestamp(date: Date, bucketType: TrafficBucketType, timeZone = 'Asia/Shanghai'): string {
+    return bucketType === 'hour' ? `${this.formatDate(date, timeZone)} ${this.formatHour(date, timeZone)}` : this.formatDate(date, timeZone);
   }
 
-  private formatDate(date: Date): string {
-    return `${date.getFullYear()}-${this.pad(date.getMonth() + 1)}-${this.pad(date.getDate())}`;
+  private formatDate(date: Date, timeZone = 'Asia/Shanghai'): string {
+    const parts = getTimeZoneParts(date, timeZone);
+    return `${parts.year}-${this.pad(parts.month)}-${this.pad(parts.day)}`;
   }
 
-  private formatShortDate(date: Date): string {
-    return `${this.pad(date.getMonth() + 1)}-${this.pad(date.getDate())}`;
+  private formatShortDate(date: Date, timeZone = 'Asia/Shanghai'): string {
+    const parts = getTimeZoneParts(date, timeZone);
+    return `${this.pad(parts.month)}-${this.pad(parts.day)}`;
   }
 
-  private formatHour(date: Date): string {
-    return `${this.pad(date.getHours())}:00`;
+  private formatHour(date: Date, timeZone = 'Asia/Shanghai'): string {
+    const parts = getTimeZoneParts(date, timeZone);
+    return `${this.pad(parts.hour)}:00`;
   }
 
   private pad(value: number): string {

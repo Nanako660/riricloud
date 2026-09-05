@@ -1,12 +1,13 @@
 export interface SubscriptionUrlOptions {
   baseUrl?: string;
+  publicBaseUrl?: string;
   shortLinksEnabled?: boolean;
   origin: string;
   token: string;
 }
 
-export function buildSubscriptionUrl({ baseUrl, shortLinksEnabled = false, origin, token }: SubscriptionUrlOptions): string {
-  const resolvedBase = normalizeBaseUrl(baseUrl?.trim() || origin);
+export function buildSubscriptionUrl({ baseUrl, publicBaseUrl, shortLinksEnabled = false, origin, token }: SubscriptionUrlOptions): string {
+  const resolvedBase = normalizeBaseUrl(baseUrl?.trim() || publicBaseUrl?.trim() || origin);
   return shortLinksEnabled ? `${resolvedBase}/${token}` : `${resolvedBase}/api/v1/sub/${token}`;
 }
 

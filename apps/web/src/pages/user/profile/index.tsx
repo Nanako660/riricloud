@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Headphones } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +14,10 @@ import { CopyButton } from '@/components/shared/copy-button';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Pagination, PaginationInfo, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { usePublicSettings } from '@/lib/public-settings';
+import { hasSupportContacts } from '@/lib/support';
+import { SupportDialog, SupportContactsInline } from '@/components/shared/support-dialog';
 import { useProfileMutations, useProfileUser, useWallet, useWalletTransactions } from './use-profile';
 
 const redeemSchema = z.object({ code: z.string().trim().min(6, '请输入有效卡密').max(128) });
@@ -40,6 +44,7 @@ export default function ProfilePage() {
   const user = useProfileUser();
   const wallet = useWallet();
   const transactions = useWalletTransactions(page);
+  const publicSettings = usePublicSettings();
   const { redeem, changePassword, resetUuid } = useProfileMutations();
   const redeemForm = useForm<RedeemValues>({ resolver: zodResolver(redeemSchema), defaultValues: { code: '' } });
   const passwordForm = useForm<PasswordValues>({ resolver: zodResolver(passwordSchema), defaultValues: { oldPassword: '', newPassword: '', confirmPassword: '' } });
@@ -70,7 +75,7 @@ export default function ProfilePage() {
         <Card className="min-w-0">
           <CardHeader><CardTitle>收支明细</CardTitle><CardDescription>记录每一次充值、消费和管理员调账。</CardDescription></CardHeader>
           <CardContent className="min-w-0 space-y-3">
-            <Table className="min-w-[680px]"><TableHeader><TableRow><TableHead className="whitespace-nowrap">时间</TableHead><TableHead className="whitespace-nowrap">类型</TableHead><TableHead className="min-w-[140px] whitespace-nowrap">说明</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">金额</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">余额</TableHead></TableRow></TableHeader><TableBody>{transactions.data?.data.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString('zh-CN')}</TableCell><TableCell className="whitespace-nowrap"><Badge className="whitespace-nowrap" variant={item.amount >= 0 ? 'secondary' : 'outline'}>{transactionLabels[item.type] ?? item.type}</Badge></TableCell><TableCell className="min-w-[140px] max-w-[240px] break-words">{item.description || '—'}</TableCell><TableCell className={`min-w-[104px] whitespace-nowrap text-right font-medium tabular-nums ${item.amount >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>{item.amount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}</TableCell><TableCell className="min-w-[104px] whitespace-nowrap text-right tabular-nums">{formatCurrency(item.balanceAfter)}</TableCell></TableRow>)}</TableBody></Table>
+            <Table className="min-w-[680px]"><TableHeader><TableRow><TableHead className="whitespace-nowrap">时间</TableHead><TableHead className="whitespace-nowrap">类型</TableHead><TableHead className="min-w-[140px] whitespace-nowrap">说明</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">金额</TableHead><TableHead className="min-w-[104px] whitespace-nowrap text-right">余额</TableHead></TableRow></TableHeader><TableBody>{transactions.data?.data.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</TableCell><TableCell className="whitespace-nowrap"><Badge className="whitespace-nowrap" variant={item.amount >= 0 ? 'secondary' : 'outline'}>{transactionLabels[item.type] ?? item.type}</Badge></TableCell><TableCell className="min-w-[140px] max-w-[240px] break-words">{item.description || '—'}</TableCell><TableCell className={`min-w-[104px] whitespace-nowrap text-right font-medium tabular-nums ${item.amount >= 0 ? 'text-emerald-600' : 'text-destructive'}`}>{item.amount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}</TableCell><TableCell className="min-w-[104px] whitespace-nowrap text-right tabular-nums">{formatCurrency(item.balanceAfter)}</TableCell></TableRow>)}</TableBody></Table>
             {!transactions.data?.data.length && <p className="py-8 text-center text-sm text-muted-foreground">暂无收支记录</p>}
             <Pagination className="border-t pt-3"><PaginationInfo page={page} totalPages={totalPages} /><PaginationPrevious onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} /><PaginationNext onClick={() => setPage((current) => Math.min(Math.max(totalPages, 1), current + 1))} disabled={page >= Math.max(totalPages, 1)} /></Pagination>
           </CardContent>
@@ -85,6 +90,23 @@ export default function ProfilePage() {
           <CardHeader><CardTitle>修改登录密码</CardTitle><CardDescription>修改后当前会话保持有效，下一次登录使用新密码。</CardDescription></CardHeader>
           <CardContent className="min-w-0"><Form {...passwordForm}><form onSubmit={passwordForm.handleSubmit(onPassword)} className="min-w-0 space-y-4">{(['oldPassword', 'newPassword', 'confirmPassword'] as const).map((name) => <FormField key={name} control={passwordForm.control} name={name} render={({ field }) => <FormItem className="min-w-0"><FormLabel>{name === 'oldPassword' ? '当前密码' : name === 'newPassword' ? '新密码' : '确认新密码'}</FormLabel><FormControl><Input className="min-w-0 max-w-full" type="password" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />)}<Button type="submit" disabled={changePassword.isPending}>{changePassword.isPending ? '保存中…' : '保存新密码'}</Button></form></Form></CardContent>
         </Card>
+        {hasSupportContacts(publicSettings.data) && (
+          <Card className="min-w-0 lg:col-span-2">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Headphones className="size-4 text-primary" />
+                  客服与技术支持
+                </CardTitle>
+                <CardDescription>遇到使用问题或需咨询，请通过官方支持渠道联系我们。</CardDescription>
+              </div>
+              <SupportDialog settings={publicSettings.data} />
+            </CardHeader>
+            <CardContent className="pt-1">
+              <SupportContactsInline settings={publicSettings.data} className="justify-start" />
+            </CardContent>
+          </Card>
+        )}
       </div>
       <AlertDialog open={resetOpen} onOpenChange={setResetOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>重置代理凭据？</AlertDialogTitle><AlertDialogDescription>旧代理凭据会立即失效，所有正在使用旧凭据的客户端都需要重新导入订阅。此操作不可撤销。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetUuid.mutate(undefined, { onSuccess: () => setResetOpen(false) })}>确认重置</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </PageContainer>

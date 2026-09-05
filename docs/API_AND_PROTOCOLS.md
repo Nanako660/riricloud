@@ -15,7 +15,7 @@
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
   - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。
-  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始配额取 `defaultTrafficLimitBytes`；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，否则按 `defaultValidityDays` 计算有效期，0 为永久。
+  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色；用户自身视图额外返回 `balance`（分）和 `uuid`。⭐
 
@@ -23,7 +23,7 @@
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐ **Deprecated**：前端已下线独立仪表盘并统一使用 `GET /user/subscription`；该接口仍保留以兼容外部脚本。
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
-- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）。
+- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
 - `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
@@ -35,19 +35,22 @@
 - `POST /user/subscription/renew`：续费当前套餐。⭐ 无请求体；按当前套餐价格扣款，顺延 `durationDays`、重置当期已用流量并写入 `PLAN_RENEW` 流水。
 - `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；仅允许目标套餐价格不低于当前套餐，低价目标返回 409；通过校验后全价扣款，切换套餐、重置已用流量并按新套餐重算周期，写入 `PLAN_UPGRADE` 流水。
 - `POST /user/subscription/cancel`：取消当前订阅。⭐ 状态变为 `CANCELED`，到期前保留使用权。
-- `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段。
+- `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段；无订阅返回 400。
 
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态与套餐筛选；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额/期限作为初始值且可由 `trafficLimitBytes`/`expireAt` 覆盖；明确传 `planId: null` 时创建无套餐用户；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
-- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
+- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
+- `POST /admin/subscriptions/users/:userId`：管理员为用户分配/绑定套餐。⭐ 请求 `{ planId, status?, trafficLimitBytes?, trafficUsedBytes?, expireAt?, addDays?, extraLineIds? }`；在同一事务内创建唯一订阅并同步 User 镜像字段。
+- `PATCH /admin/subscriptions/:id`：管理员更新用户订阅或彻底取消订阅。⭐ 支持调整状态、配额、已用流量、到期时间与额外线路授权；传入 `planId: null` 时彻底取消订阅并删除订阅记录，同一事务内将用户镜像配额与已用流量置 0、到期时间置 null，并清空额外线路授权（`userLineGrant`），向边缘节点下发同步。
+- `POST /admin/subscriptions/:id/reset-token`：管理员重置指定订阅的 Token。⭐
 
-用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
+用户创建/更新/删除及订阅变更均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
 #### 流量统计
 - `GET /admin/traffic/overview?range=today|24h|7d|30d`：管理员查询全站流量统计。⭐ `range` 省略时默认为 `today`；响应包含 `summary`（总上行、总下行、物理/计费流量、活跃线路/用户）、连续补零的 `timeSeries`、按计费流量降序排列的 `lineRankings`，以及 `rate`/`rateSeries` 节点网络吞吐统计。速率统一为 `bytes/s`；`today`/`24h` 的速率按 5 分钟、`7d` 按 30 分钟、`30d` 按 1 小时输出。`rate` 的当前值只汇总在线且未超时节点，历史平均值按指标采样数计算，峰值为各节点桶峰值之和的近似全站峰值；速率不参与计费。
@@ -99,8 +102,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段。
-- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组和探针对象；响应返回更新后全量。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含统一时区 `systemTimezone` 等）。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、探针对象与 IANA 时区合法性；响应返回更新后全量。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 
 #### 卡密管理
@@ -137,7 +140,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, subscriptionBaseUrl, subscriptionShortLinksEnabled, customCss, customHeadHtml }`；不包含 `publicBaseUrl`、套餐、JWT、Agent、二进制和探针运维参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维私密参数。
 
 订阅调试：`GET /api/v1/sub/:token?templateId=<UUID>` 可临时指定模板进行渲染，显式 `templateId` 仅用于调试并优先于套餐模板；省略时按套餐模板、系统设置 `defaultTemplateId`、`isDefault=true` 模板的顺序回退。
 

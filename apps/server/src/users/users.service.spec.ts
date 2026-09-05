@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcryptjs';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
@@ -17,7 +17,7 @@ describe('UsersService', () => {
     subscription: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() }
   };
   const agentGateway = { pushConfigToAll: jest.fn() };
-  const settingsService = { getSettings: jest.fn(), getDefaultQuota: jest.fn() };
+  const settingsService = { getSettings: jest.fn() };
   const walletService = { adjustBalance: jest.fn() };
 
   beforeAll(async () => {
@@ -104,6 +104,20 @@ describe('UsersService', () => {
         }
       }));
     });
+
+    it('支持按 NONE 筛选无订阅用户与无套餐用户', async () => {
+      prisma.$transaction.mockResolvedValue([[], 0]);
+
+      await service.listUsers({ page: 1, pageSize: 20, subscriptionStatus: 'NONE' });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ subscription: null })
+      }));
+
+      await service.listUsers({ page: 1, pageSize: 20, planId: 'NONE' });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ subscription: null })
+      }));
+    });
   });
 
   describe('createUser', () => {
@@ -123,7 +137,6 @@ describe('UsersService', () => {
       };
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.plan.findUnique.mockResolvedValue(plan);
-      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
       prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
 
       const result = await service.createUser({
@@ -168,7 +181,6 @@ describe('UsersService', () => {
       };
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.plan.findFirst.mockResolvedValue(plan);
-      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
       prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
 
       await service.createUser({ email: 'default@riricloud.local', password: 'strong-pass' });
@@ -182,7 +194,6 @@ describe('UsersService', () => {
     it('明确传 null 时创建无套餐用户', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ ...seededUser, id: 'u4', email: 'unassigned@riricloud.local' });
-      settingsService.getDefaultQuota.mockResolvedValue(107374182400);
 
       const result = await service.createUser({
         email: 'unassigned@riricloud.local',
@@ -192,7 +203,7 @@ describe('UsersService', () => {
 
       expect(result.email).toBe('unassigned@riricloud.local');
       expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ trafficLimitBytes: BigInt(107374182400) })
+        data: expect.objectContaining({ trafficLimitBytes: BigInt(0) })
       }));
       expect(prisma.subscription.create).not.toHaveBeenCalled();
     });
@@ -271,14 +282,26 @@ describe('UsersService', () => {
   });
 
   describe('resetSubscriptionToken', () => {
-    it('返回与旧值不同的新 token 并写库', async () => {
+    it('为有效订阅用户重置与旧值不同的新 token 并写库', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...seededUser, subscriptionToken: 'old-token' });
+      prisma.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', subscriptionToken: 'old-token' });
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
       const token = await service.resetSubscriptionToken('u1');
       expect(token).not.toBe('old-token');
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+        data: { subscriptionToken: token }
+      });
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { subscriptionToken: token }
       });
+    });
+
+    it('用户无有效订阅时抛出 BadRequestException', async () => {
+      prisma.user.findUnique.mockResolvedValue(seededUser);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      await expect(service.resetSubscriptionToken('u1')).rejects.toThrow(BadRequestException);
     });
 
     it('用户不存在时抛出 UnauthorizedException', async () => {
