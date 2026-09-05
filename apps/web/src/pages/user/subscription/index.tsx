@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  AlertTriangle,
   ArrowRight,
   CalendarClock,
   Gauge,
@@ -119,8 +118,6 @@ export default function UserSubscriptionPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
-
       {isEmailBlocked ? (
         <EmailVerificationBlockState
           email={user.data?.email}
@@ -128,6 +125,7 @@ export default function UserSubscriptionPage() {
         />
       ) : (
         <>
+          <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
           <AnnouncementCard />
           {data.subscription ? (
             <ActiveSubscriptionContent
@@ -201,21 +199,17 @@ function EmailVerificationBlockState({
   onVerifyClick: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-4 py-12 sm:py-24 text-center space-y-6 max-w-lg mx-auto">
+    <div className="flex flex-1 flex-col items-center justify-center p-4 pb-12 sm:pb-20 -translate-y-6 sm:-translate-y-10 text-center space-y-6 max-w-lg mx-auto">
       <div className="relative flex size-20 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-sm">
         <ShieldAlert className="size-10" />
       </div>
 
       <div className="space-y-2.5">
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="size-3.5" />
-          安全策略拦截
-        </div>
         <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          邮箱未完成验证，订阅与代理服务已阻断
+          邮箱未完成验证，订阅与代理服务暂不可用
         </h2>
         <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
-          系统已开启强制邮箱验证策略。为了保障账号安全与服务合规，在完成邮箱验证前，系统已暂停下发你的订阅配置与代理节点。
+          当前账号邮箱尚未通过验证。在完成邮箱验证前，你的订阅更新与节点连接暂不可用。
         </p>
       </div>
 

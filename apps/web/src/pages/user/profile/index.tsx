@@ -216,9 +216,9 @@ export default function ProfilePage() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <div className="flex-1 space-y-1">
-              <div className="font-semibold text-sm">系统已开启强制邮箱验证</div>
+              <div className="font-semibold text-sm">邮箱未完成验证，订阅与代理服务暂不可用</div>
               <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-                当前账号邮箱尚未通过验证。在完成邮箱验证前，系统将暂停你的订阅更新与节点代理连接。
+                当前账号邮箱尚未通过验证。在完成邮箱验证前，你的订阅更新与节点连接暂不可用。
               </p>
               <div className="pt-1.5">
                 <Button size="sm" variant="default" className="h-8 gap-1.5 text-xs" onClick={() => setVerifyEmailOpen(true)}>
