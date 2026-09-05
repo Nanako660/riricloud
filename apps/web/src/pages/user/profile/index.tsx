@@ -277,38 +277,52 @@ export default function ProfilePage() {
 
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
                   {/* 登录邮箱 + 验证状态 + 更换操作 */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <Mail className="size-3.5 shrink-0 text-muted-foreground/70" />
-                    <span className="truncate max-w-[200px] sm:max-w-[280px] font-medium text-foreground">
-                      {user.data.email}
-                    </span>
-                    {user.data.emailVerifiedAt ? (
-                      <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800">
-                        <CheckCircle2 className="size-2.5" />
-                        已验证
-                      </Badge>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
-                          <AlertTriangle className="size-2.5" />
-                          未验证
-                        </Badge>
-                        <button
-                          type="button"
-                          className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
-                          onClick={() => setVerifyEmailOpen(true)}
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 min-w-0 max-w-full">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Mail className="size-3.5 shrink-0 text-muted-foreground/70" />
+                      <span
+                        className="truncate max-w-[180px] xs:max-w-[240px] sm:max-w-[320px] font-medium text-foreground"
+                        title={user.data.email}
+                      >
+                        {user.data.email}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                      {user.data.emailVerifiedAt ? (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 px-1.5 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 whitespace-nowrap shrink-0"
                         >
-                          立即验证
-                        </button>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="ml-1 text-xs text-primary underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
-                      onClick={() => setEmailOpen(true)}
-                    >
-                      更换
-                    </button>
+                          <CheckCircle2 className="size-2.5" />
+                          已验证
+                        </Badge>
+                      ) : (
+                        <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                          <Badge
+                            variant="outline"
+                            className="gap-1 px-1.5 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 whitespace-nowrap shrink-0"
+                          >
+                            <AlertTriangle className="size-2.5" />
+                            未验证
+                          </Badge>
+                          <button
+                            type="button"
+                            className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:opacity-80 transition-opacity font-medium whitespace-nowrap shrink-0"
+                            onClick={() => setVerifyEmailOpen(true)}
+                          >
+                            立即验证
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="ml-0.5 text-xs text-primary underline underline-offset-2 hover:opacity-80 transition-opacity font-medium whitespace-nowrap shrink-0"
+                        onClick={() => setEmailOpen(true)}
+                      >
+                        更换
+                      </button>
+                    </div>
                   </div>
 
                   {/* 数字 UID */}
