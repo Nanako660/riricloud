@@ -14,6 +14,15 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+
+## [0.6.9] - 2026-09-05
+
+### Added
+
 - **全项目统一时区配置体系（`systemTimezone`）**：
   - 系统设置中新增统一时区配置（默认 `Asia/Shanghai`），支持常用 IANA 时区快速选择与自定义合法 IANA 时区录入，并提供本地预览时钟与服务端校验（`Intl.DateTimeFormat` 合法性验证）。
   - 全链路统一生效：前端全局公共 `formatDateTime` 与 `formatDate` 格式化工具接入动态时区上下文，彻底替代零散的浏览器本地 `toLocaleString`，并在全站（管理端节点、证书、用户、卡密与用户端订阅、流水明细、延迟 Chip 等）全面对齐统一时区展示；服务端数据聚合（`CALENDAR_MONTH` 自然月重置边界时间推导、流量统计图表按小时/天时间桶切片、Agent Gateway 周期边界）全面使用配置时区进行精确日期与时间桶推导。
@@ -56,6 +65,7 @@
 - 修复管理端系统设置页面在移动端与窄屏视口（如 375x812 及 320x568）下的横向溢出与组件适配缺陷：为通用 `SelectTrigger` 补充 `min-w-0`、文本截断（`[&>span]:truncate`）与右侧指示图标防挤压（`shrink-0`）约束；为系统设置各 Tab 卡片、网格容器、时区选择器及表单组件全面增加 `min-w-0`、`max-w-full` 与文本换行折叠防御，彻底根除因长时区选项标签贪婪展开导致的整页横向滚动与右侧边缘截断问题。
 - 修复 `scripts/dev-e2e.sh` 在端到端联调启动时因仍使用旧 `exitNodeId`/`exitPort` 过滤与创建直连线路，导致无法复用既有本机线路并触发服务端 `ValidationPipe` 400 校验拦截失败的问题；对齐直连线路单端点入站语义与错误回显。
 - 修复开发与联调模式下因 TypeScript 增量编译缓存（`tsconfig.build.tsbuildinfo`）与 Nest CLI 清理输出目录（`deleteOutDir: true`）脱节导致的 `Cannot find module 'dist/main'` 启动崩溃问题；将 server 端增量编译显式关闭并统一产物发射行为，同时在 dev-e2e 启动脚本中增设残留 `tsbuildinfo` 缓存清理。
+
 
 
 ## [0.6.8] - 2026-09-05
