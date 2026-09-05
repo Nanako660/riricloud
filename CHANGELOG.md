@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.6.12] - 2026-09-06
+
+### Added
 - **强制邮箱验证与订阅隔离防护机制**：
   - **动态门禁与平滑过渡**：系统设置新增「强制邮箱验证」（`enforceEmailVerification`）开关（默认关闭）；开启后，未完成邮箱核验的普通用户访问订阅接口（`GET /api/v1/sub/:token`）将被 HTTP 403 阻断并提示「请先完成邮箱验证后使用订阅服务」。
   - **节点数据平面凭证动态过滤**：Master 服务端在编译分发 Sing-box 节点配置时，自动剔除未验证普通用户的代理凭证（UUID），并订阅设置变更广播即时推送全节点热更新，彻底阻断未验证用户的节点入站连接。
@@ -35,6 +44,7 @@
 - **个人中心移动端邮箱与操作按钮排版修复**：优化个人中心名片栏在窄屏与长邮箱下的排版表现，严格为状态徽标及「立即验证」、「更换」按钮添加 `whitespace-nowrap shrink-0` 约束，彻底根除中文字符被挤压为两行纵向断行（“立即验\n证”、“更\n换”）的视觉缺陷；长邮箱支持自适应截断并保留 hover title 提示，在屏幕空间不足时支持操作按钮整簇优雅折行。
 - **管理用户弹窗状态开关布局与样式优化**：彻底移除账号状态与邮箱验证开关中硬编码的 `h-9`（36px）固定高度与多余占位标签，重构为带说明的自适应状态卡片（`rounded-lg border p-3 shadow-xs`），根除图文挤压与多列参差不对齐问题。
 - **更新带订阅用户时 BigInt 序列化 500 异常修复**：修复 `UsersService.updateUser` 在更新拥有订阅的用户时，漏将嵌套的 `subscription.trafficLimitBytes` / `trafficUsedBytes` 转换为 Number，导致 JSON 序列化抛出 `Do not know how to serialize a BigInt`（HTTP 500）的根本缺陷；统一提炼 `formatAdminUser` 序列化方法并补充单元测试回归。
+
 
 
 ## [0.6.11] - 2026-09-06
