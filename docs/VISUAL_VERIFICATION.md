@@ -58,6 +58,7 @@
 | **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**` | 顶部 Profile Header 身份横幅（个性化 Avatar、大字昵称弹窗修改、换绑邮箱 Dialog 验证码 60s 倒计时与密码验证、数字 UID 复制胶囊、角色徽标、加入时间）；Tabs 双页签（账号与安全 / 资产与财务）；账号安全页签（登录密码修改、代理凭据 UUID 掩码切换/一键复制/红色危险区域与二次重置弹窗）；资产财务页签（资产三指标概览与卡密兑换并排、全宽收支流水表格、分页与 EmptyState）；客服联系渠道卡片；移动端自适应折行、明暗双主题自适应 |
 | **`UI-30`** | 卡密管理 | 卡密管理列表与批量生成/作废交互 | `/admin/redeem-codes` | `apps/web/src/pages/admin/redeem-codes/**` | 状态筛选、元/分单位提示、批量生成表单、生成结果换行复制、统一时区有效期状态、未使用卡密作废确认、移动端表格局部滚动与弹窗内滚动 |
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | Agent/Sing-box 类型、平台与状态筛选；独立资源版本、来源、默认/启停/归档状态、平台文件 SHA-256 与大小；本地上传、远程导入、资源详情、辅助文件、分发历史；明暗主题与移动端弹窗内滚动 |
+| **`UI-32`** | 监控与系统 | 系统日志可视化大盘 | `/admin/logs` | `apps/web/src/pages/admin/logs/**` | 4 大 KPI 指标卡、分级趋势堆叠柱状图、多维过滤器工具栏、高密度等宽日志流表格、Live Tail 实时推流条（悬浮控制、清屏、暂停、自动滚动）、详情抽屉（TraceId 穿透、调用堆栈、格式化元数据）、日志导出与安全清理确认弹窗；明暗主题自适应与移动端防溢出 |
 
 ---
 
@@ -80,7 +81,7 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-30]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-32]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
     PathCheck -->|根路径与订阅控制台\nrouter/index.tsx\npages/user/subscription/*\ncomponents/shared/*| Dash[精准走查: UI-03, UI-04, UI-21]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
@@ -95,14 +96,15 @@ flowchart TD
     PathCheck -->|节点升级\npages/admin/nodes/components/upgrade-node-dialog.tsx| Upgrade[精准走查: UI-22]
     PathCheck -->|线路管理\npages/admin/lines/*| Lines[精准走查: UI-23 ~ UI-24]
     PathCheck -->|证书管理\npages/admin/certificates/*| Certificates[精准走查: UI-26]
+    PathCheck -->|系统日志\npages/admin/logs/*| Logs[精准走查: UI-32]
 ```
 
 ### 映射规则表
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-30`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-30`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-32`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-32`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
 | `apps/web/src/router/index.tsx` | `UI-03`, `UI-21` | **增量** |
@@ -122,6 +124,7 @@ flowchart TD
 | `apps/web/src/pages/admin/binaries/**` | `UI-31` | **增量** |
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
+| `apps/web/src/pages/admin/logs/**` | `UI-32` | **增量** |
 
 ---
 

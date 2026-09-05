@@ -60,7 +60,9 @@ export const SETTING_KEYS = {
   EMAIL_VERIFICATION_ENABLED: 'emailVerificationEnabled',
   CAPTCHA_MODE: 'captchaMode',
   TURNSTILE_SITE_KEY: 'turnstileSiteKey',
-  TURNSTILE_SECRET_KEY: 'turnstileSecretKey'
+  TURNSTILE_SECRET_KEY: 'turnstileSecretKey',
+  LOGS_RETENTION_DAYS: 'logsRetentionDays',
+  LOGS_MAX_COUNT: 'logsMaxCount'
 } as const;
 
 export interface SystemSettings {
@@ -111,6 +113,8 @@ export interface SystemSettings {
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
   turnstileSecretKey: string;
+  logsRetentionDays: number;
+  logsMaxCount: number;
 }
 
 export type SystemSettingsPatch = {
@@ -191,7 +195,9 @@ export const DEFAULTS: SystemSettings = {
   emailVerificationEnabled: false,
   captchaMode: 'OFF',
   turnstileSiteKey: '',
-  turnstileSecretKey: ''
+  turnstileSecretKey: '',
+  logsRetentionDays: 7,
+  logsMaxCount: 100000
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -241,7 +247,9 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   emailVerificationEnabled: '是否启用注册邮箱验证',
   captchaMode: '人机验证模式',
   turnstileSiteKey: 'Cloudflare Turnstile Site Key',
-  turnstileSecretKey: 'Cloudflare Turnstile Secret Key'
+  turnstileSecretKey: 'Cloudflare Turnstile Secret Key',
+  logsRetentionDays: '系统日志保留天数',
+  logsMaxCount: '系统日志最大保留条数'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -300,7 +308,9 @@ export class SettingsService {
       emailVerificationEnabled: this.readBoolean(map, 'emailVerificationEnabled'),
       captchaMode: this.readEnum(map, 'captchaMode', ['OFF', 'LOCAL', 'TURNSTILE']),
       turnstileSiteKey: this.readString(map, 'turnstileSiteKey'),
-      turnstileSecretKey: this.readString(map, 'turnstileSecretKey')
+      turnstileSecretKey: this.readString(map, 'turnstileSecretKey'),
+      logsRetentionDays: this.readInteger(map, 'logsRetentionDays', 1, 365),
+      logsMaxCount: this.readInteger(map, 'logsMaxCount', 1000, 1000000)
     };
   }
 

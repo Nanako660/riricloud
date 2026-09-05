@@ -20,9 +20,10 @@ import {
   INTERNAL_RELAY_TRANSIT_UUID,
   type ProtocolType
 } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import { isLineAuthorized } from '../common/line-access';
 import { getTrafficPeriod } from '../common/traffic-reset';
 
@@ -190,7 +191,8 @@ export class AgentService implements OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly settingsService?: SettingsService
+    @Optional() private readonly settingsService?: SettingsService,
+    @Optional() private readonly systemLogsService?: SystemLogsService
   ) {}
 
   // 握手鉴权：校验 agentToken，返回鉴权结果与节点
@@ -898,6 +900,20 @@ export class AgentService implements OnModuleDestroy {
     this.logger[data.success ? 'log' : 'warn'](
       `agent restart ${data.success ? 'succeeded' : 'failed'}: node=${nodeId} task=${data.taskId} message=${data.message}`
     );
+  }
+
+  handleLogReport(nodeId: string, data: LogReportData): void {
+    if (!this.systemLogsService || !data?.logs) return;
+    for (const item of data.logs) {
+      this.systemLogsService.enqueue({
+        nodeId,
+        source: item.source || 'AGENT',
+        level: item.level,
+        module: item.module || 'Agent',
+        message: item.message,
+        metadata: item.metadata
+      });
+    }
   }
 
   // Line 自己拥有协议与端点：同一条 Line 在出口节点生成协议入站，

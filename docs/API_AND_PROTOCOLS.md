@@ -141,6 +141,14 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`、`extraLineIds`；传 `planId: null` 会删除订阅实例，用户回到无套餐状态并使旧订阅 Token 失效，但不会删除用户额外线路授权。
 - `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
 
+#### 系统日志管理 (`/logs`)
+- `GET /logs?page&pageSize&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员分页多维查询系统日志。⭐ 支持日志级别（DEBUG/INFO/WARN/ERROR）、来源（SERVER/WEB/AGENT/KERNEL）、节点 UUID、TraceId 精确与关键词模糊搜索；返回统一分页结构 `{ data: SystemLog[], total, page, pageSize }`。
+- `GET /logs/metrics?hours=24`：管理员获取过去指定小时内日志大盘指标与趋势统计。⭐ 响应包含 `totalLogs`、`errorCount`、`warnCount`、`avgLatencyMs` 以及按小时聚合的分级时序柱状图数据 `trendSeries`。
+- `GET /logs/stream?token=<JWT_TOKEN>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 通过 URL query 参数 `token` 或 Bearer 头传递 JWT 认证；支持动态按级别、来源、节点和关键词过滤并实时推送最新日志事件。
+- `POST /logs/frontend`：前端批量上报异常与关键操作日志。⭐ 无需管理员鉴权（`@Public()`）；请求 `{ logs: [{ level, module, message, traceId?, stack?, metadata? }] }`；服务端自动补齐 Client IP、User Agent 与当前登录用户 ID，深度脱敏后缓冲入库并广播至 SSE 监听端。
+- `DELETE /logs?retentionDays&maxRecords`：管理员手动或按策略触发日志清理。⭐ 请求可选指定天数与最大保留条数，返回 `{ count }`；未指定时自动根据系统配置中的 `logsRetentionDays` 与 `logsMaxCount` 进行清理。
+- `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员导出筛选范围内的日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
+
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
 - `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。
@@ -337,7 +345,26 @@ Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配
 }
 ```
 
-Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result` 五类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
+#### 7. 运行日志上报 (`log_report`) —— Agent -> Master (v0.6.12)
+Agent 在配置应用失败、升级异常、内核异常退出或关键操作时，向上发送运行日志包，交由 Master `SystemLogsService` 统一入库与实时推流：
+```json
+{
+  "type": "log_report",
+  "data": {
+    "logs": [
+      {
+        "level": "ERROR",
+        "module": "WSClient",
+        "source": "AGENT",
+        "message": "failed to reload singbox config: exit code 1",
+        "metadata": { "version": 4 }
+      }
+    ]
+  }
+}
+```
+
+Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result`、`log_report` 六类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
 ## 2.4 二进制资源中心 API（v0.5.0）
 

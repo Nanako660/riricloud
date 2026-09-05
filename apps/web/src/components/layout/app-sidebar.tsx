@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary } from 'lucide-react';
+import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import { SupportDialog } from '@/components/shared/support-dialog';
@@ -59,6 +59,7 @@ export function AppSidebar() {
             label: '监控与系统',
             items: [
               { to: '/admin/traffic', label: '流量统计', icon: Activity, end: false },
+              { to: '/admin/logs', label: '系统日志', icon: ScrollText, end: false },
               { to: '/admin/settings', label: '系统设置', icon: Settings, end: false }
             ]
           }

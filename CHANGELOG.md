@@ -13,6 +13,12 @@
 ## [Unreleased]
 
 ### Added
+- **全栈可视化日志管理系统与全链路追踪**：
+  - **三端覆盖与统一存储**：构建覆盖 Master 服务端（API 访问拦截、系统核心事件、未捕获异常）、Web 前端（未捕获全局 JS 异常、Promise 拒绝、API 4xx/5xx 与关键交互）以及 VPS 边缘节点（Agent 运行状态、配置同步失败、内核异常退出）的三端日志体系；严格遵循轻量嵌入式 SQLite 零外部中间件红线，基于内存防抖环形缓冲批量持久化（`createMany`）与双上限生命周期滚动淘汰（`logsRetentionDays` / `logsMaxCount`）。
+  - **全链路 TraceId 穿透追踪**：实现统一 `X-Request-Id`（TraceId）在前端 Axios 客户端、服务端 HTTP 日志拦截器与持久层日志记录间的双向透传，支持从任意前端异常或 API 报错一键关联定位全调用链路。
+  - **低延迟 Live Tail 实时推流**：基于服务端原生 SSE（`GET /api/v1/logs/stream`，支持 URL Token / Bearer 鉴权）与 RxJS Subject 广播通道，实现毫秒级日志推流；前端配备悬浮控制器，支持推流暂停/恢复、日志清屏与跟随滚动。
+  - **全功能现代化可视化大盘（`/admin/logs`）**：提供 4 大 KPI 关键指标卡（总日志数、24h 错误数、24h 警告数、API 平均响应耗时）、24 小时级别趋势堆叠柱状图、多维过滤器工具栏（时间跨度、日志级别、日志来源、节点、关键词与 TraceId）、高密度等宽日志表格、滑出式详情抽屉（Formatted Stack Trace / JSON 元数据 / TraceId 穿透关联）以及日志导出（JSON/CSV）与安全清理模态框。
+  - **不可逆强敏感脱敏引擎**：内置专用脱敏工具，入库及推流前全量不可逆模糊化 Bearer Token、系统密码、AgentToken、SubscriptionToken 与 Cookie 等敏感凭据，杜绝凭据泄漏。
 - **用户系统完善**：新增全局唯一 6 位数字 UID、可选昵称与默认昵称回退；注册支持邮箱验证码、SMTP 发信、本地 SVG CAPTCHA 和 Cloudflare Turnstile；个人中心支持昵称修改与邮箱换绑，管理员用户列表支持 UID/昵称检索。
 - **系统安全配置**：新增 SMTP 服务、注册邮箱验证和 CAPTCHA 模式设置，SMTP 密码与 Turnstile Secret 在管理端读取时统一脱敏，并支持发送测试邮件。
 

@@ -126,6 +126,18 @@ type restartAgentResult struct {
 	Message string `json:"message"`
 }
 
+type agentLogItem struct {
+	Level    string                 `json:"level"`
+	Module   string                 `json:"module"`
+	Source   string                 `json:"source,omitempty"`
+	Message  string                 `json:"message"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type logReportData struct {
+	Logs []agentLogItem `json:"logs"`
+}
+
 // Client 长连接客户端：负责连接、鉴权、心跳与配置接收
 type Client struct {
 	masterURL  string
@@ -253,10 +265,22 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig, int64(sync.Version)); err != nil {
 				c.log.WithError(err).Error("apply singbox config failed")
 				c.sendApplyResult(conn, sync.Version, false, err.Error())
+				c.sendLogReport(conn, []agentLogItem{{
+					Level:   "ERROR",
+					Module:  "Singbox",
+					Source:  "SINGBOX",
+					Message: fmt.Sprintf("Apply singbox config v%d failed: %v", sync.Version, err),
+				}})
 				continue
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")
 			c.sendApplyResult(conn, sync.Version, true, "ok")
+			c.sendLogReport(conn, []agentLogItem{{
+				Level:   "INFO",
+				Module:  "Singbox",
+				Source:  "SINGBOX",
+				Message: fmt.Sprintf("Singbox config v%d applied successfully", sync.Version),
+			}})
 		case "upgrade_task":
 			var task upgradeTask
 			if err := json.Unmarshal(msg.Data, &task); err != nil {
@@ -307,9 +331,21 @@ func (c *Client) handleUpgrade(parent context.Context, conn *websocket.Conn, tas
 	if err != nil {
 		c.log.WithError(err).Warn("upgrade task failed")
 		c.sendUpgradeResult(conn, task, false, err.Error())
+		c.sendLogReport(conn, []agentLogItem{{
+			Level:   "ERROR",
+			Module:  "Upgrade",
+			Source:  "AGENT",
+			Message: fmt.Sprintf("Upgrade %s to %s failed: %v", task.Target, task.Version, err),
+		}})
 		return
 	}
 	c.sendUpgradeResult(conn, task, true, "ok")
+	c.sendLogReport(conn, []agentLogItem{{
+		Level:   "INFO",
+		Module:  "Upgrade",
+		Source:  "AGENT",
+		Message: fmt.Sprintf("Upgrade %s to %s succeeded", task.Target, task.Version),
+	}})
 	if task.Target == "agent" {
 		go c.restartSelf()
 	}
@@ -473,6 +509,17 @@ func (c *Client) sendRestartResult(conn *websocket.Conn, taskID string, success 
 		return
 	}
 	c.sendFrame(conn, "restart_agent_result", data)
+}
+
+func (c *Client) sendLogReport(conn *websocket.Conn, logs []agentLogItem) {
+	if len(logs) == 0 {
+		return
+	}
+	data, err := json.Marshal(logReportData{Logs: logs})
+	if err != nil {
+		return
+	}
+	c.sendFrame(conn, "log_report", data)
 }
 
 func (c *Client) sendFrame(conn *websocket.Conn, messageType string, data json.RawMessage) {
