@@ -90,8 +90,14 @@ describe('SubscriptionService lifecycle', () => {
     expect(tx.subscription.delete).toHaveBeenCalledWith({ where: { id: 's1' } });
     expect(tx.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { subscriptionToken: expect.any(String) }
+      data: {
+        subscriptionToken: expect.any(String),
+        trafficLimitBytes: BigInt(0),
+        trafficUsedBytes: BigInt(0),
+        expireAt: null
+      }
     });
+    expect(tx.userLineGrant.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } });
     expect(result).toEqual({ removed: true, id: 's1', userId: 'u1' });
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
   });
@@ -174,7 +180,7 @@ describe('SubscriptionService lifecycle', () => {
     expect(update.data.trafficPeriodStartAt.getTime()).toBeGreaterThan(current.startedAt.getTime());
   });
 
-  it('额外线路授权全量替换，移除订阅时保留授权关系', async () => {
+  it('额外线路授权全量替换，移除订阅时同步清空授权关系', async () => {
     prisma.subscription.findUnique.mockResolvedValue({ ...subscription, user: { ...subscription.user, extraLineGrants: [] } });
     prisma.line.findMany.mockResolvedValue([{ id: 'line-1' }, { id: 'line-2' }]);
     tx.subscription.update.mockResolvedValue(subscription);
@@ -189,7 +195,7 @@ describe('SubscriptionService lifecycle', () => {
     const result = await service.adminUpdate('s1', { planId: null, extraLineIds: [] });
 
     expect(result).toEqual({ removed: true, id: 's1', userId: 'u1' });
-    expect(tx.userLineGrant.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userLineGrant.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } });
     expect(tx.userLineGrant.createMany).not.toHaveBeenCalled();
   });
 

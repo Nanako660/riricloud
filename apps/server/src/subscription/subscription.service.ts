@@ -409,11 +409,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const subscriptionToken = randomUUID();
     await this.prisma.$transaction(async (tx) => {
       await tx.subscription.delete({ where: { id } });
-      await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          subscriptionToken,
+          trafficLimitBytes: BigInt(0),
+          trafficUsedBytes: BigInt(0),
+          expireAt: null
+        }
+      });
+      await tx.userLineGrant.deleteMany({ where: { userId } });
     });
     void this.agentGateway?.pushConfigToAll();
     return { removed: true, id, userId };
   }
+
 
   async adminAssign(userId: string, dto: AdminUpdateSubDto) {
     if (!dto.planId) throw new BadRequestException('绑定订阅必须指定套餐');

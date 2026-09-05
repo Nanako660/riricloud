@@ -23,7 +23,7 @@ export const editAccountSchema = z.object({
 export const subscriptionSchema = z.object({
   planId: z.string().optional(),
   status: z.enum(['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED']),
-  quotaGB: z.coerce.number().positive('配额必须大于 0'),
+  quotaGB: z.coerce.number().min(0, '配额不能为负数'),
   usedGB: z.coerce.number().min(0, '已用流量不能为负数'),
   expireAt: z.string().optional(),
   addDays: optionalPositiveInt,

@@ -46,8 +46,11 @@
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
+- `POST /admin/subscriptions/users/:userId`：管理员为用户分配/绑定套餐。⭐ 请求 `{ planId, status?, trafficLimitBytes?, trafficUsedBytes?, expireAt?, addDays?, extraLineIds? }`；在同一事务内创建唯一订阅并同步 User 镜像字段。
+- `PATCH /admin/subscriptions/:id`：管理员更新用户订阅或彻底取消订阅。⭐ 支持调整状态、配额、已用流量、到期时间与额外线路授权；传入 `planId: null` 时彻底取消订阅并删除订阅记录，同一事务内将用户镜像配额与已用流量置 0、到期时间置 null，并清空额外线路授权（`userLineGrant`），向边缘节点下发同步。
+- `POST /admin/subscriptions/:id/reset-token`：管理员重置指定订阅的 Token。⭐
 
-用户创建/更新/删除均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
+用户创建/更新/删除及订阅变更均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
 #### 流量统计
 - `GET /admin/traffic/overview?range=today|24h|7d|30d`：管理员查询全站流量统计。⭐ `range` 省略时默认为 `today`；响应包含 `summary`（总上行、总下行、物理/计费流量、活跃线路/用户）、连续补零的 `timeSeries`、按计费流量降序排列的 `lineRankings`，以及 `rate`/`rateSeries` 节点网络吞吐统计。速率统一为 `bytes/s`；`today`/`24h` 的速率按 5 分钟、`7d` 按 30 分钟、`30d` 按 1 小时输出。`rate` 的当前值只汇总在线且未超时节点，历史平均值按指标采样数计算，峰值为各节点桶峰值之和的近似全站峰值；速率不参与计费。
