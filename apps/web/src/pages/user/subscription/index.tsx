@@ -122,7 +122,7 @@ export default function UserSubscriptionPage() {
       <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
 
       {isEmailBlocked ? (
-        <EmailVerificationBlockCard
+        <EmailVerificationBlockState
           email={user.data?.email}
           onVerifyClick={() => setVerifyOpen(true)}
         />
@@ -193,7 +193,7 @@ export default function UserSubscriptionPage() {
   );
 }
 
-function EmailVerificationBlockCard({
+function EmailVerificationBlockState({
   email,
   onVerifyClick
 }: {
@@ -201,47 +201,45 @@ function EmailVerificationBlockCard({
   onVerifyClick: () => void;
 }) {
   return (
-    <Card className="overflow-hidden border-amber-500/30 bg-gradient-to-b from-amber-500/10 via-card to-card p-6 sm:p-12 shadow-sm">
-      <CardContent className="flex flex-col items-center justify-center p-0 text-center space-y-6">
-        <div className="relative flex size-20 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-inner">
-          <ShieldAlert className="size-10" />
-        </div>
+    <div className="flex flex-1 flex-col items-center justify-center p-4 py-12 sm:py-24 text-center space-y-6 max-w-lg mx-auto">
+      <div className="relative flex size-20 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-sm">
+        <ShieldAlert className="size-10" />
+      </div>
 
-        <div className="max-w-lg space-y-2.5">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
-            <AlertTriangle className="size-3.5" />
-            安全策略拦截
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            邮箱未完成验证，订阅与代理服务已阻断
-          </h2>
-          <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
-            系统已开启强制邮箱验证策略。为了保障账号安全与服务合规，在完成邮箱验证前，系统已暂停下发你的订阅配置与代理节点。
-          </p>
+      <div className="space-y-2.5">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="size-3.5" />
+          安全策略拦截
         </div>
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          邮箱未完成验证，订阅与代理服务已阻断
+        </h2>
+        <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+          系统已开启强制邮箱验证策略。为了保障账号安全与服务合规，在完成邮箱验证前，系统已暂停下发你的订阅配置与代理节点。
+        </p>
+      </div>
 
-        {email && (
-          <div className="flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-            <Mail className="size-4 shrink-0 text-muted-foreground/80" />
-            <span className="shrink-0">当前登录邮箱：</span>
-            <span className="truncate font-mono font-medium text-foreground">{email}</span>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-          <Button size="default" className="gap-2 text-sm shadow-sm" onClick={onVerifyClick}>
-            <MailCheck className="size-4" />
-            立即验证当前邮箱
-          </Button>
-          <Button size="default" variant="outline" asChild className="gap-2 text-sm">
-            <Link to="/profile">
-              前往个人中心更换
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
+      {email && (
+        <div className="flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          <Mail className="size-4 shrink-0 text-muted-foreground/80" />
+          <span className="shrink-0">当前登录邮箱：</span>
+          <span className="truncate font-mono font-medium text-foreground">{email}</span>
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+        <Button size="default" className="gap-2 text-sm shadow-sm" onClick={onVerifyClick}>
+          <MailCheck className="size-4" />
+          立即验证当前邮箱
+        </Button>
+        <Button size="default" variant="outline" asChild className="gap-2 text-sm">
+          <Link to="/profile">
+            前往个人中心更换
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
+    </div>
   );
 }
 
