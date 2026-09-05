@@ -5,6 +5,7 @@ import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { UsersService } from './users.service';
+import { VerificationService } from '../verification/verification.service';
 import { WalletService } from '../wallet/wallet.service';
 
 describe('UsersService', () => {
@@ -19,6 +20,7 @@ describe('UsersService', () => {
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
   const walletService = { adjustBalance: jest.fn() };
+  const verificationService = { verifyCode: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -27,7 +29,8 @@ describe('UsersService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AgentGatewayService, useValue: agentGateway },
         { provide: SettingsService, useValue: settingsService },
-        { provide: WalletService, useValue: walletService }
+        { provide: WalletService, useValue: walletService },
+        { provide: VerificationService, useValue: verificationService }
       ]
     }).compile();
     service = moduleRef.get(UsersService);
@@ -278,6 +281,40 @@ describe('UsersService', () => {
       walletService.adjustBalance.mockResolvedValue({ balance: 2500, transaction: { id: 'bt1' } });
       await expect(service.adjustBalance('u1', 500, '活动补发')).resolves.toEqual({ userId: 'u1', balance: 2500, transaction: { id: 'bt1' } });
       expect(walletService.adjustBalance).toHaveBeenCalledWith('u1', 500, 'ADMIN_ADJUST', '活动补发');
+    });
+
+    it('验证当前邮箱成功后更新 emailVerifiedAt 并向在线节点推送配置', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'test@example.com' });
+      verificationService.verifyCode.mockResolvedValue(undefined);
+      const verifiedAt = new Date();
+      prisma.user.update.mockResolvedValue({ id: 'u1', email: 'test@example.com', emailVerifiedAt: verifiedAt });
+
+      const result = await service.verifyEmail('u1', '123456');
+      expect(result.verified).toBe(true);
+      expect(result.emailVerifiedAt).toBe(verifiedAt.toISOString());
+      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'VERIFY_CURRENT_EMAIL', '123456');
+      expect(agentGateway.pushConfigToAll).toHaveBeenCalled();
+    });
+
+    it('更换邮箱成功后重置 emailVerifiedAt 并向在线节点推送配置', async () => {
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
+      prisma.user.findUnique
+        .mockResolvedValueOnce({ id: 'u1', email: 'old@example.com', passwordHash: await bcrypt.hash('pwd', 10) })
+        .mockResolvedValueOnce(null); // newEmail check
+      settingsService.getSettings.mockResolvedValue({ emailDomainMode: 'none', emailDomainList: [] });
+      verificationService.verifyCode.mockResolvedValue(undefined);
+      prisma.user.update.mockResolvedValue({ id: 'u1', email: 'new@example.com' });
+
+      const result = await service.changeEmail('u1', { newEmail: 'new@example.com', verificationCode: '654321', currentPassword: 'pwd' });
+      expect(result.email).toBe('new@example.com');
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'u1' },
+        data: expect.objectContaining({
+          email: 'new@example.com',
+          emailVerifiedAt: expect.any(Date)
+        })
+      }));
+      expect(agentGateway.pushConfigToAll).toHaveBeenCalled();
     });
   });
 

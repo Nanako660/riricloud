@@ -61,6 +61,7 @@ const ADMIN_USER_SELECT = {
   uid: true,
   nickname: true,
   email: true,
+  emailVerifiedAt: true,
   role: true,
   balance: true,
   trafficLimitBytes: true,
@@ -136,6 +137,21 @@ export class UsersService {
     return { uid: updated.uid, nickname: updated.nickname ?? defaultUserNickname(updated.uid) };
   }
 
+  async verifyEmail(userId: string, code: string) {
+    const verificationService = this.verificationService;
+    if (!verificationService) throw new BadRequestException('邮箱验证服务不可用');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    if (!user) throw new UnauthorizedException();
+    await verificationService.verifyCode(user.email, 'VERIFY_CURRENT_EMAIL', code);
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerifiedAt: new Date() },
+      select: { id: true, email: true, emailVerifiedAt: true }
+    });
+    void this.agentGateway.pushConfigToAll();
+    return { verified: true, emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null };
+  }
+
   async changeEmail(userId: string, dto: ChangeEmailDto) {
     const verificationService = this.verificationService;
     if (!verificationService) throw new BadRequestException('邮箱验证服务不可用');
@@ -146,10 +162,12 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
     if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
     await verificationService.verifyCode(newEmail, 'CHANGE_EMAIL', dto.verificationCode);
-    return this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: userId }, data: { email: newEmail } });
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { email: newEmail, emailVerifiedAt: new Date() } });
       return { updated: true, email: newEmail };
     });
+    void this.agentGateway.pushConfigToAll();
+    return result;
   }
 
   async resetUuid(userId: string) {
@@ -203,6 +221,11 @@ export class UsersService {
           : {}),
       ...(query.role ? { role: query.role } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.emailVerified !== undefined
+        ? query.emailVerified
+          ? { emailVerifiedAt: { not: null } }
+          : { emailVerifiedAt: null }
+        : {}),
       ...(subscriptionWhere !== undefined ? { subscription: subscriptionWhere } : {})
     };
     const [users, total] = await this.prisma.$transaction([
@@ -219,6 +242,7 @@ export class UsersService {
     // BigInt 在服务边界转 Number（< 2^53 无精度损失）
     const data = users.map(({ extraLineGrants, ...u }) => ({
       ...u,
+      emailVerifiedAt: u.emailVerifiedAt ? u.emailVerifiedAt.toISOString() : null,
       trafficLimitBytes: Number(u.trafficLimitBytes),
       trafficUsedBytes: Number(u.trafficUsedBytes),
       subscription: u.subscription
@@ -310,6 +334,9 @@ export class UsersService {
     if (dto.trafficLimitBytes !== undefined) data.trafficLimitBytes = BigInt(dto.trafficLimitBytes);
     if (dto.expireAt !== undefined) data.expireAt = dto.expireAt ? new Date(dto.expireAt) : null;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.emailVerified !== undefined) {
+      data.emailVerifiedAt = dto.emailVerified ? new Date() : null;
+    }
     if (dto.password !== undefined) {
       if (dto.password.length < 8) {
         throw new BadRequestException('密码至少 8 位');
@@ -332,7 +359,12 @@ export class UsersService {
     }
     // 配额/到期/激活/角色变化影响订阅资格，向在线节点同步用户名单
     void this.agentGateway.pushConfigToAll();
-    return { ...updated, trafficLimitBytes: Number(updated.trafficLimitBytes), trafficUsedBytes: Number(updated.trafficUsedBytes) };
+    return {
+      ...updated,
+      emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null,
+      trafficLimitBytes: Number(updated.trafficLimitBytes),
+      trafficUsedBytes: Number(updated.trafficUsedBytes)
+    };
   }
 
   async deleteUser(id: string, operatorId: string) {

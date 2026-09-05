@@ -53,4 +53,14 @@ export class ListUsersQueryDto {
   @IsUUID()
   @IsOptional()
   planId?: string;
+
+  @ApiPropertyOptional({ description: '按邮箱核验状态过滤' })
+  @Transform(({ value }) => {
+    if (value === true || value === 'true') return true;
+    if (value === false || value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  @IsOptional()
+  emailVerified?: boolean;
 }

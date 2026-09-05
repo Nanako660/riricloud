@@ -86,6 +86,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "uid" INTEGER,
         "nickname" TEXT,
         "email" TEXT NOT NULL,
+        "emailVerifiedAt" DATETIME,
         "passwordHash" TEXT NOT NULL,
         "role" TEXT NOT NULL DEFAULT 'USER',
         "balance" INTEGER NOT NULL DEFAULT 0,

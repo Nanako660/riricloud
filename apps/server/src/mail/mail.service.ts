@@ -6,11 +6,17 @@ import { SettingsService } from '../system/settings.service';
 export class MailService {
   constructor(private readonly settingsService: SettingsService) {}
 
-  async sendVerificationCode(email: string, code: string, action: 'REGISTER' | 'CHANGE_EMAIL') {
+  async sendVerificationCode(email: string, code: string, action: 'REGISTER' | 'CHANGE_EMAIL' | 'VERIFY_CURRENT_EMAIL' | 'RESET_PASSWORD') {
     const settings = await this.settingsService.getSettings();
     const transporter = this.createTransporter(settings);
     const siteName = escapeHtml(settings.siteName);
-    const subject = action === 'REGISTER' ? `【${settings.siteName}】注册验证码` : `【${settings.siteName}】换绑邮箱验证码`;
+    const subjectMap: Record<string, string> = {
+      REGISTER: `【${settings.siteName}】注册验证码`,
+      CHANGE_EMAIL: `【${settings.siteName}】换绑邮箱验证码`,
+      VERIFY_CURRENT_EMAIL: `【${settings.siteName}】邮箱验证码`,
+      RESET_PASSWORD: `【${settings.siteName}】重置登录密码验证码`
+    };
+    const subject = subjectMap[action] ?? `【${settings.siteName}】验证码`;
     const info = await transporter.sendMail({
       from: settings.smtpFrom || settings.smtpUser,
       to: email,
@@ -60,7 +66,13 @@ export class MailService {
 }
 
 function buildVerificationEmail(input: { siteName: string; logoUrl: string; code: string; footer: string; action: string }) {
-  const title = input.action === 'REGISTER' ? '完成注册验证' : '确认换绑邮箱';
+  const titleMap: Record<string, string> = {
+    REGISTER: '完成注册验证',
+    CHANGE_EMAIL: '确认换绑邮箱',
+    VERIFY_CURRENT_EMAIL: '验证当前邮箱',
+    RESET_PASSWORD: '重置登录密码'
+  };
+  const title = titleMap[input.action] ?? '邮箱安全验证';
   const logo = input.logoUrl
     ? `<img src="${escapeHtml(input.logoUrl)}" alt="${input.siteName}" style="width:48px;height:48px;object-fit:contain;border-radius:12px;">`
     : '';

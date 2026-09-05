@@ -58,6 +58,7 @@ export const SETTING_KEYS = {
   SMTP_PASS: 'smtpPass',
   SMTP_FROM: 'smtpFrom',
   EMAIL_VERIFICATION_ENABLED: 'emailVerificationEnabled',
+  ENFORCE_EMAIL_VERIFICATION: 'enforceEmailVerification',
   CAPTCHA_MODE: 'captchaMode',
   TURNSTILE_SITE_KEY: 'turnstileSiteKey',
   TURNSTILE_SECRET_KEY: 'turnstileSecretKey',
@@ -110,6 +111,7 @@ export interface SystemSettings {
   smtpPass: string;
   smtpFrom: string;
   emailVerificationEnabled: boolean;
+  enforceEmailVerification: boolean;
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
   turnstileSecretKey: string;
@@ -140,9 +142,10 @@ export type PublicSystemSettings = Pick<
   | 'subscriptionShortLinksEnabled'
   | 'customCss'
   | 'customHeadHtml'
-   | 'emailVerificationEnabled'
-   | 'captchaMode'
-   | 'turnstileSiteKey'
+  | 'emailVerificationEnabled'
+  | 'enforceEmailVerification'
+  | 'captchaMode'
+  | 'turnstileSiteKey'
 >;
 
 export const DEFAULTS: SystemSettings = {
@@ -193,6 +196,7 @@ export const DEFAULTS: SystemSettings = {
   smtpPass: '',
   smtpFrom: '',
   emailVerificationEnabled: false,
+  enforceEmailVerification: false,
   captchaMode: 'OFF',
   turnstileSiteKey: '',
   turnstileSecretKey: '',
@@ -245,6 +249,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   smtpPass: 'SMTP 登录密码',
   smtpFrom: 'SMTP 发信人地址',
   emailVerificationEnabled: '是否启用注册邮箱验证',
+  enforceEmailVerification: '强制邮箱验证以使用订阅',
   captchaMode: '人机验证模式',
   turnstileSiteKey: 'Cloudflare Turnstile Site Key',
   turnstileSecretKey: 'Cloudflare Turnstile Secret Key',
@@ -256,7 +261,23 @@ const SETTING_VALUES = Object.values(SETTING_KEYS);
 
 @Injectable()
 export class SettingsService {
+  private readonly changeListeners: Array<(patch: SystemSettingsPatch) => void> = [];
+
   constructor(private readonly prisma: PrismaService) {}
+
+  onSettingsChange(listener: (patch: SystemSettingsPatch) => void) {
+    this.changeListeners.push(listener);
+  }
+
+  private notifyChange(patch: SystemSettingsPatch) {
+    for (const listener of this.changeListeners) {
+      try {
+        listener(patch);
+      } catch {
+        // 忽略监听器内部异常
+      }
+    }
+  }
 
   async getSettings(): Promise<SystemSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { in: SETTING_VALUES } } });
@@ -306,6 +327,7 @@ export class SettingsService {
       smtpPass: this.readString(map, 'smtpPass'),
       smtpFrom: this.readString(map, 'smtpFrom'),
       emailVerificationEnabled: this.readBoolean(map, 'emailVerificationEnabled'),
+      enforceEmailVerification: this.readBoolean(map, 'enforceEmailVerification'),
       captchaMode: this.readEnum(map, 'captchaMode', ['OFF', 'LOCAL', 'TURNSTILE']),
       turnstileSiteKey: this.readString(map, 'turnstileSiteKey'),
       turnstileSecretKey: this.readString(map, 'turnstileSecretKey'),
@@ -344,6 +366,7 @@ export class SettingsService {
       customCss: settings.customCss,
       customHeadHtml: settings.customHeadHtml,
       emailVerificationEnabled: settings.emailVerificationEnabled,
+      enforceEmailVerification: settings.enforceEmailVerification,
       captchaMode: settings.captchaMode,
       turnstileSiteKey: settings.turnstileSiteKey
     };
@@ -377,6 +400,7 @@ export class SettingsService {
         });
       }
     });
+    this.notifyChange(patch);
     return this.getAdminSettings();
   }
 
@@ -386,6 +410,7 @@ export class SettingsService {
       : (Object.keys(DEFAULTS) as Array<keyof SystemSettings>);
     if (keys && selected.length !== keys.length) throw new BadRequestException('包含无效的设置键');
     await this.prisma.systemSetting.deleteMany({ where: { key: { in: selected } } });
+    this.notifyChange(DEFAULTS);
     return this.getAdminSettings();
   }
 

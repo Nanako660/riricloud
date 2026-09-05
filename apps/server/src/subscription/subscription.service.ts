@@ -48,6 +48,8 @@ type SubscriptionPlan = {
 type SubscriptionUser = {
   id: string;
   email: string;
+  role?: string;
+  emailVerifiedAt?: Date | null;
   uuid: string;
   password: string | null;
   isActive: boolean;
@@ -146,6 +148,11 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException('账号已过期、被禁用或超出流量配额');
     }
 
+    const settings = await this.settingsService?.getSettings();
+    if (settings?.enforceEmailVerification && !user.emailVerifiedAt && user.role !== 'ADMIN') {
+      throw new ForbiddenException('系统已开启强制邮箱验证，请先在个人中心完成邮箱验证或更换可用邮箱后再获取订阅');
+    }
+
     const lines = subscription
       ? await this.linesService.getAvailableForPlan(
           subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' },
@@ -172,7 +179,6 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);
     const template = await this.resolveTemplate(subscription?.plan?.template, opts.templateId);
-    const settings = await this.settingsService?.getSettings();
     return {
       body: this.render(format, subscriptionSources, subUser, template),
       contentType: SUBSCRIPTION_CONTENT_TYPES[format],

@@ -109,6 +109,7 @@ interface SystemSettings {
   smtpPass: string;
   smtpFrom: string;
   emailVerificationEnabled: boolean;
+  enforceEmailVerification: boolean;
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
   turnstileSecretKey: string;
@@ -159,6 +160,7 @@ const settingsSchema = z.object({
   smtpPass: z.string().max(512),
   smtpFrom: z.string().max(255),
   emailVerificationEnabled: z.boolean(),
+  enforceEmailVerification: z.boolean(),
   captchaMode: z.enum(['OFF', 'LOCAL', 'TURNSTILE']),
   turnstileSiteKey: z.string().max(255),
   turnstileSecretKey: z.string().max(512)
@@ -192,7 +194,7 @@ export default function AdminSettingsPage() {
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
       lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000,
       smtpEnabled: false, smtpHost: '', smtpPort: 587, smtpSecure: false, smtpUser: '', smtpPass: '', smtpFrom: '',
-      emailVerificationEnabled: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: ''
+      emailVerificationEnabled: false, enforceEmailVerification: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: ''
     })
   });
 
@@ -288,6 +290,7 @@ export default function AdminSettingsPage() {
                  <SettingsSwitch name="smtpEnabled" label="启用 SMTP 发信" description="关闭后邮箱验证码不会发送。" />
                  <div className="grid min-w-0 gap-4 sm:grid-cols-2"><SettingsInput name="smtpHost" label="SMTP 服务器" placeholder="smtp.example.com" /><SettingsInput name="smtpPort" label="端口" type="number" min={1} max={65535} /><SettingsSwitch name="smtpSecure" label="使用 SSL/TLS" description="465 端口通常开启，587 端口通常关闭并使用 STARTTLS。" /><SettingsInput name="smtpUser" label="账号" placeholder="noreply@example.com" /><SettingsInput name="smtpPass" label="密码" type="password" placeholder="留空保留当前密码" /><SettingsInput name="smtpFrom" label="发信人地址" placeholder="RiriCloud <noreply@example.com>" /></div>
                  <SettingsSwitch name="emailVerificationEnabled" label="启用注册邮箱验证" description="注册时必须完成 6 位邮箱验证码验证，验证码有效期 5 分钟。" />
+                 <SettingsSwitch name="enforceEmailVerification" label="强制邮箱验证（限制订阅与节点连接）" description="开启后，未验证邮箱的用户将无法拉取订阅配置与连接节点（管理员账号豁免）。适用于要求存量用户补全验证或防滥用场景。" />
                </div>
                <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">人机验证（CAPTCHA）</h3><p className="text-xs text-muted-foreground">在获取注册验证码前拦截自动化请求；本地图形验证码无需外部服务。</p></div></div><SettingsSelect name="captchaMode" label="验证模式" options={[{ value: 'OFF', label: '关闭' }, { value: 'LOCAL', label: '本地图形验证码' }, { value: 'TURNSTILE', label: 'Cloudflare Turnstile' }]} />{form.watch('captchaMode') === 'TURNSTILE' ? <div className="grid gap-4 sm:grid-cols-2"><SettingsInput name="turnstileSiteKey" label="Site Key" placeholder="0x4AAAAAAA..." /><SettingsInput name="turnstileSecretKey" label="Secret Key" type="password" placeholder="留空保留当前密钥" /></div> : null}</div>
              </CardContent></Card></TabsContent>
@@ -522,6 +525,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     smtpPass: settings.smtpPass,
     smtpFrom: settings.smtpFrom,
     emailVerificationEnabled: settings.emailVerificationEnabled,
+    enforceEmailVerification: settings.enforceEmailVerification ?? false,
     captchaMode: settings.captchaMode,
     turnstileSiteKey: settings.turnstileSiteKey,
     turnstileSecretKey: settings.turnstileSecretKey
@@ -574,6 +578,7 @@ function toPayload(values: SettingsForm) {
     smtpPass: values.smtpPass,
     smtpFrom: values.smtpFrom,
     emailVerificationEnabled: values.emailVerificationEnabled,
+    enforceEmailVerification: values.enforceEmailVerification,
     captchaMode: values.captchaMode,
     turnstileSiteKey: values.turnstileSiteKey,
     turnstileSecretKey: values.turnstileSecretKey

@@ -5,6 +5,7 @@ import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ChangeEmailDto } from './dto/change-email.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -46,6 +47,11 @@ export class UsersController {
   @Patch('profile')
   updateProfile(@CurrentUser() user: { id: string }, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.id, dto);
+  }
+
+  @Post('verify-email')
+  verifyEmail(@CurrentUser() user: { id: string }, @Body() dto: VerifyEmailDto) {
+    return this.usersService.verifyEmail(user.id, dto.code);
   }
 
   @Post('change-email')

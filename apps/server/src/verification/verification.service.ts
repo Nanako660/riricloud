@@ -38,12 +38,23 @@ export class VerificationService {
       if (settings.captchaMode !== 'OFF') {
         await this.captchaService.verifyCaptcha({ ...dto, remoteIp });
       }
-    } else {
+    } else if (dto.action === 'CHANGE_EMAIL') {
       if (!userId) throw new UnauthorizedException('请先登录后换绑邮箱');
       const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
       if (!user) throw new UnauthorizedException();
       const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
       if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
+    } else if (dto.action === 'VERIFY_CURRENT_EMAIL') {
+      if (!userId) throw new UnauthorizedException('请先登录后验证邮箱');
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+      if (!user) throw new UnauthorizedException();
+      if (user.email.toLowerCase() !== email) throw new BadRequestException('只能验证当前登录账号绑定的邮箱');
+    } else if (dto.action === 'RESET_PASSWORD') {
+      const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (!user) throw new BadRequestException('该邮箱尚未注册');
+      if (settings.captchaMode !== 'OFF') {
+        await this.captchaService.verifyCaptcha({ ...dto, remoteIp });
+      }
     }
 
     const store = this.store(this.client(this.prisma));

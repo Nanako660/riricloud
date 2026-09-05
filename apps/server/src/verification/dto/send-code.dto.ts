@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
-export const VERIFICATION_ACTIONS = ['REGISTER', 'CHANGE_EMAIL'] as const;
+export const VERIFICATION_ACTIONS = ['REGISTER', 'CHANGE_EMAIL', 'VERIFY_CURRENT_EMAIL', 'RESET_PASSWORD'] as const;
 export type VerificationAction = (typeof VERIFICATION_ACTIONS)[number];
 
 export class SendCodeDto {

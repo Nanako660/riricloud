@@ -21,6 +21,7 @@ export interface PublicSystemSettings {
   customCss: string;
   customHeadHtml: string;
   emailVerificationEnabled: boolean;
+  enforceEmailVerification: boolean;
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
 }

@@ -67,6 +67,7 @@ model User {
   uid               Int?         @unique                          // 6 位随机数字用户标识，存量用户由启动回填
   nickname          String?                                      // 自定义昵称；为空时展示 用户_<UID>
   email             String       @unique
+  emailVerifiedAt   DateTime?                                 // 邮箱核验时间戳；未验证或存量老用户为 null
   passwordHash      String
   role              String       @default("USER")
   balance           Int          @default(0)             // 账户余额，单位为分
@@ -96,12 +97,12 @@ model User {
   @@index([isActive])
 }
 
-// 注册与换绑邮箱使用的一次性验证码
+// 注册、换绑邮箱、当前邮箱核验与找回密码使用的一次性验证码
 model VerificationCode {
   id        String   @id @default(uuid())
   email     String
   code      String
-  action    String   // REGISTER | CHANGE_EMAIL
+  action    String   // REGISTER | CHANGE_EMAIL | VERIFY_CURRENT_EMAIL | RESET_PASSWORD
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -511,7 +512,8 @@ model SystemSetting {
 | `smtpHost` / `smtpPort` / `smtpSecure` | 主机文本 / 十进制端口 / 布尔 | `""` / `"587"` / `"false"` | SMTP 服务器连接参数；`smtpSecure=true` 使用 SSL/TLS |
 | `smtpUser` / `smtpPass` / `smtpFrom` | 文本 | `""` | SMTP 登录账号、密码和发信人地址；管理端密码返回 `********` |
 | `emailVerificationEnabled` | `"true"` / `"false"` | `"false"` | 是否要求注册提交 6 位邮箱验证码 |
-| `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册和获取注册验证码前的人机验证模式 |
+| `enforceEmailVerification` | `"true"` / `"false"` | `"false"` | 是否强制要求已核验邮箱才能使用订阅与连接节点（未核验普通用户拦截 403 并从节点入站名单剔除；ADMIN 豁免） |
+| `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册、获取注册/重置验证码前的人机验证模式 |
 | `turnstileSiteKey` / `turnstileSecretKey` | 文本 | `""` | Cloudflare Turnstile 公钥与服务端密钥；仅 Site Key 进入公共设置，Secret Key 管理端读取时脱敏 |
 
 读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。敏感设置 `smtpPass` 与 `turnstileSecretKey` 在管理端读取时返回 `********`，更新时提交该占位值表示保留原密钥。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关、运行时样式以及注册邮箱验证和 CAPTCHA 的公共参数（不含 SMTP 或 Turnstile Secret）。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。

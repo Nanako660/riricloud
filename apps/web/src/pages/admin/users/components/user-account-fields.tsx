@@ -114,6 +114,21 @@ export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAc
             </div>
           )}
         />
+        <FormField
+          control={form.control}
+          name="emailVerified"
+          render={({ field }) => (
+            <div className="space-y-2 sm:col-span-2">
+              <FormItem className="flex h-9 flex-row items-center justify-between space-y-0 rounded-md border px-3 py-2 shadow-sm">
+                <div>
+                  <FormLabel>邮箱已验证</FormLabel>
+                  <p className="text-[11px] text-muted-foreground">开启强制邮箱验证时，未验证普通用户将被限制获取订阅与连接节点</p>
+                </div>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            </div>
+          )}
+        />
       </div>
       <FormField
         control={form.control}

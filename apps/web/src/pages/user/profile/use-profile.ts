@@ -7,6 +7,7 @@ export interface ProfileUser {
   uid: number | null;
   nickname: string;
   email: string;
+  emailVerifiedAt: string | null;
   role: 'ADMIN' | 'USER';
   balance: number;
   uuid: string;
@@ -95,5 +96,15 @@ export function useProfileMutations() {
     onSuccess: () => { toast.success('登录邮箱已更换'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '换绑邮箱失败'))
   });
-  return { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail };
+  const sendCurrentEmailCode = useMutation({
+    mutationFn: async (email: string) => (await api.post('/verification/send-code', { email, action: 'VERIFY_CURRENT_EMAIL' })).data,
+    onSuccess: () => toast.success('验证码已发送到当前邮箱'),
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '验证码发送失败'))
+  });
+  const verifyCurrentEmail = useMutation({
+    mutationFn: async (code: string) => (await api.post<{ verified: boolean; emailVerifiedAt: string | null }>('/user/verify-email', { code })).data,
+    onSuccess: () => { toast.success('邮箱验证成功'); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '邮箱验证失败'))
+  });
+  return { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail, sendCurrentEmailCode, verifyCurrentEmail };
 }

@@ -17,6 +17,7 @@ export const createUserSchema = z.object({
 export const editAccountSchema = z.object({
   role: z.enum(['USER', 'ADMIN']),
   isActive: z.boolean(),
+  emailVerified: z.boolean(),
   password: z.string().min(8, '密码至少 8 位').max(64).optional().or(z.literal(''))
 });
 
