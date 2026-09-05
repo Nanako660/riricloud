@@ -153,8 +153,8 @@ export interface NodeLine {
   protocolType: ProtocolType;
   entryNodeId: string;
   entryPort: number;
-  exitNodeId: string;
-  exitPort: number;
+  landingNodeId?: string | null;
+  landingPort?: number | null;
   serverHost: string | null;
   serverPort: number | null;
   trafficRate: number;
@@ -163,9 +163,9 @@ export interface NodeLine {
   sortOrder: number;
   isPublic: boolean;
   status: 'ACTIVE' | 'DISABLED';
-  role: 'ENTRY' | 'EXIT' | 'ENTRY_AND_EXIT';
+  role: 'ENTRY' | 'LANDING' | 'DIRECT';
   entryNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
-  exitNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
+  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
 }
 
 export interface AdminNode {
@@ -195,8 +195,8 @@ export interface AdminNode {
   currentSingboxAssetId?: string | null;
   lines: NodeLine[];
   entryLines: NodeLine[];
-  exitLines: NodeLine[];
-  servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: string; port: number }>;
+  landingLines: NodeLine[];
+  servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: 'DIRECT' | 'TRANSIT' | 'LANDING'; port: number }>;
   installCommands?: { ws: string; http: string };
   uninstallCommand?: string;
   createdAt: string;

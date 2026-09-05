@@ -78,21 +78,20 @@ describe('AgentGatewayService', () => {
   const vlessParams = { flow: 'xtls-rprx-vision', transport: { type: 'tcp' }, tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], privateKey: 'private', publicKey: 'public', shortIds: ['sid'] } } };
   const line = (overrides: Record<string, unknown> = {}) => ({
     id: 'line-1', name: 'VLESS 线路', tag: null, listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS', paramsJson: JSON.stringify(vlessParams),
-    entryNodeId: 'node-1', entryPort: 24443, exitNodeId: 'node-1', exitPort: 24443, targetLineId: null, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
+    entryNodeId: 'node-1', entryPort: 24443, landingNodeId: null, landingPort: null, targetLineId: null, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
     status: 'ACTIVE',
-    ...overrides, exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+    ...overrides, landingNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
   });
 
   it('按 Line 顶层协议生成 VLESS、Hysteria2 与 Shadowsocks 入站', async () => {
     const lines = [
       line(),
-      line({ id: 'line-hy2', protocolType: 'HYSTERIA2', entryPort: 24444, exitPort: 24444, paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'hy.example.com', certificatePath: '/c', keyPath: '/k' } }) }),
-      line({ id: 'line-ss', protocolType: 'SHADOWSOCKS', entryPort: 24445, exitPort: 24445, paramsJson: JSON.stringify({ method: 'aes-256-gcm', password: 'shared' }) }),
+      line({ id: 'line-hy2', protocolType: 'HYSTERIA2', entryPort: 24444, paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'hy.example.com', certificatePath: '/c', keyPath: '/k' } }) }),
+      line({ id: 'line-ss', protocolType: 'SHADOWSOCKS', entryPort: 24445, paramsJson: JSON.stringify({ method: 'aes-256-gcm', password: 'shared' }) }),
       line({
         id: 'line-shadowtls',
         protocolType: 'SHADOWTLS',
         entryPort: 24446,
-        exitPort: 24446,
         paramsJson: JSON.stringify({
           version: 3,
           handshakeDest: 'gateway.example.com:443',
@@ -101,7 +100,7 @@ describe('AgentGatewayService', () => {
         })
       })
     ];
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: lines, exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: lines, landingLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     const inbounds = singboxConfig.inbounds as Array<Record<string, unknown>>;
@@ -129,11 +128,10 @@ describe('AgentGatewayService', () => {
       id: 'managed-tls',
       protocolType: 'HYSTERIA2',
       entryPort: 24447,
-      exitPort: 24447,
       paramsJson: JSON.stringify({ tls: { enabled: true, mode: 'tls', serverName: 'example.com' } }),
       certificate: { certificatePem: 'CERTIFICATE PEM', privateKeyPem: 'PRIVATE KEY PEM' }
     });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [managed], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [managed], landingLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
 
     const { singboxConfig } = await service.buildConfigSync('node-1');
@@ -148,7 +146,7 @@ describe('AgentGatewayService', () => {
 
   it('使用线路自定义监听地址和直连 Tag', async () => {
     const custom = line({ id: 'custom', tag: 'public-vless', listen: '127.0.0.1' });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [custom], exitLines: [] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [custom], landingLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([
@@ -157,19 +155,19 @@ describe('AgentGatewayService', () => {
   });
 
   it('双节点盲转发在入口生成 direct，在出口生成协议入站', async () => {
-    const relay = line({ id: 'blind', name: '盲转发', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: 'node-1', entryPort: 25001, exitNodeId: 'node-2', exitPort: 25002 });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], exitLines: [] });
+    const relay = line({ id: 'blind', name: '盲转发', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: 'node-1', entryPort: 25001, landingNodeId: 'node-2', landingPort: 25002 });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], landingLines: [] });
     const entryConfig = await service.buildConfigSync('node-1');
     expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'direct', listen_port: 25001, override_address: '198.51.100.20', override_port: 25002 })]));
 
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], exitLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }] });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], landingLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }] });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
   });
 
   it('协议代理中继生成协议入口、协议出口和路由规则', async () => {
-    const relay = line({ id: 'proxy', tag: 'relay-proxy', type: 'RELAY', relayMode: 'PROTOCOL_PROXY', entryNodeId: 'node-1', entryPort: 25101, exitNodeId: 'node-2', exitPort: 25102 });
-    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], exitLines: [] });
+    const relay = line({ id: 'proxy', tag: 'relay-proxy', type: 'RELAY', relayMode: 'PROTOCOL_PROXY', entryNodeId: 'node-1', entryPort: 25101, landingNodeId: 'node-2', landingPort: 25102 });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], landingLines: [] });
     prisma.user.findMany.mockResolvedValue([user]);
     const { singboxConfig } = await service.buildConfigSync('node-1');
     expect(singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'relay-proxy-entry', listen_port: 25101 })]));
@@ -182,12 +180,12 @@ describe('AgentGatewayService', () => {
       status: 'ONLINE',
       configOverride: null,
       entryLines: [],
-      exitLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }]
+      landingLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }]
     });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        tag: 'relay-proxy-exit',
+        tag: 'relay-proxy-landing',
         users: [{ uuid: INTERNAL_RELAY_TRANSIT_UUID, name: INTERNAL_RELAY_TRANSIT_EMAIL, flow: 'xtls-rprx-vision' }]
       })
     ]));
@@ -206,10 +204,10 @@ describe('AgentGatewayService', () => {
       paramsJson: JSON.stringify(targetParams),
       entryNodeId: 'node-2',
       entryPort: 25002,
-      exitNodeId: 'node-2',
-      exitPort: 25002,
+      landingNodeId: null,
+      landingPort: null,
       relaySources: [{ id: 'bridge', tagsJson: '[]', isPublic: true, status: 'ACTIVE' }],
-      exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+      landingNode: null
     });
     const bridge = line({
       id: 'bridge',
@@ -220,8 +218,8 @@ describe('AgentGatewayService', () => {
       protocolType: 'VLESS',
       entryNodeId: 'node-1',
       entryPort: 25001,
-      exitNodeId: 'node-2',
-      exitPort: 25002,
+      landingNodeId: null,
+      landingPort: null,
       targetLineId: 'target',
       targetLine: {
         id: 'target',
@@ -230,13 +228,13 @@ describe('AgentGatewayService', () => {
         paramsJson: JSON.stringify(targetParams),
         entryPort: 25002,
         status: 'ACTIVE',
-        entryNode: { serverHost: '198.51.100.20' }
+        entryNode: { serverHost: '198.51.100.20', status: 'ONLINE' }
       },
-      exitNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+      landingNode: null
     });
 
     prisma.node.findUnique.mockResolvedValueOnce({
-      id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [bridge], exitLines: []
+      id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [bridge], landingLines: []
     });
     prisma.user.findMany.mockResolvedValue([user]);
     const entryConfig = await service.buildConfigSync('node-1');
@@ -249,7 +247,7 @@ describe('AgentGatewayService', () => {
     expect(entryConfig.singboxConfig.route).toEqual({ rules: [{ inbound: ['relay-bridge-entry'], outbound: 'relay-out-bridge' }] });
 
     prisma.node.findUnique.mockResolvedValueOnce({
-      id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [targetLine], exitLines: [{ ...bridge, entryNode: { id: 'node-1', status: 'ONLINE' } }]
+      id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [targetLine], landingLines: []
     });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([
@@ -594,7 +592,7 @@ describe('AgentGatewayService', () => {
     prisma.node.findUnique
       .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'OFFLINE' })
       .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
-      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], landingLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
     await service.register('poll-node', socket);
     await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
@@ -606,7 +604,7 @@ describe('AgentGatewayService', () => {
     (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
     prisma.node.findUnique
       .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
-      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], landingLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
     const first = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(first.needUpdate).toBe(true);
@@ -637,7 +635,7 @@ describe('AgentGatewayService', () => {
     (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
     prisma.node.findUnique
       .mockResolvedValueOnce({ id: 'http-task-node', name: 'HTTP 任务节点', status: 'ONLINE' })
-      .mockResolvedValueOnce({ id: 'http-task-node', serverHost: '198.51.100.11', configOverride: null, entryLines: [], exitLines: [] })
+      .mockResolvedValueOnce({ id: 'http-task-node', serverHost: '198.51.100.11', configOverride: null, entryLines: [], landingLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
     const response = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(response.tasks).toHaveLength(1);

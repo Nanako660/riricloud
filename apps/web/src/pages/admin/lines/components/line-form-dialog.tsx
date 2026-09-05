@@ -33,26 +33,12 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
     defaultValues: defaultLineFormValues()
   });
   const realityKeypair = useRealityKeypair();
-  const type = form.watch('type');
-  const entryNodeId = form.watch('entryNodeId');
-  const entryPort = form.watch('entryPort');
 
   useEffect(() => {
     if (!open) return;
     setTab('inbound');
     form.reset(line ? lineToFormValues(line) : newLineFormValues());
   }, [form, line, open]);
-
-  useEffect(() => {
-    if (type !== 'DIRECT') return;
-    if (entryNodeId && form.getValues('exitNodeId') !== entryNodeId) {
-      form.setValue('exitNodeId', entryNodeId, { shouldDirty: true });
-    }
-    const syncedExitPort = entryPort || undefined;
-    if (form.getValues('exitPort') !== syncedExitPort) {
-      form.setValue('exitPort', syncedExitPort, { shouldDirty: true });
-    }
-  }, [entryNodeId, entryPort, form, type]);
 
   const changeProtocol = (protocolType: ProtocolType) => {
     const current = form.getValues();
@@ -67,8 +53,8 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
       targetLineId: current.targetLineId,
       entryNodeId: current.entryNodeId,
       entryPort: current.entryPort,
-      exitNodeId: current.exitNodeId,
-      exitPort: current.exitPort,
+      landingNodeId: current.landingNodeId,
+      landingPort: current.landingPort,
       certificateId: current.certificateId,
       endpointOverrideEnabled: current.endpointOverrideEnabled,
       serverHost: current.serverHost,
@@ -87,9 +73,8 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
   const changeType = (nextType: LineFormValues['type']) => {
     form.setValue('type', nextType, { shouldDirty: true });
     if (nextType === 'DIRECT') {
-      const current = form.getValues();
-      form.setValue('exitNodeId', current.entryNodeId, { shouldDirty: true });
-      form.setValue('exitPort', current.entryPort, { shouldDirty: true });
+      form.setValue('landingNodeId', '', { shouldDirty: true });
+      form.setValue('landingPort', undefined, { shouldDirty: true });
       form.setValue('targetLineId', '', { shouldDirty: true });
     }
   };

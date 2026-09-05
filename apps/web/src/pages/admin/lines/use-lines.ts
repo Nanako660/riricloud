@@ -15,8 +15,8 @@ export interface LinePayload {
   targetLineId?: string | null;
   entryNodeId: string;
   entryPort?: number | null;
-  exitNodeId: string;
-  exitPort?: number | null;
+  landingNodeId?: string | null;
+  landingPort?: number | null;
   certificateId?: string | null;
   endpointOverrideEnabled?: boolean;
   serverHost?: string | null;

@@ -184,9 +184,9 @@ export class CertificatesService {
     });
     const lines = await this.prisma.line.findMany({
       where: { certificateId: id },
-      select: { entryNodeId: true, exitNodeId: true }
+      select: { entryNodeId: true, landingNodeId: true }
     });
-    const nodeIds = [...new Set(lines.flatMap((line) => [line.entryNodeId, line.exitNodeId]))];
+    const nodeIds = [...new Set(lines.flatMap((line) => [line.entryNodeId, line.landingNodeId].filter((id): id is string => Boolean(id))))];
     const syncResults = await Promise.all(nodeIds.map(async (nodeId) => ({ nodeId, synced: await this.agentGateway.pushConfig(nodeId) })));
     return {
       certificate: this.toView(updated),

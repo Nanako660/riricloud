@@ -100,7 +100,7 @@ describe('AgentService SQLite traffic accounting', () => {
       `CREATE TABLE "Line" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "entryNodeId" TEXT NOT NULL,
-        "exitNodeId" TEXT NOT NULL,
+        "landingNodeId" TEXT,
         "type" TEXT NOT NULL DEFAULT 'DIRECT',
         "relayMode" TEXT,
         "trafficRate" REAL NOT NULL DEFAULT 1,

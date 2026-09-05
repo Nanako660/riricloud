@@ -131,10 +131,10 @@ model Node {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  // 关联；NodeInbound 仅为旧数据迁移兼容表，新线路使用 entryLines/exitLines
+  // 关联；NodeInbound 仅为旧数据迁移兼容表，新线路使用 entryLines/landingLines
   inbounds        NodeInbound[]
   entryLines      Line[]        @relation("LineEntryNode")
-  exitLines       Line[]        @relation("LineExitNode")
+  landingLines    Line[]        @relation("LineLandingNode")
   trafficLogs     TrafficLog[]
   trafficCursors  TrafficCursor[]
   rateMetrics     NodeRateMetric[]
@@ -218,8 +218,8 @@ model Line {
   paramsJson      String   @default("{}") // 协议专属参数 JSON
   entryNodeId     String
   entryPort       Int
-  exitNodeId      String
-  exitPort        Int
+  landingNodeId   String?  // 普通中继落地节点；直连与 TARGET_LINE 为 null
+  landingPort     Int?     // 普通中继落地监听端口；直连与 TARGET_LINE 为 null
   targetLineId    String? // TARGET_LINE 模式引用的其他节点直连线路
   certificateId   String? // 关联标准 TLS 证书；为空时使用 Agent 本地路径
   endpointOverrideEnabled Boolean @default(false) // 是否启用线路对外覆盖；关闭时复用底层默认设置
@@ -241,13 +241,13 @@ model Line {
   updatedAt       DateTime @updatedAt
 
   entryNode     Node @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
-  exitNode      Node @relation("LineExitNode", fields: [exitNodeId], references: [id], onDelete: Cascade)
+  landingNode   Node? @relation("LineLandingNode", fields: [landingNodeId], references: [id], onDelete: Cascade)
   targetLine    Line? @relation("LineRelayTarget", fields: [targetLineId], references: [id], onDelete: Restrict)
   relaySources  Line[] @relation("LineRelayTarget")
   certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
 
   @@index([entryNodeId])
-  @@index([exitNodeId])
+  @@index([landingNodeId])
   @@index([targetLineId])
   @@index([certificateId])
   @@index([protocolType])

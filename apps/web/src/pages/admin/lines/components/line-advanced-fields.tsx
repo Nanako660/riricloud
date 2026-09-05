@@ -37,12 +37,9 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
     if (value !== 'TARGET_LINE') form.setValue('targetLineId', '', { shouldDirty: true });
   };
   const changeTargetLine = (value: string) => {
-    const selected = lines.find((line) => line.id === value);
     form.setValue('targetLineId', value, { shouldDirty: true });
-    if (selected) {
-      form.setValue('exitNodeId', selected.entryNodeId, { shouldDirty: true });
-      form.setValue('exitPort', selected.entryPort, { shouldDirty: true });
-    }
+    form.setValue('landingNodeId', '', { shouldDirty: true });
+    form.setValue('landingPort', undefined, { shouldDirty: true });
   };
   return (
     <div className="space-y-6">
@@ -51,8 +48,8 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
         <Separator />
         <FieldGrid>
           <SelectField form={form} name="type" label="线路模式" options={[{ value: 'DIRECT', label: '直连' }, { value: 'RELAY', label: '中继' }]} onValueChange={(value) => onTypeChange(value as LineFormValues['type'])} />
-          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="exitNodeId" label="出口节点" options={nodeOptions} />}
-          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="exitPort" label="出口监听端口" type="number" placeholder="留空自动分配" />}
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="landingNodeId" label="落地节点" options={nodeOptions} />}
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="landingPort" label="落地监听端口" type="number" placeholder="留空自动分配" />}
         </FieldGrid>
         {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }, { value: 'TARGET_LINE', label: '协议转换：桥接已有线路' }]} onValueChange={changeRelayMode} />}
         {type === 'RELAY' && relayMode === 'TARGET_LINE' && <div className="space-y-3">
@@ -62,11 +59,11 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
             label="目标落地线路"
             options={targetLineOptions.length ? targetLineOptions : [{ value: '__no-target-line__', label: '暂无可用目标线路' }]}
             disabled={!entryNodeId || targetLineOptions.length === 0}
-            description="仅可选择其他节点上的启用直连线路；出口节点和端口由目标线路自动绑定。"
+            description="仅可选择其他节点上的启用直连线路；落地节点和端口由目标线路自动绑定。"
             onValueChange={changeTargetLine}
           />
           {targetLine && <div className="rounded-md border bg-muted/30 p-3 text-sm">
-            <p className="font-medium">已绑定出口</p>
+            <p className="font-medium">已绑定落地</p>
             <p className="mt-1 text-muted-foreground">{targetLine.entryNode.name} · {targetLine.entryNode.serverHost}:{targetLine.entryPort}</p>
             <p className="text-muted-foreground">目标协议：{targetLine.protocolType} · {targetLine.status === 'ACTIVE' ? '线路已启用' : '线路已禁用'}</p>
           </div>}

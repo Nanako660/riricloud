@@ -74,7 +74,7 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
   async testLine(lineId: string): Promise<SpeedTestExecutionResult> {
     const line = await this.prisma.line.findUnique({
       where: { id: lineId },
-      include: { entryNode: true, exitNode: true, targetLine: { include: { entryNode: true, exitNode: true } } }
+      include: { entryNode: true, landingNode: true, targetLine: { include: { entryNode: true, landingNode: true } } }
     });
 
     if (!line) {
@@ -236,7 +236,7 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
       host: string | null;
       trafficRate: number;
       entryNode: { name: string; serverHost: string };
-      exitNode: { name: string; serverHost: string };
+      landingNode?: { name: string; serverHost: string } | null;
     },
     targetUrl: string,
     timeoutMs: number
@@ -256,8 +256,8 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
     const subEntry: SubEntry = {
       label: line.name,
       node: {
-        name: line.exitNode.name,
-        serverHost: line.exitNode.serverHost,
+        name: line.landingNode?.name ?? line.entryNode.name,
+        serverHost: line.landingNode?.serverHost ?? line.entryNode.serverHost,
         inbounds: []
       },
       inbound: {
