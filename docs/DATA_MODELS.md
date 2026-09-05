@@ -648,3 +648,55 @@ model SystemSetting {
 文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
 
 资源分发前由服务端校验 ACTIVE 状态、目标平台、资产 SHA-256 及 `compatibilityJson` 中的 Agent 协议/版本约束；节点升级完成后通过部署任务保留历史，回滚复用旧资产完整文件包。
+
+## 5. 系统日志与全链路观测模型（SystemLog，v0.6.11）
+
+`SystemLog` 表统一汇聚 Master 服务端、Web 前端与 VPS 边缘节点（Agent 守护进程与 Sing-box 内核）的结构化日志，支撑全系统可观测性与运维诊断。
+
+### 5.1 数据表定义
+
+```prisma
+model SystemLog {
+  id        String   @id @default(uuid())
+  traceId   String?  // 全链路关联 ID (X-Request-Id)
+  source    String   // SERVER | WEB | AGENT | SINGBOX
+  level     String   // DEBUG | INFO | WARN | ERROR
+  module    String   // 产生模块/上下文（如 Auth, Lines, Nodes, Gateway, UI, Kernel）
+  message   String   // 核心描述文本
+  metadata  String   @default("{}") // 结构化 JSON 详情（IP、路由、耗时、状态码、堆栈等）
+  nodeId    String?  // 关联 VPS 节点 ID（可选）
+  userId    String?  // 关联用户 ID（可选）
+  createdAt DateTime @default(now())
+
+  node Node? @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([source, createdAt])
+  @@index([level, createdAt])
+  @@index([traceId])
+  @@index([nodeId, createdAt])
+  @@index([userId, createdAt])
+}
+```
+
+### 5.2 字段说明与约束
+
+| 字段 | 类型 | 说明与约束 |
+| :--- | :--- | :--- |
+| `id` | String (UUID) | 日志全局主键 |
+| `traceId` | String? | 统一全链路追踪 ID（通过 HTTP `X-Request-Id` 贯穿 Web 前端与 Master API） |
+| `source` | String | 来源端：`SERVER` (Master 服务端)、`WEB` (浏览器前端)、`AGENT` (边缘 Agent 守护程序)、`SINGBOX` (Sing-box 内核) |
+| `level` | String | 日志级别：`DEBUG`、`INFO`、`WARN`、`ERROR` |
+| `module` | String | 业务模块标签（例如 `Auth`、`Lines`、`Nodes`、`Gateway`、`Traffic`、`UI`、`Kernel`） |
+| `message` | String | 核心描述摘要 |
+| `metadata` | String (JSON) | 扩展元数据，包含 IP、请求方法、URL、状态码、耗时、异常调用栈堆栈等结构化信息 |
+| `nodeId` | String? | 关联的边缘节点 ID，可为空；节点删除时级联设置为 `null`（`SetNull`） |
+| `userId` | String? | 关联的操作/请求用户 ID，可为空；用户删除时级联设置为 `null`（`SetNull`） |
+| `createdAt` | DateTime | 记录产生时间戳，建有复合时序索引保障毫秒级分页检索 |
+
+### 5.3 存储缓冲与自动滚动淘汰机制
+1. **内存队列与批量入库**：高频日志优先写入 Master 内存环形队列，每隔 1 秒或积攒 50 条日志异步执行批量写入（`createMany`），消除 SQLite 单写锁争用风险。
+2. **生命周期双上限自动清理**：后台定时巡检任务按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀。
+3. **敏感信息脱敏红线**：所有 Token、密码、UUID 凭证与 Cookie 在入库前必须经过不可逆掩码处理（如 `eyJ...***`）。
+

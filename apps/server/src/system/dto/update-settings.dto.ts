@@ -343,6 +343,22 @@ export class UpdateSettingsDto {
   @MaxLength(512)
   @IsOptional()
   turnstileSecretKey?: string;
+
+  @ApiPropertyOptional({ example: 7, description: '系统日志保留天数（1~365）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  @IsOptional()
+  logsRetentionDays?: number;
+
+  @ApiPropertyOptional({ example: 100000, description: '系统日志最大保留条数（1000~1000000）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  @Max(1000000)
+  @IsOptional()
+  logsMaxCount?: number;
 }
 
 export class ResetSettingsDto {

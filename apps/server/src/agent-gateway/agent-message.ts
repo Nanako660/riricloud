@@ -9,7 +9,8 @@ export type AgentMessageType =
   | 'probe_task'
   | 'probe_result'
   | 'restart_agent_task'
-  | 'restart_agent_result';
+  | 'restart_agent_result'
+  | 'log_report';
 
 export const AGENT_PROTOCOL_VERSION = 2;
 
@@ -147,12 +148,25 @@ export interface AgentPollResponse {
   nextPollSecs: number;
 }
 
+export interface AgentLogItem {
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  module: string;
+  source?: 'AGENT' | 'SINGBOX';
+  message: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LogReportData {
+  logs: AgentLogItem[];
+}
+
 export type AgentInboundMessage =
   | AgentMessage<HeartbeatData> & { type: 'heartbeat' }
   | AgentMessage<ConfigApplyResultData> & { type: 'config_apply_result' }
   | AgentMessage<UpgradeResultData> & { type: 'upgrade_result' }
   | AgentMessage<ProbeResultData> & { type: 'probe_result' }
-  | AgentMessage<RestartAgentResultData> & { type: 'restart_agent_result' };
+  | AgentMessage<RestartAgentResultData> & { type: 'restart_agent_result' }
+  | AgentMessage<LogReportData> & { type: 'log_report' };
 
 type JsonObject = Record<string, unknown>;
 
@@ -271,6 +285,17 @@ function isRestartAgentResultData(value: unknown): value is RestartAgentResultDa
   );
 }
 
+function isLogReportData(value: unknown): value is LogReportData {
+  if (!isJsonObject(value) || !Array.isArray(value.logs)) return false;
+  return value.logs.every((item) => {
+    if (!isJsonObject(item)) return false;
+    const validLevel = ['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(item.level as string);
+    const validMessage = typeof item.message === 'string' && item.message.length <= 8192;
+    const validModule = typeof item.module === 'string' && item.module.length <= 128;
+    return validLevel && validMessage && validModule;
+  });
+}
+
 // 解析并校验 Agent 上行消息，避免类型断言绕过外部输入校验。
 export function parseAgentInboundMessage(raw: string): AgentInboundMessage | null {
   let parsed: unknown;
@@ -302,6 +327,10 @@ export function parseAgentInboundMessage(raw: string): AgentInboundMessage | nul
         : null;
     case 'restart_agent_result':
       return isRestartAgentResultData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'log_report':
+      return isLogReportData(parsed.data)
         ? { type: parsed.type, data: parsed.data }
         : null;
     default:

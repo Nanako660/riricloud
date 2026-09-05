@@ -15,6 +15,7 @@ import { CertificatesModule } from './certificates/certificates.module';
 import { TrafficModule } from './traffic/traffic.module';
 import { WalletModule } from './wallet/wallet.module';
 import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
+import { SystemLogsModule } from './system-logs/system-logs.module';
 
 // Web 静态托管在 main.ts 以中间件方式注册（@nestjs/serve-static 与 Express 5 不兼容）
 @Module({
@@ -34,7 +35,8 @@ import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
     CertificatesModule,
     TrafficModule,
     WalletModule,
-    RedeemCodesModule
+    RedeemCodesModule,
+    SystemLogsModule
   ]
 })
 export class AppModule {}

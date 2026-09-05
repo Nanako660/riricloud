@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
+import { frontendLogger } from '@/lib/logger';
 
 // 统一 API 客户端：组件内禁止裸 fetch/自建 axios 实例（CODE_REVIEW W1）
 export const api = axios.create({
@@ -13,6 +14,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const traceId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  config.headers['X-Request-Id'] = traceId;
+  (config as unknown as Record<string, unknown>).__startTime = Date.now();
+  (config as unknown as Record<string, unknown>).__traceId = traceId;
   return config;
 });
 
@@ -21,6 +26,27 @@ api.interceptors.response.use(
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
     const message = error.response?.data?.message ?? '请求失败，请稍后重试';
+    const config = error.config as (Record<string, unknown> & { url?: string; method?: string }) | undefined;
+    const traceId = typeof config?.__traceId === 'string' ? config.__traceId : undefined;
+    const startTime = typeof config?.__startTime === 'number' ? config.__startTime : undefined;
+    const durationMs = startTime ? Date.now() - startTime : undefined;
+
+    // 上报 API 请求异常到前端日志 SDK（避开日志上报接口本身以防递归）
+    if (status !== 401 && config?.url && !config.url.includes('/logs/frontend')) {
+      frontendLogger.error(
+        `API ${String(config.method || 'GET').toUpperCase()} ${config.url} -> ${status ?? 'Network Error'}`,
+        'Axios',
+        {
+          url: config.url,
+          method: config.method,
+          status,
+          durationMs,
+          message
+        },
+        traceId
+      );
+    }
+
     // 401：登录态失效，清理并跳转登录页（避免在登录页自身弹跳转循环）
     if (status === 401 && useAuthStore.getState().token) {
       useAuthStore.getState().logout();
