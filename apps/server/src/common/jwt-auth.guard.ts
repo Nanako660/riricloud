@@ -2,6 +2,7 @@ import { ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../auth/public.decorator';
+import { OPTIONAL_AUTH_KEY } from '../auth/optional-auth.decorator';
 import { ROLES_KEY } from './roles.decorator';
 import { Role } from './constants';
 
@@ -19,6 +20,18 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getClass()
     ]);
     if (isPublic) {
+      const optionalAuth = this.reflector.getAllAndOverride<boolean>(OPTIONAL_AUTH_KEY, [
+        context.getHandler(),
+        context.getClass()
+      ]);
+      if (optionalAuth && context.switchToHttp().getRequest().headers.authorization) {
+        try {
+          return (await super.canActivate(context)) as boolean;
+        } catch {
+          // 公开注册请求允许没有登录态；受保护行为由控制器按业务动作再次校验。
+          context.switchToHttp().getRequest().user = undefined;
+        }
+      }
       return true;
     }
 

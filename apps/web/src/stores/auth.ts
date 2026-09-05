@@ -2,10 +2,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 // 客户端状态仅存登录态与 Token（CODE_REVIEW W2，服务端状态归 TanStack Query）
-interface AuthUser {
+export interface AuthUser {
   id: string;
   email: string;
   role: 'ADMIN' | 'USER';
+  uid?: number | null;
+  nickname?: string | null;
 }
 
 interface AuthState {

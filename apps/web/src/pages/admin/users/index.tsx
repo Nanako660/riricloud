@@ -99,6 +99,16 @@ export default function AdminUsersPage() {
   const columns = React.useMemo<ColumnDef<AdminUser>[]>(
     () => [
       {
+        accessorKey: 'uid',
+        header: 'UID',
+        cell: ({ row }) => <span className="font-mono tabular-nums">{row.original.uid ?? '—'}</span>
+      },
+      {
+        accessorKey: 'nickname',
+        header: '昵称',
+        cell: ({ row }) => <span className="max-w-32 truncate font-medium">{row.original.nickname || '—'}</span>
+      },
+      {
         accessorKey: 'email',
         header: '邮箱',
         cell: ({ row }) => <span className="font-medium">{row.original.email}</span>
@@ -283,14 +293,14 @@ export default function AdminUsersPage() {
           data={users}
           total={data?.total}
           onSelectionChange={setSelected}
-          tableClassName="min-w-[1040px]"
+          tableClassName="min-w-[1160px]"
           emptyTitle="暂无用户"
           emptyDescription="点击右上角「创建用户」添加"
           toolbar={
             <>
               <div className="relative w-full sm:w-64">
                 <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" />
-                <Input className="pl-8" placeholder="搜索邮箱…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <Input className="pl-8" placeholder="搜索 UID、昵称或邮箱…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as typeof roleFilter)}>
                 <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="角色" /></SelectTrigger>

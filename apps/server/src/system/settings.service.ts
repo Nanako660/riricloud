@@ -49,7 +49,18 @@ export const SETTING_KEYS = {
   LINE_SPEEDTEST_INTERVAL_MINS: 'lineSpeedtestIntervalMins',
   LINE_SPEEDTEST_TARGET_URL: 'lineSpeedtestTargetUrl',
   LINE_SPEEDTEST_TIMEOUT_MS: 'lineSpeedtestTimeoutMs',
-  SYSTEM_TIMEZONE: 'systemTimezone'
+  SYSTEM_TIMEZONE: 'systemTimezone',
+  SMTP_ENABLED: 'smtpEnabled',
+  SMTP_HOST: 'smtpHost',
+  SMTP_PORT: 'smtpPort',
+  SMTP_SECURE: 'smtpSecure',
+  SMTP_USER: 'smtpUser',
+  SMTP_PASS: 'smtpPass',
+  SMTP_FROM: 'smtpFrom',
+  EMAIL_VERIFICATION_ENABLED: 'emailVerificationEnabled',
+  CAPTCHA_MODE: 'captchaMode',
+  TURNSTILE_SITE_KEY: 'turnstileSiteKey',
+  TURNSTILE_SECRET_KEY: 'turnstileSecretKey'
 } as const;
 
 export interface SystemSettings {
@@ -89,6 +100,17 @@ export interface SystemSettings {
   lineSpeedtestTargetUrl: string;
   lineSpeedtestTimeoutMs: number;
   systemTimezone: string;
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  emailVerificationEnabled: boolean;
+  captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
+  turnstileSiteKey: string;
+  turnstileSecretKey: string;
 }
 
 export type SystemSettingsPatch = {
@@ -114,6 +136,9 @@ export type PublicSystemSettings = Pick<
   | 'subscriptionShortLinksEnabled'
   | 'customCss'
   | 'customHeadHtml'
+   | 'emailVerificationEnabled'
+   | 'captchaMode'
+   | 'turnstileSiteKey'
 >;
 
 export const DEFAULTS: SystemSettings = {
@@ -155,7 +180,18 @@ export const DEFAULTS: SystemSettings = {
   lineSpeedtestIntervalMins: 30,
   lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204',
   lineSpeedtestTimeoutMs: 3000,
-  systemTimezone: 'Asia/Shanghai'
+  systemTimezone: 'Asia/Shanghai',
+  smtpEnabled: false,
+  smtpHost: '',
+  smtpPort: 587,
+  smtpSecure: false,
+  smtpUser: '',
+  smtpPass: '',
+  smtpFrom: '',
+  emailVerificationEnabled: false,
+  captchaMode: 'OFF',
+  turnstileSiteKey: '',
+  turnstileSecretKey: ''
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -194,7 +230,18 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   lineSpeedtestIntervalMins: '线路自动测速执行周期（分钟）',
   lineSpeedtestTargetUrl: '线路测速测试目标 URL',
   lineSpeedtestTimeoutMs: '线路测速单次超时阈值（毫秒）',
-  systemTimezone: '系统统一时区'
+  systemTimezone: '系统统一时区',
+  smtpEnabled: '是否启用 SMTP 发信服务',
+  smtpHost: 'SMTP 服务器地址',
+  smtpPort: 'SMTP 服务器端口',
+  smtpSecure: 'SMTP 是否使用 SSL/TLS',
+  smtpUser: 'SMTP 登录账号',
+  smtpPass: 'SMTP 登录密码',
+  smtpFrom: 'SMTP 发信人地址',
+  emailVerificationEnabled: '是否启用注册邮箱验证',
+  captchaMode: '人机验证模式',
+  turnstileSiteKey: 'Cloudflare Turnstile Site Key',
+  turnstileSecretKey: 'Cloudflare Turnstile Secret Key'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -242,7 +289,27 @@ export class SettingsService {
       lineSpeedtestIntervalMins: this.readInteger(map, 'lineSpeedtestIntervalMins', 1, 1440),
       lineSpeedtestTargetUrl: this.readString(map, 'lineSpeedtestTargetUrl'),
       lineSpeedtestTimeoutMs: this.readInteger(map, 'lineSpeedtestTimeoutMs', 500, 30000),
-      systemTimezone: this.readTimezone(map, 'systemTimezone')
+      systemTimezone: this.readTimezone(map, 'systemTimezone'),
+      smtpEnabled: this.readBoolean(map, 'smtpEnabled'),
+      smtpHost: this.readString(map, 'smtpHost'),
+      smtpPort: this.readInteger(map, 'smtpPort', 1, 65535),
+      smtpSecure: this.readBoolean(map, 'smtpSecure'),
+      smtpUser: this.readString(map, 'smtpUser'),
+      smtpPass: this.readString(map, 'smtpPass'),
+      smtpFrom: this.readString(map, 'smtpFrom'),
+      emailVerificationEnabled: this.readBoolean(map, 'emailVerificationEnabled'),
+      captchaMode: this.readEnum(map, 'captchaMode', ['OFF', 'LOCAL', 'TURNSTILE']),
+      turnstileSiteKey: this.readString(map, 'turnstileSiteKey'),
+      turnstileSecretKey: this.readString(map, 'turnstileSecretKey')
+    };
+  }
+
+  async getAdminSettings(): Promise<Omit<SystemSettings, 'smtpPass' | 'turnstileSecretKey'> & { smtpPass: string; turnstileSecretKey: string }> {
+    const settings = await this.getSettings();
+    return {
+      ...settings,
+      smtpPass: settings.smtpPass ? '********' : '',
+      turnstileSecretKey: settings.turnstileSecretKey ? '********' : ''
     };
   }
 
@@ -265,7 +332,10 @@ export class SettingsService {
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       customCss: settings.customCss,
-      customHeadHtml: settings.customHeadHtml
+      customHeadHtml: settings.customHeadHtml,
+      emailVerificationEnabled: settings.emailVerificationEnabled,
+      captchaMode: settings.captchaMode,
+      turnstileSiteKey: settings.turnstileSiteKey
     };
   }
 
@@ -279,6 +349,7 @@ export class SettingsService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const [key, value] of entries) {
+        if ((key === 'smtpPass' || key === 'turnstileSecretKey') && value === '********') continue;
         const normalized = this.normalizeForStorage(key, value);
         await tx.systemSetting.upsert({
           where: { key },
@@ -296,16 +367,16 @@ export class SettingsService {
         });
       }
     });
-    return this.getSettings();
+    return this.getAdminSettings();
   }
 
-  async resetToDefaults(keys?: Array<keyof SystemSettings>): Promise<SystemSettings> {
+  async resetToDefaults(keys?: Array<keyof SystemSettings>): Promise<Omit<SystemSettings, 'smtpPass' | 'turnstileSecretKey'> & { smtpPass: string; turnstileSecretKey: string }> {
     const selected = keys?.length
       ? keys.filter((key): key is keyof SystemSettings => key in DEFAULTS)
       : (Object.keys(DEFAULTS) as Array<keyof SystemSettings>);
     if (keys && selected.length !== keys.length) throw new BadRequestException('包含无效的设置键');
     await this.prisma.systemSetting.deleteMany({ where: { key: { in: selected } } });
-    return this.getSettings();
+    return this.getAdminSettings();
   }
 
   private async validateReferences(patch: SystemSettingsPatch) {
@@ -365,7 +436,7 @@ export class SettingsService {
 
   private readEnum<K extends keyof SystemSettings, T extends string>(map: Map<string, string>, key: K, values: readonly T[]): T {
     const value = map.get(key)?.trim().toLowerCase();
-    return values.includes(value as T) ? value as T : DEFAULTS[key] as unknown as T;
+    return values.find((item) => item.toLowerCase() === value) ?? DEFAULTS[key] as unknown as T;
   }
 
   private readStringArray(map: Map<string, string>, key: keyof SystemSettings): string[] {

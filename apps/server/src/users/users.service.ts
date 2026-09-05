@@ -11,7 +11,11 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { LinesService } from '../lines/lines.service';
 import { WalletService } from '../wallet/wallet.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { getTrafficPeriod } from '../common/traffic-reset';
+import { VerificationService } from '../verification/verification.service';
+import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from './user-identity';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -54,6 +58,8 @@ type UserPlanSnapshot = {
 // 管理端用户视图字段（不含 passwordHash / uuid 等敏感字段）
 const ADMIN_USER_SELECT = {
   id: true,
+  uid: true,
+  nickname: true,
   email: true,
   role: true,
   balance: true,
@@ -84,7 +90,8 @@ export class UsersService {
     private settingsService: SettingsService,
     private agentGateway: AgentService,
     @Optional() private linesService?: LinesService,
-    @Optional() private walletService?: WalletService
+    @Optional() private walletService?: WalletService,
+    @Optional() private verificationService?: VerificationService
   ) {}
 
   // 重置订阅令牌：旧链接立即失效，返回新 token
@@ -115,6 +122,34 @@ export class UsersService {
     }
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) } });
     return { updated: true };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { uid: true } });
+    if (!user) throw new UnauthorizedException();
+    const nickname = normalizeNickname(dto.nickname);
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { nickname },
+      select: { uid: true, nickname: true }
+    });
+    return { uid: updated.uid, nickname: updated.nickname ?? defaultUserNickname(updated.uid) };
+  }
+
+  async changeEmail(userId: string, dto: ChangeEmailDto) {
+    const verificationService = this.verificationService;
+    if (!verificationService) throw new BadRequestException('邮箱验证服务不可用');
+    const newEmail = dto.newEmail.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, passwordHash: true } });
+    if (!user) throw new UnauthorizedException();
+    if (!(await bcrypt.compare(dto.currentPassword, user.passwordHash))) throw new UnauthorizedException('当前密码错误');
+    const existing = await this.prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
+    if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
+    await verificationService.verifyCode(newEmail, 'CHANGE_EMAIL', dto.verificationCode);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: userId }, data: { email: newEmail } });
+      return { updated: true, email: newEmail };
+    });
   }
 
   async resetUuid(userId: string) {
@@ -158,8 +193,14 @@ export class UsersService {
       };
     }
 
+    const search = query.search?.trim();
+    const numericUid = search && /^\d{6}$/.test(search) ? Number(search) : null;
     const where = {
-      ...(query.search ? { email: { contains: query.search } } : {}),
+      ...(numericUid !== null
+        ? { uid: numericUid }
+        : search
+          ? { OR: [{ email: { contains: search } }, { nickname: { contains: search } }] }
+          : {}),
       ...(query.role ? { role: query.role } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(subscriptionWhere !== undefined ? { subscription: subscriptionWhere } : {})
@@ -220,7 +261,11 @@ export class UsersService {
         ? new Date(now.getTime() + plan.durationDays * 86400000)
         : null;
     const subscriptionToken = randomUUID();
+    const uid = await generateUniqueUserUid(this.prisma.user);
+    const nickname = dto.nickname ? normalizeNickname(dto.nickname) : defaultUserNickname(uid);
     const data = {
+      uid,
+      nickname,
       email: dto.email,
       passwordHash: await bcrypt.hash(dto.password, 10),
       role: dto.role ?? 'USER',

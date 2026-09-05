@@ -279,6 +279,70 @@ export class UpdateSettingsDto {
   @IsString()
   @IsOptional()
   systemTimezone?: string;
+
+  @ApiPropertyOptional({ example: false, description: '是否启用 SMTP 发信服务' })
+  @IsBoolean()
+  @IsOptional()
+  smtpEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 'smtp.example.com' })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  smtpHost?: string;
+
+  @ApiPropertyOptional({ example: 587, minimum: 1, maximum: 65535 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  smtpPort?: number;
+
+  @ApiPropertyOptional({ example: true, description: '465 端口通常使用 SSL/TLS；587 通常使用 STARTTLS' })
+  @IsBoolean()
+  @IsOptional()
+  smtpSecure?: boolean;
+
+  @ApiPropertyOptional({ example: 'noreply@example.com' })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  smtpUser?: string;
+
+  @ApiPropertyOptional({ example: '留空表示保留当前密码', writeOnly: true })
+  @IsString()
+  @MaxLength(512)
+  @IsOptional()
+  smtpPass?: string;
+
+  @ApiPropertyOptional({ example: 'RiriCloud <noreply@example.com>' })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  smtpFrom?: string;
+
+  @ApiPropertyOptional({ example: true, description: '注册时必须验证邮箱验证码' })
+  @IsBoolean()
+  @IsOptional()
+  emailVerificationEnabled?: boolean;
+
+  @ApiPropertyOptional({ enum: ['OFF', 'LOCAL', 'TURNSTILE'], default: 'OFF' })
+  @IsIn(['OFF', 'LOCAL', 'TURNSTILE'])
+  @IsOptional()
+  captchaMode?: 'OFF' | 'LOCAL' | 'TURNSTILE';
+
+  @ApiPropertyOptional({ example: '0x4AAAAAAA...' })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  turnstileSiteKey?: string;
+
+  @ApiPropertyOptional({ example: '0x4AAAAAAA...', writeOnly: true })
+  @IsString()
+  @MaxLength(512)
+  @IsOptional()
+  turnstileSecretKey?: string;
 }
 
 export class ResetSettingsDto {

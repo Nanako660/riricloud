@@ -4,7 +4,7 @@
 
 生产环境推荐由 Nginx 负责 HTTPS 终止、反向代理和边缘路由。后端唯一真实订阅接口仍为 `GET /api/v1/sub/:token`；伪静态订阅地址由 Nginx 将严格匹配的 UUID 单段路径内部 rewrite 到该接口，不新增 NestJS 路由或通用代理 middleware。
 
-> **实现状态（v0.4.20）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.6.11）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、验证码发送、CAPTCHA、本地订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
 >
@@ -14,10 +14,10 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64) }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。
-  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
+  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。
+  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
-- `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色；用户自身视图额外返回 `balance`（分）和 `uuid`。⭐
+- `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
 
 ### 1.2 用户面板 (`/user`)
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐ **Deprecated**：前端已下线独立仪表盘并统一使用 `GET /user/subscription`；该接口仍保留以兼容外部脚本。
@@ -25,6 +25,8 @@
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
 - `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
+- `PATCH /user/profile`：修改当前用户昵称。⭐ 请求 `{ nickname }`，服务端清洗首尾空白并限制为 2~20 个字符；响应 `{ uid, nickname }`。
+- `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后返回 `{ updated: true, email }`。
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
@@ -40,7 +42,7 @@
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
 - `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
@@ -102,9 +104,10 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含统一时区 `systemTimezone` 等）。
-- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、探针对象与 IANA 时区合法性；响应返回更新后全量。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA 与统一时区 `systemTimezone` 等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、探针对象与 IANA 时区合法性；敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
+- `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
 
 #### 卡密管理
 - `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选。⭐
@@ -140,7 +143,11 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml }`；不包含套餐、JWT、Agent、二进制和探针运维私密参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。
+
+### 1.5 邮箱验证码与人机验证
+- `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；`captchaToken` 为带签名凭据，不返回明文答案。
+- `POST /verification/send-code`：发送邮箱验证码。⭐ 请求 `{ email, action: "REGISTER"|"CHANGE_EMAIL", captchaToken?, captchaAnswer?, turnstileToken? }`；`REGISTER` 需要启用注册邮箱验证、邮箱未被占用，并在 CAPTCHA 模式非 `OFF` 时先通过人机验证；`CHANGE_EMAIL` 需要登录且新邮箱未被其他账号占用。相同邮箱和行为 60 秒内不可重复发送，验证码有效期 5 分钟，错误尝试最多 5 次；成功响应 `{ sent: true, expiresAt, cooldownSeconds: 60, messageId? }`。
 
 订阅调试：`GET /api/v1/sub/:token?templateId=<UUID>` 可临时指定模板进行渲染，显式 `templateId` 仅用于调试并优先于套餐模板；省略时按套餐模板、系统设置 `defaultTemplateId`、`isDefault=true` 模板的顺序回退。
 

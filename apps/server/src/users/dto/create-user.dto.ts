@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { IsEmail, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLES, Role } from '../../common/constants';
@@ -13,6 +14,14 @@ export class CreateUserDto {
   @MinLength(8)
   @MaxLength(64)
   password!: string;
+
+  @ApiPropertyOptional({ example: '小云', minLength: 2, maxLength: 20 })
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(20)
+  @IsOptional()
+  nickname?: string;
 
   @ApiPropertyOptional({ enum: ROLES, default: 'USER' })
   @IsString()

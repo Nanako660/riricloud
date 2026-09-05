@@ -2,10 +2,13 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { AgentService } from '../agent-gateway/agent.service';
+import { CaptchaService } from '../captcha/captcha.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { WalletService } from '../wallet/wallet.service';
+import { defaultUserNickname, generateUniqueUserUid, isUidUniqueConstraintError, normalizeNickname } from '../users/user-identity';
+import { VerificationService } from '../verification/verification.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -17,7 +20,9 @@ export class AuthService {
     private settingsService: SettingsService,
     private agentGateway: AgentService,
     @Optional() private subscriptionService?: SubscriptionService,
-    @Optional() private walletService?: WalletService
+    @Optional() private walletService?: WalletService,
+    @Optional() private verificationService?: VerificationService,
+    @Optional() private captchaService?: CaptchaService
   ) {}
 
   async login(dto: LoginDto): Promise<{ accessToken: string }> {
@@ -46,15 +51,37 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('邮箱已被注册');
     }
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash: await bcrypt.hash(dto.password, 10),
-        role: 'USER',
-        trafficLimitBytes: BigInt(0),
-        expireAt: null
+    if (settings.emailVerificationEnabled === true) {
+      if (!this.verificationService || !dto.verificationCode) throw new BadRequestException('请输入邮箱验证码');
+      await this.verificationService.verifyCode(dto.email, 'REGISTER', dto.verificationCode);
+    } else if ((settings.captchaMode ?? 'OFF') !== 'OFF') {
+      if (!this.captchaService) throw new BadRequestException('人机验证服务不可用');
+      await this.captchaService.verifyCaptcha(dto);
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    let user: { id: string; email: string; role: string } | null = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const uid = await generateUniqueUserUid(this.prisma.user);
+      const nickname = dto.nickname ? normalizeNickname(dto.nickname) : defaultUserNickname(uid);
+      try {
+        user = await this.prisma.user.create({
+          data: {
+            uid,
+            nickname,
+            email: dto.email.trim().toLowerCase(),
+            passwordHash,
+            role: 'USER',
+            trafficLimitBytes: BigInt(0),
+            expireAt: null
+          }
+        });
+        break;
+      } catch (error) {
+        if (!isUidUniqueConstraintError(error) || attempt === 7) throw error;
       }
-    });
+    }
+    if (!user) throw new BadRequestException('无法分配唯一用户 UID，请稍后重试');
     if (settings.defaultBalance > 0 && this.walletService) {
       await this.walletService.adjustBalance(user.id, settings.defaultBalance, 'SYSTEM_GIFT', '新用户注册赠金');
     }
@@ -71,8 +98,10 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true,
-        email: true,
+         id: true,
+         uid: true,
+         nickname: true,
+         email: true,
         role: true,
         balance: true,
         uuid: true,
@@ -90,6 +119,7 @@ export class AuthService {
     // BigInt 无法 JSON 序列化，在服务边界转 Number（流量值 < 2^53，无精度损失）
     return {
       ...user,
+      nickname: user.nickname ?? defaultUserNickname(user.uid),
       balance: user.balance,
       uuid: user.uuid,
       trafficLimitBytes: Number(user.trafficLimitBytes),

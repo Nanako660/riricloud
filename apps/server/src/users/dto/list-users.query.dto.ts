@@ -22,7 +22,7 @@ export class ListUsersQueryDto {
   @IsOptional()
   pageSize?: number = 20;
 
-  @ApiPropertyOptional({ description: '邮箱模糊搜索' })
+  @ApiPropertyOptional({ description: 'UID 精确搜索，或按昵称/邮箱模糊搜索' })
   @IsString()
   @IsOptional()
   search?: string;

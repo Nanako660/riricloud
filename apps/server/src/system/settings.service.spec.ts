@@ -136,6 +136,34 @@ describe('SettingsService', () => {
     expect(result).not.toHaveProperty('binaryDownloadBaseUrl');
   });
 
+  it('管理端读取时同时脱敏 SMTP 密码与 Turnstile Secret，并支持占位值保留原密钥', async () => {
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.SMTP_PASS, value: 'smtp-secret' },
+      { key: SETTING_KEYS.TURNSTILE_SECRET_KEY, value: 'turnstile-secret' }
+    ]);
+    await expect(service.getAdminSettings()).resolves.toEqual(expect.objectContaining({
+      smtpPass: '********',
+      turnstileSecretKey: '********'
+    }));
+
+    prisma.systemSetting.upsert.mockResolvedValue({});
+    prisma.systemSetting.findMany.mockResolvedValue([]);
+    await service.updateSettings({ smtpPass: '********', turnstileSecretKey: '********' });
+    expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it('重置普通设置时也不会在管理端响应中泄露内部密钥', async () => {
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.SMTP_PASS, value: 'smtp-secret' },
+      { key: SETTING_KEYS.TURNSTILE_SECRET_KEY, value: 'turnstile-secret' }
+    ]);
+    prisma.systemSetting.deleteMany.mockResolvedValue({ count: 1 });
+    await expect(service.resetToDefaults(['siteName'])).resolves.toEqual(expect.objectContaining({
+      smtpPass: '********',
+      turnstileSecretKey: '********'
+    }));
+  });
+
   it('重置指定键时删除覆盖值并返回默认值', async () => {
     prisma.systemSetting.deleteMany.mockResolvedValue({ count: 3 });
     prisma.systemSetting.findMany.mockResolvedValue([]);

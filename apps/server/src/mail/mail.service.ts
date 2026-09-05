@@ -1,0 +1,72 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import * as nodemailer from 'nodemailer';
+import { SettingsService } from '../system/settings.service';
+
+@Injectable()
+export class MailService {
+  constructor(private readonly settingsService: SettingsService) {}
+
+  async sendVerificationCode(email: string, code: string, action: 'REGISTER' | 'CHANGE_EMAIL') {
+    const settings = await this.settingsService.getSettings();
+    const transporter = this.createTransporter(settings);
+    const siteName = escapeHtml(settings.siteName);
+    const subject = action === 'REGISTER' ? `【${settings.siteName}】注册验证码` : `【${settings.siteName}】换绑邮箱验证码`;
+    const info = await transporter.sendMail({
+      from: settings.smtpFrom || settings.smtpUser,
+      to: email,
+      subject,
+      text: `${settings.siteName} 验证码：${code}，5 分钟内有效。请勿将验证码提供给他人。`,
+      html: buildVerificationEmail({
+        siteName,
+        logoUrl: settings.logoUrl,
+        code,
+        footer: settings.footerCopyright || `© ${new Date().getFullYear()} ${settings.siteName}`,
+        action
+      })
+    });
+    return { messageId: info.messageId };
+  }
+
+  async testSmtp(email: string) {
+    const settings = await this.settingsService.getSettings();
+    const transporter = this.createTransporter(settings);
+    const startedAt = Date.now();
+    try {
+      await transporter.verify();
+      const info = await transporter.sendMail({
+        from: settings.smtpFrom || settings.smtpUser,
+        to: email,
+        subject: `【${settings.siteName}】SMTP 测试邮件`,
+        text: `SMTP 配置测试成功。发送时间：${new Date().toISOString()}`,
+        html: `<p>${escapeHtml(settings.siteName)} SMTP 配置测试成功。</p><p>发送时间：${escapeHtml(new Date().toISOString())}</p>`
+      });
+      return { success: true, messageId: info.messageId, durationMs: Date.now() - startedAt };
+    } catch {
+      throw new BadRequestException('SMTP 测试失败，请检查服务器、端口、加密方式和账号密码');
+    }
+  }
+
+  private createTransporter(settings: Awaited<ReturnType<SettingsService['getSettings']>>) {
+    if (!settings.smtpEnabled) throw new BadRequestException('SMTP 发信服务未启用');
+    if (!settings.smtpHost) throw new BadRequestException('SMTP 服务器未配置');
+    if (!settings.smtpFrom && !settings.smtpUser) throw new BadRequestException('请配置发信人地址或 SMTP 账号');
+    return nodemailer.createTransport({
+      host: settings.smtpHost,
+      port: settings.smtpPort,
+      secure: settings.smtpSecure,
+      auth: settings.smtpUser ? { user: settings.smtpUser, pass: settings.smtpPass } : undefined
+    });
+  }
+}
+
+function buildVerificationEmail(input: { siteName: string; logoUrl: string; code: string; footer: string; action: string }) {
+  const title = input.action === 'REGISTER' ? '完成注册验证' : '确认换绑邮箱';
+  const logo = input.logoUrl
+    ? `<img src="${escapeHtml(input.logoUrl)}" alt="${input.siteName}" style="width:48px;height:48px;object-fit:contain;border-radius:12px;">`
+    : '';
+  return `<!doctype html><html><body style="margin:0;background:#f4f7fb;padding:32px 16px;font-family:Arial,'Microsoft YaHei',sans-serif;color:#172033;"><div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e4e9f2;border-radius:16px;overflow:hidden;"><div style="padding:28px 28px 16px;text-align:center;">${logo}<h1 style="font-size:22px;margin:14px 0 6px;">${input.siteName}</h1><p style="margin:0;color:#667085;">${title}</p></div><div style="padding:12px 28px 30px;text-align:center;"><p style="color:#475467;">您的验证码是：</p><div style="display:inline-block;letter-spacing:8px;font-size:34px;font-weight:700;color:#2563eb;background:#eff6ff;border-radius:12px;padding:14px 24px 14px 32px;">${escapeHtml(input.code)}</div><p style="color:#667085;font-size:14px;margin:22px 0 0;">验证码 5 分钟内有效，请勿将验证码提供给他人。</p></div><div style="padding:16px 28px;background:#f8fafc;color:#98a2b3;font-size:12px;text-align:center;">${escapeHtml(input.footer)}</div></div></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character);
+}

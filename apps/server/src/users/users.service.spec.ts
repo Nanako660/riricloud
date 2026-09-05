@@ -98,7 +98,7 @@ describe('UsersService', () => {
       });
       expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: {
-          email: { contains: 'demo' },
+          OR: [{ email: { contains: 'demo' } }, { nickname: { contains: 'demo' } }],
           isActive: false,
           subscription: { is: { status: 'ACTIVE', planId: 'p1' } }
         }
