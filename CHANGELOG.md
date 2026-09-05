@@ -38,6 +38,7 @@
 
 ### Fixed
 
+- 修复管理端系统设置页面在移动端与窄屏视口（如 375x812 及 320x568）下的横向溢出与组件适配缺陷：为通用 `SelectTrigger` 补充 `min-w-0`、文本截断（`[&>span]:truncate`）与右侧指示图标防挤压（`shrink-0`）约束；为系统设置各 Tab 卡片、网格容器、时区选择器及表单组件全面增加 `min-w-0`、`max-w-full` 与文本换行折叠防御，彻底根除因长时区选项标签贪婪展开导致的整页横向滚动与右侧边缘截断问题。
 - 修复 `scripts/dev-e2e.sh` 在端到端联调启动时因仍使用旧 `exitNodeId`/`exitPort` 过滤与创建直连线路，导致无法复用既有本机线路并触发服务端 `ValidationPipe` 400 校验拦截失败的问题；对齐直连线路单端点入站语义与错误回显。
 - 修复开发与联调模式下因 TypeScript 增量编译缓存（`tsconfig.build.tsbuildinfo`）与 Nest CLI 清理输出目录（`deleteOutDir: true`）脱节导致的 `Cannot find module 'dist/main'` 启动崩溃问题；将 server 端增量编译显式关闭并统一产物发射行为，同时在 dev-e2e 启动脚本中增设残留 `tsbuildinfo` 缓存清理。
 
