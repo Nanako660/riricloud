@@ -30,7 +30,7 @@ import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
 import { BalanceFormDialog } from './components/balance-form-dialog';
 
-import { formatBytes, formatCurrency } from '@/lib/utils';
+import { formatBytes, formatCurrency, formatDate } from '@/lib/utils';
 
 // 状态色规范：激活=success、封禁=destructive（FRONTEND_UI_GUIDELINES §状态色）
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -142,7 +142,7 @@ export default function AdminUsersPage() {
         header: '有效期',
         cell: ({ row }) =>
           row.original.expireAt ? (
-            <span className="tabular-nums">{new Date(row.original.expireAt).toLocaleDateString('zh-CN')}</span>
+            <span className="tabular-nums">{formatDate(row.original.expireAt)}</span>
           ) : (
             <span className="text-muted-foreground">永久</span>
           )
@@ -157,7 +157,7 @@ export default function AdminUsersPage() {
         header: '创建时间',
         cell: ({ row }) => (
           <span className="text-muted-foreground tabular-nums">
-            {new Date(row.original.createdAt).toLocaleDateString('zh-CN')}
+            {formatDate(row.original.createdAt)}
           </span>
         )
       },

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { usePublicSettings } from '@/lib/public-settings';
+import { setDefaultSystemTimezone } from '@/lib/utils';
 
 const CUSTOM_STYLE_ID = 'riricloud-custom-css';
 const CUSTOM_HEAD_ATTRIBUTE = 'data-riricloud-custom-head';
@@ -11,6 +12,10 @@ export function SiteRuntime() {
   useEffect(() => {
     const settings = settingsQuery.data;
     if (!settings) return;
+
+    if (settings.systemTimezone) {
+      setDefaultSystemTimezone(settings.systemTimezone);
+    }
 
     const previousTitle = document.title;
     document.title = settings.siteName || 'RiriCloud';

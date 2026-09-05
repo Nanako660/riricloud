@@ -1,4 +1,5 @@
-import { useEffect, type InputHTMLAttributes } from 'react';
+import { useEffect, useState, type InputHTMLAttributes } from 'react';
+import { Link } from 'react-router-dom';
 import { useForm, useFormContext, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,10 +8,11 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { useTheme } from 'next-themes';
 import { z } from 'zod';
-import { Code2, Gauge, Globe2, Link2, Palette, RotateCcw, Save, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
+import { Clock, Code2, Gauge, Globe2, Link2, Palette, RotateCcw, Save, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import { formatDateTime } from '@/lib/utils';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAdminPlans } from '@/pages/admin/plans/use-plans';
 import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
@@ -38,6 +40,28 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 
+const COMMON_TIMEZONES = [
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai（北京 / 上海 / 香港 / 台北 · UTC+8）' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo（东京 / 首尔 · UTC+9）' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore（新加坡 · UTC+8）' },
+  { value: 'UTC', label: 'UTC（协调世界时 · UTC+0）' },
+  { value: 'Europe/London', label: 'Europe/London（伦敦 · UTC+0/+1）' },
+  { value: 'Europe/Paris', label: 'Europe/Paris（巴黎 / 柏林 · UTC+1/+2）' },
+  { value: 'America/New_York', label: 'America/New_York（纽约 / 美东 · UTC-5/-4）' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles（洛杉矶 / 美西 · UTC-8/-7）' },
+  { value: 'Australia/Sydney', label: 'Australia/Sydney（悉尼 / 墨尔本 · UTC+10/+11）' }
+];
+
+function isValidTimezone(value: string): boolean {
+  if (!value || !value.trim()) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value.trim() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface SystemSettings {
   siteName: string;
   siteDescription: string;
@@ -51,10 +75,9 @@ interface SystemSettings {
   supportEmail: string;
   supportCustomUrl: string;
   registrationEnabled: boolean;
+  systemTimezone: string;
   defaultPlanId: string | null;
-  defaultTrafficLimitBytes: number;
   defaultBalance: number;
-  defaultValidityDays: number;
   emailDomainMode: 'none' | 'whitelist' | 'blacklist';
   emailDomainList: string[];
   passwordMinLength: number;
@@ -82,6 +105,7 @@ const settingsSchema = z.object({
   siteName: z.string().trim().min(1, '站点名不能为空').max(32),
   siteDescription: z.string().max(120),
   publicBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的全站访问 URL'),
+  systemTimezone: z.string().trim().min(1, '时区不能为空').refine(isValidTimezone, '请输入有效的 IANA 时区标识（例如 Asia/Shanghai 或 UTC）'),
   logoUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Logo URL'),
   faviconUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Favicon URL'),
   siteAnnouncement: z.string().max(10000),
@@ -92,9 +116,7 @@ const settingsSchema = z.object({
   supportCustomUrl: z.string().refine(isBlankOrUrl, '请输入有效的支持 URL'),
   registrationEnabled: z.boolean(),
   defaultPlanId: z.string(),
-  defaultQuotaGB: z.coerce.number().int().min(1, '至少 1 GB').max(1048576, '不能超过 1 PB'),
   defaultBalanceYuan: z.coerce.number().min(0, '余额不能为负数').multipleOf(0.01, '最多保留两位小数'),
-  defaultValidityDays: z.coerce.number().int().min(0).max(3650),
   emailDomainMode: z.enum(['none', 'whitelist', 'blacklist']),
   emailDomainListText: z.string().max(16000),
   passwordMinLength: z.coerce.number().int().min(8).max(64),
@@ -129,13 +151,14 @@ export default function AdminSettingsPage() {
     queryKey: ['admin', 'settings'],
     queryFn: async () => (await api.get<SystemSettings>('/admin/settings')).data
   });
+  const defaultTemplate = templates.data?.find((t) => t.isDefault) ?? templates.data?.find((t) => t.id === settingsQuery.data?.defaultTemplateId);
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
     defaultValues: toForm({
       siteName: '', siteDescription: '', publicBaseUrl: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
-      defaultPlanId: null, defaultTrafficLimitBytes: 100 * 1024 ** 3, defaultValidityDays: 0, emailDomainMode: 'none',
-      defaultBalance: 0,
+      systemTimezone: 'Asia/Shanghai',
+      defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
       emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
@@ -204,11 +227,12 @@ export default function AdminSettingsPage() {
             <TabsContent value="branding"><Card><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
                <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
                <SettingsInput name="siteDescription" label="副标题描述" placeholder="留空则不显示副标题" />
-               <div className="space-y-2 md:col-span-2"><SettingsInput name="publicBaseUrl" label="全站访问 URL" placeholder="https://panel.example.com" description="用于生成 Agent 安装命令、升级地址和二进制下载地址；留空时自动匹配当前访问域名。" /><SetOriginButton name="publicBaseUrl" /></div>
+               <div className="space-y-2 md:col-span-2"><SettingsInput name="publicBaseUrl" label="全站访问 URL（主入口基准 URL）" placeholder="https://panel.example.com" description="面板对外完整基准 URL（例如 https://panel.example.com）。订阅基准 URL 与二进制分发基准 URL 留空时均默认继承此地址。" /><SetOriginButton name="publicBaseUrl" /></div>
+              <TimezoneSettingField />
               <SettingsInput name="logoUrl" label="Logo URL" placeholder="https://cdn.example.com/logo.svg" description="留空时使用默认云朵图标。" />
               <SettingsInput name="faviconUrl" label="Favicon URL" placeholder="https://cdn.example.com/favicon.ico" />
               <SettingsTextarea name="siteAnnouncement" label="全局公告横幅" className="md:col-span-2" rows={5} description="支持标题、粗体、列表、行内代码和安全的 HTTPS 链接 Markdown。" />
-              <SettingsInput name="footerCopyright" label="页脚版权" placeholder="© 2026 RiriCloud" />
+              <SettingsInput name="footerCopyright" label="页脚版权" placeholder="© 2026 RiriCloud" description="展示于侧边栏底部与登录页页脚；留空时自动回退为版本与站点名称。" />
               <SettingsInput name="supportEmail" label="客服邮箱" placeholder="support@example.com" />
               <SettingsInput name="supportTelegramUrl" label="Telegram 客服 / 群组" placeholder="https://t.me/riricloud" />
               <SettingsInput name="supportDiscordUrl" label="Discord 客服 / 群组" placeholder="https://discord.gg/example" />
@@ -218,19 +242,35 @@ export default function AdminSettingsPage() {
             <TabsContent value="users"><Card><CardHeader><SectionTitle icon={UsersRound} title="注册与用户策略" description="控制新用户注册条件和首次登录时的默认权益。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
               <SettingsSwitch name="registrationEnabled" label="开放注册" description="关闭后公开注册接口和注册页入口都会拒绝新用户。" className="md:col-span-2" />
               <SettingsSelect name="defaultPlanId" label="新用户默认套餐" options={[{ value: 'none', label: '不自动绑定套餐' }, ...(plans.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }))]} description="绑定后注册会立即生成有效订阅和订阅链接。" />
-              <SettingsInput name="defaultQuotaGB" label="默认流量配额（GB）" type="number" min={1} />
               <SettingsInput name="defaultBalanceYuan" label="新用户注册初始余额（元）" type="number" min={0} description="注册赠金会记录为 SYSTEM_GIFT 流水。" />
-              <SettingsInput name="defaultValidityDays" label="默认有效天数" type="number" min={0} description="0 表示永久有效；配置套餐时以套餐周期为准。" />
+              <div className="rounded-lg border border-dashed bg-muted/30 p-3.5 text-xs text-muted-foreground md:col-span-2 space-y-1">
+                <p className="font-medium text-foreground">关于新用户流量与有效期：</p>
+                <p>新用户注册后的流量配额与账号有效期完全统一由「新用户默认套餐」决定。若选择「不自动绑定套餐」，新注册用户初始配额为 0 且无到期限制，用户可通过赠送的初始余额在「套餐市场」自选开通。</p>
+              </div>
               <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} />
               <SettingsSelect name="emailDomainMode" label="邮箱域名过滤模式" options={[{ value: 'none', label: '不限制' }, { value: 'whitelist', label: '白名单，仅允许列表域名' }, { value: 'blacklist', label: '黑名单，拒绝列表域名' }]} />
               <SettingsTextarea name="emailDomainListText" label="邮箱域名列表" rows={5} className="md:col-span-2" description="每行一个域名，例如 example.com；不需要填写 @。" />
             </CardContent></Card></TabsContent>
 
             <TabsContent value="subscription"><Card><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid gap-5 md:grid-cols-2">
-               <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL" placeholder="https://panel.example.com" description="用于用户端拼装订阅链接；可包含 Nginx 对外使用的路径，留空时使用当前面板地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
+               <div className="space-y-2 md:col-span-2"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL（覆盖项，可选）" placeholder="https://sub.example.com" description="客户端获取订阅的独立基准域名或反代路径。留空时自动继承「全站访问 URL」，若全站 URL 亦留空则使用当前访问地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
               <SettingsSwitch name="subscriptionShortLinksEnabled" label="使用 Nginx 伪静态短链接" description="开启后展示 https://domain.com/<UUID>；请先在 Nginx 中配置对应 rewrite 规则。" />
               <SettingsInput name="subscriptionUpdateIntervalHours" label="客户端更新周期（小时）" type="number" min={1} max={168} />
-              <SettingsSelect name="defaultTemplateId" label="全局默认订阅模板" options={[{ value: 'none', label: '不指定，回退到标记为默认的模板' }, ...(templates.data ?? []).map((template) => ({ value: template.id, label: `${template.name}${template.isDefault ? '（当前默认）' : ''}` }))]} />
+              <div className="rounded-lg border bg-muted/20 p-4 space-y-2 md:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">全局默认订阅模板</p>
+                    <p className="text-xs text-muted-foreground">
+                      当前默认：<span className="font-semibold text-foreground">{defaultTemplate ? defaultTemplate.name : '未设置默认模板（回退系统内嵌规则）'}</span>
+                      {defaultTemplate?.description ? ` — ${defaultTemplate.description}` : ''}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/admin/templates">前往模板管理设置</Link>
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">全局默认订阅模板用于未单独绑定专有模板的套餐及普通订阅分发；标记与管理统一在「订阅模板」页面维护。</p>
+              </div>
               <SettingsSwitch name="publicLinesEnabled" label="公开线路列表" description="关闭后用户订阅和线路页不再返回公开线路。" />
               <SettingsSwitch name="includeUsageHeaders" label="注入用量响应头" description="向订阅响应附加 Subscription-Userinfo。" />
             </CardContent></Card></TabsContent>
@@ -239,7 +279,7 @@ export default function AdminSettingsPage() {
               <SettingsInput name="heartbeatTimeoutSecs" label="心跳离线判定超时（秒）" type="number" min={5} max={3600} />
               <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
-              <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL" placeholder="https://downloads.example.com/riricloud" description="留空时优先使用 RIRICLOUD_PUBLIC_URL。" />
+              <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL（覆盖项，可选）" placeholder="https://downloads.example.com/riricloud" description="供节点下载 riri-agent 及 sing-box 内核的专用存储/CDN 地址。留空时自动继承「全站访问 URL」。" />
               <div className="rounded-lg border bg-muted/20 p-4 md:col-span-2 space-y-4">
                 <div className="space-y-1">
                   <h4 className="text-sm font-semibold">线路自动测速</h4>
@@ -307,6 +347,93 @@ function SetOriginButton({ name }: { name: 'publicBaseUrl' | 'subscriptionBaseUr
   return <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setValue(name, window.location.origin, { shouldDirty: true })}><Link2 />使用当前面板地址</Button>;
 }
 
+function TimezoneSettingField() {
+  const { control, watch, setValue } = useFormContext<SettingsForm>();
+  const currentTimezone = watch('systemTimezone') || 'Asia/Shanghai';
+  const isPreset = COMMON_TIMEZONES.some((tz) => tz.value === currentTimezone);
+  const [selectMode, setSelectMode] = useState<string>(isPreset ? currentTimezone : 'custom');
+
+  useEffect(() => {
+    if (COMMON_TIMEZONES.some((tz) => tz.value === currentTimezone)) {
+      setSelectMode(currentTimezone);
+    } else {
+      setSelectMode('custom');
+    }
+  }, [currentTimezone]);
+
+  let previewText = '';
+  try {
+    previewText = formatDateTime(new Date(), currentTimezone);
+  } catch {
+    previewText = '无效时区';
+  }
+
+  return (
+    <div className="space-y-3 md:col-span-2 rounded-lg border p-4 bg-muted/10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="space-y-0.5">
+          <FormLabel className="text-sm font-medium flex items-center gap-1.5">
+            <Clock className="size-4 text-primary" />
+            全站统一时区设置
+          </FormLabel>
+          <FormDescription>
+            全站时间展示、账单流水、自然月流量重置（1日 00:00:00）及流量统计时间桶切分均以此统一时区为准。
+          </FormDescription>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground rounded-md bg-muted/60 px-2.5 py-1 tabular-nums self-start sm:self-auto shrink-0">
+          <span>当前时区时间：</span>
+          <strong className="text-foreground font-medium">{previewText}</strong>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormItem>
+          <FormLabel className="text-xs text-muted-foreground">常用时区快捷选择</FormLabel>
+          <Select
+            value={selectMode}
+            onValueChange={(val) => {
+              setSelectMode(val);
+              if (val !== 'custom') {
+                setValue('systemTimezone', val, { shouldValidate: true, shouldDirty: true });
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="请选择常用时区" />
+            </SelectTrigger>
+            <SelectContent>
+              {COMMON_TIMEZONES.map((tz) => (
+                <SelectItem key={tz.value} value={tz.value}>
+                  {tz.label}
+                </SelectItem>
+              ))}
+              <SelectItem value="custom">自定义 IANA 时区（手动填写）</SelectItem>
+            </SelectContent>
+          </Select>
+        </FormItem>
+
+        <FormField
+          control={control}
+          name="systemTimezone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs text-muted-foreground">IANA 时区标识</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  placeholder="例如 Asia/Shanghai 或 UTC"
+                  onChange={(e) => field.onChange(e.target.value.trim())}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
 function toForm(settings: SystemSettings): SettingsForm {
   return {
     siteName: settings.siteName,
@@ -321,10 +448,9 @@ function toForm(settings: SystemSettings): SettingsForm {
     supportEmail: settings.supportEmail,
     supportCustomUrl: settings.supportCustomUrl,
     registrationEnabled: settings.registrationEnabled,
+    systemTimezone: settings.systemTimezone || 'Asia/Shanghai',
     defaultPlanId: settings.defaultPlanId ?? 'none',
-    defaultQuotaGB: Math.max(1, Math.round(settings.defaultTrafficLimitBytes / 1024 ** 3)),
     defaultBalanceYuan: settings.defaultBalance / 100,
-    defaultValidityDays: settings.defaultValidityDays,
     emailDomainMode: settings.emailDomainMode,
     emailDomainListText: settings.emailDomainList.join('\n'),
     passwordMinLength: settings.passwordMinLength,
@@ -363,11 +489,10 @@ function toPayload(values: SettingsForm) {
     supportEmail: values.supportEmail,
     supportCustomUrl: values.supportCustomUrl,
     registrationEnabled: values.registrationEnabled,
+    systemTimezone: values.systemTimezone,
     defaultPlanId: values.defaultPlanId === 'none' ? null : values.defaultPlanId,
-    defaultTrafficLimitBytes: Math.round(values.defaultQuotaGB * 1024 ** 3),
     defaultBalance: Math.round(values.defaultBalanceYuan * 100),
     emailDomainList: values.emailDomainListText.split(/\r?\n|,/).map((item) => item.trim().toLowerCase().replace(/^@+/, '')).filter(Boolean),
-    defaultValidityDays: values.defaultValidityDays,
     emailDomainMode: values.emailDomainMode,
     passwordMinLength: values.passwordMinLength,
     subscriptionBaseUrl: values.subscriptionBaseUrl,

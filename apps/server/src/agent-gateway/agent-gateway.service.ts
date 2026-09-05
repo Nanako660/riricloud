@@ -459,10 +459,11 @@ export class AgentService implements OnModuleDestroy {
             plan: { select: { durationDays: true, trafficResetMode: true } }
           }
         });
+        const timezone = (await this.settingsService?.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
         for (const item of subscriptions) {
           subscriptionByUser.set(item.userId, item.id);
           if (!item.plan || !item.startedAt) continue;
-          const period = getTrafficPeriod(item.plan.trafficResetMode, observedAt, item.startedAt, item.plan.durationDays);
+          const period = getTrafficPeriod(item.plan.trafficResetMode, observedAt, item.startedAt, item.plan.durationDays, timezone);
           if (!period) continue;
           const previous = item.trafficPeriodStartAt ?? null;
           const shouldReset = Boolean(previous && previous.getTime() < period.startAt.getTime());

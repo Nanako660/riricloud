@@ -163,6 +163,7 @@ export class UsersService {
       }),
       this.prisma.user.count({ where })
     ]);
+    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
     // BigInt 在服务边界转 Number（< 2^53 无精度损失）
     const data = users.map(({ extraLineGrants, ...u }) => ({
       ...u,
@@ -179,7 +180,8 @@ export class UsersService {
                   u.subscription.plan.trafficResetMode,
                   new Date(),
                   u.subscription.startedAt,
-                  u.subscription.plan.durationDays
+                  u.subscription.plan.durationDays,
+                  timeZone
                 )?.nextResetAt ?? null
               : null,
             extraLineIds: (extraLineGrants ?? []).map((grant) => grant.lineId),
@@ -196,9 +198,9 @@ export class UsersService {
       throw new ConflictException('邮箱已存在');
     }
     const plan = await this.resolveInitialPlan(dto.planId);
-    const defaultQuota = await this.settingsService.getDefaultQuota();
+    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
     const now = new Date();
-    const trafficLimitBytes = BigInt(dto.trafficLimitBytes ?? plan?.trafficLimitBytes ?? defaultQuota);
+    const trafficLimitBytes = BigInt(dto.trafficLimitBytes ?? plan?.trafficLimitBytes ?? 0);
     const expireAt = dto.expireAt !== undefined
       ? dto.expireAt
         ? new Date(dto.expireAt)
@@ -228,7 +230,7 @@ export class UsersService {
               startedAt: now,
               expireAt,
               subscriptionToken,
-              trafficPeriodStartAt: getTrafficPeriod(plan.trafficResetMode, now, now, plan.durationDays)?.startAt ?? null
+              trafficPeriodStartAt: getTrafficPeriod(plan.trafficResetMode, now, now, plan.durationDays, timeZone)?.startAt ?? null
             }
           });
           return created;

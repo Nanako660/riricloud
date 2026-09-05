@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatRate } from '@/lib/utils';
+import { formatDateTime, formatRate } from '@/lib/utils';
 import { useAdminNodes, useNodeMutations, type AdminNode } from './use-nodes';
 import { NodeFormDialog } from './components/node-form-dialog';
 
@@ -20,7 +20,7 @@ function NodeStatusBadge({ node }: { node: AdminNode }) {
 }
 
 function formatLastSeen(value: string | null) {
-  return value ? new Date(value).toLocaleString('zh-CN') : '未上报';
+  return value ? formatDateTime(value) : '未上报';
 }
 
 function NodeRate({ node }: { node: AdminNode }) {

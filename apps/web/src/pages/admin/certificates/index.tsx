@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import type { ApiCertificate, CertificateStatus } from '@/lib/api';
+import { formatDate } from '@/lib/utils';
 import { CertificateDetailDialog } from './certificate-detail-dialog';
 import { CertificateFormDialog } from './certificate-form-dialog';
 import { useAdminCertificates, useCertificateMutations } from './use-certificates';
@@ -19,10 +20,6 @@ const statusLabels: Record<CertificateStatus, string> = {
   EXPIRED: '已过期',
   NOT_YET_VALID: '尚未生效'
 };
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('zh-CN');
-}
 
 function statusVariant(status: CertificateStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'EXPIRED') return 'destructive';

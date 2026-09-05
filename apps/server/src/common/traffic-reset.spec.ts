@@ -1,13 +1,19 @@
 import { getTrafficPeriod, shouldResetTraffic } from './traffic-reset';
 
 describe('traffic reset periods', () => {
-  it('按服务器本地时区计算自然月边界并支持跨年', () => {
-    const now = new Date(2026, 11, 31, 23, 59, 59);
-    const period = getTrafficPeriod('CALENDAR_MONTH', now, now, 30);
+  it('按指定系统时区（如 UTC / Asia/Shanghai）计算自然月边界并支持跨年', () => {
+    const utcDate = new Date('2026-12-31T23:59:59.000Z');
+    const periodUtc = getTrafficPeriod('CALENDAR_MONTH', utcDate, utcDate, 30, 'UTC');
+    expect(periodUtc).toEqual({
+      startAt: new Date('2026-12-01T00:00:00.000Z'),
+      nextResetAt: new Date('2027-01-01T00:00:00.000Z')
+    });
 
-    expect(period).toEqual({
-      startAt: new Date(2026, 11, 1),
-      nextResetAt: new Date(2027, 0, 1)
+    const beijingDate = new Date('2026-09-05T12:00:00.000Z');
+    const periodBeijing = getTrafficPeriod('CALENDAR_MONTH', beijingDate, beijingDate, 30, 'Asia/Shanghai');
+    expect(periodBeijing).toEqual({
+      startAt: new Date('2026-08-31T16:00:00.000Z'),
+      nextResetAt: new Date('2026-09-30T16:00:00.000Z')
     });
   });
 

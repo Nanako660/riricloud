@@ -1,7 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, Cloud, GitBranch, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary } from 'lucide-react';
+import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
+import { SupportDialog } from '@/components/shared/support-dialog';
+import { hasSupportContacts } from '@/lib/support';
 import {
   Sidebar,
   SidebarContent,
@@ -86,8 +88,28 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
       </SidebarContent>
-      <SidebarFooter className="p-3">
-        <p className="text-sidebar-foreground/45 px-2 text-[11px] text-center">v{__APP_VERSION__}</p>
+      <SidebarFooter className="p-3 space-y-2">
+        {hasSupportContacts(publicSettings.data) && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SupportDialog
+                settings={publicSettings.data}
+                trigger={
+                  <SidebarMenuButton className="w-full justify-start rounded-lg px-3 py-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
+                    <Headphones className="size-4" />
+                    <span>联系客服与帮助</span>
+                  </SidebarMenuButton>
+                }
+              />
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
+        <div className="px-2 text-center text-[11px] text-sidebar-foreground/45 space-y-0.5">
+          {publicSettings.data?.footerCopyright ? (
+            <p className="truncate" title={publicSettings.data.footerCopyright}>{publicSettings.data.footerCopyright}</p>
+          ) : null}
+          <p>v{__APP_VERSION__}</p>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

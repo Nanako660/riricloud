@@ -27,9 +27,7 @@ export const SETTING_KEYS = {
   SUPPORT_CUSTOM_URL: 'supportCustomUrl',
   REGISTRATION_ENABLED: 'registrationEnabled',
   DEFAULT_PLAN_ID: 'defaultPlanId',
-  DEFAULT_TRAFFIC_LIMIT_BYTES: 'defaultTrafficLimitBytes',
   DEFAULT_BALANCE: 'defaultBalance',
-  DEFAULT_VALIDITY_DAYS: 'defaultValidityDays',
   EMAIL_DOMAIN_MODE: 'emailDomainMode',
   EMAIL_DOMAIN_LIST: 'emailDomainList',
   PASSWORD_MIN_LENGTH: 'passwordMinLength',
@@ -50,7 +48,8 @@ export const SETTING_KEYS = {
   LINE_SPEEDTEST_ENABLED: 'lineSpeedtestEnabled',
   LINE_SPEEDTEST_INTERVAL_MINS: 'lineSpeedtestIntervalMins',
   LINE_SPEEDTEST_TARGET_URL: 'lineSpeedtestTargetUrl',
-  LINE_SPEEDTEST_TIMEOUT_MS: 'lineSpeedtestTimeoutMs'
+  LINE_SPEEDTEST_TIMEOUT_MS: 'lineSpeedtestTimeoutMs',
+  SYSTEM_TIMEZONE: 'systemTimezone'
 } as const;
 
 export interface SystemSettings {
@@ -67,9 +66,7 @@ export interface SystemSettings {
   supportCustomUrl: string;
   registrationEnabled: boolean;
   defaultPlanId: string | null;
-  defaultTrafficLimitBytes: number;
   defaultBalance: number;
-  defaultValidityDays: number;
   emailDomainMode: EmailDomainMode;
   emailDomainList: string[];
   passwordMinLength: number;
@@ -91,6 +88,7 @@ export interface SystemSettings {
   lineSpeedtestIntervalMins: number;
   lineSpeedtestTargetUrl: string;
   lineSpeedtestTimeoutMs: number;
+  systemTimezone: string;
 }
 
 export type SystemSettingsPatch = {
@@ -101,6 +99,8 @@ export type PublicSystemSettings = Pick<
   SystemSettings,
   | 'siteName'
   | 'siteDescription'
+  | 'publicBaseUrl'
+  | 'systemTimezone'
   | 'logoUrl'
   | 'faviconUrl'
   | 'siteAnnouncement'
@@ -130,9 +130,7 @@ export const DEFAULTS: SystemSettings = {
   supportCustomUrl: '',
   registrationEnabled: false,
   defaultPlanId: null,
-  defaultTrafficLimitBytes: 107374182400,
   defaultBalance: 0,
-  defaultValidityDays: 0,
   emailDomainMode: 'none',
   emailDomainList: [],
   passwordMinLength: 8,
@@ -156,7 +154,8 @@ export const DEFAULTS: SystemSettings = {
   lineSpeedtestEnabled: true,
   lineSpeedtestIntervalMins: 30,
   lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204',
-  lineSpeedtestTimeoutMs: 3000
+  lineSpeedtestTimeoutMs: 3000,
+  systemTimezone: 'Asia/Shanghai'
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -173,9 +172,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   supportCustomUrl: '自定义客服支持地址',
   registrationEnabled: '是否开放注册',
   defaultPlanId: '新用户默认套餐',
-  defaultTrafficLimitBytes: '新用户默认流量配额（字节）',
   defaultBalance: '新用户注册初始余额（分）',
-  defaultValidityDays: '新用户默认有效天数',
   emailDomainMode: '邮箱域名过滤模式',
   emailDomainList: '邮箱域名过滤列表',
   passwordMinLength: '密码最小长度',
@@ -196,7 +193,8 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   lineSpeedtestEnabled: '是否开启线路自动定时测速',
   lineSpeedtestIntervalMins: '线路自动测速执行周期（分钟）',
   lineSpeedtestTargetUrl: '线路测速测试目标 URL',
-  lineSpeedtestTimeoutMs: '线路测速单次超时阈值（毫秒）'
+  lineSpeedtestTimeoutMs: '线路测速单次超时阈值（毫秒）',
+  systemTimezone: '系统统一时区'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -222,9 +220,7 @@ export class SettingsService {
       supportCustomUrl: this.readString(map, 'supportCustomUrl'),
       registrationEnabled: this.readBoolean(map, 'registrationEnabled'),
       defaultPlanId: this.readNullableString(map, 'defaultPlanId'),
-      defaultTrafficLimitBytes: this.readInteger(map, 'defaultTrafficLimitBytes', 1, Number.MAX_SAFE_INTEGER),
       defaultBalance: this.readInteger(map, 'defaultBalance', 0, Number.MAX_SAFE_INTEGER),
-      defaultValidityDays: this.readInteger(map, 'defaultValidityDays', 0, 3650),
       emailDomainMode: this.readEnum(map, 'emailDomainMode', ['none', 'whitelist', 'blacklist']),
       emailDomainList: this.readStringArray(map, 'emailDomainList').map(normalizeDomain).filter(Boolean),
       passwordMinLength: this.readInteger(map, 'passwordMinLength', 8, 64),
@@ -245,7 +241,8 @@ export class SettingsService {
       lineSpeedtestEnabled: this.readBoolean(map, 'lineSpeedtestEnabled'),
       lineSpeedtestIntervalMins: this.readInteger(map, 'lineSpeedtestIntervalMins', 1, 1440),
       lineSpeedtestTargetUrl: this.readString(map, 'lineSpeedtestTargetUrl'),
-      lineSpeedtestTimeoutMs: this.readInteger(map, 'lineSpeedtestTimeoutMs', 500, 30000)
+      lineSpeedtestTimeoutMs: this.readInteger(map, 'lineSpeedtestTimeoutMs', 500, 30000),
+      systemTimezone: this.readTimezone(map, 'systemTimezone')
     };
   }
 
@@ -254,6 +251,8 @@ export class SettingsService {
     return {
       siteName: settings.siteName,
       siteDescription: settings.siteDescription,
+      publicBaseUrl: settings.publicBaseUrl,
+      systemTimezone: settings.systemTimezone,
       logoUrl: settings.logoUrl,
       faviconUrl: settings.faviconUrl,
       siteAnnouncement: settings.siteAnnouncement,
@@ -309,11 +308,10 @@ export class SettingsService {
     return this.getSettings();
   }
 
-  async getDefaultQuota(): Promise<number> {
-    return (await this.getSettings()).defaultTrafficLimitBytes;
-  }
-
   private async validateReferences(patch: SystemSettingsPatch) {
+    if (patch.systemTimezone !== undefined && patch.systemTimezone !== null && !isValidTimezone(patch.systemTimezone)) {
+      throw new BadRequestException('无效的 IANA 时区标识符');
+    }
     if (patch.defaultPlanId) {
       const planDelegate = (this.prisma as unknown as {
         plan?: { findUnique: (args: Record<string, unknown>) => Promise<{ isPublic: boolean } | null> };
@@ -387,6 +385,24 @@ export class SettingsService {
     } catch {
       return DEFAULTS.probePresetTargets;
     }
+  }
+
+  private readTimezone(map: Map<string, string>, key: keyof SystemSettings): string {
+    const value = map.get(key)?.trim();
+    if (value && isValidTimezone(value)) {
+      return value;
+    }
+    return DEFAULTS[key] as string;
+  }
+}
+
+export function isValidTimezone(tz: string): boolean {
+  if (!tz || typeof tz !== 'string') return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz.trim() });
+    return true;
+  } catch {
+    return false;
   }
 }
 

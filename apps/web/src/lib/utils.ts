@@ -31,3 +31,69 @@ export function formatCurrency(cents: number | null | undefined): string {
 export function formatYuan(yuan: number | null | undefined): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(yuan ?? 0);
 }
+
+let defaultSystemTimezone = 'Asia/Shanghai';
+
+export function setDefaultSystemTimezone(timeZone: string | null | undefined): void {
+  if (!timeZone || !timeZone.trim()) return;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timeZone.trim() });
+    defaultSystemTimezone = timeZone.trim();
+  } catch {
+    // 忽略无效时区
+  }
+}
+
+export function getDefaultSystemTimezone(): string {
+  return defaultSystemTimezone;
+}
+
+export function formatDateTime(
+  date: Date | string | number | null | undefined,
+  timeZone?: string,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!date) return '—';
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '—';
+
+  const tz = timeZone?.trim() || defaultSystemTimezone;
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      ...options
+    }).format(d).replace(/\//g, '-');
+  } catch {
+    return d.toLocaleString('zh-CN');
+  }
+}
+
+export function formatDate(
+  date: Date | string | number | null | undefined,
+  timeZone?: string,
+  options?: Intl.DateTimeFormatOptions
+): string {
+  if (!date) return '—';
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '—';
+
+  const tz = timeZone?.trim() || defaultSystemTimezone;
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      ...options
+    }).format(d).replace(/\//g, '-');
+  } catch {
+    return d.toLocaleDateString('zh-CN');
+  }
+}

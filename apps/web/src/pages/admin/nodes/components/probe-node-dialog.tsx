@@ -14,6 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatDateTime } from '@/lib/utils';
 import type { ProbeResult, ProbeSnapshot } from '../use-nodes';
 
 const schema = z.object({
@@ -108,7 +109,7 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
             <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>关闭</Button><Button type="submit" disabled={pending}>{pending ? '执行中…' : '开始诊断'}</Button></DialogFooter>
           </form>
         </Form>
-        {snapshot && <div className="space-y-3 border-t pt-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">最近一次结果</p><span className="text-xs text-muted-foreground">{new Date(snapshot.completedAt).toLocaleString('zh-CN')}</span></div><div className="space-y-2">{snapshot.results.map((result, index) => <ProbeResultCard key={`${result.type}-${result.target}-${index}`} result={result} />)}</div></div>}
+        {snapshot && <div className="space-y-3 border-t pt-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-medium">最近一次结果</p><span className="text-xs text-muted-foreground">{formatDateTime(snapshot.completedAt)}</span></div><div className="space-y-2">{snapshot.results.map((result, index) => <ProbeResultCard key={`${result.type}-${result.target}-${index}`} result={result} />)}</div></div>}
       </div>
     </ResponsiveDialogContent>
   </ResponsiveDialog>;

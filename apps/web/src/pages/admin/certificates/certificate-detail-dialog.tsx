@@ -5,6 +5,7 @@ import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/co
 import { Textarea } from '@/components/ui/textarea';
 import { CopyButton } from '@/components/shared/copy-button';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
+import { formatDate } from '@/lib/utils';
 import { useCertificateDetail } from './use-certificates';
 
 const statusLabels = {
@@ -13,10 +14,6 @@ const statusLabels = {
   EXPIRED: '已过期',
   NOT_YET_VALID: '尚未生效'
 } as const;
-
-function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString('zh-CN');
-}
 
 export function CertificateDetailDialog({ open, onOpenChange, certificateId }: { open: boolean; onOpenChange: (open: boolean) => void; certificateId: string | null }) {
   const detail = useCertificateDetail(certificateId, open);

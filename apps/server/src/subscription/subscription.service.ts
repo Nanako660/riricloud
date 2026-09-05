@@ -507,13 +507,15 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resetDueTrafficPeriods(now = new Date()): Promise<number> {
+    const settings = await this.settingsService?.getSettings();
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
     const subscriptions = await this.prisma.subscription.findMany({
       where: { plan: { trafficResetMode: { in: TRAFFIC_RESET_MODES.filter((mode) => mode !== 'NONE') } } },
       include: { plan: true }
     });
     const due = subscriptions
       .map((subscription) => {
-        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays);
+        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays, timeZone);
         const previous = subscription.trafficPeriodStartAt;
         return { subscription, period, shouldReset: Boolean(period && previous && previous.getTime() < period.startAt.getTime()) };
       })
@@ -545,7 +547,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private async ensureTrafficReset(subscription: SubscriptionRecord, now = new Date()): Promise<{ subscription: SubscriptionRecord; changed: boolean }> {
     const plan = subscription.plan;
     const mode = plan?.trafficResetMode ?? 'NONE';
-    const period = plan ? getTrafficPeriod(mode, now, subscription.startedAt, plan.durationDays) : null;
+    const settings = await this.settingsService?.getSettings();
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
+    const period = plan ? getTrafficPeriod(mode, now, subscription.startedAt, plan.durationDays, timeZone) : null;
     if (!period) return { subscription, changed: false };
 
     const previous = subscription.trafficPeriodStartAt ?? null;
@@ -594,9 +598,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private getInitialTrafficPeriodStart(
     plan: { trafficResetMode?: string; durationDays: number },
     now: Date,
-    startedAt = now
+    startedAt = now,
+    timeZone = 'Asia/Shanghai'
   ): Date | null {
-    return getTrafficPeriod(plan.trafficResetMode ?? 'NONE', now, startedAt, plan.durationDays)?.startAt ?? null;
+    return getTrafficPeriod(plan.trafficResetMode ?? 'NONE', now, startedAt, plan.durationDays, timeZone)?.startAt ?? null;
   }
 
   private getExtraLineIds(subscription: SubscriptionRecord): string[] {
@@ -709,10 +714,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private toView(subscription: SubscriptionRecord) {
+  private toView(subscription: SubscriptionRecord, timeZone = 'Asia/Shanghai') {
     const trafficResetMode = subscription.plan?.trafficResetMode ?? 'NONE';
     const period = subscription.plan
-      ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays)
+      ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays, timeZone)
       : null;
     return {
       ...subscription,

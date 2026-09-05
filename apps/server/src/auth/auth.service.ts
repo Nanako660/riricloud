@@ -51,10 +51,8 @@ export class AuthService {
         email: dto.email,
         passwordHash: await bcrypt.hash(dto.password, 10),
         role: 'USER',
-        trafficLimitBytes: BigInt(settings.defaultTrafficLimitBytes),
-        ...(settings.defaultValidityDays > 0
-          ? { expireAt: new Date(Date.now() + settings.defaultValidityDays * 86400000) }
-          : {})
+        trafficLimitBytes: BigInt(0),
+        expireAt: null
       }
     });
     if (settings.defaultBalance > 0 && this.walletService) {

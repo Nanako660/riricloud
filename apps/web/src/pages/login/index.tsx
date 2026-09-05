@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { SupportContactsInline } from '@/components/shared/support-dialog';
 
 const loginSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
@@ -59,7 +60,7 @@ export default function LoginPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-3 sm:p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
@@ -114,6 +115,14 @@ export default function LoginPage() {
           </Form>
         </CardContent>
       </Card>
+      <div className="mt-6 flex flex-col items-center gap-2 text-center text-xs text-muted-foreground">
+        <SupportContactsInline settings={infoQuery.data} />
+        {infoQuery.data?.footerCopyright ? (
+          <p>{infoQuery.data.footerCopyright}</p>
+        ) : (
+          <p>© {new Date().getFullYear()} {siteName}</p>
+        )}
+      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import type { AdminLine } from '../../lines/use-lines';
 import type { Plan } from '../../plans/use-plans';
 import type { AdminUserSubscription } from '../use-users';
 import { dateInputAfterDays, GB, type SubscriptionForm } from './user-form-schema';
+import { formatDate, formatDateTime } from '@/lib/utils';
 
 const STATUS_LABELS = {
   ACTIVE: '正常',
@@ -49,7 +50,7 @@ export function UserSubscriptionFields({
         <div>
           <p className="text-sm font-medium">{subscription ? `当前套餐：${subscription.plan?.name ?? '未命名套餐'}` : '当前没有订阅'}</p>
           <p className="text-xs text-muted-foreground">
-            {subscription ? `开始于 ${new Date(subscription.startedAt).toLocaleDateString('zh-CN')}` : '当前为无套餐状态，选择套餐后可绑定'}
+            {subscription ? `开始于 ${formatDate(subscription.startedAt)}` : '当前为无套餐状态，选择套餐后可绑定'}
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" disabled={resetPending} onClick={onResetToken}>
@@ -59,7 +60,7 @@ export function UserSubscriptionFields({
       </div>
       <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">流量重置：</span>{RESET_MODE_LABELS[resetMode]}
-        {resetMode === 'NONE' ? '，当前套餐不会自动重置' : nextResetAt ? `，下次重置：${new Date(nextResetAt).toLocaleString('zh-CN')}` : '，绑定后按当前周期计算下次重置时间'}
+        {resetMode === 'NONE' ? '，当前套餐不会自动重置' : nextResetAt ? `，下次重置：${formatDateTime(nextResetAt)}` : '，绑定后按当前周期计算下次重置时间'}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField
