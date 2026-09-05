@@ -1,7 +1,6 @@
 import type { UseFormReturn } from 'react-hook-form';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import type { Plan } from '../../plans/use-plans';
@@ -82,54 +81,54 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
 export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAccountForm>; isSelf: boolean }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField
-          control={form.control}
-          name="role"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>角色</FormLabel>
-              <Select disabled={isSelf} value={field.value} onValueChange={field.onChange}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="USER">用户</SelectItem>
-                  <SelectItem value="ADMIN">管理员</SelectItem>
-                </SelectContent>
-              </Select>
-              {isSelf ? <FormDescription>不能修改自己的角色</FormDescription> : null}
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+      <FormField
+        control={form.control}
+        name="role"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>角色</FormLabel>
+            <Select disabled={isSelf} value={field.value} onValueChange={field.onChange}>
+              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value="USER">用户</SelectItem>
+                <SelectItem value="ADMIN">管理员</SelectItem>
+              </SelectContent>
+            </Select>
+            {isSelf ? <FormDescription>不能修改自己的角色</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="space-y-2.5">
         <FormField
           control={form.control}
           name="isActive"
           render={({ field }) => (
-            <div className="space-y-2">
-              <Label className="invisible" aria-hidden="true">占位</Label>
-              <FormItem className="flex h-9 flex-row items-center justify-between space-y-0 rounded-md border px-3 py-2 shadow-sm">
-                <FormLabel>启用账号</FormLabel>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-              </FormItem>
-            </div>
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-xs">
+              <div className="space-y-0.5 pr-2">
+                <FormLabel className="text-sm font-medium cursor-pointer">启用账号</FormLabel>
+                <p className="text-xs text-muted-foreground">停用后用户将被禁止登录控制台及建立节点代理连接</p>
+              </div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
           )}
         />
         <FormField
           control={form.control}
           name="emailVerified"
           render={({ field }) => (
-            <div className="space-y-2 sm:col-span-2">
-              <FormItem className="flex h-9 flex-row items-center justify-between space-y-0 rounded-md border px-3 py-2 shadow-sm">
-                <div>
-                  <FormLabel>邮箱已验证</FormLabel>
-                  <p className="text-[11px] text-muted-foreground">开启强制邮箱验证时，未验证普通用户将被限制获取订阅与连接节点</p>
-                </div>
-                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-              </FormItem>
-            </div>
+            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-xs">
+              <div className="space-y-0.5 pr-2">
+                <FormLabel className="text-sm font-medium cursor-pointer">邮箱已验证</FormLabel>
+                <p className="text-xs text-muted-foreground">开启强制邮箱验证时，未验证普通用户将被限制获取订阅与连接节点</p>
+              </div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
           )}
         />
       </div>
+
       <FormField
         control={form.control}
         name="password"

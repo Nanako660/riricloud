@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
-  AlertTriangle,
+  ArrowRight,
   CalendarClock,
   Gauge,
   GitBranch,
@@ -14,6 +14,7 @@ import {
   MailCheck,
   RefreshCw,
   RotateCcw,
+  ShieldAlert,
   ShoppingBag,
   XCircle
 } from 'lucide-react';
@@ -117,43 +118,26 @@ export default function UserSubscriptionPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
-      <AnnouncementCard />
-
-      {isEmailBlocked && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-            <div className="flex-1 space-y-1">
-              <div className="font-semibold text-sm">邮箱未验证，订阅与代理服务暂不可用</div>
-              <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-                系统已开启强制邮箱验证，未验证邮箱的用户无法拉取订阅配置与连接节点。请先完成当前邮箱验证或前往个人中心更换可用邮箱。
-              </p>
-              <div className="flex flex-wrap gap-2 pt-1.5">
-                <Button size="sm" variant="default" className="h-8 gap-1.5 text-xs" onClick={() => setVerifyOpen(true)}>
-                  <MailCheck className="size-3.5" />
-                  立即验证当前邮箱
-                </Button>
-                <Button size="sm" variant="outline" asChild className="h-8 gap-1.5 text-xs">
-                  <Link to="/profile">前往个人中心更换</Link>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {data.subscription ? (
-        <ActiveSubscriptionContent
-          subscription={data.subscription}
-          lines={data.lines}
-          isEmailBlocked={isEmailBlocked}
+      {isEmailBlocked ? (
+        <EmailVerificationBlockState
+          email={user.data?.email}
           onVerifyClick={() => setVerifyOpen(true)}
         />
       ) : (
-        <NoSubscriptionCard />
+        <>
+          <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
+          <AnnouncementCard />
+          {data.subscription ? (
+            <ActiveSubscriptionContent
+              subscription={data.subscription}
+              lines={data.lines}
+            />
+          ) : (
+            <NoSubscriptionCard />
+          )}
+          <ClientGuideCard />
+        </>
       )}
-      <ClientGuideCard />
 
       {/* 验证当前邮箱弹窗 */}
       <Dialog open={verifyOpen} onOpenChange={setVerifyOpen}>
@@ -207,6 +191,52 @@ export default function UserSubscriptionPage() {
   );
 }
 
+function EmailVerificationBlockState({
+  email,
+  onVerifyClick
+}: {
+  email?: string;
+  onVerifyClick: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center p-4 pb-12 sm:pb-20 -translate-y-6 sm:-translate-y-10 text-center space-y-6 max-w-lg mx-auto">
+      <div className="relative flex size-20 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-sm">
+        <ShieldAlert className="size-10" />
+      </div>
+
+      <div className="space-y-2.5">
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+          邮箱未完成验证，订阅与代理服务暂不可用
+        </h2>
+        <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+          当前账号邮箱尚未通过验证。在完成邮箱验证前，您的订阅更新与节点连接暂不可用。
+        </p>
+      </div>
+
+      {email && (
+        <div className="flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          <Mail className="size-4 shrink-0 text-muted-foreground/80" />
+          <span className="shrink-0">当前登录邮箱：</span>
+          <span className="truncate font-mono font-medium text-foreground">{email}</span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+        <Button size="default" className="gap-2 text-sm shadow-sm" onClick={onVerifyClick}>
+          <MailCheck className="size-4" />
+          立即验证当前邮箱
+        </Button>
+        <Button size="default" variant="outline" asChild className="gap-2 text-sm">
+          <Link to="/profile">
+            前往个人中心更换
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function NoSubscriptionCard() {
   return (
     <Card>
@@ -232,14 +262,10 @@ function NoSubscriptionCard() {
 
 function ActiveSubscriptionContent({
   subscription: sub,
-  lines,
-  isEmailBlocked,
-  onVerifyClick
+  lines
 }: {
   subscription: UserSubscription;
   lines: UserLine[];
-  isEmailBlocked?: boolean;
-  onVerifyClick?: () => void;
 }) {
   const { cancel, resetToken, renew } = useUserSubscriptionMutations();
   const wallet = useWallet();
@@ -313,7 +339,15 @@ function ActiveSubscriptionContent({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4 pt-0">
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{formatBytes(sub.trafficUsedBytes)} / {formatBytes(sub.trafficLimitBytes)}</span>
+              <span>{percent.toFixed(1)}%</span>
+            </div>
+            <Progress value={percent} />
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
               <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -324,15 +358,12 @@ function ActiveSubscriptionContent({
               <p className="truncate text-xs text-muted-foreground">已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}</p>
             </div>
 
-            <div className="space-y-2 rounded-lg border bg-muted/20 p-3.5">
-              <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Gauge className="h-3.5 w-3.5 shrink-0" />
-                  <span>流量使用率</span>
-                </div>
-                <span className="font-mono">{percent.toFixed(1)}%</span>
+            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Gauge className="h-3.5 w-3.5 shrink-0" />
+                <span>流量使用率</span>
               </div>
-              <Progress value={percent} />
+              <p className="text-xl font-bold tracking-tight">{percent.toFixed(1)}%</p>
               <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
             </div>
 
@@ -386,20 +417,12 @@ function ActiveSubscriptionContent({
       <Card>
         <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row sm:items-center">
           <div className="min-w-0 space-y-0.5">
-            <div className="flex items-center gap-2">
-              <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" />通用多格式订阅链接</CardTitle>
-              {isEmailBlocked && (
-                <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                  <AlertTriangle className="mr-1 h-3 w-3 text-amber-600" />
-                  已阻断
-                </Badge>
-              )}
-            </div>
+            <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" />通用多格式订阅链接</CardTitle>
             <p className="text-xs text-muted-foreground">支持 Clash Meta、Sing-box、Shadowrocket 等多客户端自动解析</p>
           </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" className="w-full shrink-0 gap-1 text-xs sm:w-auto" disabled={resetToken.isPending || isEmailBlocked}>
+              <Button variant="outline" size="sm" className="w-full shrink-0 gap-1 text-xs sm:w-auto" disabled={resetToken.isPending}>
                 <RefreshCw className="h-3.5 w-3.5" />{resetToken.isPending ? '重置中…' : '重置订阅链接'}
               </Button>
             </AlertDialogTrigger>
@@ -416,24 +439,10 @@ function ActiveSubscriptionContent({
           </AlertDialog>
         </CardHeader>
         <CardContent className="space-y-3">
-          {isEmailBlocked ? (
-            <div className="space-y-2 rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-3.5 dark:border-amber-800 dark:bg-amber-950/20">
-              <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                邮箱未验证：无法获取有效订阅配置（客户端拉取将返回 403 错误）。
-              </p>
-              <div className="flex flex-wrap gap-2 pt-0.5">
-                <Button size="sm" variant="default" className="h-7 gap-1 text-xs" onClick={onVerifyClick}>
-                  <MailCheck className="size-3" />
-                  立即验证当前邮箱
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-              <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">{url}</code>
-              <CopyButton value={url} />
-            </div>
-          )}
+          <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">{url}</code>
+            <CopyButton value={url} />
+          </div>
           <p className="text-xs leading-relaxed text-muted-foreground">将该链接导入支持的代理客户端即可同步所有可用线路；套餐或线路变更时客户端将自动热更新。</p>
         </CardContent>
       </Card>
@@ -443,11 +452,6 @@ function ActiveSubscriptionContent({
           <CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4" />可用线路（{lines.length}）</CardTitle>
         </CardHeader>
         <CardContent>
-          {isEmailBlocked && (
-            <div className="mb-3 rounded-md border border-dashed border-amber-300 bg-amber-50/40 p-2.5 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-              节点已下发连接拦截规则：当前账号邮箱未验证，即使手动导入配置也将被节点阻断连接。
-            </div>
-          )}
           {lines.length ? (
             <div className="grid gap-3 md:grid-cols-2">
               {lines.map((line) => <LineCard key={line.id} line={line} />)}

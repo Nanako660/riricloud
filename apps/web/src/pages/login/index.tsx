@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { z } from 'zod';
-import { Cloud, Loader2 } from 'lucide-react';
+import { Cloud, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { usePublicSettings } from '@/lib/public-settings';
@@ -105,7 +105,7 @@ export default function LoginPage() {
                 )}
               />
               <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
-                {loginMutation.isPending ? <Loader2 className="animate-spin" /> : null}
+                {loginMutation.isPending ? <Loader2 className="animate-spin" /> : <LogIn />}
                 登录
               </Button>
               {infoQuery.data?.registrationEnabled ? (
