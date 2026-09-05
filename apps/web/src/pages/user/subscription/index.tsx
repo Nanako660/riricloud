@@ -209,7 +209,7 @@ function EmailVerificationBlockState({
           邮箱未完成验证，订阅与代理服务暂不可用
         </h2>
         <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
-          当前账号邮箱尚未通过验证。在完成邮箱验证前，你的订阅更新与节点连接暂不可用。
+          当前账号邮箱尚未通过验证。在完成邮箱验证前，您的订阅更新与节点连接暂不可用。
         </p>
       </div>
 

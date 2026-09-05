@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { AgentService } from '../agent-gateway/agent.service';
@@ -83,6 +84,8 @@ const ADMIN_USER_SELECT = {
   },
   extraLineGrants: { select: { lineId: true } }
 } as const;
+
+type AdminUserQueryResult = Prisma.UserGetPayload<{ select: typeof ADMIN_USER_SELECT }>;
 
 @Injectable()
 export class UsersService {
@@ -240,9 +243,15 @@ export class UsersService {
     ]);
     const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
     // BigInt 在服务边界转 Number（< 2^53 无精度损失）
-    const data = users.map(({ extraLineGrants, ...u }) => ({
+    const data = users.map((u) => this.formatAdminUser(u, timeZone));
+    return { data, total, page, pageSize };
+  }
+
+  private formatAdminUser(user: AdminUserQueryResult, timeZone: string) {
+    const { extraLineGrants, ...u } = user;
+    return {
       ...u,
-      emailVerifiedAt: u.emailVerifiedAt ? u.emailVerifiedAt.toISOString() : null,
+      emailVerifiedAt: u.emailVerifiedAt ? (u.emailVerifiedAt instanceof Date ? u.emailVerifiedAt.toISOString() : u.emailVerifiedAt) : null,
       trafficLimitBytes: Number(u.trafficLimitBytes),
       trafficUsedBytes: Number(u.trafficUsedBytes),
       subscription: u.subscription
@@ -260,12 +269,11 @@ export class UsersService {
                   timeZone
                 )?.nextResetAt ?? null
               : null,
-            extraLineIds: (extraLineGrants ?? []).map((grant) => grant.lineId),
+            extraLineIds: (extraLineGrants ?? []).map((grant: { lineId: string }) => grant.lineId),
             plan: u.subscription.plan
           }
         : null
-    }));
-    return { data, total, page, pageSize };
+    };
   }
 
   async createUser(dto: CreateUserDto) {
@@ -317,7 +325,7 @@ export class UsersService {
         })
       : await this.prisma.user.create({ data, select: ADMIN_USER_SELECT });
     void this.agentGateway.pushConfigToAll();
-    return { ...user, trafficLimitBytes: Number(user.trafficLimitBytes), trafficUsedBytes: Number(user.trafficUsedBytes) };
+    return this.formatAdminUser(user, timeZone);
   }
 
   async updateUser(id: string, dto: UpdateUserDto, operatorId: string) {
@@ -359,12 +367,8 @@ export class UsersService {
     }
     // 配额/到期/激活/角色变化影响订阅资格，向在线节点同步用户名单
     void this.agentGateway.pushConfigToAll();
-    return {
-      ...updated,
-      emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null,
-      trafficLimitBytes: Number(updated.trafficLimitBytes),
-      trafficUsedBytes: Number(updated.trafficUsedBytes)
-    };
+    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
+    return this.formatAdminUser(updated, timeZone);
   }
 
   async deleteUser(id: string, operatorId: string) {

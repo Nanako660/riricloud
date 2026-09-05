@@ -244,6 +244,29 @@ describe('UsersService', () => {
       prisma.user.findUnique.mockResolvedValue(null);
       await expect(service.updateUser('nope', {}, 'admin-1')).rejects.toThrow(NotFoundException);
     });
+
+    it('拥有订阅的用户更新时，返回值中的订阅流量字段转为 Number 且可被 JSON.stringify 序列化（BigInt 修复回归）', async () => {
+      prisma.user.findUnique.mockResolvedValue(seededUser);
+      prisma.user.update.mockResolvedValue({
+        ...seededUser,
+        subscription: {
+          id: 'sub-1',
+          status: 'ACTIVE',
+          trafficLimitBytes: BigInt(107374182400),
+          trafficUsedBytes: BigInt(2147483648),
+          startedAt: new Date(),
+          expireAt: null,
+          trafficPeriodStartAt: null,
+          plan: { id: 'p1', name: '体验套餐', durationDays: 30, trafficResetMode: 'NONE' }
+        },
+        extraLineGrants: [{ lineId: 'line-1' }]
+      });
+      const result = await service.updateUser('u1', { emailVerified: true }, 'admin-1');
+      expect(typeof result.subscription?.trafficLimitBytes).toBe('number');
+      expect(typeof result.subscription?.trafficUsedBytes).toBe('number');
+      expect(result.subscription?.extraLineIds).toEqual(['line-1']);
+      expect(() => JSON.stringify(result)).not.toThrow();
+    });
   });
 
   describe('deleteUser', () => {
