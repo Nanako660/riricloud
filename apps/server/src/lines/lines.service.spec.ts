@@ -218,7 +218,7 @@ describe('LinesService', () => {
   });
 
   it('目标直连线路禁用时不返回桥接中继线路', async () => {
-    const bridge = { ...rawLine, id: 'bridge', type: 'RELAY', relayMode: 'TARGET_LINE', targetLineId: 'target', entryNode, exitNode, targetLine: { id: 'target', status: 'DISABLED' } };
+    const bridge = { ...rawLine, id: 'bridge', type: 'RELAY', relayMode: 'TARGET_LINE', targetLineId: 'target', entryNode, landingNode: null, targetLine: { id: 'target', status: 'DISABLED' } };
     prisma.line.findMany.mockResolvedValue([bridge]);
     const result = await service.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
     expect(result).toHaveLength(0);
@@ -227,7 +227,7 @@ describe('LinesService', () => {
   it('删除被桥接引用的目标线路时拦截操作', async () => {
     prisma.line.findUnique.mockResolvedValue(rawLine);
     prisma.line.findFirst.mockResolvedValue({ id: 'bridge-line' });
-    await expect(service.remove(rawLine.id)).rejects.toThrow('该线路正被其他中继线路作为出口目标引用');
+    await expect(service.remove(rawLine.id)).rejects.toThrow('该线路正被其他中继线路作为落地目标引用');
     expect(prisma.line.delete).not.toHaveBeenCalled();
   });
 

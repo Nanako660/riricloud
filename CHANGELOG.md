@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- 修复 `scripts/dev-e2e.sh` 在端到端联调启动时因仍使用旧 `exitNodeId`/`exitPort` 过滤与创建直连线路，导致无法复用既有本机线路并触发服务端 `ValidationPipe` 400 校验拦截失败的问题；对齐直连线路单端点入站语义与错误回显。
 - 修复开发与联调模式下因 TypeScript 增量编译缓存（`tsconfig.build.tsbuildinfo`）与 Nest CLI 清理输出目录（`deleteOutDir: true`）脱节导致的 `Cannot find module 'dist/main'` 启动崩溃问题；将 server 端增量编译显式关闭并统一产物发射行为，同时在 dev-e2e 启动脚本中增设残留 `tsbuildinfo` 缓存清理。
 
 

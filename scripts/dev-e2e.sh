@@ -303,7 +303,7 @@ else
   fi
 
   LINE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/lines?page=1&pageSize=100" \
-    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const body=JSON.parse(d)||{};const lines=Array.isArray(body.data)?body.data:[];const nodeId=process.argv[1];const requestedPort=Number(process.argv[2]);const useLocal=process.argv[3]==="1";const direct=lines.filter(x=>x.type==="DIRECT"&&x.protocolType==="VLESS"&&x.entryNodeId===nodeId&&x.exitNodeId===nodeId);const named=direct.find(x=>x.name==="Master 本机直连");const matched=useLocal?(named||direct[0]):direct.find(x=>x.entryPort===requestedPort);console.log(matched?[matched.id,matched.entryPort,matched.status].join(" "):"")}catch{console.log("")}})' "$NODE_ID" "$NODE_PORT" "$USE_MASTER_LOCAL")"
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const body=JSON.parse(d)||{};const lines=Array.isArray(body.data)?body.data:[];const nodeId=process.argv[1];const requestedPort=Number(process.argv[2]);const useLocal=process.argv[3]==="1";const direct=lines.filter(x=>x.type==="DIRECT"&&x.protocolType==="VLESS"&&x.entryNodeId===nodeId);const named=direct.find(x=>x.name==="Master 本机直连");const matched=useLocal?(named||direct[0]):direct.find(x=>x.entryPort===requestedPort);console.log(matched?[matched.id,matched.entryPort,matched.status].join(" "):"")}catch{console.log("")}})' "$NODE_ID" "$NODE_PORT" "$USE_MASTER_LOCAL")"
   if [ -n "$LINE_LINE" ]; then
     read -r LINE_ID NODE_PORT LINE_STATUS <<<"$LINE_LINE"
     if [ "$LINE_STATUS" != "ACTIVE" ]; then
@@ -316,12 +316,12 @@ else
     say "创建 VLESS Reality 线路（端口 $NODE_PORT）…"
     LINE_PARAMS='{"flow":"xtls-rprx-vision","transport":{"type":"tcp"},"tls":{"enabled":true,"mode":"reality","serverName":"www.apple.com","reality":{"dest":"www.apple.com:443","serverNames":["www.apple.com"],"shortIds":["0123456789abcdef"]}}}'
     LINE_NAME="$(jsonquote "$NODE_NAME")"
-    LINE_BODY="$(printf '{"name":%s,"type":"DIRECT","protocolType":"VLESS","params":%s,"entryNodeId":"%s","entryPort":%s,"exitNodeId":"%s","exitPort":%s,"tags":["e2e"],"isPublic":true,"status":"ACTIVE"}' \
-      "$LINE_NAME" "$LINE_PARAMS" "$NODE_ID" "$NODE_PORT" "$NODE_ID" "$NODE_PORT")"
+    LINE_BODY="$(printf '{"name":%s,"type":"DIRECT","protocolType":"VLESS","params":%s,"entryNodeId":"%s","entryPort":%s,"tags":["e2e"],"isPublic":true,"status":"ACTIVE"}' \
+      "$LINE_NAME" "$LINE_PARAMS" "$NODE_ID" "$NODE_PORT")"
     LINE_RESULT="$(curl -fsS --max-time 5 -X POST "${AUTH[@]}" -H 'Content-Type: application/json' \
-      -d "$LINE_BODY" "$SERVER_URL/api/v1/admin/lines")" || die "创建线路失败"
+      -d "$LINE_BODY" "$SERVER_URL/api/v1/admin/lines" 2>&1)" || die "创建线路失败：$LINE_RESULT"
     LINE_ID="$(printf '%s' "$LINE_RESULT" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{console.log(JSON.parse(d).line.id)}catch{console.log("")}})')"
-    [ -n "$LINE_ID" ] || die "创建线路失败"
+    [ -n "$LINE_ID" ] || die "创建线路失败：$LINE_RESULT"
   fi
 fi
 

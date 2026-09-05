@@ -148,7 +148,7 @@ export class LinesService {
     await this.findRaw(id);
     const referencingLine = await this.prisma.line.findFirst({ where: { targetLineId: id }, select: { id: true } });
     if (referencingLine) {
-      throw new BadRequestException('该线路正被其他中继线路作为出口目标引用，请先解除引用后再删除');
+      throw new BadRequestException('该线路正被其他中继线路作为落地目标引用，请先解除引用后再删除');
     }
     await this.prisma.line.delete({ where: { id } });
     void this.agentGateway.pushConfigToAll();
