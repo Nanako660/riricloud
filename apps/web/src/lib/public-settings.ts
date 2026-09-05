@@ -20,6 +20,9 @@ export interface PublicSystemSettings {
   subscriptionShortLinksEnabled: boolean;
   customCss: string;
   customHeadHtml: string;
+  emailVerificationEnabled: boolean;
+  captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
+  turnstileSiteKey: string;
 }
 
 export function usePublicSettings() {

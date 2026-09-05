@@ -13,7 +13,7 @@ export class SettingsController {
 
   @Get()
   getSettings() {
-    return this.settingsService.getSettings();
+    return this.settingsService.getAdminSettings();
   }
 
   @Put()

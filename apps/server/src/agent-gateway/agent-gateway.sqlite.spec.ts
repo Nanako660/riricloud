@@ -83,6 +83,8 @@ describe('AgentService SQLite traffic accounting', () => {
       )`,
       `CREATE TABLE "User" (
         "id" TEXT NOT NULL PRIMARY KEY,
+        "uid" INTEGER,
+        "nickname" TEXT,
         "email" TEXT NOT NULL,
         "passwordHash" TEXT NOT NULL,
         "role" TEXT NOT NULL DEFAULT 'USER',

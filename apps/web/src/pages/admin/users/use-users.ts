@@ -4,6 +4,8 @@ import { api, extractErrorMessage } from '@/lib/api';
 
 export interface AdminUser {
   id: string;
+  uid: number | null;
+  nickname: string;
   email: string;
   role: 'ADMIN' | 'USER';
   balance: number;

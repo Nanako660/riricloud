@@ -8,7 +8,7 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { useTheme } from 'next-themes';
 import { z } from 'zod';
-import { Clock, Code2, Gauge, Globe2, Link2, Palette, RotateCcw, Save, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
+import { Clock, Code2, Gauge, Globe2, Link2, Mail, Palette, RotateCcw, Save, Send, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
@@ -23,9 +23,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -99,6 +101,17 @@ interface SystemSettings {
   lineSpeedtestIntervalMins: number;
   lineSpeedtestTargetUrl: string;
   lineSpeedtestTimeoutMs: number;
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  emailVerificationEnabled: boolean;
+  captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
+  turnstileSiteKey: string;
+  turnstileSecretKey: string;
 }
 
 const settingsSchema = z.object({
@@ -137,7 +150,18 @@ const settingsSchema = z.object({
   lineSpeedtestEnabled: z.boolean(),
   lineSpeedtestIntervalMins: z.coerce.number().int().min(1).max(1440),
   lineSpeedtestTargetUrl: z.string().refine(isBlankOrUrl, '请输入有效的测速目标 URL'),
-  lineSpeedtestTimeoutMs: z.coerce.number().int().min(500).max(30000)
+  lineSpeedtestTimeoutMs: z.coerce.number().int().min(500).max(30000),
+  smtpEnabled: z.boolean(),
+  smtpHost: z.string().max(255),
+  smtpPort: z.coerce.number().int().min(1).max(65535),
+  smtpSecure: z.boolean(),
+  smtpUser: z.string().max(255),
+  smtpPass: z.string().max(512),
+  smtpFrom: z.string().max(255),
+  emailVerificationEnabled: z.boolean(),
+  captchaMode: z.enum(['OFF', 'LOCAL', 'TURNSTILE']),
+  turnstileSiteKey: z.string().max(255),
+  turnstileSecretKey: z.string().max(512)
 });
 
 export type SettingsForm = z.infer<typeof settingsSchema>;
@@ -147,6 +171,8 @@ export default function AdminSettingsPage() {
   const publicSettings = usePublicSettings();
   const plans = useAdminPlans();
   const templates = useAdminTemplates();
+  const [smtpTestOpen, setSmtpTestOpen] = useState(false);
+  const [smtpTestEmail, setSmtpTestEmail] = useState('');
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: async () => (await api.get<SystemSettings>('/admin/settings')).data
@@ -164,7 +190,9 @@ export default function AdminSettingsPage() {
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
-      lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000
+      lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000,
+      smtpEnabled: false, smtpHost: '', smtpPort: 587, smtpSecure: false, smtpUser: '', smtpPass: '', smtpFrom: '',
+      emailVerificationEnabled: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: ''
     })
   });
 
@@ -191,6 +219,11 @@ export default function AdminSettingsPage() {
       void queryClient.invalidateQueries({ queryKey: ['system', 'public-info'] });
     },
     onError: (error) => toast.error(extractErrorMessage(error, '重置失败'))
+  });
+  const smtpTestMutation = useMutation({
+    mutationFn: async (email: string) => (await api.post<{ success: boolean; messageId?: string; durationMs?: number }>('/admin/settings/smtp/test', { email })).data,
+    onSuccess: (result) => { setSmtpTestOpen(false); toast.success(`测试邮件已发送${result.durationMs ? `（${result.durationMs}ms）` : ''}`); },
+    onError: (error) => toast.error(extractErrorMessage(error, 'SMTP 测试失败'))
   });
 
   if (settingsQuery.isPending) {
@@ -249,8 +282,15 @@ export default function AdminSettingsPage() {
               </div>
               <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} />
               <SettingsSelect name="emailDomainMode" label="邮箱域名过滤模式" options={[{ value: 'none', label: '不限制' }, { value: 'whitelist', label: '白名单，仅允许列表域名' }, { value: 'blacklist', label: '黑名单，拒绝列表域名' }]} />
-              <SettingsTextarea name="emailDomainListText" label="邮箱域名列表" rows={5} className="md:col-span-2" description="每行一个域名，例如 example.com；不需要填写 @。" />
-            </CardContent></Card></TabsContent>
+               <SettingsTextarea name="emailDomainListText" label="邮箱域名列表" rows={5} className="md:col-span-2" description="每行一个域名，例如 example.com；不需要填写 @。" />
+               <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm">
+                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-start gap-2"><Mail className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">邮件服务（SMTP）</h3><p className="text-xs text-muted-foreground">用于发送注册和换绑邮箱验证码，密码字段保持脱敏。</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSmtpTestOpen(true)} disabled={smtpTestMutation.isPending}><Send />发送测试邮件</Button></div>
+                 <SettingsSwitch name="smtpEnabled" label="启用 SMTP 发信" description="关闭后邮箱验证码不会发送。" />
+                 <div className="grid min-w-0 gap-4 sm:grid-cols-2"><SettingsInput name="smtpHost" label="SMTP 服务器" placeholder="smtp.example.com" /><SettingsInput name="smtpPort" label="端口" type="number" min={1} max={65535} /><SettingsSwitch name="smtpSecure" label="使用 SSL/TLS" description="465 端口通常开启，587 端口通常关闭并使用 STARTTLS。" /><SettingsInput name="smtpUser" label="账号" placeholder="noreply@example.com" /><SettingsInput name="smtpPass" label="密码" type="password" placeholder="留空保留当前密码" /><SettingsInput name="smtpFrom" label="发信人地址" placeholder="RiriCloud <noreply@example.com>" /></div>
+                 <SettingsSwitch name="emailVerificationEnabled" label="启用注册邮箱验证" description="注册时必须完成 6 位邮箱验证码验证，验证码有效期 5 分钟。" />
+               </div>
+               <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">人机验证（CAPTCHA）</h3><p className="text-xs text-muted-foreground">在获取注册验证码前拦截自动化请求；本地图形验证码无需外部服务。</p></div></div><SettingsSelect name="captchaMode" label="验证模式" options={[{ value: 'OFF', label: '关闭' }, { value: 'LOCAL', label: '本地图形验证码' }, { value: 'TURNSTILE', label: 'Cloudflare Turnstile' }]} />{form.watch('captchaMode') === 'TURNSTILE' ? <div className="grid gap-4 sm:grid-cols-2"><SettingsInput name="turnstileSiteKey" label="Site Key" placeholder="0x4AAAAAAA..." /><SettingsInput name="turnstileSecretKey" label="Secret Key" type="password" placeholder="留空保留当前密钥" /></div> : null}</div>
+             </CardContent></Card></TabsContent>
 
             <TabsContent value="subscription"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
                <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL（覆盖项，可选）" placeholder="https://sub.example.com" description="客户端获取订阅的独立基准域名或反代路径。留空时自动继承「全站访问 URL」，若全站 URL 亦留空则使用当前访问地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
@@ -307,6 +347,7 @@ export default function AdminSettingsPage() {
         </form>
       </Form>
       {publicSettings.isError ? <p className="text-xs text-muted-foreground">公开站点信息暂时不可用，保存后会自动重试同步。</p> : null}
+      <Dialog open={smtpTestOpen} onOpenChange={setSmtpTestOpen}><DialogContent size="compact"><DialogHeader><DialogTitle>发送 SMTP 测试邮件</DialogTitle><DialogDescription>请输入收件地址，系统会先验证 SMTP 连接，再发送一封测试邮件。</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="smtp-test-email">收件邮箱</Label><Input id="smtp-test-email" type="email" value={smtpTestEmail} onChange={(event) => setSmtpTestEmail(event.target.value)} placeholder="admin@example.com" /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setSmtpTestOpen(false)}>取消</Button><Button type="button" disabled={smtpTestMutation.isPending || !smtpTestEmail.trim()} onClick={() => smtpTestMutation.mutate(smtpTestEmail.trim())}><Send />{smtpTestMutation.isPending ? '发送中…' : '发送测试邮件'}</Button></DialogFooter></DialogContent></Dialog>
     </PageContainer>
   );
 }
@@ -472,7 +513,18 @@ function toForm(settings: SystemSettings): SettingsForm {
     lineSpeedtestEnabled: settings.lineSpeedtestEnabled,
     lineSpeedtestIntervalMins: settings.lineSpeedtestIntervalMins,
     lineSpeedtestTargetUrl: settings.lineSpeedtestTargetUrl,
-    lineSpeedtestTimeoutMs: settings.lineSpeedtestTimeoutMs
+    lineSpeedtestTimeoutMs: settings.lineSpeedtestTimeoutMs,
+    smtpEnabled: settings.smtpEnabled,
+    smtpHost: settings.smtpHost,
+    smtpPort: settings.smtpPort,
+    smtpSecure: settings.smtpSecure,
+    smtpUser: settings.smtpUser,
+    smtpPass: settings.smtpPass,
+    smtpFrom: settings.smtpFrom,
+    emailVerificationEnabled: settings.emailVerificationEnabled,
+    captchaMode: settings.captchaMode,
+    turnstileSiteKey: settings.turnstileSiteKey,
+    turnstileSecretKey: settings.turnstileSecretKey
   };
 }
 
@@ -513,7 +565,18 @@ function toPayload(values: SettingsForm) {
     lineSpeedtestEnabled: values.lineSpeedtestEnabled,
     lineSpeedtestIntervalMins: values.lineSpeedtestIntervalMins,
     lineSpeedtestTargetUrl: values.lineSpeedtestTargetUrl,
-    lineSpeedtestTimeoutMs: values.lineSpeedtestTimeoutMs
+    lineSpeedtestTimeoutMs: values.lineSpeedtestTimeoutMs,
+    smtpEnabled: values.smtpEnabled,
+    smtpHost: values.smtpHost,
+    smtpPort: values.smtpPort,
+    smtpSecure: values.smtpSecure,
+    smtpUser: values.smtpUser,
+    smtpPass: values.smtpPass,
+    smtpFrom: values.smtpFrom,
+    emailVerificationEnabled: values.emailVerificationEnabled,
+    captchaMode: values.captchaMode,
+    turnstileSiteKey: values.turnstileSiteKey,
+    turnstileSecretKey: values.turnstileSecretKey
   };
 }
 

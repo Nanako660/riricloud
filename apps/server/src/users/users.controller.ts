@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { UsersService } from './users.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ChangeEmailDto } from './dto/change-email.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @ApiTags('user')
 @ApiBearerAuth()
@@ -39,6 +41,16 @@ export class UsersController {
   @Post('change-password')
   changePassword(@CurrentUser() user: { id: string }, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(user.id, dto);
+  }
+
+  @Patch('profile')
+  updateProfile(@CurrentUser() user: { id: string }, @Body() dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(user.id, dto);
+  }
+
+  @Post('change-email')
+  changeEmail(@CurrentUser() user: { id: string }, @Body() dto: ChangeEmailDto) {
+    return this.usersService.changeEmail(user.id, dto);
   }
 
   @Post('reset-uuid')

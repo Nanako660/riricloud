@@ -29,7 +29,7 @@
 | 索引编号 | 模块分类 | 页面 / 交互单元 | 路由 / 触发方式 | 对应源码路径 | 核心验证检查点 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 卡片居中性、Logo 渲染、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、输入框聚焦态、登录后跳转与错误 Toast、底栏客服支持联系渠道与页脚版权渲染 |
-| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**` | 表单字段对齐、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、密码确认校验、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
+| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**`, `apps/web/src/components/shared/captcha-challenge.tsx` | 表单字段对齐、昵称选填与默认昵称提示、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、密码确认校验、邮箱验证码获取按钮与 60 秒倒计时、本地 SVG CAPTCHA 弹窗/内嵌验证或 Turnstile 状态、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
 | **`UI-03`** | 控制台 | 根路径重定向 | `/` | `apps/web/src/router/index.tsx` | 登录后访问根路径使用 replace 自动跳转至 `/subscription`，不渲染已下线的仪表盘页面 |
 | **`UI-04`** | 用户订阅 | 公告与客户端使用指引 | `/subscription` | `apps/web/src/components/shared/announcement-card.tsx`, `apps/web/src/components/shared/client-guide-card.tsx` | 公告 Markdown 安全渲染、关闭状态本地记忆、无订阅与有订阅状态下均展示客户端三步指引，明暗主题与移动端不溢出 |
 | **`UI-05`** | 节点管理 | 节点管理列表 | `/admin/nodes` | `apps/web/src/pages/admin/nodes/index.tsx` | 节点数据表格、内核运行状态 Badge、CPU/内存/带宽遥测实时刷新、统一时区心跳时间展示 |
@@ -38,10 +38,10 @@
 | **`UI-08`** | 节点详情 | 派生监听端口卡片 | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 线路派生端口按 DIRECT/TRANSIT/LANDING 三态角色展示、消除直连幽灵双端口、端口文本不溢出、无线路时 EmptyState |
 | **`UI-09`** | 节点详情 | 基础信息与遥测 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、Agent Token、通信模式、Agent/系统架构/内核版本画像、遥测与内核状态、统一时区上报时间 |
 | **`UI-10`** | 节点详情 | 高级与运维 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | Line 配置预览、JSON 覆盖编辑器、统一时区网络质量快照、格式化内核错误日志、重启/升级/删除操作 |
-| **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | 邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选（支持「无订阅 NONE」与「无套餐 NONE」精准筛选，状态下拉中英文对照）、套餐 Badge、订阅状态 Badge（有效/已取消/已过期/已吊销/无订阅）、流量进度条、统一时区到期日、流量数据自动刷新、操作列对无订阅用户置灰禁用重置订阅链接按钮并展示「该用户暂无有效订阅」Tooltip 提示、Token 重置确认、管理员防误操作保护 |
+| **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | UID 与昵称列、UID 精确搜索和昵称/邮箱实时搜索、角色/账号状态/订阅状态/套餐筛选（支持「无订阅 NONE」与「无套餐 NONE」精准筛选，状态下拉中英文对照）、套餐 Badge、订阅状态 Badge（有效/已取消/已过期/已吊销/无订阅）、流量进度条、统一时区到期日、流量数据自动刷新、操作列对无订阅用户置灰禁用重置订阅链接按钮并展示「该用户暂无有效订阅」Tooltip 提示、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select，纯套餐驱动（彻底移除手动流量配额与到期项输入，无套餐创建 0 配额无订阅用户，绑定套餐自动继承套餐配额与时长） |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色与封禁、密码重置；订阅管理中无订阅用户隐藏重置订阅链接按钮，无订阅或选择无套餐时自适应隐藏配额/已用流量/到期日/额外线路输入项，展示状态说明或取消警告卡片；无订阅用户提示请选择套餐绑定且未选套餐前保存按钮禁用；已有订阅选择无套餐切换为红色「彻底取消订阅」按钮并触发二次确认弹窗；绑定具体套餐后流畅展开微调输入项与流量重置信息；Token 重置确认 |
-| **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与二进制下载 URL 明确为覆盖项、默认模板只读展示与跳转管理、CodeMirror、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
+| **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与二进制下载 URL 明确为覆盖项、默认模板只读展示与跳转管理、CodeMirror、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
 | **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐卡片信息密度、公开/下架 Badge、节点匹配与模板标签、删除确认 |
 | **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、流量重置策略 Select、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
@@ -55,7 +55,7 @@
 | **`UI-26`** | 证书管理 | 证书管理列表与证书操作弹窗 | `/admin/certificates`（点击新建/编辑/查看） | `apps/web/src/pages/admin/certificates/**` | 证书名称、SAN 标签、签发者、统一时区有效期状态展示、关联线路数、PEM 粘贴/上传、解析反馈、私钥查看、引用线路删除拦截 |
 | **`UI-27`** | 流量统计 | 全站流量统计 | `/admin/traffic` | `apps/web/src/pages/admin/traffic/**` | 今日/24 小时/7 天/30 天 Tabs、流量与当前速率摘要、平均/峰值速率图、线路/用户 Top 5 + 其他 Donut 切换、线路明细/用户排行 Tabs、邮箱搜索、角色筛选、本地分页、前三名徽标、排行表格数字字段不换行、明暗主题与移动端局部横向滚动 |
 | **`UI-28`** | 用户管理与流量统计 | 单用户流量明细下钻 | `/admin/users` 或 `/admin/traffic`（点击“流量明细”） | `apps/web/src/pages/admin/users/components/user-traffic-dialog.tsx` | 用户配额画像、周期走势图、线路占比、明细表格、无记录 EmptyState、桌面 `max-w-5xl` Dialog/移动 Sheet、外层无横向溢出且明细表局部滚动、明暗主题 |
-| **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | 余额与收支摘要、客服支持渠道卡片、卡密兑换、统一时区流水分页、密码修改、用户代理凭据展示/复制与重置确认；移动端单列、流水表格保持完整字段与可读列宽并在容器内横向滚动、明暗主题 |
+| **`UI-29`** | 用户中心 | 个人中心 | `/profile` | `apps/web/src/pages/user/profile/**`, `apps/web/src/components/shared/quick-redeem-form.tsx` | UID 醒目展示与复制、昵称就地编辑、换绑邮箱 Dialog（新邮箱验证码 60 秒倒计时与当前密码确认）、余额与收支摘要、客服支持渠道卡片、卡密兑换、统一时区流水分页、密码修改、用户代理凭据展示/复制与重置确认；移动端单列、流水表格保持完整字段与可读列宽并在容器内横向滚动、明暗主题 |
 | **`UI-30`** | 卡密管理 | 卡密管理列表与批量生成/作废交互 | `/admin/redeem-codes` | `apps/web/src/pages/admin/redeem-codes/**` | 状态筛选、元/分单位提示、批量生成表单、生成结果换行复制、统一时区有效期状态、未使用卡密作废确认、移动端表格局部滚动与弹窗内滚动 |
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | Agent/Sing-box 类型、平台与状态筛选；独立资源版本、来源、默认/启停/归档状态、平台文件 SHA-256 与大小；本地上传、远程导入、资源详情、辅助文件、分发历史；明暗主题与移动端弹窗内滚动 |
 

@@ -14,6 +14,8 @@ datasource db {
 
 model User {
   id                String    @id @default(uuid())
+  uid               Int?      @unique // 6 位随机数字用户标识
+  nickname          String?   // 用户自定义昵称；为空时由应用层回退为 用户_<UID>
   email             String    @unique
   passwordHash      String
   role              String    @default("USER") // Role 枚举：ADMIN | USER
@@ -36,6 +38,19 @@ model User {
 
   @@index([role])
   @@index([isActive])
+}
+
+model VerificationCode {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  action    String // REGISTER | CHANGE_EMAIL
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, action, createdAt])
+  @@index([expiresAt])
 }
 
 model Node {

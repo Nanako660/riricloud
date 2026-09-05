@@ -4,6 +4,8 @@ import { api, extractErrorMessage } from '@/lib/api';
 
 export interface ProfileUser {
   id: string;
+  uid: number | null;
+  nickname: string;
   email: string;
   role: 'ADMIN' | 'USER';
   balance: number;
@@ -78,5 +80,20 @@ export function useProfileMutations() {
     onSuccess: () => { toast.success('代理凭据已重置'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '凭据重置失败'))
   });
-  return { redeem, changePassword, resetUuid };
+  const updateProfile = useMutation({
+    mutationFn: async (payload: { nickname: string }) => (await api.patch('/user/profile', payload)).data,
+    onSuccess: () => { toast.success('昵称已更新'); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '昵称保存失败'))
+  });
+  const sendEmailCode = useMutation({
+    mutationFn: async (email: string) => (await api.post('/verification/send-code', { email, action: 'CHANGE_EMAIL' })).data,
+    onSuccess: () => toast.success('验证码已发送到新邮箱'),
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '验证码发送失败'))
+  });
+  const changeEmail = useMutation({
+    mutationFn: async (payload: { newEmail: string; verificationCode: string; currentPassword: string }) => (await api.post('/user/change-email', payload)).data,
+    onSuccess: () => { toast.success('登录邮箱已更换'); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, '换绑邮箱失败'))
+  });
+  return { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail };
 }

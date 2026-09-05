@@ -1,6 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { LogOut, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,8 +17,16 @@ import {
 // 顶栏独立小巧用户菜单（点击弹出用户信息与退出）
 export function UserMenu() {
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const profile = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => (await api.get<{ email: string; role: 'ADMIN' | 'USER'; uid: number | null; nickname: string }>('/auth/me')).data,
+    enabled: Boolean(token),
+    staleTime: 60_000
+  });
+  const currentUser = profile.data ?? user;
 
   const onLogout = () => {
     logout();
@@ -24,8 +34,9 @@ export function UserMenu() {
     navigate('/login');
   };
 
-  const userInitial = (user?.email?.[0] || 'U').toUpperCase();
-  const isAdmin = user?.role === 'ADMIN';
+  const displayName = currentUser?.nickname || currentUser?.email || '未登录';
+  const userInitial = displayName[0]?.toUpperCase() || 'U';
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   return (
     <DropdownMenu>
@@ -47,9 +58,11 @@ export function UserMenu() {
             </div>
             <div className="grid flex-1 text-left text-xs leading-tight min-w-0">
               <span className="truncate font-semibold text-foreground">
-                {user?.email || '未登录'}
+                {displayName}
               </span>
               <span className="truncate text-[11px] text-muted-foreground flex items-center gap-1">
+                {currentUser?.uid ? <span className="font-mono">UID {currentUser.uid}</span> : null}
+                {currentUser?.uid ? <span>·</span> : null}
                 {isAdmin ? (
                   <>
                     <ShieldCheck className="size-3 text-emerald-500 shrink-0" />

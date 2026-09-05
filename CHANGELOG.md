@@ -13,6 +13,8 @@
 ## [Unreleased]
 
 ### Added
+- **用户系统完善**：新增全局唯一 6 位数字 UID、可选昵称与默认昵称回退；注册支持邮箱验证码、SMTP 发信、本地 SVG CAPTCHA 和 Cloudflare Turnstile；个人中心支持昵称修改与邮箱换绑，管理员用户列表支持 UID/昵称检索。
+- **系统安全配置**：新增 SMTP 服务、注册邮箱验证和 CAPTCHA 模式设置，SMTP 密码与 Turnstile Secret 在管理端读取时统一脱敏，并支持发送测试邮件。
 
 ### Changed
 

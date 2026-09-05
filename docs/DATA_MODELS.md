@@ -64,6 +64,8 @@ enum ProtocolType {
 // ==============================
 model User {
   id                String       @id @default(uuid())
+  uid               Int?         @unique                          // 6 位随机数字用户标识，存量用户由启动回填
+  nickname          String?                                      // 自定义昵称；为空时展示 用户_<UID>
   email             String       @unique
   passwordHash      String
   role              String       @default("USER")
@@ -92,6 +94,20 @@ model User {
 
   @@index([role])
   @@index([isActive])
+}
+
+// 注册与换绑邮箱使用的一次性验证码
+model VerificationCode {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  action    String   // REGISTER | CHANGE_EMAIL
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, action, createdAt])
+  @@index([expiresAt])
 }
 
 // ==============================
@@ -491,8 +507,14 @@ model SystemSetting {
 | `lineSpeedtestTargetUrl` | HTTP/HTTPS URL | `"http://cp.cloudflare.com/generate_204"` | 线路测速探测目标 URL |
 | `lineSpeedtestTimeoutMs` | 十进制整数（500~30000） | `"3000"` | 单次测速连接超时阈值（毫秒） |
 | `systemTimezone` | IANA 时区标识（如 `Asia/Shanghai`） | `"Asia/Shanghai"` | 全系统统一时区设置；驱动全站前端时间格式化、后端流量图表按小时/天聚合时间桶以及自然月重置边界精确计算 |
+| `smtpEnabled` | `"true"` / `"false"` | `"false"` | 是否启用 SMTP 发信；密码只在服务端保存，管理端读取时脱敏 |
+| `smtpHost` / `smtpPort` / `smtpSecure` | 主机文本 / 十进制端口 / 布尔 | `""` / `"587"` / `"false"` | SMTP 服务器连接参数；`smtpSecure=true` 使用 SSL/TLS |
+| `smtpUser` / `smtpPass` / `smtpFrom` | 文本 | `""` | SMTP 登录账号、密码和发信人地址；管理端密码返回 `********` |
+| `emailVerificationEnabled` | `"true"` / `"false"` | `"false"` | 是否要求注册提交 6 位邮箱验证码 |
+| `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册和获取注册验证码前的人机验证模式 |
+| `turnstileSiteKey` / `turnstileSecretKey` | 文本 | `""` | Cloudflare Turnstile 公钥与服务端密钥；仅 Site Key 进入公共设置，Secret Key 管理端读取时脱敏 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关和前端运行时样式字段。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。敏感设置 `smtpPass` 与 `turnstileSecretKey` 在管理端读取时返回 `********`，更新时提交该占位值表示保留原密钥。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关、运行时样式以及注册邮箱验证和 CAPTCHA 的公共参数（不含 SMTP 或 Turnstile Secret）。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。
 
 ---
 

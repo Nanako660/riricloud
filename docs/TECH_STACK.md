@@ -56,6 +56,10 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
   - 标准无状态 Bearer Token 认证。
 - **YAML 序列化（`yaml`）**：
   - Clash Meta 订阅输出需要将配置对象序列化为 YAML；选用纯 JS、零传递依赖且活跃维护的 [`yaml`](https://github.com/eemeli/yaml) 包，不引入原生编译依赖。
+- **SMTP 邮件（`nodemailer`）**：
+  - 通过成熟的 Node.js SMTP 客户端发送注册与换绑邮箱验证码，并复用同一 Transporter 执行管理员测试邮件；连接参数来自 `SystemSetting`，不新增外部邮件服务或队列。
+- **本地 CAPTCHA（`svg-captcha`）**：
+  - 生成纯 SVG 图形/算术验证码，答案只保存在签名凭据中并在服务端校验；无需浏览器插件、原生编译或额外基础设施。Cloudflare Turnstile 作为可选在线模式，通过官方校验接口完成服务端验证。
 
 ---
 
