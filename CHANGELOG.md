@@ -21,9 +21,16 @@
   - 系统设置以 `publicBaseUrl` 作为主基准入口；`subscriptionBaseUrl` 与 `binaryDownloadBaseUrl` 作为可选覆盖项，留空时自适应继承主基准地址。
   - 全界面落地页脚版权与客服支持体系：`footerCopyright`、客服邮箱、Telegram、Discord、自定义客服 URL 在侧边栏底栏（提供「联系客服与帮助」弹窗）、登录页、注册页、个人中心全量对齐渲染。
   - 收敛系统设置中「默认订阅模板」入口：由冗余的修改下拉框调整为只读信息卡片（展示当前默认模板名称与说明）+ 一键跳转至「订阅模板」页管理，消除管理端重复入口。
+- **用户管理支持「无订阅」与「无套餐」精准筛选**：
+  - 用户管理列表订阅状态筛选下拉新增「无订阅 (NONE)」选项，并在中文化标签中全面对齐（有效 ACTIVE、已取消 CANCELED、已过期 EXPIRED、已吊销 REVOKED、无订阅 NONE）；
+  - 套餐筛选下拉新增「无套餐 (NONE)」选项；
+  - 服务端 `ListUsersQueryDto` 与 `users.service.ts` 原生支持 `subscriptionStatus=NONE` 及 `planId=NONE`，精准通过 Prisma `where: { subscription: null }` 查询无订阅记录用户。
 
 ### Changed
 
+- **管理员创建用户全面切换为纯套餐驱动**：
+  - 彻底移除创建用户弹窗中冗余的手动「流量配额」与「到期日期」输入项；
+  - 选择「暂不绑定套餐」时创建纯净 0 配额无订阅账号，选择具体套餐时自动由后端继承该套餐预设配额与有效期；如需为个别用户微调，创建后通过「编辑用户 -> 订阅管理」Tab 进行精细化调控。
 - **线路端点拓扑与 Landing 体系彻底重构**：
   - 彻底废除历史语义不明且发生抽象泄露的 `exitNodeId` / `exitPort` 字段，全栈全面切换为语义精确的 `Entry`（入口/中转）与 `Landing`（落地）拓扑体系。
   - 数据模型与持久层重塑：直连线路（`DIRECT`）仅持久化入口节点与业务监听端口（`entryNodeId` + `entryPort`），落地字段（`landingNodeId` / `landingPort`）自然保持为 `null`，彻底根除直连模式强行同步伪出口字段导致的幽灵双重端口与大量防御同步代码；桥接线路（`TARGET_LINE`）落地信息完全由目标直连线路动态解析（单一真理源 SSOT）。

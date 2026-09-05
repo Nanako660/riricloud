@@ -12,7 +12,7 @@ import type { AdminLine } from '../../lines/use-lines';
 import { useUserMutations, type AdminUser } from '../use-users';
 import { CreateUserFields, EditAccountFields } from './user-account-fields';
 import { UserSubscriptionFields } from './user-subscription-fields';
-import { createUserSchema, dateInputAfterDays, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
+import { createUserSchema, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
 
 interface UserFormDialogProps {
   open: boolean;
@@ -27,10 +27,7 @@ const emptyCreateValues: CreateUserForm = {
   email: '',
   password: '',
   role: 'USER',
-  planId: '',
-  quotaGB: 100,
-  permanent: false,
-  expireAt: dateInputAfterDays(30)
+  planId: ''
 };
 
 export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOptions }: UserFormDialogProps) {
@@ -72,9 +69,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
       email: values.email,
       password: values.password,
       role: values.role,
-      planId: values.planId || null,
-      trafficLimitBytes: Math.round(values.quotaGB * GB),
-      expireAt: values.permanent ? null : dateInputToIso(values.expireAt ?? '')
+      planId: values.planId || null
     }, { onSuccess: () => onOpenChange(false) });
   };
 
@@ -111,7 +106,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
         <ResponsiveDialogContent>
           <DialogHeader>
             <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
-            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，配额和有效期可继续微调。'}</DialogDescription>
+            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，套餐配额与时长由所选套餐决定。'}</DialogDescription>
           </DialogHeader>
           {isEdit ? (
             <Tabs key={user?.id} defaultValue="account" className="w-full">

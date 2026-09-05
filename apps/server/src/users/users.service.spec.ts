@@ -104,6 +104,20 @@ describe('UsersService', () => {
         }
       }));
     });
+
+    it('支持按 NONE 筛选无订阅用户与无套餐用户', async () => {
+      prisma.$transaction.mockResolvedValue([[], 0]);
+
+      await service.listUsers({ page: 1, pageSize: 20, subscriptionStatus: 'NONE' });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ subscription: null })
+      }));
+
+      await service.listUsers({ page: 1, pageSize: 20, planId: 'NONE' });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ subscription: null })
+      }));
+    });
   });
 
   describe('createUser', () => {

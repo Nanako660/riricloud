@@ -139,19 +139,31 @@ export class UsersService {
   async listUsers(query: ListUsersQueryDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const subscriptionWhere = query.subscriptionStatus || query.planId
-      ? {
-          is: {
-            ...(query.subscriptionStatus ? { status: query.subscriptionStatus } : {}),
-            ...(query.planId ? { planId: query.planId } : {})
-          }
+    let subscriptionWhere: Record<string, unknown> | null | undefined = undefined;
+
+    const wantNoSubscription = query.subscriptionStatus === 'NONE';
+    const wantNoPlan = query.planId === 'NONE';
+
+    if (wantNoSubscription || wantNoPlan) {
+      if ((query.subscriptionStatus && !wantNoSubscription) || (query.planId && !wantNoPlan)) {
+        subscriptionWhere = { is: { status: 'NONE' } };
+      } else {
+        subscriptionWhere = null;
+      }
+    } else if (query.subscriptionStatus || query.planId) {
+      subscriptionWhere = {
+        is: {
+          ...(query.subscriptionStatus ? { status: query.subscriptionStatus } : {}),
+          ...(query.planId ? { planId: query.planId } : {})
         }
-      : undefined;
+      };
+    }
+
     const where = {
       ...(query.search ? { email: { contains: query.search } } : {}),
       ...(query.role ? { role: query.role } : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-      ...(subscriptionWhere ? { subscription: subscriptionWhere } : {})
+      ...(subscriptionWhere !== undefined ? { subscription: subscriptionWhere } : {})
     };
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
