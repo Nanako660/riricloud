@@ -23,7 +23,8 @@ export class CaptchaService {
       height: 52,
       fontSize: 34,
       noise: 2,
-      color: false,
+      color: true,
+      background: '#f8fafc',
       inverse: false,
       mathMin: 1,
       mathMax: 20
