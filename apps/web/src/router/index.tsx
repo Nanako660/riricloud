@@ -17,6 +17,12 @@ export const router = createBrowserRouter([
     })
   },
   {
+    path: '/forgot-password',
+    lazy: async () => ({
+      Component: (await import('@/pages/forgot-password')).default
+    })
+  },
+  {
     element: <AuthGuard />,
     children: [
       {

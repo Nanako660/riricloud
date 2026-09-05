@@ -17,6 +17,7 @@ model User {
   uid               Int?      @unique // 6 位随机数字用户标识
   nickname          String?   // 用户自定义昵称；为空时由应用层回退为 用户_<UID>
   email             String    @unique
+  emailVerifiedAt   DateTime? // 邮箱核验时间；未核验或存量老用户为 null
   passwordHash      String
   role              String    @default("USER") // Role 枚举：ADMIN | USER
   balance           Int       @default(0) // 账户余额，单位为分
@@ -45,7 +46,7 @@ model VerificationCode {
   id        String   @id @default(uuid())
   email     String
   code      String
-  action    String // REGISTER | CHANGE_EMAIL
+  action    String // REGISTER | CHANGE_EMAIL | VERIFY_CURRENT_EMAIL | RESET_PASSWORD
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())

@@ -7,6 +7,7 @@ export interface AdminUser {
   uid: number | null;
   nickname: string;
   email: string;
+  emailVerifiedAt: string | null;
   role: 'ADMIN' | 'USER';
   balance: number;
   trafficLimitBytes: number;
@@ -35,6 +36,7 @@ interface ListUsersParams {
   pageSize?: number;
   role?: 'ADMIN' | 'USER';
   isActive?: boolean;
+  emailVerified?: boolean;
   subscriptionStatus?: AdminUserSubscription['status'] | 'NONE';
   planId?: string;
 }
@@ -51,6 +53,7 @@ export function useAdminUsers(params: ListUsersParams) {
             ...(params.search ? { search: params.search } : {}),
             ...(params.role ? { role: params.role } : {}),
             ...(params.isActive !== undefined ? { isActive: params.isActive } : {}),
+            ...(params.emailVerified !== undefined ? { emailVerified: params.emailVerified } : {}),
             ...(params.subscriptionStatus ? { subscriptionStatus: params.subscriptionStatus } : {}),
             ...(params.planId ? { planId: params.planId } : {})
           }
@@ -95,6 +98,7 @@ export function useUserMutations() {
       expireAt?: string | null;
       isActive?: boolean;
       password?: string;
+      emailVerified?: boolean;
     }) => (await api.patch(`/admin/users/${id}`, payload)).data,
     ...invalidateSub
   });

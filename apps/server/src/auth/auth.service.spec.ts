@@ -7,6 +7,7 @@ import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { VerificationService } from '../verification/verification.service';
 import { WalletService } from '../wallet/wallet.service';
 
 describe('AuthService', () => {
@@ -14,13 +15,15 @@ describe('AuthService', () => {
   const prisma = {
     user: {
       findUnique: jest.fn(),
-      create: jest.fn()
+      create: jest.fn(),
+      update: jest.fn()
     }
   };
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
   const subscriptionService = { subscribe: jest.fn() };
   const walletService = { adjustBalance: jest.fn() };
+  const verificationService = { verifyCode: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -31,7 +34,8 @@ describe('AuthService', () => {
         { provide: AgentGatewayService, useValue: agentGateway },
         { provide: SettingsService, useValue: settingsService },
         { provide: SubscriptionService, useValue: subscriptionService },
-        { provide: WalletService, useValue: walletService }
+        { provide: WalletService, useValue: walletService },
+        { provide: VerificationService, useValue: verificationService }
       ]
     }).compile();
     service = moduleRef.get(AuthService);
@@ -165,6 +169,50 @@ describe('AuthService', () => {
       prisma.user.create.mockResolvedValue({ id: 'u-gift', email: 'gift@example.com', role: 'USER' });
       await service.register({ email: 'gift@example.com', password: 'password123' });
       expect(walletService.adjustBalance).toHaveBeenCalledWith('u-gift', 2500, 'SYSTEM_GIFT', '新用户注册赠金');
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('邮箱不存在时抛出 BadRequestException', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.resetPassword({
+        email: 'notfound@example.com',
+        code: '123456',
+        newPassword: 'password123'
+      })).rejects.toThrow('该邮箱尚未注册');
+    });
+
+    it('新密码长度小于系统设置时抛出 BadRequestException', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'test@example.com', emailVerifiedAt: null });
+      settingsService.getSettings.mockResolvedValue({ passwordMinLength: 10 });
+      await expect(service.resetPassword({
+        email: 'test@example.com',
+        code: '123456',
+        newPassword: 'short'
+      })).rejects.toThrow('密码至少 10 位');
+    });
+
+    it('重置密码成功后更新密码散列并自动补全 emailVerifiedAt，并向在线节点推送配置', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'test@example.com', emailVerifiedAt: null });
+      settingsService.getSettings.mockResolvedValue({ passwordMinLength: 8 });
+      verificationService.verifyCode.mockResolvedValue(undefined);
+      prisma.user.update.mockResolvedValue({});
+
+      const result = await service.resetPassword({
+        email: 'test@example.com',
+        code: '123456',
+        newPassword: 'new-password-123'
+      });
+
+      expect(result).toEqual({ success: true, message: '密码重置成功' });
+      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'RESET_PASSWORD', '123456');
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'u1' },
+        data: expect.objectContaining({
+          emailVerifiedAt: expect.any(Date)
+        })
+      }));
+      expect(agentGateway.pushConfigToAll).toHaveBeenCalled();
     });
   });
 });

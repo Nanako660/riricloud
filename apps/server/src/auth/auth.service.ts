@@ -11,6 +11,7 @@ import { defaultUserNickname, generateUniqueUserUid, isUidUniqueConstraintError,
 import { VerificationService } from '../verification/verification.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -47,6 +48,7 @@ export class AuthService {
       throw new BadRequestException(`密码至少 ${passwordMinLength} 位`);
     }
     this.assertEmailDomainAllowed(dto.email, settings.emailDomainMode ?? 'none', settings.emailDomainList ?? []);
+
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException('邮箱已被注册');
@@ -70,6 +72,7 @@ export class AuthService {
             uid,
             nickname,
             email: dto.email.trim().toLowerCase(),
+            emailVerifiedAt: settings.emailVerificationEnabled ? new Date() : null,
             passwordHash,
             role: 'USER',
             trafficLimitBytes: BigInt(0),
@@ -94,6 +97,34 @@ export class AuthService {
     return { accessToken: await this.signToken(user) };
   }
 
+  async resetPassword(dto: ResetPasswordDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('该邮箱尚未注册');
+    }
+    const settings = await this.settingsService.getSettings();
+    const minLength = settings.passwordMinLength ?? 8;
+    if (dto.newPassword.length < minLength) {
+      throw new BadRequestException(`密码至少 ${minLength} 位`);
+    }
+
+    if (!this.verificationService) throw new BadRequestException('邮箱验证服务不可用');
+    await this.verificationService.verifyCode(email, 'RESET_PASSWORD', dto.code);
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        emailVerifiedAt: user.emailVerifiedAt ?? new Date()
+      }
+    });
+
+    void this.agentGateway.pushConfigToAll();
+    return { success: true, message: '密码重置成功' };
+  }
+
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -102,6 +133,7 @@ export class AuthService {
          uid: true,
          nickname: true,
          email: true,
+         emailVerifiedAt: true,
         role: true,
         balance: true,
         uuid: true,
@@ -120,6 +152,7 @@ export class AuthService {
     return {
       ...user,
       nickname: user.nickname ?? defaultUserNickname(user.uid),
+      emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
       balance: user.balance,
       uuid: user.uuid,
       trafficLimitBytes: Number(user.trafficLimitBytes),

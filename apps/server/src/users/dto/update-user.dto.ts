@@ -34,4 +34,9 @@ export class UpdateUserDto {
   @MaxLength(64)
   @IsOptional()
   password?: string;
+
+  @ApiPropertyOptional({ description: '邮箱是否已验证；true=标记已验证，false=标记未验证' })
+  @IsBoolean()
+  @IsOptional()
+  emailVerified?: boolean;
 }

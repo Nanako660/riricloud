@@ -525,4 +525,40 @@ describe('SubscriptionService', () => {
     prisma.user.findUnique.mockResolvedValue(null);
     await expect(service.getSubscription('nope')).rejects.toThrow(NotFoundException);
   });
+
+  describe('强制邮箱验证与管理员豁免', () => {
+    it('开启强制邮箱验证时未验证普通用户抛出 ForbiddenException', async () => {
+      settingsService.getSettings.mockResolvedValue({ enforceEmailVerification: true });
+      prisma.user.findUnique.mockResolvedValue({
+        ...activeUser,
+        role: 'USER',
+        emailVerifiedAt: null
+      });
+      await expect(service.getSubscription('tok-1')).rejects.toThrow('系统已开启强制邮箱验证，请先在个人中心完成邮箱验证或更换可用邮箱后再获取订阅');
+    });
+
+    it('开启强制邮箱验证时管理员账号豁免拦截', async () => {
+      settingsService.getSettings.mockResolvedValue({ enforceEmailVerification: true });
+      prisma.user.findUnique.mockResolvedValue({
+        ...activeUser,
+        role: 'ADMIN',
+        emailVerifiedAt: null
+      });
+      prisma.node.findMany.mockResolvedValue([]);
+      const result = await service.getSubscription('tok-1');
+      expect(result).toBeDefined();
+    });
+
+    it('开启强制邮箱验证且已验证邮箱的普通用户正常获取订阅', async () => {
+      settingsService.getSettings.mockResolvedValue({ enforceEmailVerification: true });
+      prisma.user.findUnique.mockResolvedValue({
+        ...activeUser,
+        role: 'USER',
+        emailVerifiedAt: new Date()
+      });
+      prisma.node.findMany.mockResolvedValue([]);
+      const result = await service.getSubscription('tok-1');
+      expect(result).toBeDefined();
+    });
+  });
 });

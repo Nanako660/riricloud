@@ -327,6 +327,11 @@ export class UpdateSettingsDto {
   @IsOptional()
   emailVerificationEnabled?: boolean;
 
+  @ApiPropertyOptional({ example: false, description: '强制邮箱验证以使用订阅与节点连接（未核验普通用户拦截并从节点剔除）' })
+  @IsBoolean()
+  @IsOptional()
+  enforceEmailVerification?: boolean;
+
   @ApiPropertyOptional({ enum: ['OFF', 'LOCAL', 'TURNSTILE'], default: 'OFF' })
   @IsIn(['OFF', 'LOCAL', 'TURNSTILE'])
   @IsOptional()

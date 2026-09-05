@@ -14,10 +14,15 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。
+  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
   - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
 - `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
-- `GET /auth/me`：获取当前登录用户的详细信息、套餐与角色；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
+- `POST /auth/reset-password`：找回/重置登录密码。⭐
+  - 请求：`{ email, code(6位数字), newPassword(8~64) }`。
+  - 邮箱不存在时返回 400（明确提示“该邮箱尚未注册”）；新密码长度必须满足系统设定的 `passwordMinLength`；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码。
+  - 存量或未核验邮箱的用户重置成功后，系统自动将其标记为已核验（`emailVerifiedAt = now()`），并向在线节点推送配置恢复其节点代理访问。
+  - 响应：`{ success: true, message: '密码重置成功' }`。
+- `GET /auth/me`：获取当前登录用户的详细信息、套餐、角色与邮箱核验状态 (`emailVerifiedAt`)；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
 
 ### 1.2 用户面板 (`/user`)
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐ **Deprecated**：前端已下线独立仪表盘并统一使用 `GET /user/subscription`；该接口仍保留以兼容外部脚本。
@@ -26,7 +31,8 @@
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
 - `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
 - `PATCH /user/profile`：修改当前用户昵称。⭐ 请求 `{ nickname }`，服务端清洗首尾空白并限制为 2~20 个字符；响应 `{ uid, nickname }`。
-- `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后返回 `{ updated: true, email }`。
+- `POST /user/verify-email`：核验当前账号邮箱所有权。⭐ 请求 `{ code }`（6 位数字验证码，需登录态）；核验 `VERIFY_CURRENT_EMAIL` 验证码成功后更新 `emailVerifiedAt = now()` 并向节点推送配置恢复订阅与节点连接，响应 `{ verified: true, emailVerifiedAt }`。
+- `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后标记 `emailVerifiedAt = now()` 并向节点推送配置，返回 `{ updated: true, email }`。
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
@@ -151,11 +157,16 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。
 
 ### 1.5 邮箱验证码与人机验证
 - `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；`captchaToken` 为带签名凭据，不返回明文答案。
-- `POST /verification/send-code`：发送邮箱验证码。⭐ 请求 `{ email, action: "REGISTER"|"CHANGE_EMAIL", captchaToken?, captchaAnswer?, turnstileToken? }`；`REGISTER` 需要启用注册邮箱验证、邮箱未被占用，并在 CAPTCHA 模式非 `OFF` 时先通过人机验证；`CHANGE_EMAIL` 需要登录且新邮箱未被其他账号占用。相同邮箱和行为 60 秒内不可重复发送，验证码有效期 5 分钟，错误尝试最多 5 次；成功响应 `{ sent: true, expiresAt, cooldownSeconds: 60, messageId? }`。
+- `POST /verification/send-code`：发送邮箱验证码。⭐ 请求 `{ email, action: "REGISTER"|"CHANGE_EMAIL"|"VERIFY_CURRENT_EMAIL"|"RESET_PASSWORD", captchaToken?, captchaAnswer?, turnstileToken? }`；
+  - `REGISTER`：需要启用注册邮箱验证、邮箱未被占用，若 CAPTCHA 模式非 `OFF` 须先通过人机验证；
+  - `CHANGE_EMAIL`：需要用户登录且新邮箱未被其他账号占用；
+  - `VERIFY_CURRENT_EMAIL`：需要用户登录且提交的邮箱与当前账号邮箱一致；
+  - `RESET_PASSWORD`：需要邮箱已注册（未注册返回 400），若 CAPTCHA 模式非 `OFF` 须先通过人机验证；
+  - 相同邮箱和行为 60 秒内不可重复发送，验证码有效期 5 分钟，错误尝试最多 5 次；成功响应 `{ sent: true, expiresAt, cooldownSeconds: 60, messageId? }`。
 
 订阅调试：`GET /api/v1/sub/:token?templateId=<UUID>` 可临时指定模板进行渲染，显式 `templateId` 仅用于调试并优先于套餐模板；省略时按套餐模板、系统设置 `defaultTemplateId`、`isDefault=true` 模板的顺序回退。
 
@@ -498,7 +509,7 @@ GET https://<domain>/<prefix>/<UUID>
 /<prefix>/<UUID> -> /api/v1/sub/<UUID>
 ```
 
-rewrite 不覆盖原始查询字符串，因此 `?type=clash`、`?type=sing-box` 等参数会继续传给订阅接口；`User-Agent` 和订阅响应头也由 Nginx 原样转发。`/login`、`/admin`、`/api/**`、`/ws/agent` 等非 UUID 路径继续交给 Master，WebSocket 路径单独配置 Upgrade/Connection 头。无效 Token、过期订阅和禁用账号继续沿用后端现有的 404/403 语义。
+rewrite 不覆盖原始查询字符串，因此 `?type=clash`、`?type=sing-box` 等参数会继续传给订阅接口；`User-Agent` 和订阅响应头也由 Nginx 原样转发。`/login`、`/admin`、`/api/**`、`/ws/agent` 等非 UUID 路径继续交给 Master，WebSocket 路径单独配置 Upgrade/Connection 头。无效 Token、过期订阅、禁用账号以及在开启强制邮箱验证（`enforceEmailVerification=true`）时未核验邮箱的普通用户（管理员豁免）继续沿用后端统一的 404/403 语义（返回明确错误提示）。
 
 前端系统设置 `subscriptionShortLinksEnabled` 默认关闭，只控制用户界面展示的链接形式，不检测 Nginx 是否已配置。`subscriptionBaseUrl` 可包含 pathname，例如 `https://domain.com/panel` 会生成 `https://domain.com/panel/<UUID>`；Nginx 的 location/rewrite 前缀必须与其保持一致。完整配置见 `scripts/nginx/riricloud.conf.example`。
 

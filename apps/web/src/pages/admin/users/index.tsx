@@ -74,6 +74,7 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = React.useState<AdminUser[]>([]);
   const [roleFilter, setRoleFilter] = React.useState<'ALL' | 'USER' | 'ADMIN'>('ALL');
   const [activeFilter, setActiveFilter] = React.useState<'ALL' | 'true' | 'false'>('ALL');
+  const [emailVerifiedFilter, setEmailVerifiedFilter] = React.useState<'ALL' | 'true' | 'false'>('ALL');
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status'] | 'NONE'>('ALL');
   const [planFilter, setPlanFilter] = React.useState('ALL');
   const [trafficUser, setTrafficUser] = React.useState<AdminUser | null>(null);
@@ -88,6 +89,7 @@ export default function AdminUsersPage() {
     search: debouncedSearch,
     role: roleFilter === 'ALL' ? undefined : roleFilter,
     isActive: activeFilter === 'ALL' ? undefined : activeFilter === 'true',
+    emailVerified: emailVerifiedFilter === 'ALL' ? undefined : emailVerifiedFilter === 'true',
     subscriptionStatus: subscriptionFilter === 'ALL' ? undefined : subscriptionFilter,
     planId: planFilter === 'ALL' ? undefined : planFilter
   });
@@ -111,7 +113,20 @@ export default function AdminUsersPage() {
       {
         accessorKey: 'email',
         header: '邮箱',
-        cell: ({ row }) => <span className="font-medium">{row.original.email}</span>
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate font-medium">{row.original.email}</span>
+            {row.original.emailVerifiedAt ? (
+              <Badge variant="outline" className="px-1 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 shrink-0">
+                已验证
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="px-1 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 shrink-0">
+                未验证
+              </Badge>
+            )}
+          </div>
+        )
       },
       {
         id: 'plan',
@@ -309,6 +324,10 @@ export default function AdminUsersPage() {
               <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as typeof activeFilter)}>
                 <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="账号状态" /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">全部账号</SelectItem><SelectItem value="true">已激活</SelectItem><SelectItem value="false">已封禁</SelectItem></SelectContent>
+              </Select>
+              <Select value={emailVerifiedFilter} onValueChange={(value) => setEmailVerifiedFilter(value as typeof emailVerifiedFilter)}>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="邮箱验证" /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">全部邮箱</SelectItem><SelectItem value="true">已验证</SelectItem><SelectItem value="false">未验证</SelectItem></SelectContent>
               </Select>
               <Select value={subscriptionFilter} onValueChange={(value) => setSubscriptionFilter(value as typeof subscriptionFilter)}>
                 <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>

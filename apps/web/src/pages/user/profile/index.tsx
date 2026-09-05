@@ -7,12 +7,14 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Calendar,
+  CheckCircle2,
   CreditCard,
   Eye,
   EyeOff,
   Headphones,
   KeyRound,
   Mail,
+  MailCheck,
   Pencil,
   Receipt,
   ShieldCheck,
@@ -66,11 +68,15 @@ const emailSchema = z.object({
   verificationCode: z.string().regex(/^\d{6}$/, '请输入 6 位验证码'),
   currentPassword: z.string().min(8, '密码至少 8 位')
 });
+const verifyEmailSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, '请输入 6 位验证码')
+});
 
 type RedeemValues = z.infer<typeof redeemSchema>;
 type PasswordValues = z.infer<typeof passwordSchema>;
 type NicknameValues = z.infer<typeof nicknameSchema>;
 type EmailValues = z.infer<typeof emailSchema>;
+type VerifyEmailValues = z.infer<typeof verifyEmailSchema>;
 
 const transactionLabels: Record<string, string> = {
   SYSTEM_GIFT: '注册赠金',
@@ -85,15 +91,17 @@ export default function ProfilePage() {
   const [page, setPage] = useState(1);
   const [resetOpen, setResetOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [verifyEmailOpen, setVerifyEmailOpen] = useState(false);
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [showUuid, setShowUuid] = useState(false);
   const [emailCooldown, setEmailCooldown] = useState(0);
+  const [verifyCooldown, setVerifyCooldown] = useState(0);
 
   const user = useProfileUser();
   const wallet = useWallet();
   const transactions = useWalletTransactions(page);
   const publicSettings = usePublicSettings();
-  const { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail } = useProfileMutations();
+  const { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail, sendCurrentEmailCode, verifyCurrentEmail } = useProfileMutations();
 
   const redeemForm = useForm<RedeemValues>({
     resolver: zodResolver(redeemSchema),
@@ -111,6 +119,10 @@ export default function ProfilePage() {
     resolver: zodResolver(emailSchema),
     defaultValues: { newEmail: '', verificationCode: '', currentPassword: '' }
   });
+  const verifyEmailForm = useForm<VerifyEmailValues>({
+    resolver: zodResolver(verifyEmailSchema),
+    defaultValues: { code: '' }
+  });
 
   const totalPages = Math.ceil((transactions.data?.total ?? 0) / 10);
 
@@ -125,6 +137,12 @@ export default function ProfilePage() {
     const timer = window.setInterval(() => setEmailCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [emailCooldown]);
+
+  useEffect(() => {
+    if (!verifyCooldown) return;
+    const timer = window.setInterval(() => setVerifyCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [verifyCooldown]);
 
   if (user.isPending || wallet.isPending) {
     return (
@@ -172,12 +190,46 @@ export default function ProfilePage() {
       }
     });
 
+  const requestVerifyCode = () => {
+    if (verifyCooldown || sendCurrentEmailCode.isPending || !user.data?.email) return;
+    sendCurrentEmailCode.mutate(user.data.email, { onSuccess: () => setVerifyCooldown(60) });
+  };
+
+  const onVerifyEmail = (values: VerifyEmailValues) =>
+    verifyCurrentEmail.mutate(values.code, {
+      onSuccess: () => {
+        setVerifyEmailOpen(false);
+        verifyEmailForm.reset();
+      }
+    });
+
   const displayName = user.data.nickname || user.data.email;
   const userInitial = displayName[0]?.toUpperCase() || 'U';
+  const isEmailUnverifiedBlocked = publicSettings.data?.enforceEmailVerification && !user.data.emailVerifiedAt && user.data.role !== 'ADMIN';
 
   return (
     <PageContainer>
       <PageHeader title="个人中心" description="管理用户身份资料、登录凭证、账户资产与收支明细。" />
+
+      {isEmailUnverifiedBlocked && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <div className="font-semibold text-sm">系统已开启强制邮箱验证</div>
+              <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                当前账号邮箱尚未通过验证。在完成邮箱验证前，系统将暂停你的订阅更新与节点代理连接。
+              </p>
+              <div className="pt-1.5">
+                <Button size="sm" variant="default" className="h-8 gap-1.5 text-xs" onClick={() => setVerifyEmailOpen(true)}>
+                  <MailCheck className="size-3.5" />
+                  立即验证当前邮箱
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 顶部名片式用户身份横幅 (Profile Header) */}
       <Card className="min-w-0 overflow-hidden border-border/70 bg-gradient-to-br from-card via-card to-muted/20 shadow-sm">
@@ -224,12 +276,32 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-                  {/* 登录邮箱 + 更换操作 */}
+                  {/* 登录邮箱 + 验证状态 + 更换操作 */}
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Mail className="size-3.5 shrink-0 text-muted-foreground/70" />
                     <span className="truncate max-w-[200px] sm:max-w-[280px] font-medium text-foreground">
                       {user.data.email}
                     </span>
+                    {user.data.emailVerifiedAt ? (
+                      <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800">
+                        <CheckCircle2 className="size-2.5" />
+                        已验证
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="gap-1 px-1.5 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+                          <AlertTriangle className="size-2.5" />
+                          未验证
+                        </Badge>
+                        <button
+                          type="button"
+                          className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
+                          onClick={() => setVerifyEmailOpen(true)}
+                        >
+                          立即验证
+                        </button>
+                      </div>
+                    )}
                     <button
                       type="button"
                       className="ml-1 text-xs text-primary underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
@@ -651,6 +723,55 @@ export default function ProfilePage() {
                 </Button>
                 <Button type="submit" disabled={changeEmail.isPending}>
                   {changeEmail.isPending ? '提交中…' : '确认换绑'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 验证当前邮箱弹窗 */}
+      <Dialog open={verifyEmailOpen} onOpenChange={setVerifyEmailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>验证当前邮箱</DialogTitle>
+            <DialogDescription>
+              验证码将发送至当前绑定邮箱：<span className="font-mono text-foreground font-medium">{user.data.email}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...verifyEmailForm}>
+            <form className="space-y-4" onSubmit={verifyEmailForm.handleSubmit(onVerifyEmail)}>
+              <FormField
+                control={verifyEmailForm.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>邮箱验证码</FormLabel>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" {...field} />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={requestVerifyCode}
+                        disabled={verifyCooldown > 0 || sendCurrentEmailCode.isPending}
+                      >
+                        <Mail className="size-4" />
+                        {verifyCooldown ? `${verifyCooldown}s` : '获取验证码'}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setVerifyEmailOpen(false)}>
+                  取消
+                </Button>
+                <Button type="submit" disabled={verifyCurrentEmail.isPending}>
+                  {verifyCurrentEmail.isPending ? '验证中…' : '确认验证'}
                 </Button>
               </DialogFooter>
             </form>

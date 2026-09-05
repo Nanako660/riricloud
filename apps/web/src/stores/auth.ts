@@ -8,6 +8,7 @@ export interface AuthUser {
   role: 'ADMIN' | 'USER';
   uid?: number | null;
   nickname?: string | null;
+  emailVerifiedAt?: string | null;
 }
 
 interface AuthState {

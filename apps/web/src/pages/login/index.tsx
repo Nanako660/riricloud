@@ -91,7 +91,12 @@ export default function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>密码</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>密码</FormLabel>
+                      <Link className="text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline" to="/forgot-password">
+                        忘记密码？
+                      </Link>
+                    </div>
                     <FormControl>
                       <Input type="password" placeholder="请输入登录密码" autoComplete="current-password" {...field} />
                     </FormControl>

@@ -33,6 +33,8 @@ export type AgentSocket = { send: (data: string) => void; close: (code?: number,
 type SubscriptionUserSnapshot = {
   uuid: string;
   email: string;
+  role?: string;
+  emailVerifiedAt?: Date | null;
   password: string | null;
   isActive: boolean;
   extraLineGrants?: Array<{ lineId: string }>;
@@ -193,7 +195,15 @@ export class AgentService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Optional() private readonly settingsService?: SettingsService,
     @Optional() private readonly systemLogsService?: SystemLogsService
-  ) {}
+  ) {
+    if (this.settingsService) {
+      this.settingsService.onSettingsChange((patch) => {
+        if (patch.enforceEmailVerification !== undefined) {
+          void this.pushConfigToAll();
+        }
+      });
+    }
+  }
 
   // 握手鉴权：校验 agentToken，返回鉴权结果与节点
   async authenticate(token: string | undefined): Promise<
@@ -957,6 +967,9 @@ export class AgentService implements OnModuleDestroy {
     // vless/tuic 用 uuid 登录；hy2 的 password 回退 uuid（与订阅输出一致，见 docs/DATA_MODELS.md §3.1）
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: SubscriptionDelegate }).subscription;
     let entitledSubscriptions: SubscriptionSnapshot[] = [];
+    const settings = await this.settingsService?.getSettings();
+    const enforceEmailVerification = settings?.enforceEmailVerification ?? false;
+
     if (subscriptionDelegate) {
       entitledSubscriptions = await subscriptionDelegate.findMany({
         where: { status: { in: ['ACTIVE', 'CANCELED'] } },
@@ -965,6 +978,8 @@ export class AgentService implements OnModuleDestroy {
             select: {
               uuid: true,
               email: true,
+              role: true,
+              emailVerifiedAt: true,
               password: true,
               isActive: true,
               extraLineGrants: { select: { lineId: true } }
@@ -975,13 +990,17 @@ export class AgentService implements OnModuleDestroy {
       });
       entitledSubscriptions = entitledSubscriptions.filter((subscription) =>
         subscription.user.isActive &&
+        (!enforceEmailVerification || !!subscription.user.emailVerifiedAt || subscription.user.role === 'ADMIN') &&
         subscription.trafficUsedBytes < subscription.trafficLimitBytes &&
         (!subscription.expireAt || subscription.expireAt.getTime() > Date.now())
       );
     } else {
       const entitledUsers = await this.prisma.user.findMany({
-        where: { isActive: true },
-        select: { uuid: true, email: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
+        where: {
+          isActive: true,
+          ...(enforceEmailVerification ? { OR: [{ emailVerifiedAt: { not: null } }, { role: 'ADMIN' }] } : {})
+        },
+        select: { uuid: true, email: true, role: true, emailVerifiedAt: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
       });
       entitledSubscriptions = entitledUsers
         .filter(isUserEntitled)
@@ -991,7 +1010,7 @@ export class AgentService implements OnModuleDestroy {
           trafficLimitBytes: u.trafficLimitBytes,
           trafficUsedBytes: u.trafficUsedBytes,
           expireAt: u.expireAt,
-          user: { uuid: u.uuid, email: u.email, password: u.password, isActive: u.isActive }
+          user: { uuid: u.uuid, email: u.email, role: u.role, emailVerifiedAt: u.emailVerifiedAt, password: u.password, isActive: u.isActive }
         }));
     }
 
