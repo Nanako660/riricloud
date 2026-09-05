@@ -25,6 +25,8 @@ describe('CaptchaService', () => {
   it('生成签名本地验证码并在成功后拒绝重放', async () => {
     settingsService.getSettings.mockResolvedValue({ captchaMode: 'LOCAL' });
     const challenge = service.createLocalChallenge();
+    expect(challenge.svg).toContain('#f8fafc');
+    expect(challenge.svg).toMatch(/fill="#[0-9a-f]{6}"/i);
     const payload = challenge.captchaToken.split('.')[0];
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { answer: string };
 
