@@ -23,7 +23,7 @@
 - `GET /user/dashboard`：获取个人仪表盘数据（总配额、已用流量、剩余有效期、可用线路数及线路摘要）。⭐ **Deprecated**：前端已下线独立仪表盘并统一使用 `GET /user/subscription`；该接口仍保留以兼容外部脚本。
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
-- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）。
+- `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
 - `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
@@ -35,7 +35,7 @@
 - `POST /user/subscription/renew`：续费当前套餐。⭐ 无请求体；按当前套餐价格扣款，顺延 `durationDays`、重置当期已用流量并写入 `PLAN_RENEW` 流水。
 - `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；仅允许目标套餐价格不低于当前套餐，低价目标返回 409；通过校验后全价扣款，切换套餐、重置已用流量并按新套餐重算周期，写入 `PLAN_UPGRADE` 流水。
 - `POST /user/subscription/cancel`：取消当前订阅。⭐ 状态变为 `CANCELED`，到期前保留使用权。
-- `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段。
+- `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段；无订阅返回 400。
 
 ### 1.3 管理员模块 (`/admin`)
 
@@ -43,7 +43,7 @@
 - `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
 - `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
 - `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
-- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；无订阅用户仅更新用户镜像字段。
+- `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
 - `POST /admin/subscriptions/users/:userId`：管理员为用户分配/绑定套餐。⭐ 请求 `{ planId, status?, trafficLimitBytes?, trafficUsedBytes?, expireAt?, addDays?, extraLineIds? }`；在同一事务内创建唯一订阅并同步 User 镜像字段。

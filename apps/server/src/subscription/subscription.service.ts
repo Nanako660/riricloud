@@ -310,9 +310,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const delegate = this.requireSubscriptionDelegate();
     const current = await delegate.findUnique({ where: { userId } });
     if (!current) {
-      const token = randomUUID();
-      await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken: token } });
-      return { subscriptionToken: token };
+      throw new BadRequestException('该用户未绑定有效订阅，无法重置订阅链接');
     }
     return this.resetTokenBySubscription(current.id);
   }

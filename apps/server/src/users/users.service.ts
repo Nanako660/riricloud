@@ -93,19 +93,18 @@ export class UsersService {
     if (!user) {
       throw new UnauthorizedException();
     }
-    const subscriptionToken = randomUUID();
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
     const subscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId } })
       : null;
-    if (subscription) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.subscription.update({ where: { id: subscription.id }, data: { subscriptionToken } });
-        await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
-      });
-    } else {
-      await this.prisma.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    if (!subscription) {
+      throw new BadRequestException('该用户未绑定有效订阅，无法重置订阅链接');
     }
+    const subscriptionToken = randomUUID();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subscription.update({ where: { id: subscription.id }, data: { subscriptionToken } });
+      await tx.user.update({ where: { id: userId }, data: { subscriptionToken } });
+    });
     return subscriptionToken;
   }
 

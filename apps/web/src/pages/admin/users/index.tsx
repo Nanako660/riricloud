@@ -200,11 +200,19 @@ export default function AdminUsersPage() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="重置订阅链接" disabled={resetSubscriptionToken.isPending} onClick={() => setResetting(u)}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+                  <span className="inline-block">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="重置订阅链接"
+                      disabled={!u.subscription || resetSubscriptionToken.isPending}
+                      onClick={() => setResetting(u)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent>重置订阅链接</TooltipContent>
+                <TooltipContent>{u.subscription ? '重置订阅链接' : '该用户暂无有效订阅'}</TooltipContent>
               </Tooltip>
               {!isSelf ? (
                 <>

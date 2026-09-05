@@ -57,10 +57,12 @@ export function UserSubscriptionFields({
             {subscription ? `开始于 ${formatDate(subscription.startedAt)}` : '当前为无套餐状态，选择套餐后可绑定'}
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" disabled={resetPending} onClick={onResetToken}>
-          <RefreshCw className={resetPending ? 'animate-spin' : undefined} />
-          重置订阅链接
-        </Button>
+        {subscription && (
+          <Button type="button" variant="outline" size="sm" disabled={resetPending} onClick={onResetToken}>
+            <RefreshCw className={resetPending ? 'animate-spin' : undefined} />
+            重置订阅链接
+          </Button>
+        )}
       </div>
 
       <div className="space-y-3">

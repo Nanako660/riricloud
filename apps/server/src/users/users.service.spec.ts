@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcryptjs';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
@@ -282,14 +282,26 @@ describe('UsersService', () => {
   });
 
   describe('resetSubscriptionToken', () => {
-    it('返回与旧值不同的新 token 并写库', async () => {
+    it('为有效订阅用户重置与旧值不同的新 token 并写库', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...seededUser, subscriptionToken: 'old-token' });
+      prisma.subscription.findUnique.mockResolvedValue({ id: 'sub-1', userId: 'u1', subscriptionToken: 'old-token' });
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
       const token = await service.resetSubscriptionToken('u1');
       expect(token).not.toBe('old-token');
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { id: 'sub-1' },
+        data: { subscriptionToken: token }
+      });
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { subscriptionToken: token }
       });
+    });
+
+    it('用户无有效订阅时抛出 BadRequestException', async () => {
+      prisma.user.findUnique.mockResolvedValue(seededUser);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      await expect(service.resetSubscriptionToken('u1')).rejects.toThrow(BadRequestException);
     });
 
     it('用户不存在时抛出 UnauthorizedException', async () => {
