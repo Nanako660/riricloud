@@ -9,7 +9,8 @@ import {
   type TrafficOverviewResponse,
   type TrafficTimeRange,
   type TrafficTimeSeriesPoint,
-  type UserTrafficDetailResponse
+  type UserTrafficDetailResponse,
+  type UserTrafficRankItem
 } from './dto/traffic.dto';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -57,6 +58,22 @@ type LineAggregate = {
   download: bigint;
 };
 
+type UserAggregate = {
+  upload: bigint;
+  download: bigint;
+  billedTotal: number;
+};
+
+type TrafficUser = {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  subscription: {
+    plan: { name: string } | null;
+  } | null;
+};
+
 type SeriesAggregate = {
   upload: bigint;
   download: bigint;
@@ -70,6 +87,7 @@ type Aggregation = {
   activeUsers: Set<string>;
   activeLines: Set<string>;
   lineAggregates: Map<string, LineAggregate>;
+  userAggregates: Map<string, UserAggregate>;
   series: SeriesAggregate[];
 };
 
@@ -125,6 +143,10 @@ export class TrafficService {
       aggregation.totalUpload + aggregation.totalDownload,
       fallbackLines
     );
+    const userRankings = await this.toUserRankings(
+      aggregation.userAggregates,
+      aggregation.totalUpload + aggregation.totalDownload
+    );
 
     return {
       timeRange: range,
@@ -141,6 +163,7 @@ export class TrafficService {
       },
       timeSeries: this.toTimeSeries(aggregation.series, config, timeZone),
       lineRankings,
+      userRankings,
       ...rateOverview
     };
   }
@@ -380,6 +403,7 @@ export class TrafficService {
       activeUsers: new Set<string>(),
       activeLines: new Set<string>(),
       lineAggregates: new Map<string, LineAggregate>(),
+      userAggregates: new Map<string, UserAggregate>(),
       series: Array.from({ length: config.bucketCount }, () => ({ upload: 0n, download: 0n, billedTotal: 0 }))
     };
 
@@ -400,6 +424,11 @@ export class TrafficService {
       aggregation.totalBilled += billedTotal;
       if (total > 0n) {
         aggregation.activeUsers.add(row.userId);
+        const userAggregate = aggregation.userAggregates.get(row.userId) ?? { upload: 0n, download: 0n, billedTotal: 0 };
+        userAggregate.upload += upload;
+        userAggregate.download += download;
+        userAggregate.billedTotal += billedTotal;
+        aggregation.userAggregates.set(row.userId, userAggregate);
         if (line) aggregation.activeLines.add(line.id);
       }
 
@@ -411,6 +440,60 @@ export class TrafficService {
       }
     }
     return aggregation;
+  }
+
+  private async toUserRankings(
+    userAggregates: Map<string, UserAggregate>,
+    totalPhysical: bigint
+  ): Promise<UserTrafficRankItem[]> {
+    const rankedAggregates = Array.from(userAggregates.entries())
+      .sort((left, right) => {
+        const leftTotal = left[1].upload + left[1].download;
+        const rightTotal = right[1].upload + right[1].download;
+        if (rightTotal !== leftTotal) return rightTotal > leftTotal ? 1 : -1;
+        return left[0].localeCompare(right[0]);
+      })
+      .slice(0, 100);
+    const userIds = rankedAggregates.map(([userId]) => userId);
+    if (userIds.length === 0) return [];
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        subscription: { select: { plan: { select: { name: true } } } }
+      }
+    }) as unknown as TrafficUser[];
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const total = this.toNumber(totalPhysical);
+
+    const rankings = rankedAggregates
+      .map(([userId, aggregate]) => {
+        const user = usersById.get(userId);
+        if (!user) return null;
+        const physical = aggregate.upload + aggregate.download;
+        const physicalNumber = this.toNumber(physical);
+        return {
+          userId,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive,
+          planName: user.subscription?.plan?.name ?? null,
+          upload: this.toNumber(aggregate.upload),
+          download: this.toNumber(aggregate.download),
+          total: physicalNumber,
+          billedTotal: this.round2(aggregate.billedTotal),
+          percentage: total > 0 ? this.round2((physicalNumber / total) * 100) : 0
+        } satisfies UserTrafficRankItem;
+      })
+      .filter((item): item is UserTrafficRankItem => item !== null);
+    return rankings.sort((left, right) => {
+      if (right.total !== left.total) return right.total - left.total;
+      return left.email.localeCompare(right.email);
+    });
   }
 
   private toLineRankings(

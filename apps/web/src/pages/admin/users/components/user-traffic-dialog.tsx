@@ -13,10 +13,26 @@ import { TrafficDonutChart, TrafficTrendChart } from '../../traffic/components/t
 import { TrafficRankTable } from '../../traffic/components/traffic-rank-table';
 import { trafficRangeLabels, trafficRanges, useUserTrafficDetail, type TrafficTimeRange } from '../../traffic/use-traffic';
 
-export function UserTrafficDialog({ user, open, onOpenChange }: { user: AdminUser | null; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [range, setRange] = React.useState<TrafficTimeRange>('today');
+type TrafficUser = Pick<AdminUser, 'id' | 'email' | 'role' | 'isActive'>;
+
+export function UserTrafficDialog({
+  user,
+  open,
+  onOpenChange,
+  initialRange = 'today'
+}: {
+  user: TrafficUser | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialRange?: TrafficTimeRange;
+}) {
+  const [range, setRange] = React.useState<TrafficTimeRange>(initialRange);
   const { data, isPending, isFetching, isError } = useUserTrafficDetail(user?.id ?? null, range, open);
   const quotaPercent = data && data.quota.trafficLimitBytes > 0 ? Math.min(Math.round((data.quota.trafficUsedBytes / data.quota.trafficLimitBytes) * 100), 100) : 0;
+
+  React.useEffect(() => {
+    if (open) setRange(initialRange);
+  }, [initialRange, open]);
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>

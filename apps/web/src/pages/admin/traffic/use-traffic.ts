@@ -33,6 +33,19 @@ export interface LineTrafficRankItem {
   percentage: number;
 }
 
+export interface UserTrafficRankItem {
+  userId: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  planName: string | null;
+  upload: number;
+  download: number;
+  total: number;
+  billedTotal: number;
+  percentage: number;
+}
+
 export interface RateSeriesPoint {
   timestamp: string;
   displayTime: string;
@@ -58,6 +71,7 @@ export interface TrafficOverviewResponse {
   };
   timeSeries: TrafficTimeSeriesPoint[];
   lineRankings: LineTrafficRankItem[];
+  userRankings: UserTrafficRankItem[];
   rate: {
     currentUploadRate: number;
     currentDownloadRate: number;

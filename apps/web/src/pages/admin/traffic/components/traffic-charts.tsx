@@ -1,7 +1,7 @@
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { formatBytes, formatRate } from '@/lib/utils';
-import type { LineTrafficRankItem, RateSeriesPoint, TrafficTimeSeriesPoint } from '../use-traffic';
+import type { LineTrafficRankItem, RateSeriesPoint, TrafficTimeSeriesPoint, UserTrafficRankItem } from '../use-traffic';
 
 const chartColors = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
@@ -44,9 +44,59 @@ export function TrafficTrendChart({ data, compact = false }: { data: TrafficTime
   );
 }
 
-export function TrafficDonutChart({ data }: { data: LineTrafficRankItem[] }) {
-  const total = data.reduce((sum, item) => sum + item.total, 0);
-  if (total <= 0) return <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">暂无线路流量</div>;
+type DonutItem = {
+  key: string;
+  name: string;
+  total: number;
+  percentage: number;
+};
+
+function maskEmail(email: string) {
+  const [local, domain] = email.split('@');
+  if (!domain) return email.length > 16 ? `${email.slice(0, 13)}…` : email;
+  const maskedLocal = local.length > 2 ? `${local.slice(0, 2)}***` : `${local.slice(0, 1)}***`;
+  return `${maskedLocal}@${domain}`;
+}
+
+function buildUserDonutData(data: UserTrafficRankItem[], totalPhysical: number): DonutItem[] {
+  const topUsers = data.slice(0, 5).map((item) => ({
+    key: item.userId,
+    name: maskEmail(item.email),
+    total: item.total,
+    percentage: item.percentage
+  }));
+  const otherTotal = Math.max(totalPhysical - topUsers.reduce((sum, item) => sum + item.total, 0), 0);
+  if (otherTotal <= 0) return topUsers;
+  return [
+    ...topUsers,
+    {
+      key: 'other-users',
+      name: '其他用户',
+      total: otherTotal,
+      percentage: totalPhysical > 0 ? Math.round((otherTotal / totalPhysical) * 10000) / 100 : 0
+    }
+  ];
+}
+
+export function TrafficDonutChart({
+  data,
+  mode = 'line',
+  totalPhysical
+}: {
+  data: LineTrafficRankItem[] | UserTrafficRankItem[];
+  mode?: 'line' | 'user';
+  totalPhysical?: number;
+}) {
+  const chartData: DonutItem[] = mode === 'user'
+    ? buildUserDonutData(data as UserTrafficRankItem[], totalPhysical ?? 0)
+    : (data as LineTrafficRankItem[]).map((item) => ({
+      key: item.lineId ?? item.lineName,
+      name: item.lineName,
+      total: item.total,
+      percentage: item.percentage
+    }));
+  const total = mode === 'user' ? totalPhysical ?? 0 : chartData.reduce((sum, item) => sum + item.total, 0);
+  if (total <= 0) return <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">暂无{mode === 'user' ? '用户' : '线路'}流量</div>;
 
   return (
     <div className="flex h-full flex-col justify-between space-y-4">
@@ -57,19 +107,19 @@ export function TrafficDonutChart({ data }: { data: LineTrafficRankItem[] }) {
         </div>
         <ResponsiveContainer width="100%" height="100%" className="relative z-10">
           <PieChart>
-            <Pie data={data} dataKey="total" nameKey="lineName" innerRadius="62%" outerRadius="84%" paddingAngle={2} strokeWidth={0}>
-              {data.map((item, index) => <Cell key={item.lineId ?? item.lineName} fill={chartColors[index % chartColors.length]} />)}
+            <Pie data={chartData} dataKey="total" nameKey="name" innerRadius="62%" outerRadius="84%" paddingAngle={2} strokeWidth={0}>
+              {chartData.map((item, index) => <Cell key={item.key} fill={chartColors[index % chartColors.length]} />)}
             </Pie>
             <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatBytes(value)} />} />
           </PieChart>
         </ResponsiveContainer>
       </ChartContainer>
       <div className="space-y-2 border-t pt-3">
-        {data.slice(0, 5).map((item, index) => (
-          <div key={item.lineId ?? item.lineName} className="flex min-w-0 items-center justify-between gap-3 text-xs sm:text-sm">
-            <span className="flex min-w-0 items-center gap-2 overflow-hidden" title={item.lineName}>
+        {chartData.slice(0, 5).map((item, index) => (
+          <div key={item.key} className="flex min-w-0 items-center justify-between gap-3 text-xs sm:text-sm">
+            <span className="flex min-w-0 items-center gap-2 overflow-hidden" title={item.name}>
               <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
-              <span className="truncate font-medium">{item.lineName}</span>
+              <span className="truncate font-medium">{item.name}</span>
             </span>
             <span className="shrink-0 text-muted-foreground tabular-nums text-xs font-medium">{item.percentage}%</span>
           </div>
