@@ -185,7 +185,7 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0">
               {/* 大尺寸个性化 Avatar 头像 */}
-              <div className="relative flex size-16 sm:size-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 border border-primary/25 text-primary font-bold text-2xl sm:text-3xl shadow-sm select-none">
+              <div className="relative flex size-16 sm:size-20 shrink-0 items-center justify-center rounded-2xl border border-border/80 bg-muted/60 text-foreground font-bold text-2xl sm:text-3xl shadow-xs select-none dark:border-primary/25 dark:bg-gradient-to-br dark:from-primary/20 dark:via-primary/10 dark:to-primary/5 dark:text-primary">
                 {userInitial}
               </div>
 
@@ -393,7 +393,7 @@ export default function ProfilePage() {
                 <CardDescription>余额以人民币为单位，用于套餐订购与自动续费扣费。</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 sm:p-5">
+                <div className="rounded-xl border border-border/80 bg-muted/30 p-4 shadow-xs sm:p-5 dark:border-primary/20 dark:bg-gradient-to-br dark:from-primary/10 dark:via-primary/5 dark:to-transparent">
                   <p className="text-xs font-medium text-muted-foreground">当前可用余额</p>
                   <p className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
                     {formatCurrency(wallet.data.balance)}
