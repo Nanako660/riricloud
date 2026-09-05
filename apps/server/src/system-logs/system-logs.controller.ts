@@ -18,7 +18,7 @@ import type { Observable } from 'rxjs';
 import { Public } from '../auth/public.decorator';
 import { Roles } from '../common/roles.decorator';
 import { CreateFrontendLogsDto } from './dto/create-frontend-logs.dto';
-import { QueryLogsDto } from './dto/query-logs.dto';
+import { CleanLogsDto, ExportLogsDto, QueryLogsDto } from './dto/query-logs.dto';
 import { SSEHubService } from './sse-hub.service';
 import { SystemLogsService } from './system-logs.service';
 
@@ -96,14 +96,8 @@ export class SystemLogsController {
   @ApiOperation({ summary: '按保留策略清理历史日志' })
   @ApiQuery({ name: 'retentionDays', required: false, type: Number, description: '清理多少天之前的日志' })
   @ApiQuery({ name: 'maxRecords', required: false, type: Number, description: '保留最新记录上限，超额清理' })
-  cleanLogs(
-    @Query('retentionDays') retentionDays?: string,
-    @Query('maxRecords') maxRecords?: string
-  ) {
-    return this.logsService.clean(
-      retentionDays ? Number(retentionDays) : undefined,
-      maxRecords ? Number(maxRecords) : undefined
-    );
+  cleanLogs(@Query() query: CleanLogsDto) {
+    return this.logsService.clean(query.retentionDays, query.maxRecords);
   }
 
   @Get('export')
@@ -112,10 +106,10 @@ export class SystemLogsController {
   @ApiOperation({ summary: '按条件导出日志文件（JSON 或 CSV）' })
   @ApiQuery({ name: 'format', required: false, enum: ['json', 'csv'], description: '导出格式' })
   async exportLogs(
-    @Query() query: QueryLogsDto,
-    @Query('format') format: 'json' | 'csv' = 'json',
-    @Res() res: Response
+    @Query() query: ExportLogsDto,
+    @Res({ passthrough: true }) res: Response
   ) {
+    const format = query.format || 'json';
     const data = await this.logsService.export(query, format);
     const filename = `riricloud-logs-${new Date().toISOString().slice(0, 10)}.${format}`;
 
@@ -127,6 +121,6 @@ export class SystemLogsController {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     }
 
-    res.send(data);
+    return data;
   }
 }

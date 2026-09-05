@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export const LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -56,4 +56,24 @@ export class QueryLogsDto {
   @Min(1)
   @Max(200)
   pageSize?: number = 50;
+}
+
+export class ExportLogsDto extends QueryLogsDto {
+  @IsOptional()
+  @IsIn(['json', 'csv'])
+  format?: 'json' | 'csv' = 'json';
+}
+
+export class CleanLogsDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  retentionDays?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxRecords?: number;
 }
