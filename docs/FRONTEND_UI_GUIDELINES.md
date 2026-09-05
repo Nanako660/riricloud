@@ -303,7 +303,7 @@ export function PageContainer({ title, description, actions, children }: PageCon
 - 交互提示：统一使用 `ChartTooltip` 与 `ChartTooltipContent` 保证悬浮卡片视觉风格与面板整体一致。
 - 流量统计使用 `--chart-1` 表示下行、`--chart-2` 表示上行、`--chart-3` 表示计费流量、`--chart-4`/`--chart-5` 表示线路分布；速率图同时展示平均值与近似峰值，面积图必须保留连续零值时隙，避免数据空洞造成折线断裂。
 - 字节数统一经过 `formatBytes` 格式化为 B / KB / MB / GB / TB / PB；时序图按小时或天显示 `displayTime`，Tooltip 同时展示上行、下行和当前合计。
-- 管理员流量统计位于 `/admin/traffic`，时间范围切换使用紧凑 `Tabs`，线路明细在表格容器内横向滚动；页面明确标注节点网络吞吐不参与计费，用户管理操作列的“流量明细”使用 `Activity` 图标打开响应式下钻弹窗。
+- 管理员流量统计位于 `/admin/traffic`，时间范围切换使用紧凑 `Tabs`；占比卡片支持线路分布与 Top 5 用户/其他用户分布切换，消耗明细支持线路明细与用户排行切换。用户排行使用邮箱搜索、角色筛选、本地分页、前三名徽标和占比进度条，表格在容器内横向滚动，行点击或“流量明细”按钮打开响应式下钻弹窗；页面明确标注节点网络吞吐不参与计费。
 
 ---
 

@@ -7,7 +7,7 @@ describe('TrafficService', () => {
   const prisma = {
     trafficLog: { findMany: jest.fn() },
     line: { findMany: jest.fn(), count: jest.fn() },
-    user: { findUnique: jest.fn(), count: jest.fn() },
+    user: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     node: { findMany: jest.fn() },
     nodeRateMetric: { findMany: jest.fn() }
   };
@@ -27,6 +27,7 @@ describe('TrafficService', () => {
     prisma.line.findMany.mockResolvedValue([]);
     prisma.line.count.mockResolvedValue(0);
     prisma.user.count.mockResolvedValue(0);
+    prisma.user.findMany.mockResolvedValue([]);
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.node.findMany.mockResolvedValue([]);
     prisma.nodeRateMetric.findMany.mockResolvedValue([]);
@@ -62,6 +63,65 @@ describe('TrafficService', () => {
     expect(result.summary).toMatchObject({ totalUpload: 150, totalDownload: 350, totalPhysical: 500, totalBilled: 800, activeLinesCount: 2, activeUsersCount: 2 });
     expect(result.lineRankings.map((item) => item.lineName)).toEqual(['香港 Premium', '日本 CN2']);
     expect(result.lineRankings.map((item) => item.percentage)).toEqual([80, 20]);
+  });
+
+  it('按用户聚合多条线路流量，批量回填用户资料并计算倍率与占比', async () => {
+    prisma.user.count.mockResolvedValue(3);
+    prisma.trafficLog.findMany.mockResolvedValue([
+      { nodeId: 'node-1', userId: 'user-1', upload: 100n, download: 300n, recordedAt: localDay(1, 15), line: line() },
+      { nodeId: 'node-1', userId: 'user-1', upload: 50n, download: 50n, recordedAt: localDay(2, 15), line: line({ id: 'line-2', name: '日本 CN2', trafficRate: 2 }) },
+      { nodeId: 'node-1', userId: 'user-2', upload: 50n, download: 50n, recordedAt: localDay(3, 15), line: line({ id: 'line-3', name: '美国直连', trafficRate: 1 }) }
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'user-1', email: 'alice@example.com', role: 'USER', isActive: true, subscription: { plan: { name: '专业版' } } },
+      { id: 'user-2', email: 'admin@example.com', role: 'ADMIN', isActive: false, subscription: null }
+    ]);
+
+    const result = await service.getOverview('today');
+
+    expect(result.userRankings).toEqual([
+      {
+        userId: 'user-1',
+        email: 'alice@example.com',
+        role: 'USER',
+        isActive: true,
+        planName: '专业版',
+        upload: 150,
+        download: 350,
+        total: 500,
+        billedTotal: 800,
+        percentage: 83.33
+      },
+      {
+        userId: 'user-2',
+        email: 'admin@example.com',
+        role: 'ADMIN',
+        isActive: false,
+        planName: null,
+        upload: 50,
+        download: 50,
+        total: 100,
+        billedTotal: 100,
+        percentage: 16.67
+      }
+    ]);
+    expect(prisma.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['user-1', 'user-2'] } },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        subscription: { select: { plan: { select: { name: true } } } }
+      }
+    });
+  });
+
+  it('无流量时返回空用户排行且不执行无意义的用户回查', async () => {
+    const result = await service.getOverview('today');
+
+    expect(result.userRankings).toEqual([]);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 
   it('overview 返回在线节点当前速率与历史平均/峰值', async () => {

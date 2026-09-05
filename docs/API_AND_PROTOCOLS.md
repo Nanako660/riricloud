@@ -53,7 +53,7 @@
 用户创建/更新/删除及订阅变更均会触发向全部在线 Agent 推送 `config_sync`（订阅资格变化实时生效）。
 
 #### 流量统计
-- `GET /admin/traffic/overview?range=today|24h|7d|30d`：管理员查询全站流量统计。⭐ `range` 省略时默认为 `today`；响应包含 `summary`（总上行、总下行、物理/计费流量、活跃线路/用户）、连续补零的 `timeSeries`、按计费流量降序排列的 `lineRankings`，以及 `rate`/`rateSeries` 节点网络吞吐统计。速率统一为 `bytes/s`；`today`/`24h` 的速率按 5 分钟、`7d` 按 30 分钟、`30d` 按 1 小时输出。`rate` 的当前值只汇总在线且未超时节点，历史平均值按指标采样数计算，峰值为各节点桶峰值之和的近似全站峰值；速率不参与计费。
+- `GET /admin/traffic/overview?range=today|24h|7d|30d`：管理员查询全站流量统计。⭐ `range` 省略时默认为 `today`；响应包含 `summary`（总上行、总下行、物理/计费流量、活跃线路/用户）、连续补零的 `timeSeries`、按计费流量降序排列的 `lineRankings`、按物理流量降序排列且最多返回 100 条的 `userRankings`，以及 `rate`/`rateSeries` 节点网络吞吐统计。`userRankings` 每项包含 `userId`、邮箱、角色、账号状态、当前套餐名称、周期上行/下行/物理总量、倍率折算计费量和占全站物理流量百分比；用户计费量按每条流水归属线路的倍率加权。速率统一为 `bytes/s`；`today`/`24h` 的速率按 5 分钟、`7d` 按 30 分钟、`30d` 按 1 小时输出。`rate` 的当前值只汇总在线且未超时节点，历史平均值按指标采样数计算，峰值为各节点桶峰值之和的近似全站峰值；速率不参与计费。
 - `GET /admin/traffic/users/:userId?range=today|24h|7d|30d`：管理员查询指定用户的流量画像。⭐ 响应包含当前订阅/配额、选定周期 `summary`、补零时序和线路消耗清单；用户不存在返回 404，`userId` 必须为 UUID。
 
 Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最靠前的 ACTIVE 入口线路；没有匹配线路时保留 `lineId=null`。聚合历史流水时会按节点首选 ACTIVE 入口线路回退归组，仍无法归属的数据标记为“未分配线路（节点直连）”。
@@ -510,4 +510,3 @@ Master 订阅编译引擎（`builders.ts`）支持通过 `SubscriptionTemplate` 
 - **语义化 DNS 与防污染编译 (`dnsConfigJson`)**：
   - 支持语义化 DNS 配置（`enable`、`fakeIp`、`directDns`、`proxyDns`、`ipv6`）及经典 Clash DNS 格式自动归一化。
   - 当 `fakeIp: true` 时，Clash 输出 `enhanced-mode: fake-ip` 与 `fake-ip-range`；Sing-box 输出 `dns_fakeip` 服务器定义、`fakeip` 范围（`198.18.0.0/15`）及 A/AAAA 查询劫持规则；国内 DoH DNS 直连，国外 DNS 走代理节点解析，根除 DNS 污染。
-

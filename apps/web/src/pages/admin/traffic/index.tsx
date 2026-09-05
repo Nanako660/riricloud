@@ -11,7 +11,9 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { cn, formatBytes, formatRate } from '@/lib/utils';
 import { RateTrendChart, TrafficDonutChart, TrafficTrendChart } from './components/traffic-charts';
 import { TrafficRankTable } from './components/traffic-rank-table';
-import { trafficRangeLabels, trafficRanges, useTrafficOverview, type TrafficTimeRange } from './use-traffic';
+import { UserRankTable } from './components/user-rank-table';
+import { UserTrafficDialog } from '../users/components/user-traffic-dialog';
+import { trafficRangeLabels, trafficRanges, useTrafficOverview, type TrafficTimeRange, type UserTrafficRankItem } from './use-traffic';
 
 function TrafficSkeleton() {
   return (
@@ -31,13 +33,16 @@ function TrafficSkeleton() {
 
 export default function AdminTrafficPage() {
   const [range, setRange] = React.useState<TrafficTimeRange>('today');
-  const [search, setSearch] = React.useState('');
+  const [lineSearch, setLineSearch] = React.useState('');
   const [protocolFilter, setProtocolFilter] = React.useState('ALL');
+  const [donutMode, setDonutMode] = React.useState<'lines' | 'users'>('lines');
+  const [detailMode, setDetailMode] = React.useState<'lines' | 'users'>('lines');
+  const [trafficUser, setTrafficUser] = React.useState<UserTrafficRankItem | null>(null);
   const { data, isPending, isFetching, isError } = useTrafficOverview(range);
   const summary = data?.summary;
   const protocols = Array.from(new Set((data?.lineRankings ?? []).map((item) => item.protocolType).filter((value): value is string => Boolean(value))));
-  const rankings = data?.lineRankings.filter((item) =>
-    item.lineName.toLowerCase().includes(search.trim().toLowerCase()) &&
+  const lineRankings = data?.lineRankings.filter((item) =>
+    item.lineName.toLowerCase().includes(lineSearch.trim().toLowerCase()) &&
     (protocolFilter === 'ALL' || item.protocolType === protocolFilter)
   ) ?? [];
 
@@ -66,10 +71,70 @@ export default function AdminTrafficPage() {
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="flex min-w-0 flex-col lg:col-span-2"><CardHeader><CardTitle>时序吞吐走势</CardTitle><CardDescription>按{data.bucketType === 'hour' ? '小时' : '天'}汇总原始上行与下行流量</CardDescription></CardHeader><CardContent className="flex flex-1 flex-col pb-2"><TrafficTrendChart data={data.timeSeries} /></CardContent></Card>
-            <Card className="flex min-w-0 flex-col"><CardHeader><CardTitle>线路消耗占比</CardTitle><CardDescription>按物理流量统计线路分布</CardDescription></CardHeader><CardContent className="flex flex-1 flex-col pb-4"><TrafficDonutChart data={data.lineRankings} /></CardContent></Card>
+            <Card className="flex min-w-0 flex-col">
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>消耗占比</CardTitle>
+                    <CardDescription>{donutMode === 'lines' ? '按物理流量统计线路分布' : '展示 Top 5 用户与其他用户的物理流量占比'}</CardDescription>
+                  </div>
+                  <Tabs value={donutMode} onValueChange={(value) => setDonutMode(value as 'lines' | 'users')}>
+                    <TabsList className="h-8 w-full sm:w-auto">
+                      <TabsTrigger value="lines" className="h-7 flex-1 px-2 text-xs sm:flex-none"><Activity className="mr-1 size-3.5" />线路</TabsTrigger>
+                      <TabsTrigger value="users" className="h-7 flex-1 px-2 text-xs sm:flex-none"><Users className="mr-1 size-3.5" />用户</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col pb-4">
+                <TrafficDonutChart
+                  data={donutMode === 'lines' ? data.lineRankings : data.userRankings}
+                  mode={donutMode === 'lines' ? 'line' : 'user'}
+                  totalPhysical={summary.totalPhysical}
+                />
+              </CardContent>
+            </Card>
           </div>
 
-          <Card className="min-w-0"><CardHeader><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>线路消耗明细</CardTitle><CardDescription>原始流量与倍率折算后的计费量对比</CardDescription></div><div className="flex flex-wrap items-center gap-2"><Gauge className="size-4 text-muted-foreground" /><Input aria-label="搜索线路" className="h-9 w-full sm:w-56" placeholder="搜索线路…" value={search} onChange={(event) => setSearch(event.target.value)} /><Select value={protocolFilter} onValueChange={setProtocolFilter}><SelectTrigger className="h-9 w-full sm:w-36"><SelectValue placeholder="协议" /></SelectTrigger><SelectContent><SelectItem value="ALL">全部协议</SelectItem>{protocols.map((protocol) => <SelectItem key={protocol} value={protocol}>{protocol}</SelectItem>)}</SelectContent></Select></div></div></CardHeader><CardContent className="p-0"><TrafficRankTable items={rankings} /></CardContent></Card>
+          <Card className="min-w-0">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>消耗明细</CardTitle>
+                  <CardDescription>{detailMode === 'lines' ? '原始流量与倍率折算后的计费量对比' : '按周期物理流量排序的活跃用户 Top 100'}</CardDescription>
+                </div>
+                <Tabs value={detailMode} onValueChange={(value) => setDetailMode(value as 'lines' | 'users')}>
+                  <TabsList className="h-8 w-full sm:w-auto">
+                    <TabsTrigger value="lines" className="h-7 flex-1 px-2 text-xs sm:flex-none">线路明细</TabsTrigger>
+                    <TabsTrigger value="users" className="h-7 flex-1 px-2 text-xs sm:flex-none">用户排行</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {detailMode === 'lines' ? (
+                <div>
+                  <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-end">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Gauge className="size-4 text-muted-foreground" />
+                      <Input aria-label="搜索线路" className="h-9 w-full sm:w-56" placeholder="搜索线路…" value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
+                      <Select value={protocolFilter} onValueChange={setProtocolFilter}>
+                        <SelectTrigger aria-label="筛选线路协议" className="h-9 w-full sm:w-36"><SelectValue placeholder="协议" /></SelectTrigger>
+                        <SelectContent><SelectItem value="ALL">全部协议</SelectItem>{protocols.map((protocol) => <SelectItem key={protocol} value={protocol}>{protocol}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <TrafficRankTable items={lineRankings} />
+                </div>
+              ) : <UserRankTable items={data.userRankings} onSelectUser={setTrafficUser} />}
+            </CardContent>
+          </Card>
+          <UserTrafficDialog
+            user={trafficUser ? { id: trafficUser.userId, email: trafficUser.email, role: trafficUser.role as 'ADMIN' | 'USER', isActive: trafficUser.isActive } : null}
+            open={!!trafficUser}
+            initialRange={range}
+            onOpenChange={(open) => !open && setTrafficUser(null)}
+          />
         </div>
       )}
     </PageContainer>
