@@ -44,6 +44,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Pagination, PaginationInfo, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { hasSupportContacts } from '@/lib/support';
 import { SupportDialog, SupportContactsInline } from '@/components/shared/support-dialog';
@@ -53,7 +54,7 @@ const redeemSchema = z.object({ code: z.string().trim().min(6, '请输入有效�
 const passwordSchema = z
   .object({
     oldPassword: z.string().min(8, '密码至少 8 位'),
-    newPassword: z.string().min(8, '密码至少 8 位').max(64),
+    newPassword: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
     confirmPassword: z.string()
   })
   .refine((value) => value.newPassword === value.confirmPassword, {
@@ -101,6 +102,7 @@ export default function ProfilePage() {
   const wallet = useWallet();
   const transactions = useWalletTransactions(page);
   const publicSettings = usePublicSettings();
+  const passwordMinLength = publicSettings.data?.passwordMinLength ?? 8;
   const { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail, sendCurrentEmailCode, verifyCurrentEmail } = useProfileMutations();
 
   const redeemForm = useForm<RedeemValues>({
@@ -168,11 +170,16 @@ export default function ProfilePage() {
   const onRedeem = (values: RedeemValues) =>
     redeem.mutate(values.code, { onSuccess: () => redeemForm.reset() });
 
-  const onPassword = (values: PasswordValues) =>
+  const onPassword = (values: PasswordValues) => {
+    if (values.newPassword.length < passwordMinLength) {
+      passwordForm.setError('newPassword', { message: `密码至少 ${passwordMinLength} 位` });
+      return;
+    }
     changePassword.mutate(
       { oldPassword: values.oldPassword, newPassword: values.newPassword },
       { onSuccess: () => passwordForm.reset() }
     );
+  };
 
   const onNickname = (values: NicknameValues) =>
     updateProfile.mutate({ nickname: values.nickname }, { onSuccess: () => setNicknameOpen(false) });

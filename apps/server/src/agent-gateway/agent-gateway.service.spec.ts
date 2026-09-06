@@ -38,7 +38,7 @@ describe('AgentGatewayService', () => {
   const deploymentUpdate = jest.fn();
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
-    node: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+    node: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     user: { findMany: jest.fn() },
     line: { findFirst: jest.fn() },
     nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) },
@@ -58,6 +58,14 @@ describe('AgentGatewayService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.node.findUnique.mockReset();
+    prisma.node.findUnique.mockResolvedValue(null);
+    prisma.node.findFirst.mockReset();
+    prisma.node.findFirst.mockImplementation(async ({ where }: { where: { OR?: Array<Record<string, unknown>> } }) => {
+      const token = where.OR?.[1]?.agentToken;
+      if (token === 'bad-token') return null;
+      return { id: token === 'token-node-1' ? 'node-1' : 'poll-node', status: 'ONLINE', communicationMode: 'HTTP', pollIntervalSecs: 15 };
+    });
     prisma.user.findMany.mockResolvedValue([]);
     txUserFindMany.mockResolvedValue([]);
     txSubscriptionFindMany.mockResolvedValue([]);
@@ -603,7 +611,6 @@ describe('AgentGatewayService', () => {
   it('HTTP 轮询只在配置版本落后时返回配置', async () => {
     (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
     prisma.node.findUnique
-      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
       .mockResolvedValueOnce({ id: 'poll-node', serverHost: '198.51.100.10', configOverride: null, entryLines: [], landingLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
     const first = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
@@ -611,9 +618,7 @@ describe('AgentGatewayService', () => {
     expect(first.singboxConfig).toEqual(expect.objectContaining({ inbounds: [] }));
     expect(first.nextPollSecs).toBe(15);
 
-    prisma.node.findUnique
-      .mockResolvedValueOnce({ id: 'poll-node', name: 'HTTP 节点', status: 'ONLINE' })
-      .mockResolvedValueOnce({ pollIntervalSecs: 30 });
+    prisma.node.findUnique.mockResolvedValueOnce({ pollIntervalSecs: 30 });
     const second = await service.poll('token', {
       cpuUsage: 1,
       memoryUsage: 2,
@@ -634,9 +639,9 @@ describe('AgentGatewayService', () => {
 
     (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
     prisma.node.findUnique
-      .mockResolvedValueOnce({ id: 'http-task-node', name: 'HTTP 任务节点', status: 'ONLINE' })
       .mockResolvedValueOnce({ id: 'http-task-node', serverHost: '198.51.100.11', configOverride: null, entryLines: [], landingLines: [] })
       .mockResolvedValueOnce({ pollIntervalSecs: 15 });
+    prisma.node.findFirst.mockResolvedValue({ id: 'http-task-node', status: 'ONLINE', communicationMode: 'HTTP', pollIntervalSecs: 15 });
     const response = await service.poll('token', { protocolVersion: 2, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, trafficSnapshots: [] });
     expect(response.tasks).toHaveLength(1);
     const taskId = response.tasks[0].data.taskId;
@@ -809,6 +814,8 @@ describe('AgentGatewayService', () => {
   });
 
   it('单节点承载多线路时，心跳上报复合凭证可精确拆分归属并按各线路倍率独立扣除额度', async () => {
+    (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [], landingLines: [] });
     const userOne = { id: 'user-1', uuid: '11111111-1111-4111-8111-111111111111', email: 'one@example.com' };
     const directLine = { id: 'line-direct', trafficRate: 1 };
     const relayLine = { id: 'line-relay', trafficRate: 2 };

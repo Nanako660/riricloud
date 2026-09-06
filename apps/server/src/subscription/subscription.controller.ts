@@ -20,6 +20,9 @@ export class SubscriptionController {
     @Res({ passthrough: true }) res: Response
   ) {
     const result = await this.subscriptionService.getSubscription(token, { type, templateId, userAgent });
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Profile-Update-Interval', String(result.updateIntervalHours));
     if (result.userInfoHeader) res.setHeader('Subscription-Userinfo', result.userInfoHeader);

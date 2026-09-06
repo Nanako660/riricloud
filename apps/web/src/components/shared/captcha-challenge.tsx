@@ -23,11 +23,12 @@ interface CaptchaDialogProps {
   open: boolean;
   mode: CaptchaMode;
   siteKey: string;
+  action: string;
   onOpenChange: (open: boolean) => void;
   onVerified: (payload: CaptchaPayload) => void;
 }
 
-export function CaptchaDialog({ open, mode, siteKey, onOpenChange, onVerified }: CaptchaDialogProps) {
+export function CaptchaDialog({ open, mode, siteKey, action, onOpenChange, onVerified }: CaptchaDialogProps) {
   const [local, setLocal] = useState<LocalChallenge | null>(null);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,7 +75,7 @@ export function CaptchaDialog({ open, mode, siteKey, onOpenChange, onVerified }:
             </DialogFooter>
           </div>
         ) : (
-          <TurnstileWidget siteKey={siteKey} onToken={(turnstileToken) => { onVerified({ turnstileToken }); onOpenChange(false); }} />
+          <TurnstileWidget siteKey={siteKey} action={action} onToken={(turnstileToken) => { onVerified({ turnstileToken }); onOpenChange(false); }} />
         )}
       </DialogContent>
     </Dialog>
@@ -84,10 +85,11 @@ export function CaptchaDialog({ open, mode, siteKey, onOpenChange, onVerified }:
 interface CaptchaInlineProps {
   mode: CaptchaMode;
   siteKey: string;
+  action: string;
   onChange: (payload: CaptchaPayload | null) => void;
 }
 
-export function CaptchaInline({ mode, siteKey, onChange }: CaptchaInlineProps) {
+export function CaptchaInline({ mode, siteKey, action, onChange }: CaptchaInlineProps) {
   const [local, setLocal] = useState<LocalChallenge | null>(null);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
@@ -109,7 +111,7 @@ export function CaptchaInline({ mode, siteKey, onChange }: CaptchaInlineProps) {
   }, [loadLocal, mode, onChange]);
 
   if (mode === 'OFF') return null;
-  if (mode === 'TURNSTILE') return <TurnstileWidget siteKey={siteKey} onToken={(turnstileToken) => onChange({ turnstileToken })} />;
+  if (mode === 'TURNSTILE') return <TurnstileWidget siteKey={siteKey} action={action} onToken={(turnstileToken) => onChange({ turnstileToken })} />;
 
   return (
     <div className="space-y-2 rounded-lg border p-3 shadow-sm">
@@ -127,10 +129,11 @@ export function CaptchaInline({ mode, siteKey, onChange }: CaptchaInlineProps) {
 
 interface TurnstileWidgetProps {
   siteKey: string;
+  action: string;
   onToken: (token: string) => void;
 }
 
-function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
+function TurnstileWidget({ siteKey, action, onToken }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
 
@@ -145,6 +148,7 @@ function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
       if (disposed || !containerRef.current || !window.turnstile) return;
       widgetId = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
+        action,
         callback: onToken,
         'expired-callback': () => setError('验证已过期，请重新验证'),
         'error-callback': () => setError('Turnstile 加载失败，请检查网络')
@@ -167,7 +171,7 @@ function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
       disposed = true;
       if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
     };
-  }, [onToken, siteKey]);
+  }, [action, onToken, siteKey]);
 
   return <div className="space-y-2"><div ref={containerRef} className="min-h-[65px]" />{error ? <p className="text-sm text-destructive">{error}</p> : <p className="text-xs text-muted-foreground">由 Cloudflare 提供无感人机验证。</p>}</div>;
 }
@@ -175,7 +179,7 @@ function TurnstileWidget({ siteKey, onToken }: TurnstileWidgetProps) {
 declare global {
   interface Window {
     turnstile?: {
-      render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; 'expired-callback': () => void; 'error-callback': () => void }) => string;
+      render: (container: HTMLElement, options: { sitekey: string; action: string; callback: (token: string) => void; 'expired-callback': () => void; 'error-callback': () => void }) => string;
       remove: (widgetId: string) => void;
     };
   }

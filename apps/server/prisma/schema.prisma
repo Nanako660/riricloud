@@ -28,6 +28,7 @@ model User {
   uuid              String    @unique @default(uuid()) // VLESS/Sing-box 用户识别
   password          String? // SS/Hysteria2 连接密码（预留）
   isActive          Boolean   @default(true)
+  sessionVersion    Int       @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -45,13 +46,26 @@ model User {
 model VerificationCode {
   id        String   @id @default(uuid())
   email     String
-  code      String
+  codeHash  String
   action    String // REGISTER | CHANGE_EMAIL | VERIFY_CURRENT_EMAIL | RESET_PASSWORD
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([email, action, createdAt])
+  @@index([expiresAt])
+}
+
+model CaptchaChallenge {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  answerHash String
+  ipHash    String?
+  attempts  Int       @default(0)
+  consumedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
   @@index([expiresAt])
 }
 
@@ -62,6 +76,7 @@ model Node {
   isLocal               Boolean   @default(false) // 主控本机预置节点
   configOverride        String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
   agentToken            String    @unique
+  agentTokenHash        String?   @unique
   communicationMode     String    @default("WS") // WS | HTTP
   pollIntervalSecs      Int       @default(15) // HTTP 轮询建议周期，秒
   status                String    @default("OFFLINE") // ONLINE | OFFLINE | DISABLED

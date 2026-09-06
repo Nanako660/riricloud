@@ -19,6 +19,7 @@ import (
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
+	"github.com/Nanako660/riricloud/apps/agent/internal/security"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
@@ -379,9 +380,9 @@ func (c *Client) runUpgrade(parent context.Context, raw json.RawMessage) {
 			for _, file := range task.Files {
 				files = append(files, singbox.UpgradeFile{Name: file.Name, Role: file.Role, URL: file.URL, SHA256: file.SHA256})
 			}
-			err = c.singboxMgr.UpgradeKernelFiles(ctx, files)
+			err = c.singboxMgr.UpgradeKernelFiles(ctx, files, c.token)
 		} else {
-			err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256)
+			err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256, c.token)
 		}
 	case "agent":
 		err = c.upgradeSelf(ctx, task)
@@ -440,7 +441,7 @@ func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {
 	if err != nil {
 		return fmt.Errorf("resolve agent executable: %w", err)
 	}
-	temp, err := upgrade.DownloadAndVerify(ctx, task.URL, task.SHA256, filepath.Dir(target))
+	temp, err := upgrade.DownloadAndVerify(ctx, task.URL, task.SHA256, filepath.Dir(target), c.token)
 	if err != nil {
 		return err
 	}
@@ -502,6 +503,9 @@ func resolvePollURL(rawURL string) (string, error) {
 		parsed.Path = strings.TrimSuffix(parsed.Path, "/ws/agent") + "/api/v1/agent/poll"
 	}
 	parsed.RawQuery = ""
+	if err := security.ValidateHTTPURL(parsed.String()); err != nil {
+		return "", err
+	}
 	return parsed.String(), nil
 }
 

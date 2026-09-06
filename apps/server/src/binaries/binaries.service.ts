@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { ImportBinaryDto } from './dto/import-binary.dto';
 import { SettingsService } from '../system/settings.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
+import { hashAgentToken } from '../common/agent-token';
+import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
 
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
 const TARGETS = [
@@ -127,19 +129,18 @@ export class BinariesService implements OnModuleInit {
 
   async authorizeDownload(token: string | undefined): Promise<void> {
     if (!token) throw new UnauthorizedException('缺少 AgentToken');
-    const node = await this.prisma.node.findUnique({ where: { agentToken: token }, select: { status: true } });
+    const node = await this.prisma.node.findFirst({ where: { OR: [{ agentTokenHash: hashAgentToken(token) }, { agentToken: token }], }, select: { status: true } });
     if (!node || node.status === 'DISABLED') throw new UnauthorizedException('无效的 AgentToken');
   }
 
-  buildDownloadUrl(target: BinaryTarget, token: string, requestBaseUrl?: string): string {
-    return this.buildDownloadUrlFromBase(target, token, resolvePublicBaseUrl({ requestBaseUrl }));
+  buildDownloadUrl(target: BinaryTarget, _token: string, requestBaseUrl?: string): string {
+    return this.buildDownloadUrlFromBase(target, resolvePublicBaseUrl({ requestBaseUrl }));
   }
 
-  async buildConfiguredDownloadUrl(target: BinaryTarget, token: string, requestBaseUrl?: string): Promise<string> {
+  async buildConfiguredDownloadUrl(target: BinaryTarget, _token: string, requestBaseUrl?: string): Promise<string> {
     const settings = await this.settingsService?.getSettings();
     return this.buildDownloadUrlFromBase(
       target,
-      token,
       resolvePublicBaseUrl({
         configuredBaseUrl: settings?.binaryDownloadBaseUrl || settings?.publicBaseUrl,
         requestBaseUrl
@@ -147,9 +148,9 @@ export class BinariesService implements OnModuleInit {
     );
   }
 
-  private buildDownloadUrlFromBase(target: BinaryTarget, token: string, configuredBase?: string): string {
+  private buildDownloadUrlFromBase(target: BinaryTarget, configuredBase?: string): string {
     const base = configuredBase ?? resolvePublicBaseUrl();
-    return appendPublicPath(base, `api/v1/downloads/binaries/${target}?token=${encodeURIComponent(token)}`);
+    return appendPublicPath(base, `api/v1/downloads/binaries/${target}`);
   }
 
   findForNode(kind: BinaryKind, osArch: string | null | undefined): BinaryAsset | undefined {
@@ -169,14 +170,8 @@ export class BinariesService implements OnModuleInit {
   }
 
   async importRemote(dto: ImportBinaryDto): Promise<BinaryInfo> {
-    if (!/^https?:\/\//i.test(dto.url)) throw new Error('binary URL must use http or https');
     if (!/^[a-f0-9]{64}$/i.test(dto.sha256)) throw new Error('binary sha256 must be 64 hexadecimal characters');
-    const response = await fetch(dto.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`binary download failed: HTTP ${response.status}`);
-    const contentLength = Number(response.headers.get('content-length') ?? 0);
-    if (contentLength > MAX_BINARY_SIZE) throw new Error('binary file exceeds size limit');
-    const body = Buffer.from(await response.arrayBuffer());
-    if (body.length > MAX_BINARY_SIZE) throw new Error('binary file exceeds size limit');
+    const body = await fetchSafeRemoteBuffer(dto.url, { maxBytes: MAX_BINARY_SIZE });
     const actual = createHash('sha256').update(body).digest('hex');
     if (actual.toLowerCase() !== dto.sha256.toLowerCase()) throw new Error(`binary checksum mismatch: got ${actual}`);
     await mkdir(this.customDir, { recursive: true });

@@ -191,6 +191,9 @@ func NormalizeMasterURL(rawURL string, mode Mode) (string, error) {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("MASTER_URL must be an absolute URL")
 	}
+	if err := validateTransport(parsed); err != nil {
+		return "", err
+	}
 	scheme := parsed.Scheme
 	switch mode {
 	case ModeWS:
@@ -260,6 +263,9 @@ func resolveMode(rawURL, explicit string) (Mode, error) {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("MASTER_URL must be an absolute URL")
 	}
+	if err := validateTransport(parsed); err != nil {
+		return "", err
+	}
 	if explicit != "" {
 		switch Mode(strings.ToLower(strings.TrimSpace(explicit))) {
 		case ModeWS:
@@ -284,6 +290,22 @@ func resolveMode(rawURL, explicit string) (Mode, error) {
 	default:
 		return "", fmt.Errorf("MASTER_URL scheme must be ws, wss, http, or https")
 	}
+}
+
+func validateTransport(parsed *url.URL) error {
+	if !productionLike() || (parsed.Scheme != "http" && parsed.Scheme != "ws") {
+		return nil
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+	return fmt.Errorf("production Agent connections require https or wss for public Master URLs")
+}
+
+func productionLike() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("RIRICLOUD_ENV")))
+	return value == "production" || strings.EqualFold(strings.TrimSpace(os.Getenv("NODE_ENV")), "production")
 }
 
 func executableName(name string) string {

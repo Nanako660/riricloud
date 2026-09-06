@@ -26,7 +26,7 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
         render={({ field }) => (
           <FormItem>
             <FormLabel>初始密码</FormLabel>
-            <FormControl><Input type="password" placeholder="至少 8 位" autoComplete="new-password" {...field} /></FormControl>
+            <FormControl><Input type="password" placeholder="至少 8 位，含大小写、数字和特殊字符" autoComplete="new-password" {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )}
@@ -135,7 +135,7 @@ export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAc
         render={({ field }) => (
           <FormItem>
             <FormLabel>重置登录密码（可选）</FormLabel>
-            <FormControl><Input type="password" placeholder="留空表示不修改" autoComplete="new-password" {...field} /></FormControl>
+            <FormControl><Input type="password" placeholder="留空表示不修改；新密码需含大小写、数字和特殊字符" autoComplete="new-password" {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )}

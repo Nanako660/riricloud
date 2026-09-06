@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -187,7 +188,9 @@ func (c *Client) Run(ctx context.Context) {
 func (c *Client) runOnce(ctx context.Context) error {
 	c.log.Info("connecting to master")
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, c.masterURL+"?token="+c.token, nil)
+	header := http.Header{}
+	header.Set("X-Agent-Token", c.token)
+	conn, _, err := dialer.DialContext(ctx, c.masterURL, header)
 	if err != nil {
 		return fmt.Errorf("dial master: %w", err)
 	}
@@ -319,9 +322,9 @@ func (c *Client) handleUpgrade(parent context.Context, conn *websocket.Conn, tas
 			for _, file := range task.Files {
 				files = append(files, singbox.UpgradeFile{Name: file.Name, Role: file.Role, URL: file.URL, SHA256: file.SHA256})
 			}
-			err = c.singboxMgr.UpgradeKernelFiles(ctx, files)
+			err = c.singboxMgr.UpgradeKernelFiles(ctx, files, c.token)
 		} else {
-			err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256)
+			err = c.singboxMgr.UpgradeKernel(ctx, task.URL, task.SHA256, c.token)
 		}
 	case "agent":
 		err = c.upgradeSelf(ctx, task)
@@ -356,7 +359,7 @@ func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {
 	if err != nil {
 		return fmt.Errorf("resolve agent executable: %w", err)
 	}
-	temp, err := upgrade.DownloadAndVerify(ctx, task.URL, task.SHA256, filepath.Dir(target))
+	temp, err := upgrade.DownloadAndVerify(ctx, task.URL, task.SHA256, filepath.Dir(target), c.token)
 	if err != nil {
 		return err
 	}

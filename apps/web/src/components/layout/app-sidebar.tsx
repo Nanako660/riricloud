@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useCurrentUser } from '@/lib/current-user';
 import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
@@ -20,7 +21,8 @@ import {
 // 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user?.role === 'ADMIN';
+  const sessionQuery = useCurrentUser();
+  const isAdmin = (sessionQuery.data ?? user)?.role === 'ADMIN';
   const { setOpenMobile } = useSidebar();
   const publicSettings = usePublicSettings();
   const siteName = publicSettings.data?.siteName || 'RiriCloud';

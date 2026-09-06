@@ -13,7 +13,7 @@ RiriCloud 采用 SQLite 配合 Prisma ORM 进行持久化。Master 启动时会�
 管理员初始化与演示 seed 分离：
 
 - 启动入口先执行 `apps/server/prisma/bootstrap-admin.js`。数据库没有 `role=ADMIN` 时，按 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 创建首个管理员；兼容 `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`，优先级为正式配置高于旧配置。已有管理员时完全跳过，不改密码，也不因邮箱配置变化创建重复账号。
-- 空数据库没有管理员且未提供凭据时启动失败；管理员邮箱沿用 `class-validator` 的 `IsEmail` 规则，密码长度必须为 `8-64` 位。
+- 空数据库没有管理员且未提供凭据时启动失败；管理员邮箱沿用 `class-validator` 的 `IsEmail` 规则，密码长度必须为 `8-64` 位，并且必须同时包含大写字母、小写字母、数字和特殊字符。
 - `AUTO_SEED=false`（生产默认值）迁移数据库、初始化管理员、确保内嵌默认订阅模板存在，并始终创建或复用系统保留的 `Master-Local` 本机节点；不会创建演示用户、体验套餐和线路。
 - `AUTO_SEED=true` 才执行 `apps/server/prisma/seed.js`，额外幂等创建演示用户、体验套餐、VLESS/Reality 直连线路和盲转发示例线路；默认模板由通用 bootstrap 负责，完整 seed 会将其同步为内嵌模板定义，不会重复创建。本机节点由通用 bootstrap 负责，不会重复创建。重复执行不会覆盖已有管理员密码；本地 `pnpm setup` 仍通过该脚本使用演示默认凭据。
 - `Master-Local` 使用 `Node.isLocal=true` 标记，是 Master 内置 Agent 的固定数据库身份。启动时复用已有 `agentToken` 与节点配置；管理端删除接口对该节点返回 `409`，防止误删内置 Agent 身份。
@@ -83,6 +83,7 @@ model User {
   password          String?                               // 用于 Shadowsocks/Hysteria2 连接密码
   
   isActive          Boolean      @default(true)          // 是否启用
+  sessionVersion    Int          @default(0)             // 密码修改、注销、禁用或管理员重置时递增，使旧 JWT 失效
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -101,13 +102,27 @@ model User {
 model VerificationCode {
   id        String   @id @default(uuid())
   email     String
-  code      String
+  codeHash  String   // 使用应用密钥 HMAC；迁移后旧明文验证码全部失效
   action    String   // REGISTER | CHANGE_EMAIL | VERIFY_CURRENT_EMAIL | RESET_PASSWORD
   attempts  Int      @default(0)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([email, action, createdAt])
+  @@index([expiresAt])
+}
+
+// 本地图形验证码的服务端短期状态；答案、令牌与 IP 均不可逆保存
+model CaptchaChallenge {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  answerHash String
+  ipHash     String?
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
   @@index([expiresAt])
 }
 
@@ -125,6 +140,7 @@ model Node {
 
   // 主从长连接通信凭证
   agentToken      String        @unique @default(uuid()) // Agent 接入认证密钥
+  agentTokenHash  String?       @unique                    // AgentToken HMAC/SHA-256 校验值，避免仅依赖可逆密文
   communicationMode AgentTransportMode @default(WS)      // 当前/期望通信模式
   pollIntervalSecs Int           @default(15)             // HTTP 轮询建议周期（秒）
   status          NodeStatus    @default(OFFLINE)        // 实时状态
@@ -232,7 +248,7 @@ model Line {
   type            String   @default("DIRECT") // DIRECT | RELAY
   relayMode       String? // BLIND_FORWARD | PROTOCOL_PROXY | TARGET_LINE
   protocolType    String   @default("VLESS") // ProtocolType
-  paramsJson      String   @default("{}") // 协议专属参数 JSON
+  paramsJson      String   @default("{}") // 协议专属参数 JSON；Reality 私钥按应用层 AES-GCM 加密保存
   entryNodeId     String
   entryPort       Int
   landingNodeId   String?  // 普通中继落地节点；直连与 TARGET_LINE 为 null
@@ -281,7 +297,7 @@ model Certificate {
   id             String   @id @default(uuid())
   name           String
   certificatePem String   // X.509 叶子证书 PEM
-  privateKeyPem  String   // 未加密私钥 PEM
+  privateKeyPem  String   // AES-GCM 应用层密文；仅管理员详情与 Agent 配置组装时解密
   subject        String
   issuer         String
   serialNumber   String
@@ -502,7 +518,7 @@ model SystemSetting {
 | `probePresetTargets` | 探针目标 JSON 数组 | TCP Apple 443 + DNS Cloudflare | 管理端探针预设目标 |
 | `jwtSessionDays` | 十进制整数（1~30） | `"1"` | 新签发 JWT 的会话有效天数 |
 | `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |
-| `customHeadHtml` | HTML/JS 文本 | `""` | 面板 `document.head` 运行时注入代码 |
+| `customHeadHtml` | HTML/JS 文本 | `""` | 管理员可信边界内由面板 `document.head` 运行时注入；可读取当前页面 JWT，默认 CSP 不允许任意 inline script |
 | `lineSpeedtestEnabled` | `"true"` / `"false"` | `"true"` | 是否开启后台线路自动定时测速 |
 | `lineSpeedtestIntervalMins` | 十进制整数（1~1440） | `"30"` | 线路自动测速执行周期（分钟） |
 | `lineSpeedtestTargetUrl` | HTTP/HTTPS URL | `"http://cp.cloudflare.com/generate_204"` | 线路测速探测目标 URL |
@@ -510,7 +526,7 @@ model SystemSetting {
 | `systemTimezone` | IANA 时区标识（如 `Asia/Shanghai`） | `"Asia/Shanghai"` | 全系统统一时区设置；驱动全站前端时间格式化、后端流量图表按小时/天聚合时间桶以及自然月重置边界精确计算 |
 | `smtpEnabled` | `"true"` / `"false"` | `"false"` | 是否启用 SMTP 发信；密码只在服务端保存，管理端读取时脱敏 |
 | `smtpHost` / `smtpPort` / `smtpSecure` | 主机文本 / 十进制端口 / 布尔 | `""` / `"587"` / `"false"` | SMTP 服务器连接参数；`smtpSecure=true` 使用 SSL/TLS |
-| `smtpUser` / `smtpPass` / `smtpFrom` | 文本 | `""` | SMTP 登录账号、密码和发信人地址；管理端密码返回 `********` |
+| `smtpUser` / `smtpPass` / `smtpFrom` | 文本 | `""` | SMTP 登录账号、密码和发信人地址；密码使用 AES-GCM 应用层密文保存，管理端返回 `********` |
 | `emailVerificationEnabled` | `"true"` / `"false"` | `"false"` | 是否要求注册提交 6 位邮箱验证码 |
 | `enforceEmailVerification` | `"true"` / `"false"` | `"false"` | 是否强制要求已核验邮箱才能使用订阅与连接节点（未核验普通用户拦截 403 并从节点入站名单剔除；ADMIN 豁免） |
 | `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册、获取注册/重置验证码前的人机验证模式 |
@@ -701,4 +717,3 @@ model SystemLog {
 1. **内存队列与批量入库**：高频日志优先写入 Master 内存环形队列，每隔 1 秒或积攒 50 条日志异步执行批量写入（`createMany`），消除 SQLite 单写锁争用风险。
 2. **生命周期双上限自动清理**：后台定时巡检任务按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀。
 3. **敏感信息脱敏红线**：所有 Token、密码、UUID 凭证与 Cookie 在入库前必须经过不可逆掩码处理（如 `eyJ...***`）。
-

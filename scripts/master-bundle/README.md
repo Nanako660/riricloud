@@ -30,7 +30,7 @@ AUTO_SEED=true ./start.sh
 如需重置已有管理员密码，命令默认隐藏交互输入并要求确认：
 ```bash
 ./admin-reset.sh --email admin@example.com
-printf '%s\n' 'new-password' | ./admin-reset.sh --email admin@example.com --password-stdin
+printf '%s\n' 'New-admin-password1!' | ./admin-reset.sh --email admin@example.com --password-stdin
 ```
 重置命令不会创建账号，也不会把普通用户提权为管理员。
 

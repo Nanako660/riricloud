@@ -19,6 +19,24 @@
 ### Fixed
 
 
+## [0.6.13] - 2026-09-06
+
+### Fixed
+- **密码强度校验补齐**：注册、找回密码、个人修改密码和管理员创建/重置用户密码统一要求密码同时包含大写字母、小写字母、数字和特殊字符，并同步前端表单提示、DTO 校验与服务端动态最小长度校验；既有弱密码仍可正常登录。
+- **e2e 管理员导航状态修复**：统一侧栏、管理员路由守卫与用户菜单使用服务端 `/auth/me` 会话数据，避免管理员账号在个人中心显示“系统管理员”但因过期内存角色导致全部管理员菜单消失。
+- **登录注册安全审计整改**：本地图形验证码改为 SQLite 服务端短期状态并使用不可逆 HMAC，加入过期、一次性消费、IP 绑定、失败次数和并发保护；邮箱验证码改为 hash 存储并使迁移前明文验证码全部失效；注册/找回密码统一邮箱归一化、错误语义、动态密码长度、密码强度、CAPTCHA 与限流边界。
+- **浏览器认证会话硬化**：登录/注册改用 HttpOnly、SameSite Cookie，移除前端 localStorage JWT；注销、改密、重置、禁用和管理员 CLI 重置递增 `sessionVersion` 立即失效旧会话，并补充 API no-store、CSP、CORS 与安全响应头。
+- **e2e Cookie 登录适配**：`scripts/dev-e2e.sh` 与资源同步脚本改用权限受限的临时 Cookie jar，不再读取登录响应中的 `accessToken` JSON。
+- **本地 e2e 联调凭证修复**：节点列表脱敏后，`scripts/dev-e2e.sh` 改为通过本地 Prisma helper 读取 `Master-Local` AgentToken，避免复用旧配置导致内嵌 Agent 鉴权失败；既有独立节点缺少显式 AgentToken 时改为明确报错。
+- **本地 e2e 资源同步修复**：复用已有主控或 SQLite 数据库时，自动校验当前 Agent/Sing-box 构建产物并创建新的资源 revision，避免升级任务使用旧文件或因 SHA-256 不一致失败。
+- **安全审计整改**：AgentToken 改为 CSPRNG 生成、哈希校验与 AES-GCM 密文保存，创建/轮换时仅返回一次，轮换立即断开旧连接；移除 Agent/JWT query 鉴权，Agent 二进制与 WS 统一使用 Header，SSE 日志改用一次性短期票据。
+- **认证与输入洪泛防护**：补齐登录、注册、密码重置、验证码和前端日志限流，验证码失败次数使用 SQLite 原子更新，Agent WS 与日志上报增加帧大小、消息数量、metadata 和队列配额，密码/禁用/重置后旧 JWT 立即失效。
+- **网络与部署安全**：远程二进制下载增加 DNS 私网/元数据地址阻断、逐跳重定向校验、HTTPS 策略与流式大小限制；生产入口拒绝 `AUTO_SEED=true`，容器和发行包增加非 root、只读根文件系统、capability drop、no-new-privileges 与临时文件系统约束。
+- **敏感配置保护**：SMTP、Turnstile、证书私钥和 Reality 私钥使用 AES-GCM 应用层加密，管理端响应与线路输出脱敏；补充安全响应头、明确 CORS、CSP、HSTS、nosniff、Frame 防护与 no-store 策略。
+- **供应链与依赖治理**：锁定 `qs` 修复版本、升级 React Router，固定 Docker 基础镜像 digest 并校验 Sing-box/Cronet SHA-256；记录 `deepmerge-ts` 经 Prisma 配置链路引入的残余 High 风险与持续监控计划。
+
+
+
 ## [0.6.12] - 2026-09-06
 
 ### Added

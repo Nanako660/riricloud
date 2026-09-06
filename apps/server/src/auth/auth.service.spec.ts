@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcryptjs';
@@ -13,6 +13,7 @@ import { WalletService } from '../wallet/wallet.service';
 describe('AuthService', () => {
   let service: AuthService;
   const prisma = {
+    $transaction: jest.fn(),
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -22,7 +23,7 @@ describe('AuthService', () => {
   const agentGateway = { pushConfigToAll: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
   const subscriptionService = { subscribe: jest.fn() };
-  const walletService = { adjustBalance: jest.fn() };
+  const walletService = { adjustBalance: jest.fn(), applyBalanceChange: jest.fn() };
   const verificationService = { verifyCode: jest.fn() };
 
   beforeAll(async () => {
@@ -42,6 +43,10 @@ describe('AuthService', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+  beforeEach(() => {
+    prisma.$transaction.mockImplementation(async (callback: (client: typeof prisma) => Promise<unknown>) => callback(prisma));
+  });
 
   const activeAdmin = {
     id: 'u1',
@@ -71,6 +76,11 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'admin@riricloud.local', password: 'riri-admin-demo' })
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('账号不存在时也执行密码校验并返回统一错误', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.login({ email: 'missing@example.com', password: 'wrong-password' })).rejects.toThrow('邮箱或密码错误');
     });
   });
 
@@ -105,17 +115,17 @@ describe('AuthService', () => {
     it('注册开关关闭时抛出 ForbiddenException', async () => {
       settingsService.getSettings.mockResolvedValue({ ...enabledSettings, registrationEnabled: false });
       await expect(
-        service.register({ email: 'new@example.com', password: 'password123' })
+        service.register({ email: 'new@example.com', password: 'Password123!' })
       ).rejects.toThrow(ForbiddenException);
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it('邮箱已存在时抛出 ConflictException', async () => {
+    it('邮箱已存在时返回不暴露账号状态的通用错误', async () => {
       settingsService.getSettings.mockResolvedValue(enabledSettings);
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
       await expect(
-        service.register({ email: 'admin@riricloud.local', password: 'password123' })
-      ).rejects.toThrow(ConflictException);
+        service.register({ email: 'admin@riricloud.local', password: 'Password123!' })
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('注册成功创建 USER 角色默认配额用户并触发全节点推送', async () => {
@@ -127,7 +137,7 @@ describe('AuthService', () => {
         role: data.role,
         trafficLimitBytes: data.trafficLimitBytes
       }));
-      const result = await service.register({ email: 'new@example.com', password: 'password123' });
+      const result = await service.register({ email: 'new@example.com', password: 'Password123!' });
       expect(result).toEqual({ accessToken: 'token' });
       expect(prisma.user.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -139,17 +149,39 @@ describe('AuthService', () => {
       expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
     });
 
+    it('邮箱验证码失败时返回通用错误，避免暴露注册邮箱状态', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailVerificationEnabled: true });
+      prisma.user.findUnique.mockResolvedValue(null);
+      verificationService.verifyCode.mockRejectedValue(new BadRequestException('验证码错误'));
+
+      await expect(service.register({ email: 'new@example.com', password: 'Password123!', verificationCode: '000000' }))
+        .rejects.toThrow('注册信息无效');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('注册的邮箱验证码消费与用户权益创建处于同一事务', async () => {
+      settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailVerificationEnabled: true, defaultBalance: 100 });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'u-transaction', email: 'tx@example.com', role: 'USER' });
+      verificationService.verifyCode.mockResolvedValue(undefined);
+
+      await service.register({ email: 'tx@example.com', password: 'Password123!', verificationCode: '123456' });
+
+      expect(verificationService.verifyCode).toHaveBeenCalledWith('tx@example.com', 'REGISTER', '123456', prisma);
+      expect(walletService.applyBalanceChange).toHaveBeenCalledWith(prisma, 'u-transaction', 100, 'SYSTEM_GIFT', '新用户注册赠金');
+    });
+
     it('按系统设置限制密码最小长度', async () => {
       settingsService.getSettings.mockResolvedValue({ ...enabledSettings, passwordMinLength: 12 });
-      await expect(service.register({ email: 'short@example.com', password: 'password1' })).rejects.toThrow('密码至少 12 位');
+      await expect(service.register({ email: 'short@example.com', password: 'Password1!' })).rejects.toThrow('密码至少 12 位');
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('按系统设置执行邮箱域名白名单和黑名单过滤', async () => {
       settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailDomainMode: 'whitelist', emailDomainList: ['example.com'] });
-      await expect(service.register({ email: 'new@blocked.com', password: 'password123' })).rejects.toThrow('不在允许注册范围');
+      await expect(service.register({ email: 'new@blocked.com', password: 'Password123!' })).rejects.toThrow('不在允许注册范围');
       settingsService.getSettings.mockResolvedValue({ ...enabledSettings, emailDomainMode: 'blacklist', emailDomainList: ['blocked.com'] });
-      await expect(service.register({ email: 'new@blocked.com', password: 'password123' })).rejects.toThrow('已被禁止注册');
+      await expect(service.register({ email: 'new@blocked.com', password: 'Password123!' })).rejects.toThrow('已被禁止注册');
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
@@ -158,17 +190,18 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ id: 'u-default-plan', email: 'plan@example.com', role: 'USER' });
       subscriptionService.subscribe.mockResolvedValue({ id: 'sub-1' });
-      await service.register({ email: 'plan@example.com', password: 'password123' });
-      expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1');
-      expect(agentGateway.pushConfigToAll).not.toHaveBeenCalled();
+      await service.register({ email: 'plan@example.com', password: 'Password123!' });
+      expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1', prisma);
+      expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
     });
 
     it('配置初始余额时写入 SYSTEM_GIFT 流水', async () => {
       settingsService.getSettings.mockResolvedValue({ ...enabledSettings, defaultBalance: 2500 });
       prisma.user.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue({ id: 'u-gift', email: 'gift@example.com', role: 'USER' });
-      await service.register({ email: 'gift@example.com', password: 'password123' });
-      expect(walletService.adjustBalance).toHaveBeenCalledWith('u-gift', 2500, 'SYSTEM_GIFT', '新用户注册赠金');
+      walletService.applyBalanceChange.mockResolvedValue({ balance: 2500 });
+      await service.register({ email: 'gift@example.com', password: 'Password123!' });
+      expect(walletService.applyBalanceChange).toHaveBeenCalledWith(prisma, 'u-gift', 2500, 'SYSTEM_GIFT', '新用户注册赠金');
     });
   });
 
@@ -178,8 +211,8 @@ describe('AuthService', () => {
       await expect(service.resetPassword({
         email: 'notfound@example.com',
         code: '123456',
-        newPassword: 'password123'
-      })).rejects.toThrow('该邮箱尚未注册');
+        newPassword: 'Password123!'
+      })).rejects.toThrow('重置请求无效');
     });
 
     it('新密码长度小于系统设置时抛出 BadRequestException', async () => {
@@ -201,11 +234,11 @@ describe('AuthService', () => {
       const result = await service.resetPassword({
         email: 'test@example.com',
         code: '123456',
-        newPassword: 'new-password-123'
+        newPassword: 'New-password-123!'
       });
 
       expect(result).toEqual({ success: true, message: '密码重置成功' });
-      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'RESET_PASSWORD', '123456');
+      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'RESET_PASSWORD', '123456', prisma);
       expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 'u1' },
         data: expect.objectContaining({
@@ -213,6 +246,30 @@ describe('AuthService', () => {
         })
       }));
       expect(agentGateway.pushConfigToAll).toHaveBeenCalled();
+    });
+
+    it('验证码或用户更新失败时使用统一错误且事务回滚', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1', email: 'test@example.com', emailVerifiedAt: null });
+      settingsService.getSettings.mockResolvedValue({ passwordMinLength: 8 });
+      verificationService.verifyCode.mockRejectedValue(new BadRequestException('验证码错误'));
+
+      await expect(service.resetPassword({ email: 'test@example.com', code: '000000', newPassword: 'New-password-123!' }))
+        .rejects.toThrow('重置请求无效');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('邮箱大小写与空白按统一规则查询', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(service.resetPassword({ email: ' User@Example.com ', code: '123456', newPassword: 'New-password-123!' }))
+        .rejects.toThrow('重置请求无效');
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'user@example.com' } });
+    });
+  });
+
+  describe('logout', () => {
+    it('注销时递增 sessionVersion 使旧 JWT 失效', async () => {
+      await service.logout('u1');
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { sessionVersion: { increment: 1 } } });
     });
   });
 });

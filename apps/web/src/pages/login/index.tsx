@@ -43,14 +43,12 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: async (values: LoginForm) => {
-      const { data } = await api.post<{ accessToken: string }>('/auth/login', values);
-      const me = await api.get<MeResponse>('/auth/me', {
-        headers: { Authorization: `Bearer ${data.accessToken}` }
-      });
-      return { token: data.accessToken, user: me.data };
+      await api.post<{ accessToken: string }>('/auth/login', values);
+      const me = await api.get<MeResponse>('/auth/me');
+      return { user: me.data };
     },
-    onSuccess: ({ token, user }) => {
-      setAuth(token, user);
+    onSuccess: ({ user }) => {
+      setAuth(user);
       toast.success('登录成功');
       navigate('/', { replace: true });
     },

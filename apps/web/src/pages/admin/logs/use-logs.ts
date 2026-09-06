@@ -127,47 +127,45 @@ export function useLiveTailStream(
   filter: LogsFilter,
   onNewLog: (item: SystemLogItem) => void
 ) {
-  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const [isConnected, setIsConnected] = React.useState(false);
 
   React.useEffect(() => {
-    if (!enabled || !token) {
+    if (!enabled || !user) {
       setIsConnected(false);
       return;
     }
 
-    const query = new URLSearchParams();
-    query.set('token', token);
-    if (filter.level !== 'ALL') query.set('level', filter.level);
-    if (filter.source !== 'ALL') query.set('source', filter.source);
-    if (filter.nodeId && filter.nodeId !== 'ALL') query.set('nodeId', filter.nodeId);
-    if (filter.keyword) query.set('keyword', filter.keyword.trim());
+    let eventSource: EventSource | undefined;
+    let cancelled = false;
+    void api.get<{ ticket: string }>('/logs/stream-ticket').then(({ data }) => {
+      if (cancelled) return;
+      const query = new URLSearchParams({ ticket: data.ticket });
+      if (filter.level !== 'ALL') query.set('level', filter.level);
+      if (filter.source !== 'ALL') query.set('source', filter.source);
+      if (filter.nodeId && filter.nodeId !== 'ALL') query.set('nodeId', filter.nodeId);
+      if (filter.keyword) query.set('keyword', filter.keyword.trim());
 
-    const url = `/api/v1/logs/stream?${query.toString()}`;
-    const eventSource = new EventSource(url);
-
-    eventSource.onopen = () => {
-      setIsConnected(true);
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data) as SystemLogItem;
-        onNewLog(parsed);
-      } catch {
-        // ignore parse error
-      }
-    };
-
-    eventSource.onerror = () => {
-      setIsConnected(false);
-    };
+      eventSource = new EventSource(`/api/v1/logs/stream?${query.toString()}`);
+      eventSource.onopen = () => setIsConnected(true);
+      eventSource.onmessage = (event) => {
+        try {
+          onNewLog(JSON.parse(event.data) as SystemLogItem);
+        } catch {
+          // ignore parse error
+        }
+      };
+      eventSource.onerror = () => setIsConnected(false);
+    }).catch(() => {
+      if (!cancelled) setIsConnected(false);
+    });
 
     return () => {
-      eventSource.close();
+      cancelled = true;
+      eventSource?.close();
       setIsConnected(false);
     };
-  }, [enabled, token, filter.level, filter.source, filter.nodeId, filter.keyword, onNewLog]);
+  }, [enabled, user, filter.level, filter.source, filter.nodeId, filter.keyword, onNewLog]);
 
   return { isConnected };
 }

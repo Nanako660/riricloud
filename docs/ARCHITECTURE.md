@@ -76,7 +76,7 @@ graph TB
 
 ### 2.1 主控中心 (Master Server)
 - **Web UI (`apps/web`)**：为用户和管理员提供现代化的 Web 控制界面。包括用户注册登录、融合公告/订阅管理/可用线路/客户端指引的「我的订阅」控制台、通用订阅导出，以及管理员的用户管理、节点纳管、线路拓扑配置、配置下发和系统状态监控。
-- **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权。
+- **业务 API 服务 (`apps/server`)**：基于 NestJS 框架开发，提供标准的 RESTful 接口与 JWT 鉴权；浏览器会话使用 HttpOnly/SameSite Cookie，服务端以 `sessionVersion` 递增实现注销、改密、重置和禁用后的旧会话失效。
 - **Agent 统一业务服务 (`apps/server/agent-gateway/agent.service.ts`)**：维护节点鉴权、遥测落库、配置快照、任务队列、探针快照与健康判定；同一节点的心跳串行处理，流量账务使用短事务；WS 网关和 HTTP 轮询控制器均为薄传输适配器。
 - **主控二进制分发中心 (`apps/server/src/binaries`)**：维护规范的双层存储架构：最高优先级的运行态持久仓 `data/binaries/`（支持多架构自定义导入、热更新与远程缓存）与静态内置仓 `binaries/`（发行包仅精准预置当前宿主架构的二进制）；开发环境下智能回退至 `artifacts/binaries`。升级任务按节点 `osArch` 选择主控内置或导入版本，下载端点使用 AgentToken 鉴权。
 - **WebSocket 实时网关 (`apps/server/agent-gateway`)**：与分布在全球的各 Node Agent 保持双向全双工长连接，实现秒级状态同步与实时配置热推。
@@ -116,12 +116,12 @@ sequenceDiagram
 
     Admin->>Web: 1. 在面板创建节点基础信息，再通过线路向导定义协议、参数与入口/出口拓扑
     Web->>Master: POST /api/v1/admin/nodes 与 /admin/lines
-    Master-->>Web: 返回 Node ID 及生成的专属 AgentToken
-    Web-->>Admin: 展示一键原生 CLI 命令 (curl 下载 Agent + riri-agent install)
+    Master-->>Web: 返回 Node ID 及一次性 AgentToken
+    Web-->>Admin: 展示一键原生 CLI 命令 (Header 下载 Agent + riri-agent install)
     
     Admin->>Agent: 2. 在 VPS 执行一键原生 CLI 命令
     Note over Agent: 下载 Agent 二进制，执行 install，写入 YAML、下载 Sing-box 并注册系统服务
-    Agent->>Master: 3. 发起 WSS 连接: /ws/agent?token=xxx
+    Agent->>Master: 3. 发起 WSS 连接: /ws/agent，并在 Header 传递 X-Agent-Token
     Master->>Master: 4. 鉴权 AgentToken & 标记节点状态为 ONLINE
     Master-->>Agent: 5. 握手成功并下发当前全量 Sing-box 配置文件 JSON
     Agent->>Singbox: 6. 写入 config.json 并启动 Sing-box 守护进程
@@ -239,11 +239,13 @@ sequenceDiagram
 
 1. **管理与用户访问安全**：
    - 密码使用 `bcrypt` 单向哈希加盐存储。
-   - API 采用 JWT 无状态鉴权，具备过期时间与刷新机制。
+   - API 采用 JWT 鉴权；浏览器通过 HttpOnly/SameSite Cookie 携带，JWT 带 `sessionVersion`，密码/账号状态变化后旧会话立即失效。
    - 角色访问控制（RBAC）：细分 `ADMIN` 和 `USER` 权限路由守卫。
 2. **Master-Agent 通信安全**：
    - 生产环境强制采用 WSS (WebSocket over TLS) 加密传输。
-   - 每个节点在主控端创建时分配唯一的 `AgentToken`（64位高熵随机串），Agent 握手时强制鉴权。
+   - 每个节点在主控端创建时分配唯一的 `AgentToken`（32 字节 CSPRNG），数据库保存 AES-GCM 密文与 SHA-256 校验值；AgentToken 只在创建/轮换响应中返回一次，握手和二进制下载统一使用 `X-Agent-Token` Header，旧连接在轮换后立即断开。
+   - SSE 日志流先由管理员 JWT 创建一次性短期票据，SSE URL 不接受长期 JWT；日志、下载响应和订阅响应均禁止缓存并设置 `Referrer-Policy: no-referrer`。
+   - 线路 `paramsJson` 中的 Reality 私钥按应用层 AES-GCM 加密保存，只有编译 Agent 配置时在内存中解密；管理端线路响应始终脱敏。
    - Agent 上行消息先经过类型、范围、数组长度和文本长度校验；升级任务同时校验 URL 协议与 64 位十六进制 SHA-256，失败输入不进入业务层。
 3. **代理传输安全 (Reality / TLS)**：
    - 首推 **VLESS + Reality** 协议：无需自备域名与公网证书，通过窃用大型合法网站（如 `www.apple.com`, `gateway.icloud.com` 等）的 SNI 与 TLS 握手特征，实现极强的抗封锁能力。

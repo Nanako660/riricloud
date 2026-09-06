@@ -6,14 +6,11 @@ import { frontendLogger } from '@/lib/logger';
 // 统一 API 客户端：组件内禁止裸 fetch/自建 axios 实例（CODE_REVIEW W1）
 export const api = axios.create({
   baseURL: '/api/v1',
-  timeout: 15_000
+  timeout: 15_000,
+  withCredentials: true
 });
 
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   const traceId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
   config.headers['X-Request-Id'] = traceId;
   (config as unknown as Record<string, unknown>).__startTime = Date.now();
@@ -48,7 +45,7 @@ api.interceptors.response.use(
     }
 
     // 401：登录态失效，清理并跳转登录页（避免在登录页自身弹跳转循环）
-    if (status === 401 && useAuthStore.getState().token) {
+    if (status === 401 && useAuthStore.getState().user) {
       useAuthStore.getState().logout();
       toast.error('登录已过期，请重新登录');
       if (window.location.pathname !== '/login') {

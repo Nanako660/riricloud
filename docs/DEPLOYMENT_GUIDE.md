@@ -20,9 +20,9 @@ cp .env.example .env   # 编辑：JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD 必�
 
 - 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
 - 首次启动空数据库时，bootstrap 按 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 创建首个管理员；兼容旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD`，不再提供生产默认管理员密码。
-- 生产环境 `AUTO_SEED=false` 时创建管理员、内嵌默认订阅模板和系统保留的 `Master-Local`，不会创建演示用户、套餐和线路；开发/演示环境明确设置 `AUTO_SEED=true` 才会额外执行完整演示 seed。内嵌模板允许管理员通过模板编辑器修改，但不能删除。
-- 重置已有管理员密码：`./admin-reset.sh --email admin@example.com`（默认隐藏交互输入）；自动化场景可用 `printf '%s\n' 'new-password' | ./admin-reset.sh --email admin@example.com --password-stdin`。该命令不会创建或提权账号。
-- 主控采用双层二进制分发仓：持久运行态仓 `data/binaries/`（支持多架构上传、热更新与缓存，优先级最高）与静态内置仓 `binaries/`（发行包仅精准内置当前宿主架构的本机 Agent 与 Sing-box）。远端不同架构 VPS 节点若需下载安装或升级，可将目标架构文件放入持久卷 `data/binaries/` 或在后台导入。生产环境建议在「系统设置 → 基础与品牌」配置 `publicBaseUrl=https://<master-domain>`；未配置时，节点管理请求会按反向代理的 `X-Forwarded-Proto` 与 `X-Forwarded-Host` 自动匹配当前网站域名，也可设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>` 作为环境变量兜底。
+- 生产环境 `AUTO_SEED=false` 时创建管理员、内嵌默认订阅模板和系统保留的 `Master-Local`，不会创建演示用户、套餐和线路；Docker 入口与发行包 `start.sh` 会在生产模式拒绝 `AUTO_SEED=true`。开发/演示环境明确设置 `AUTO_SEED=true` 才会额外执行完整演示 seed。内嵌模板允许管理员通过模板编辑器修改，但不能删除。
+- 重置已有管理员密码：`./admin-reset.sh --email admin@example.com`（默认隐藏交互输入，新密码需同时包含大小写字母、数字和特殊字符）；自动化场景可用 `printf '%s\n' 'New-admin-password1!' | ./admin-reset.sh --email admin@example.com --password-stdin`。该命令不会创建或提权账号。
+- 主控采用双层二进制分发仓：持久运行态仓 `data/binaries/`（支持多架构上传、热更新与缓存，优先级最高）与静态内置仓 `binaries/`（发行包仅精准内置当前宿主架构的本机 Agent 与 Sing-box）。远端不同架构 VPS 节点若需下载安装或升级，可将目标架构文件放入持久卷 `data/binaries/` 或在后台导入。生产环境建议在「系统设置 → 基础与品牌」配置 `publicBaseUrl=https://<master-domain>`；未配置时，节点管理请求会按反向代理的 `X-Forwarded-Proto` 与 `X-Forwarded-Host` 自动匹配当前网站域名，也可设置 `RIRICLOUD_PUBLIC_URL=https://<master-domain>` 作为环境变量兜底。只有显式设置 `RIRICLOUD_TRUST_PROXY=true` 时才信任 `X-Forwarded-For`，不得把该开关暴露给不受信任的直连客户端。
 
 ### 1.3 方式二：源码构建与运行
 
@@ -63,7 +63,7 @@ pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模�
 
 ```bash
 cp .env.example .env  # 或手动创建 .env
-# 填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+# 填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
 pnpm docker:build
 pnpm docker:up
 ```
@@ -109,16 +109,20 @@ artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha25
 
 运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Docker 构建上下文排除 TypeScript `*.tsbuildinfo` 与本地 `artifacts/` 产物，避免增量元数据和离线包拖大上下文；构建阶段使用 BuildKit cache mount 持久化 pnpm、Corepack、Go module/build 和 sing-box 下载缓存，源码变化时无需重复下载未变化的依赖；Server 编译完成后会在 `pnpm deploy --prod` 前暂存 `dist`，再显式复制到最终部署目录，确保 Docker 镜像包含编译入口；Docker 构建还会断言 `/out/server/dist/main.js` 或兼容的 `/out/server/dist/src/main.js` 存在。Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。Docker 构建缓存存储在 Docker BuildKit/ Docker Desktop 中，不由 WSL 项目目录下的 `.cache/` 自动提供；执行 `docker builder prune` 后首次构建仍会重新填充这些缓存。
 
-主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`）。容器入口（`docker-entrypoint.js`）与发行包启动脚本（`start.sh`）均具备编译产物路径容错机制，优先引导 `dist/main.js` 并兼容 `dist/src/main.js` 布局。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
+主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有非生产环境显式设置 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`），生产入口会直接拒绝该配置。容器入口（`docker-entrypoint.js`）与发行包启动脚本（`start.sh`）均具备编译产物路径容错机制，优先引导 `dist/main.js` 并兼容 `dist/src/main.js` 布局。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
 
 ```bash
 docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com
-printf '%s\n' 'new-password' | docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
+printf '%s\n' 'New-admin-password1!' | docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
 ```
 
 Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控制 Master 面板监听端口；本机 Agent 动态使用的 TCP/UDP 线路端口会直接监听宿主机，不需要映射上万条端口。Compose 不固定 `container_name`，可用项目名同时运行多个实例。生产环境应设置 `MASTER_LOCAL_HOST`，或设置 `RIRICLOUD_PUBLIC_URL` 让 bootstrap 自动推导本机线路对外地址。Compose 默认引用 `latest`，`pnpm docker:up` 会注入当前版本和 Git 构建元数据。
 
 Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。
+
+认证运行边界：认证接口的快速限流使用 Master 进程内存，当前最多保留 `10,000` 个哈希计数键并定期清理过期窗口。进程重启会清空计数，多实例部署不会共享计数，因此生产环境应在可信反向代理处配置同源限流，并优先保持单 Master 实例；不能把该内存限流当作跨实例或持久化风控。多实例必须使用外部具备共享状态的边缘限流方案，但项目本身不引入 Redis、MQ 或其他外部运行时依赖。反向代理仅在链路完全受信时设置 `RIRICLOUD_TRUST_PROXY=true`，否则客户端可伪造 `X-Forwarded-For` 影响 IP 维度限流。
+
+认证审计事件写入现有 SQLite 系统日志队列，事件只包含事件类型、哈希化邮箱标识、用户 ID、动作和客户端 IP 等有限元数据；日志服务会统一脱敏、限制消息/metadata 大小并按既有保留策略清理。密码、验证码、JWT、Cookie、AgentToken 和完整 CAPTCHA/Turnstile token 不得写入环境变量以外的日志或备份导出。部署或迁移 `20260907120000_auth_registration_security` 时，`VerificationCode` 会重建为 `codeHash` 字段，迁移前的明文验证码不会被转换而是全部失效；回滚前必须备份 SQLite 主文件及 WAL/SHM 文件，不能通过回滚恢复旧明文验证码。
 
 v0.5.0 新增 `TrafficCursor` 表，并将 Master-Agent 流量协议升级为 v2。迁移会由 `prisma migrate deploy` 创建表；升级前应先备份 SQLite 主文件及其 `-wal`/`-shm` 文件，确认备份可读。不要通过增大 `busy_timeout` 或并行启动多个 Master 来处理写锁问题，单 Master、WAL、本地可靠文件系统和应用层单写者调度器是本版本的运行前提。
 
@@ -162,7 +166,7 @@ pnpm docker:down
 
 ### 1.5 Nginx 反向代理与订阅伪静态链接
 
-生产环境建议让 Nginx 作为唯一边缘代理，负责 HTTPS 终止、域名入口、订阅短链 rewrite、WebSocket Upgrade 和限流；Master 只监听内网地址并继续提供标准 API。配置示例位于 `scripts/nginx/riricloud.conf.example`，其中默认上游为 `http://127.0.0.1:3000`。
+生产环境建议让 Nginx 作为唯一边缘代理，负责 HTTPS 终止、域名入口、订阅短链 rewrite、WebSocket Upgrade 和限流；Master 只监听内网地址并继续提供标准 API。配置示例位于 `scripts/nginx/riricloud.conf.example`，其中默认上游为 `http://127.0.0.1:3000`。Master 自身默认拒绝未列入 `CORS_ORIGINS` 的跨域来源，并设置 CSP、HSTS、`nosniff`、Frame 防护和 `no-referrer`；只有确认代理链可信时才设置 `RIRICLOUD_TRUST_PROXY=true`。
 
 ```bash
 sudo cp scripts/nginx/riricloud.conf.example /etc/nginx/conf.d/riricloud.conf
@@ -190,21 +194,25 @@ sudo systemctl reload nginx
 在主控面板点击“添加节点”后，复制对应的原生 CLI 命令，登录节点 VPS 终端以 root 身份执行。命令先从主控下载匹配平台的 Agent，再由 Agent 自己完成安装：
 
 ```bash
+read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
 curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
+  'https://<master-domain>/api/v1/downloads/agent' \
   -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
   rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
+  /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=wss://<master-domain>/ws/agent
 ```
 
 如果节点所在网络不支持 WebSocket Upgrade，可在安装向导切换为 HTTP 模式：
 
 ```bash
+read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
 curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  'https://<master-domain>/api/v1/downloads/agent?token=<YOUR_AGENT_TOKEN>' \
+  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
+  'https://<master-domain>/api/v1/downloads/agent' \
   -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
   rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token=<YOUR_AGENT_TOKEN> --master=https://<master-domain>
+  /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=https://<master-domain>
 ```
 
 #### CLI 安装步骤：
@@ -256,14 +264,16 @@ HTTP 容器模式只需替换为：
 bash scripts/dev-e2e.sh                  # 全套启动并跟踪 Agent 日志，Ctrl+C 退出
 SKIP_WEB=1 bash scripts/dev-e2e.sh       # 不启动 Web 面板
 NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调节点并自定义端口
+E2E_SYNC_RESOURCES=0 bash scripts/dev-e2e.sh # 跳过本地构建产物同步
 ```
 
-- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录、默认复用 seed 预置的 `Master-Local` 节点、构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点，并复用或创建对应端口的 VLESS Reality 线路。
+- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录，使用临时权限受限 Cookie jar 调用管理 API（登录响应不再读取 `accessToken` JSON；解析器兼容 curl Netscape 格式的 `#HttpOnly_` Cookie 标记），默认复用 seed 预置的 `Master-Local` 节点，并通过本地 Prisma bootstrap helper 读取其 AgentToken（节点列表 API 已脱敏，不再返回凭证），再构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点；复用既有独立节点时必须显式设置 `AGENT_TOKEN`，否则脚本会提示删除旧节点后重新创建对应端口的 VLESS Reality 线路。
+- 默认情况下，脚本会在启动 Agent 前通过 `scripts/dev-e2e-sync-resource.mjs` 比对当前构建文件的 SHA-256；当复用已有主控或 e2e 数据库且资源文件发生变化时，自动创建新的资源 revision、激活并设为默认，避免升级任务下载到旧文件或因文件哈希不一致失败。设置 `E2E_SYNC_RESOURCES=0` 可跳过；也可用 `E2E_RESOURCE_VERSION`、`E2E_AGENT_RESOURCE_FILE`、`E2E_AGENT_RESOURCE_TARGET`、`E2E_SINGBOX_RESOURCE_FILE`、`E2E_SINGBOX_RESOURCE_TARGET` 和 `E2E_SINGBOX_RESOURCE_VERSION` 覆盖同步目标，例如为 WSL 节点同步 `singbox-linux-amd64` 资源。
 - 主控端默认尝试 `http://localhost:3000`；若未检测到可复用的服务且该端口无法绑定（例如 Windows 系统排除端口），脚本会自动向后探测最多 1000 个可用端口，并同步更新主控地址、Web API 代理地址和 Agent WebSocket 地址。可通过 `SERVER_PORT` 或 `PORT` 固定端口，或通过 `SERVER_PORT_SCAN_LIMIT` 调整探测范围。手动启动 Web 时可用 `VITE_API_PROXY_TARGET` 指定 `/api` 代理目标。
 - StatsService 默认监听 `127.0.0.1:10085`；若该端口无法绑定，开发联调会自动探测可用端口并通过 `STATS_API_LISTEN` 注入主控配置，Agent 会自动读取下发配置中的 StatsService 地址。也可手动设置 `STATS_API_LISTEN=127.0.0.1:xxxx`。
 - 开发联调启动的 Agent 会显式使用非交互模式，避免 Git Bash 后台进程误判为 Bubble Tea 终端并触发无效 console handle 错误。
 - 开发联调要求 Sing-box 启用 `with_v2ray_api`、`with_utls`、`with_quic` 和 `with_naive_outbound`。若默认找到的 `.tools/sing-box/` 二进制缺少这些标签，脚本会使用项目内 Go 工具链从 `SINGBOX_VERSION`（默认 `1.14.0`）源码构建并缓存到 `.cache/sing-box-v2ray-api/`；显式设置 `SINGBOX_BINARY_PATH` 时不会自动替换不兼容的二进制。
-- 未显式设置 `JWT_SECRET` 时，脚本会为本次本地联调进程生成随机密钥，避免空白开发 `.env` 阻止主控启动；生产环境仍必须按源码部署要求手动配置强随机密钥。
+- 未显式设置 `JWT_SECRET` 时，脚本会为本次本地联调进程生成随机密钥，避免空白开发 `.env` 阻止主控启动；生产环境仍必须按源码部署要求手动配置强随机密钥。Cookie 会话仅在本次脚本生命周期内使用，退出时清理临时 jar。
 - 已在运行的主控/Web 服务会被复用而非重启；脚本退出只回收其自身启动的主控/Web 进程。若主控端口发生变化，需先停止旧的 5173 Web 进程，再重新执行脚本，使 Vite 重新读取 API 代理目标。
 - 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时；迁移、登录或节点准备阶段失败也会回收本次已启动的主控/Web 进程。
 - 可验证的内核行为：配置下发拉起（含 `sing-box check` 预检）、本地 StatsService 监听实际选定地址、面板编辑线路后优雅重启热应用、`taskkill` 内核后自动重拉、关闭 Agent 无残留进程。

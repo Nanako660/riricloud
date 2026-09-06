@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { OptionalAuth } from '../auth/optional-auth.decorator';
 import { Public } from '../auth/public.decorator';
+import { resolveClientIp } from '../common/auth-security';
 import { SendCodeDto } from './dto/send-code.dto';
 import { VerificationService } from './verification.service';
 
@@ -19,9 +20,9 @@ export class VerificationController {
     @Body() dto: SendCodeDto,
     @CurrentUser() user: { id: string } | undefined,
     @Ip() remoteIp: string,
+    @Headers('user-agent') userAgent?: string,
     @Headers('x-forwarded-for') forwardedFor?: string
   ) {
-    const clientIp = forwardedFor?.split(',')[0]?.trim() || remoteIp;
-    return this.verificationService.sendCode(dto, user?.id, clientIp);
+    return this.verificationService.sendCode(dto, user?.id, resolveClientIp(remoteIp, forwardedFor), userAgent);
   }
 }

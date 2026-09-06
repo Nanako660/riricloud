@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.25-bookworm AS agent-build
+FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS agent-build
 
 ARG TARGETARCH=amd64
 ARG RIRICLOUD_VERSION=dev
@@ -16,12 +16,15 @@ RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
     -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
     -o /out/riri-agent .
 
-FROM golang:1.26-bookworm AS singbox-build
+FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS singbox-build
 
 ARG TARGETARCH=amd64
 ARG SINGBOX_VERSION=1.14.0
 ARG SINGBOX_REVISION=1
 ARG CRONET_VERSION=v150.0.7871.63-2
+ARG SINGBOX_SHA256=87baf6852e37941cbe40bdd94bec81c957c88a56751cecd6bbf0e6108bc69398
+ARG CRONET_SHA256_AMD64=c3949c6ad64e1d8fcd1e3b1fae4e302b2e553d769665a4bd7576483564c3f026
+ARG CRONET_SHA256_ARM64=8f13a6186aca498d37ee5e1f410282f587d663995aca60d6bf29a2d4f5536f2b
 WORKDIR /src
 
 RUN --mount=type=cache,id=riricloud-singbox-downloads,target=/tmp/singbox-cache,sharing=locked \
@@ -37,6 +40,10 @@ RUN --mount=type=cache,id=riricloud-singbox-downloads,target=/tmp/singbox-cache,
 	&& if [ ! -s "$cronet_library" ]; then curl --fail --silent --show-error --location \
 	  "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${TARGETARCH}.so" \
 	  --output "${cronet_library}.tmp" && mv "${cronet_library}.tmp" "$cronet_library"; fi \
+	&& printf '%s  %s\n' "$SINGBOX_SHA256" "$singbox_archive" | sha256sum -c - \
+	&& cronet_sha="$CRONET_SHA256_AMD64" \
+	&& if [ "$TARGETARCH" = "arm64" ]; then cronet_sha="$CRONET_SHA256_ARM64"; fi \
+	&& printf '%s  %s\n' "$cronet_sha" "$cronet_library" | sha256sum -c - \
 	&& tar -xzf "$singbox_archive" \
 	&& cp "$cronet_library" /libcronet.so \
 	&& chmod 0755 /libcronet.so
@@ -49,7 +56,7 @@ RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 	-ldflags "-s -w" \
 	-o /sing-box ./cmd/sing-box
 
-FROM node:20-bookworm-slim AS resource-manifest
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS resource-manifest
 
 ARG TARGETARCH=amd64
 ARG RIRICLOUD_VERSION=dev
@@ -73,8 +80,9 @@ RUN node - "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETA
   fs.mkdirSync("/manifest/binaries", { recursive: true });
   fs.writeFileSync("/manifest/binaries/manifest.json", `${JSON.stringify({ schemaVersion: 1, applicationVersion: appVersion, resources }, null, 2)}\n`);
 NODE
+RUN mkdir -p /manifest/agent-data && touch /manifest/agent-data/.keep
 
-FROM gcr.io/distroless/cc-debian12 AS runtime
+FROM gcr.io/distroless/cc-debian12@sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa AS runtime
 
 ARG RIRICLOUD_VERSION=dev
 ARG RIRICLOUD_VCS_REF=unknown
@@ -101,9 +109,10 @@ ENV SINGBOX_CONFIG_PATH=/var/lib/riri-agent/config.json \
 COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
-COPY --from=resource-manifest /manifest/binaries/manifest.json /var/lib/riri-agent/binaries/manifest.json
+COPY --chown=65532:65532 --from=resource-manifest /manifest/agent-data/ /var/lib/riri-agent/
+COPY --chown=65532:65532 --from=resource-manifest /manifest/binaries/manifest.json /var/lib/riri-agent/binaries/manifest.json
 
-USER 0
+USER 65532:65532
 
 VOLUME ["/var/lib/riri-agent"]
 ENTRYPOINT ["/usr/local/bin/riri-agent"]

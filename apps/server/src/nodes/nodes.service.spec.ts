@@ -34,7 +34,8 @@ describe('NodesService', () => {
   it('创建节点返回使用当前访问域名的 AgentToken 与安装命令', async () => {
     prisma.node.create.mockResolvedValue(nodeWithLines);
     const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
-    expect(result.agentToken).toBe(baseNode.agentToken);
+    expect(result.agentToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.node).not.toHaveProperty('agentToken');
     expect(result.installCommand).toContain('--token=');
     expect(result.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
     expect(result.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
@@ -52,7 +53,7 @@ describe('NodesService', () => {
 
   it('未提供自定义地址时使用主控内置二进制', async () => {
     prisma.node.findUnique.mockResolvedValue({ ...baseNode, osArch: 'linux/amd64' });
-    binaries.resolveForNode.mockResolvedValue({ version: '0.3.0', url: 'http://master/api/v1/downloads/binaries/agent-linux-amd64?token=token', sha256: 'a'.repeat(64) });
+    binaries.resolveForNode.mockResolvedValue({ version: '0.3.0', url: 'http://master/api/v1/downloads/binaries/agent-linux-amd64', sha256: 'a'.repeat(64) });
     gateway.requestUpgrade.mockResolvedValue({ taskId: 'task-1', requested: true });
     const result = await service.requestUpgrade(baseNode.id, { target: 'agent' });
     expect(binaries.resolveForNode).toHaveBeenCalledWith('agent', 'linux/amd64', baseNode.agentToken, undefined);

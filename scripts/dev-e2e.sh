@@ -8,7 +8,8 @@
 #   NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 自定义独立节点端口
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
-# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL
+# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
+# 资源同步覆盖：E2E_RESOURCE_VERSION / E2E_AGENT_RESOURCE_FILE / E2E_AGENT_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_FILE / E2E_SINGBOX_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_VERSION
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > .tools/sing-box/ > tools/ > PATH
 set -euo pipefail
 
@@ -21,11 +22,12 @@ SERVER_URL_OVERRIDE="${SERVER_URL:-}"
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
 ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-admin@riricloud.local}"
-ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-riri-admin-demo}"
+ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-RiriCloud-Admin-2026!}"
 NODE_NAME="${NODE_NAME:-local-e2e}"
 NODE_HOST="${NODE_HOST:-127.0.0.1}"
 NODE_PORT="${NODE_PORT:-8443}"
 USE_MASTER_LOCAL="${USE_MASTER_LOCAL:-1}"
+E2E_SYNC_RESOURCES="${E2E_SYNC_RESOURCES:-1}"
 SERVER_PORT_SCAN_LIMIT="${SERVER_PORT_SCAN_LIMIT:-1000}"
 SERVER_PORT_OVERRIDE="${SERVER_PORT:-${PORT:-}}"
 STATS_API_LISTEN_OVERRIDE="${STATS_API_LISTEN:-}"
@@ -44,6 +46,7 @@ export JWT_SECRET
 LOG_DIR="$ROOT/.cache/logs"
 SINGBOX_CONF_DIR="$ROOT/.cache/agent"
 mkdir -p "$LOG_DIR" "$SINGBOX_CONF_DIR"
+COOKIE_JAR=""
 
 say() { printf '\033[1;36m[dev-e2e]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[dev-e2e]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -57,6 +60,7 @@ cleanup() {
   # 只回收本次脚本启动的服务；已在运行的复用实例保持不动
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
   [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
+  [ -n "$COOKIE_JAR" ] && rm -f -- "$COOKIE_JAR"
 }
 trap cleanup EXIT INT TERM
 
@@ -67,6 +71,31 @@ jsonget() {
 
 jsonquote() {
   node -e 'console.log(JSON.stringify(process.argv[1]))' "$1"
+}
+
+sync_dev_resource() {
+  local kind="$1"
+  local target="$2"
+  local file="$3"
+  local version="$4"
+  local filename="$5"
+  [ -f "$file" ] || die "e2e 资源文件不存在：$file"
+  RIRICLOUD_ADMIN_COOKIE_FILE="$COOKIE_JAR" node scripts/dev-e2e-sync-resource.mjs \
+    --server-url "$SERVER_URL" \
+    --kind "$kind" \
+    --target "$target" \
+    --version "$version" \
+    --file "$file" \
+    --filename "$filename" \
+    --app-version "$E2E_APP_VERSION" \
+    || die "同步 e2e $kind 资源失败"
+}
+
+master_agent_token() {
+  (
+    cd "$ROOT/apps/server"
+    DATABASE_URL="${DATABASE_URL:-file:./dev.db}" node prisma/master-agent-config.js --token
+  )
 }
 
 server_up() { curl -fsS --max-time 2 "$SERVER_URL/api/v1/system/version" >/dev/null 2>&1; }
@@ -273,11 +302,15 @@ else
 fi
 
 # ---------- 4. 登录管理员并准备联调节点 ----------
+COOKIE_JAR="$(mktemp "$ROOT/.cache/dev-e2e-cookie.XXXXXX")"
+chmod 600 "$COOKIE_JAR"
 LOGIN_BODY=$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
-ADMIN_TOKEN="$(curl -fsS --max-time 5 -H 'Content-Type: application/json' -d "$LOGIN_BODY" "$SERVER_URL/api/v1/auth/login" | jsonget accessToken)"
-[ -n "$ADMIN_TOKEN" ] || die "管理员登录失败：请检查 ADMIN_EMAIL/ADMIN_PASSWORD（默认 admin@riricloud.local / riri-admin-demo）"
+LOGIN_RESULT="$(curl -fsS --max-time 5 -c "$COOKIE_JAR" -b "$COOKIE_JAR" -H 'Content-Type: application/json' -d "$LOGIN_BODY" "$SERVER_URL/api/v1/auth/login")"
+ADMIN_AUTHENTICATED="$(printf '%s' "$LOGIN_RESULT" | jsonget authenticated)"
+[ "$ADMIN_AUTHENTICATED" = "true" ] && grep -q $'\triricloud_access\t' "$COOKIE_JAR" \
+  || die "管理员登录失败：请检查 ADMIN_EMAIL/ADMIN_PASSWORD（默认 admin@riricloud.local / RiriCloud-Admin-2026!）"
 
-AUTH=(-H "Authorization: Bearer $ADMIN_TOKEN")
+AUTH=(-b "$COOKIE_JAR")
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 if [ -n "$AGENT_TOKEN" ]; then
   say "使用环境变量指定的 AGENT_TOKEN"
@@ -285,13 +318,15 @@ else
   # 默认复用 seed 预置的 Master-Local，保证面板中的本机节点与本地 Agent 是同一个实体。
   # USE_MASTER_LOCAL=0 时按地址查找独立联调节点（避免中文名经 Windows 控制台的编码问题）。
   NODE_LINE="$(curl -fsS --max-time 5 "${AUTH[@]}" "$SERVER_URL/api/v1/admin/nodes" \
-    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const nodes=JSON.parse(d)||[];const local=nodes.find(x=>x.isLocal&&x.name==="Master-Local")||nodes.find(x=>x.isLocal);const matched=nodes.find(x=>x.serverHost===process.argv[1]);const n=process.argv[2]==="1"?local:matched;console.log(n?[n.id,n.agentToken,n.serverHost].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$USE_MASTER_LOCAL")"
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const nodes=JSON.parse(d)||[];const local=nodes.find(x=>x.isLocal&&x.name==="Master-Local")||nodes.find(x=>x.isLocal);const matched=nodes.find(x=>x.serverHost===process.argv[1]);const n=process.argv[2]==="1"?local:matched;console.log(n?[n.id,n.serverHost].join(" "):"")}catch{console.log("")}})' "$NODE_HOST" "$USE_MASTER_LOCAL")"
   if [ -n "$NODE_LINE" ]; then
-    read -r NODE_ID AGENT_TOKEN NODE_HOST <<<"$NODE_LINE"
+    read -r NODE_ID NODE_HOST <<<"$NODE_LINE"
     if [ "$USE_MASTER_LOCAL" = "1" ]; then
+      AGENT_TOKEN="$(master_agent_token)" || die "读取 Master-Local AgentToken 失败，请确认 DATABASE_URL 与主控使用的加密密钥一致"
+      [ -n "$AGENT_TOKEN" ] || die "读取 Master-Local AgentToken 失败：返回为空"
       say "复用 Master-Local（$NODE_HOST）"
     else
-      say "复用既有节点（$NODE_HOST）"
+      die "节点列表不会返回既有节点的 AgentToken；请通过 AGENT_TOKEN=... 显式提供凭证，或删除该节点后重新运行以创建联调节点"
     fi
   else
     say "创建联调节点「$NODE_NAME」（$NODE_HOST:$NODE_PORT）…"
@@ -337,6 +372,24 @@ AGENT_BIN="${RIRICLOUD_AGENT_BINARY_PATH:-$ROOT/artifacts/dev/agent/${AGENT_GOOS
 say "构建 Agent…"
 RIRICLOUD_AGENT_BINARY_PATH="$AGENT_BIN" bash scripts/build-agent.sh || die "Agent 构建失败"
 
+if [ "$E2E_SYNC_RESOURCES" = "1" ]; then
+  E2E_APP_VERSION="${E2E_APP_VERSION:-$(node -p "require('./package.json').version")}"
+  E2E_RESOURCE_VERSION="${E2E_RESOURCE_VERSION:-$E2E_APP_VERSION}"
+  RESOURCE_OS="$AGENT_GOOS"
+  [ "$RESOURCE_OS" = "darwin" ] && RESOURCE_OS="macos"
+  AGENT_RESOURCE_TARGET="${E2E_AGENT_RESOURCE_TARGET:-agent-${RESOURCE_OS}-${AGENT_GOARCH}}"
+  AGENT_RESOURCE_FILE="${E2E_AGENT_RESOURCE_FILE:-$AGENT_BIN}"
+  AGENT_RESOURCE_FILENAME="$(basename "$AGENT_RESOURCE_FILE")"
+  SINGBOX_RESOURCE_TARGET="${E2E_SINGBOX_RESOURCE_TARGET:-singbox-${RESOURCE_OS}-${AGENT_GOARCH}}"
+  SINGBOX_RESOURCE_FILE="${E2E_SINGBOX_RESOURCE_FILE:-$SINGBOX_BIN}"
+  SINGBOX_RESOURCE_VERSION="${E2E_SINGBOX_RESOURCE_VERSION:-${SINGBOX_VERSION:-1.14.0}}"
+  SINGBOX_RESOURCE_FILENAME="$(basename "$SINGBOX_RESOURCE_FILE")"
+  say "同步 Agent 资源（$AGENT_RESOURCE_TARGET）…"
+  sync_dev_resource AGENT "$AGENT_RESOURCE_TARGET" "$AGENT_RESOURCE_FILE" "$E2E_RESOURCE_VERSION" "$AGENT_RESOURCE_FILENAME"
+  say "同步 Sing-box 资源（$SINGBOX_RESOURCE_TARGET）…"
+  sync_dev_resource SINGBOX "$SINGBOX_RESOURCE_TARGET" "$SINGBOX_RESOURCE_FILE" "$SINGBOX_RESOURCE_VERSION" "$SINGBOX_RESOURCE_FILENAME"
+fi
+
 MASTER_WS_URL="$(node -e 'const url = new URL("/ws/agent", process.argv[1]); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; console.log(url.toString())' "$SERVER_URL")"
 say "启动 Agent（内核：$(basename "$SINGBOX_BIN")，日志：$LOG_DIR/agent.log）…"
 (
@@ -358,7 +411,7 @@ for _ in $(seq 1 40); do
 done
 
 say "---------------- 就绪 ----------------"
-say "Web 面板     ：$WEB_URL（admin@riricloud.local / riri-admin-demo）"
+say "Web 面板     ：$WEB_URL（admin@riricloud.local / RiriCloud-Admin-2026!）"
 say "节点状态     ：面板「节点管理」页观察在线状态与遥测"
 say "内核监听     ：$NODE_HOST:$NODE_PORT（config：$SINGBOX_CONF_DIR/config.json）"
 if [ "$KERNEL_UP" = "1" ]; then

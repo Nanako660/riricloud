@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/Nanako660/riricloud/apps/agent/internal/security"
 )
 
 const maxDownloadSize int64 = 100 * 1024 * 1024
@@ -21,9 +23,9 @@ const maxDownloadSize int64 = 100 * 1024 * 1024
 var sha256Pattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 // DownloadAndVerify 将远端文件流式下载到目标目录，并在落盘前完成 SHA-256 校验。
-func DownloadAndVerify(ctx context.Context, rawURL, expectedSHA, dir string) (string, error) {
-	if !strings.HasPrefix(strings.ToLower(rawURL), "https://") && !strings.HasPrefix(strings.ToLower(rawURL), "http://") {
-		return "", fmt.Errorf("upgrade URL must use http or https")
+func DownloadAndVerify(ctx context.Context, rawURL, expectedSHA, dir string, tokens ...string) (string, error) {
+	if err := security.ValidateHTTPURL(rawURL); err != nil {
+		return "", err
 	}
 	expectedSHA = strings.TrimSpace(expectedSHA)
 	if !sha256Pattern.MatchString(expectedSHA) {
@@ -37,7 +39,11 @@ func DownloadAndVerify(ctx context.Context, rawURL, expectedSHA, dir string) (st
 	if err != nil {
 		return "", fmt.Errorf("create upgrade request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	if len(tokens) > 0 && tokens[0] != "" {
+		req.Header.Set("X-Agent-Token", tokens[0])
+	}
+	client := security.NewHTTPClient(0, len(tokens) > 0 && tokens[0] != "")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download upgrade: %w", err)
 	}

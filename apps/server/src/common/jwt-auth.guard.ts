@@ -5,6 +5,7 @@ import { IS_PUBLIC_KEY } from '../auth/public.decorator';
 import { OPTIONAL_AUTH_KEY } from '../auth/optional-auth.decorator';
 import { ROLES_KEY } from './roles.decorator';
 import { Role } from './constants';
+import { readAuthCookie } from '../auth/auth-cookie';
 
 // 全局 JWT + RBAC 守卫：默认所有端点需要 JWT，@Public() 显式放行；
 // 端点声明 @Roles() 时在 JWT 校验通过后校验角色（安全红线：服务端默认拒绝）
@@ -24,7 +25,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         context.getHandler(),
         context.getClass()
       ]);
-      if (optionalAuth && context.switchToHttp().getRequest().headers.authorization) {
+      const request = context.switchToHttp().getRequest<{ headers: { authorization?: string; cookie?: string } }>();
+      if (optionalAuth && (request.headers.authorization || readAuthCookie(request))) {
         try {
           return (await super.canActivate(context)) as boolean;
         } catch {

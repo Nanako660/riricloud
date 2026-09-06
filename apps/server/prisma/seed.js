@@ -6,6 +6,7 @@ const { generateKeyPairSync, randomInt } = require('node:crypto');
 const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
 const { buildDefaultTemplateData, migrateLegacyTemplates } = require('./default-template');
+const { encryptSecret } = require('./secret-crypto');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -71,7 +72,7 @@ function defaultLocalVlessParams() {
       reality: {
         dest: 'www.apple.com:443',
         serverNames: ['www.apple.com'],
-        privateKey: keys.privateKey,
+        privateKey: encryptSecret(keys.privateKey),
         publicKey: keys.publicKey,
         shortIds: ['0123456789abcdef']
       }
@@ -95,8 +96,8 @@ function hasInvalidVlessFlow(params) {
 }
 
 async function main() {
-  const userEmail = process.env.SEED_USER_EMAIL || 'demo@riricloud.local';
-  const userPassword = process.env.SEED_USER_PASSWORD || 'riri-user-demo';
+  const userEmail = (process.env.SEED_USER_EMAIL || 'demo@riricloud.local').trim().toLowerCase();
+  const userPassword = process.env.SEED_USER_PASSWORD || 'RiriCloud-User-2026!';
   await migrateLegacyTemplates(prisma);
   // 完整 seed 仍保留本地演示默认值；生产启动入口只调用无默认值的 bootstrap。
   const { admin } = await ensureAdmin(prisma, { allowDemoDefaults: true });

@@ -174,7 +174,6 @@ export interface AdminNode {
   serverHost: string;
   isLocal: boolean;
   configOverride: string | null;
-  agentToken: string;
   communicationMode: CommunicationMode;
   pollIntervalSecs: number;
   status: string;

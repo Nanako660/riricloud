@@ -1,13 +1,11 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
 import type { Response } from 'express';
-import type { Request } from 'express';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
-import { getRequestBaseUrl } from '../common/public-url';
 import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
 import { BinaryResourcesService } from './binary-resources.service';
@@ -25,38 +23,36 @@ export class BinariesController {
   @Get('downloads/agent')
   async downloadAgent(
     @Headers('user-agent') userAgent: string | undefined,
-    @Query('token') token: string | undefined,
     @Headers('x-agent-token') headerToken: string | undefined,
-    @Req() request: Request,
     @Res({ passthrough: true }) response: Response
   ) {
-    const credential = token ?? headerToken;
-    await this.binaries.authorizeDownload(credential);
-    if (!credential) throw new Error('缺少 AgentToken');
+    await this.binaries.authorizeDownload(headerToken);
     const target = this.binaries.resolveAgentTarget(userAgent);
-    const configuredBuilder = (this.binaries as BinariesService & {
-      buildConfiguredDownloadUrl?: (assetTarget: typeof target, agentToken: string, requestBaseUrl?: string) => Promise<string>;
-    }).buildConfiguredDownloadUrl;
-    const requestBaseUrl = getRequestBaseUrl(request);
-    const url = configuredBuilder
-      ? await configuredBuilder.call(this.binaries, target, credential, requestBaseUrl)
-      : this.binaries.buildDownloadUrl(target, credential, requestBaseUrl);
-    response.redirect(302, url);
+    const asset = this.binaries.getAsset(target);
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', asset.size);
+    response.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    return new StreamableFile(createReadStream(asset.path));
   }
 
   @Public()
   @Get('downloads/binaries/:target')
   async download(
     @Param('target') target: string,
-    @Query('token') token: string | undefined,
     @Headers('x-agent-token') headerToken: string | undefined,
     @Res({ passthrough: true }) response: Response
   ) {
-    await this.binaries.authorizeDownload(token ?? headerToken);
+    await this.binaries.authorizeDownload(headerToken);
     const asset = this.binaries.getAsset(target);
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', asset.size);
     response.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Referrer-Policy', 'no-referrer');
     return new StreamableFile(createReadStream(asset.path));
   }
 
@@ -64,15 +60,17 @@ export class BinariesController {
   @Get('downloads/binary-assets/:id')
   async downloadManagedAsset(
     @Param('id') id: string,
-    @Query('token') token: string | undefined,
     @Headers('x-agent-token') headerToken: string | undefined,
     @Res({ passthrough: true }) response: Response
   ) {
-    await this.binaries.authorizeDownload(token ?? headerToken);
+    await this.binaries.authorizeDownload(headerToken);
     const managed = await this.resources!.getDownloadAsset(id);
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', managed.file?.size ?? managed.asset.size);
     response.setHeader('Content-Disposition', `attachment; filename="${managed.file?.name ?? managed.asset.filename}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Referrer-Policy', 'no-referrer');
     return new StreamableFile(createReadStream(managed.path));
   }
 
@@ -80,15 +78,17 @@ export class BinariesController {
   @Get('downloads/binary-files/:id')
   async downloadManagedFile(
     @Param('id') id: string,
-    @Query('token') token: string | undefined,
     @Headers('x-agent-token') headerToken: string | undefined,
     @Res({ passthrough: true }) response: Response
   ) {
-    await this.binaries.authorizeDownload(token ?? headerToken);
+    await this.binaries.authorizeDownload(headerToken);
     const managed = await this.resources!.getDownloadFile(id);
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', managed.file.size);
     response.setHeader('Content-Disposition', `attachment; filename="${managed.file.name}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Referrer-Policy', 'no-referrer');
     return new StreamableFile(createReadStream(managed.path));
   }
 

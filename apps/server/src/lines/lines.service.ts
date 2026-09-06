@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AgentService } from '../agent-gateway/agent.service';
-import { normalizeInboundParams, sanitizeInboundParams } from '../common/inbound';
+import { normalizeInboundParams, protectInboundSecrets, sanitizeInboundParams, revealInboundSecrets } from '../common/inbound';
 import {
   LINE_TYPES,
   PROTOCOL_TYPES,
@@ -274,7 +274,7 @@ export class LinesService {
 
     const protocolType = input.protocolType ?? (current?.protocolType as ProtocolType | undefined) ?? 'VLESS';
     if (!PROTOCOL_TYPES.includes(protocolType)) throw new BadRequestException('线路协议无效');
-    const existingParams = current ? this.parseObject(current.paramsJson) : {};
+    const existingParams = current ? revealInboundSecrets(this.parseObject(current.paramsJson)) : {};
     const certificateId = input.certificateId !== undefined ? input.certificateId : current?.certificateId ?? null;
     const certificate = certificateId
       ? await this.prisma.certificate.findUnique({ where: { id: certificateId } })
@@ -288,7 +288,7 @@ export class LinesService {
         key: [certificate.privateKeyPem]
       };
     }
-    const params = normalizeInboundParams(protocolType, mergedParams);
+    const params = protectInboundSecrets(normalizeInboundParams(protocolType, mergedParams));
     if (certificateId && (params.tls as { mode?: string } | undefined)?.mode !== 'tls') {
       throw new BadRequestException('证书只能关联标准 TLS 安全模式');
     }

@@ -83,11 +83,11 @@ describe('管理员 bootstrap', () => {
   it('正式 ADMIN_* 配置优先于兼容的 SEED_ADMIN_* 配置', () => {
     const credentials = resolveAdminCredentials({
       ADMIN_EMAIL: 'new@example.com',
-      ADMIN_PASSWORD: 'new-password',
+      ADMIN_PASSWORD: 'New-password1!',
       SEED_ADMIN_EMAIL: 'legacy@example.com',
-      SEED_ADMIN_PASSWORD: 'legacy-password'
+      SEED_ADMIN_PASSWORD: 'Legacy-password1!'
     });
-    expect(credentials).toEqual({ email: 'new@example.com', password: 'new-password' });
+    expect(credentials).toEqual({ email: 'new@example.com', password: 'New-password1!' });
   });
 
   it('已有管理员时跳过创建且不要求凭据', async () => {
@@ -110,7 +110,7 @@ describe('管理员 bootstrap', () => {
 
   it('空库使用正式配置创建首个管理员并哈希密码', async () => {
     process.env.ADMIN_EMAIL = 'admin@example.com';
-    process.env.ADMIN_PASSWORD = 'strong-password';
+    process.env.ADMIN_PASSWORD = 'Strong-password1!';
     prisma.user.findFirst.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.user.create.mockImplementation(async ({ data }: { data: User }) => ({
@@ -122,7 +122,7 @@ describe('管理员 bootstrap', () => {
 
     expect(result.created).toBe(true);
     expect(result.admin).toEqual(expect.objectContaining({ email: 'admin@example.com', role: 'ADMIN' }));
-    expect(await bcrypt.compare('strong-password', result.admin.passwordHash as string)).toBe(true);
+    expect(await bcrypt.compare('Strong-password1!', result.admin.passwordHash as string)).toBe(true);
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: {
         email: 'admin@example.com',
@@ -134,7 +134,7 @@ describe('管理员 bootstrap', () => {
 
   it('不会把已存在的普通用户自动提权', async () => {
     process.env.ADMIN_EMAIL = 'user@example.com';
-    process.env.ADMIN_PASSWORD = 'strong-password';
+    process.env.ADMIN_PASSWORD = 'Strong-password1!';
     prisma.user.findFirst.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'user@example.com', role: 'USER' });
 
@@ -145,7 +145,8 @@ describe('管理员 bootstrap', () => {
   it('复用登录层的邮箱与密码约束', () => {
     expect(validateAdminEmail(' admin@example.com ')).toBe('admin@example.com');
     expect(() => validateAdminEmail('invalid-email')).toThrow();
-    expect(validateAdminPassword('12345678')).toBe('12345678');
+    expect(validateAdminPassword('Strong-Password1!')).toBe('Strong-Password1!');
+    expect(() => validateAdminPassword('12345678')).toThrow('密码必须同时包含');
     expect(() => validateAdminPassword('short')).toThrow(/8-64/);
     expect(() => validateAdminPassword('x'.repeat(65))).toThrow(/8-64/);
   });

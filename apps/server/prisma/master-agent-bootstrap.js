@@ -1,6 +1,7 @@
 'use strict';
 
-const { randomBytes } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
+const { encryptSecret } = require('./secret-crypto');
 
 const MASTER_AGENT_NAME = 'Master-Local';
 const DEFAULT_MASTER_LOCAL_HOST = '127.0.0.1';
@@ -41,12 +42,14 @@ async function ensureMasterAgentNode(prisma, env = process.env) {
   const existing = await findMasterAgentNode(prisma);
   if (existing) return { node: existing, created: false };
 
+  const token = randomBytes(32).toString('hex');
   const node = await prisma.node.create({
     data: {
       name: MASTER_AGENT_NAME,
       serverHost: resolveMasterLocalHost(env),
       isLocal: true,
-      agentToken: randomBytes(32).toString('hex'),
+      agentToken: encryptSecret(token),
+      agentTokenHash: createHash('sha256').update(token).digest('hex'),
       status: 'OFFLINE'
     }
   });

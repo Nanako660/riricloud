@@ -253,15 +253,15 @@ func (m *Manager) checkConfigWithBinary(binaryPath string) error {
 }
 
 // UpgradeKernel 保留旧协议入口，单文件升级仍按完整资源包事务执行。
-func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string) error {
+func (m *Manager) UpgradeKernel(ctx context.Context, rawURL, expectedSHA string, tokens ...string) error {
 	return m.UpgradeKernelFiles(ctx, []UpgradeFile{{
 		Name: filepath.Base(m.binPath), Role: "main", URL: rawURL, SHA256: expectedSHA,
-	}})
+	}}, tokens...)
 }
 
 // UpgradeKernelFiles 下载并校验完整 Sing-box 资源包，统一执行原子替换、启动验证和回滚。
 // 旧版 Agent 只发送 url/sha256 时由 UpgradeKernel 转换为单文件资源包。
-func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile) error {
+func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile, tokens ...string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("sing-box upgrade files are required")
 	}
@@ -296,7 +296,7 @@ func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile) e
 		if index != mainIndex {
 			fileTarget = filepath.Join(filepath.Dir(target), file.Name)
 		}
-		temp, downloadErr := upgrade.DownloadAndVerify(ctx, file.URL, file.SHA256, filepath.Dir(fileTarget))
+		temp, downloadErr := upgrade.DownloadAndVerify(ctx, file.URL, file.SHA256, filepath.Dir(fileTarget), tokens...)
 		if downloadErr != nil {
 			for _, downloaded := range downloads {
 				_ = os.Remove(downloaded.temp)

@@ -144,7 +144,7 @@ describe('UsersService', () => {
 
       const result = await service.createUser({
         email: 'new@riricloud.local',
-        password: 'strong-pass',
+        password: 'Strong-pass1!',
         planId: 'p1',
         expireAt: null
       });
@@ -186,7 +186,7 @@ describe('UsersService', () => {
       prisma.plan.findFirst.mockResolvedValue(plan);
       prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
 
-      await service.createUser({ email: 'default@riricloud.local', password: 'strong-pass' });
+      await service.createUser({ email: 'default@riricloud.local', password: 'Strong-pass1!' });
 
       expect(prisma.plan.findFirst).toHaveBeenCalledWith({ where: { name: '体验套餐' } });
       expect(tx.subscription.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -200,7 +200,7 @@ describe('UsersService', () => {
 
       const result = await service.createUser({
         email: 'unassigned@riricloud.local',
-        password: 'strong-pass',
+        password: 'Strong-pass1!',
         planId: null
       });
 
@@ -288,8 +288,8 @@ describe('UsersService', () => {
     it('旧密码正确时可以修改登录密码', async () => {
       prisma.user.findUnique.mockResolvedValue({ passwordHash: await bcrypt.hash('old-password', 10) });
       prisma.user.update.mockResolvedValue({});
-      await expect(service.changePassword('u1', { oldPassword: 'old-password', newPassword: 'new-password' })).resolves.toEqual({ updated: true });
-      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u1' }, data: { passwordHash: expect.any(String) } }));
+      await expect(service.changePassword('u1', { oldPassword: 'old-password', newPassword: 'New-password1!' })).resolves.toEqual({ updated: true });
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u1' }, data: expect.objectContaining({ passwordHash: expect.any(String), sessionVersion: { increment: 1 } }) }));
     });
 
     it('重置 UUID 后向在线节点推送配置', async () => {
@@ -311,11 +311,12 @@ describe('UsersService', () => {
       verificationService.verifyCode.mockResolvedValue(undefined);
       const verifiedAt = new Date();
       prisma.user.update.mockResolvedValue({ id: 'u1', email: 'test@example.com', emailVerifiedAt: verifiedAt });
+      prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
 
       const result = await service.verifyEmail('u1', '123456');
       expect(result.verified).toBe(true);
       expect(result.emailVerifiedAt).toBe(verifiedAt.toISOString());
-      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'VERIFY_CURRENT_EMAIL', '123456');
+      expect(verificationService.verifyCode).toHaveBeenCalledWith('test@example.com', 'VERIFY_CURRENT_EMAIL', '123456', prisma);
       expect(agentGateway.pushConfigToAll).toHaveBeenCalled();
     });
 

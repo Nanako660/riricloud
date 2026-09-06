@@ -15,6 +15,7 @@ export interface PublicSystemSettings {
   supportEmail: string;
   supportCustomUrl: string;
   registrationEnabled: boolean;
+  passwordMinLength: number;
   systemTimezone: string;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;

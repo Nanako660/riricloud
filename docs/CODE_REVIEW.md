@@ -58,8 +58,8 @@ PrismaService（数据访问，全局唯一 PrismaClient 实例）
 
 | # | 约束 | 说明 |
 | :-: | :--- | :--- |
-| W1 | **请求只经统一 API 客户端** | 组件内出现裸 `fetch`/自建 `axios` 实例 = 打回；拦截器统一处理 JWT、401 跳转与错误 toast |
-| W2 | **服务端状态归 TanStack Query，客户端状态归 Zustand** | 来自 API 的数据一律 Query（缓存、失效、重试）；仅登录态、Token、UI 偏好进 Zustand。同一数据同时存两处 = 打回 |
+| W1 | **请求只经统一 API 客户端** | 组件内出现裸 `fetch`/自建 `axios` 实例 = 打回；统一客户端必须启用 `withCredentials`，由 HttpOnly Cookie 携带 JWT，拦截器统一处理 401 跳转与错误 toast |
+| W2 | **服务端状态归 TanStack Query，客户端状态归 Zustand** | 来自 API 的数据一律 Query（缓存、失效、重试）；Zustand 只保留内存登录用户与 UI 状态，不保存 JWT 或长期认证凭据。同一数据同时存两处 = 打回 |
 | W3 | **变更后失效缓存而非手动改缓存** | mutation 成功后 `invalidateQueries`，禁止手工拼 server state |
 | W4 | **路由守卫在路由层声明** | `AuthGuard` / `AdminGuard`（React Router loader/wrapper），禁止在页面组件里判断角色后"假装跳转" |
 | W5 | **组件文件 ≤ 300 行** | 超限拆分为子组件 / 自定义 hook；逻辑复杂先抽 hook（`use-*.ts`）再考虑组件拆分 |
@@ -96,9 +96,10 @@ PrismaService（数据访问，全局唯一 PrismaClient 实例）
 1. 密钥、Token、私钥不得进入日志输出、异常消息与 git 追踪文件（`.env` 实文件禁入 git）。
 2. 一切外部输入（HTTP 入参、WS 消息、订阅 token）先校验后使用；WS 消息解析失败必须安全忽略并记日志，不得使 Gateway 崩溃。
 3. 权限校验发生在服务端每一层入口（JWT Guard + 角色），前端隐藏按钮不算权限控制。
-4. 管理端与 Agent 通道的操作（reload、配置下发）须校验来源身份；`agentToken` 不得出现在订阅输出或普通用户可见的 API 响应中。
-5. 文件写入仅限约定目录（agent 配置目录、server 数据目录）；涉及路径拼接的输入必须防目录穿越。
-6. 新增依赖检查已知 CVE（`pnpm audit` / `govulncheck` 纳入 CI）。
+4. 管理端与 Agent 通道的操作（reload、配置下发）须校验来源身份；`agentToken` 不得出现在订阅输出、节点详情或普通用户可见的 API 响应中，只能在创建/轮换响应中一次性返回。
+5. 凭据不得进入 URL query；AgentToken 使用 Header，SSE 使用一次性短期票据，Reality/证书私钥与系统 Secret 必须加密存储并在输出前脱敏。
+6. 文件写入仅限约定目录（agent 配置目录、server 数据目录）；涉及路径拼接的输入必须防目录穿越。
+7. 新增依赖检查已知 CVE（`pnpm audit` / `govulncheck` 纳入 CI）；被忽略的 advisory 必须写明调用链、适用性和残余风险。
 
 ---
 

@@ -16,7 +16,9 @@ import { ChangeEmailDto } from './dto/change-email.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { getTrafficPeriod } from '../common/traffic-reset';
 import { VerificationService } from '../verification/verification.service';
+import { assertEmailLength, assertPasswordPolicy, normalizeEmail } from '../common/auth-security';
 import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from './user-identity';
+import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -95,7 +97,8 @@ export class UsersService {
     private agentGateway: AgentService,
     @Optional() private linesService?: LinesService,
     @Optional() private walletService?: WalletService,
-    @Optional() private verificationService?: VerificationService
+    @Optional() private verificationService?: VerificationService,
+    @Optional() private authAuditService?: AuthAuditService
   ) {}
 
   // 重置订阅令牌：旧链接立即失效，返回新 token
@@ -122,9 +125,14 @@ export class UsersService {
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
     if (!user || !(await bcrypt.compare(dto.oldPassword, user.passwordHash))) {
+      this.audit('PASSWORD_CHANGE_FAILURE', { reason: 'old_password' }, userId);
       throw new UnauthorizedException('旧密码错误');
     }
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, 10) } });
+    const passwordMinLength = (await this.settingsService.getSettings())?.passwordMinLength ?? 8;
+    assertPasswordPolicy(dto.newPassword, passwordMinLength);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, 10), sessionVersion: { increment: 1 } } });
+    this.audit('PASSWORD_CHANGED', {}, userId);
+    this.audit('SESSION_INVALIDATED', { reason: 'password_change' }, userId);
     return { updated: true };
   }
 
@@ -145,31 +153,51 @@ export class UsersService {
     if (!verificationService) throw new BadRequestException('邮箱验证服务不可用');
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
     if (!user) throw new UnauthorizedException();
-    await verificationService.verifyCode(user.email, 'VERIFY_CURRENT_EMAIL', code);
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { emailVerifiedAt: new Date() },
-      select: { id: true, email: true, emailVerifiedAt: true }
-    });
+    let updated;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        await verificationService.verifyCode(user.email, 'VERIFY_CURRENT_EMAIL', code, tx);
+        return tx.user.update({
+          where: { id: userId },
+          data: { emailVerifiedAt: new Date() },
+          select: { id: true, email: true, emailVerifiedAt: true }
+        });
+      });
+    } catch (error) {
+      this.audit('VERIFICATION_FAILURE', { action: 'VERIFY_CURRENT_EMAIL' }, userId);
+      throw error;
+    }
     void this.agentGateway.pushConfigToAll();
+    this.audit('VERIFICATION_CONSUMED', { action: 'VERIFY_CURRENT_EMAIL' }, userId);
     return { verified: true, emailVerifiedAt: updated.emailVerifiedAt ? updated.emailVerifiedAt.toISOString() : null };
   }
 
   async changeEmail(userId: string, dto: ChangeEmailDto) {
     const verificationService = this.verificationService;
     if (!verificationService) throw new BadRequestException('邮箱验证服务不可用');
-    const newEmail = dto.newEmail.trim().toLowerCase();
+    const newEmail = normalizeEmail(dto.newEmail);
+    assertEmailLength(newEmail);
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, passwordHash: true } });
     if (!user) throw new UnauthorizedException();
-    if (!(await bcrypt.compare(dto.currentPassword, user.passwordHash))) throw new UnauthorizedException('当前密码错误');
-    const existing = await this.prisma.user.findUnique({ where: { email: newEmail }, select: { id: true } });
-    if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
-    await verificationService.verifyCode(newEmail, 'CHANGE_EMAIL', dto.verificationCode);
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({ where: { id: userId }, data: { email: newEmail, emailVerifiedAt: new Date() } });
-      return { updated: true, email: newEmail };
-    });
+    if (!(await bcrypt.compare(dto.currentPassword, user.passwordHash))) {
+      this.audit('PASSWORD_CHANGE_FAILURE', { reason: 'current_password', action: 'CHANGE_EMAIL' }, userId);
+      throw new UnauthorizedException('当前密码错误');
+    }
+    let result;
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.user.findUnique({ where: { email: newEmail }, select: { id: true } });
+        if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
+        await verificationService.verifyCode(newEmail, 'CHANGE_EMAIL', dto.verificationCode, tx);
+        await tx.user.update({ where: { id: userId }, data: { email: newEmail, emailVerifiedAt: new Date() } });
+        return { updated: true, email: newEmail };
+      });
+    } catch (error) {
+      this.audit('VERIFICATION_FAILURE', { action: 'CHANGE_EMAIL' }, userId);
+      throw error;
+    }
     void this.agentGateway.pushConfigToAll();
+    this.audit('VERIFICATION_CONSUMED', { action: 'CHANGE_EMAIL' }, userId);
     return result;
   }
 
@@ -277,12 +305,16 @@ export class UsersService {
   }
 
   async createUser(dto: CreateUserDto) {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = normalizeEmail(dto.email);
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('邮箱已存在');
     }
+    const settings = await this.settingsService.getSettings();
+    const passwordMinLength = settings?.passwordMinLength ?? 8;
+    assertPasswordPolicy(dto.password, passwordMinLength);
     const plan = await this.resolveInitialPlan(dto.planId);
-    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
     const now = new Date();
     const trafficLimitBytes = BigInt(dto.trafficLimitBytes ?? plan?.trafficLimitBytes ?? 0);
     const expireAt = dto.expireAt !== undefined
@@ -298,7 +330,7 @@ export class UsersService {
     const data = {
       uid,
       nickname,
-      email: dto.email,
+      email,
       passwordHash: await bcrypt.hash(dto.password, 10),
       role: dto.role ?? 'USER',
       trafficLimitBytes,
@@ -325,6 +357,7 @@ export class UsersService {
         })
       : await this.prisma.user.create({ data, select: ADMIN_USER_SELECT });
     void this.agentGateway.pushConfigToAll();
+    this.audit('ADMIN_USER_CREATED', { emailHash: this.authAuditService?.emailHash(email) });
     return this.formatAdminUser(user, timeZone);
   }
 
@@ -333,6 +366,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
+    const settings = await this.settingsService.getSettings();
     // 防锁死：管理员不能修改自己的角色
     if (dto.role !== undefined && id === operatorId && dto.role !== user.role) {
       throw new ForbiddenException('不能修改自己的角色');
@@ -346,10 +380,12 @@ export class UsersService {
       data.emailVerifiedAt = dto.emailVerified ? new Date() : null;
     }
     if (dto.password !== undefined) {
-      if (dto.password.length < 8) {
-        throw new BadRequestException('密码至少 8 位');
-      }
+      const passwordMinLength = settings?.passwordMinLength ?? 8;
+      assertPasswordPolicy(dto.password, passwordMinLength);
       data.passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+    if (dto.password !== undefined || dto.isActive === false) {
+      data.sessionVersion = { increment: 1 };
     }
     const updated = await this.prisma.user.update({ where: { id }, data, select: ADMIN_USER_SELECT });
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
@@ -367,7 +403,15 @@ export class UsersService {
     }
     // 配额/到期/激活/角色变化影响订阅资格，向在线节点同步用户名单
     void this.agentGateway.pushConfigToAll();
-    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
+    if (dto.password !== undefined) {
+      this.audit('ADMIN_PASSWORD_CHANGED', { operatorId }, id);
+      this.audit('SESSION_INVALIDATED', { reason: 'admin_password_change', operatorId }, id);
+    }
+    if (dto.isActive === false) {
+      this.audit('ACCOUNT_DISABLED', { operatorId }, id);
+      this.audit('SESSION_INVALIDATED', { reason: 'account_disabled', operatorId }, id);
+    }
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
     return this.formatAdminUser(updated, timeZone);
   }
 
@@ -381,8 +425,13 @@ export class UsersService {
     }
     // TrafficLog 经 schema onDelete: Cascade 级联删除
     await this.prisma.user.delete({ where: { id } });
+    this.audit('ACCOUNT_DISABLED', { operatorId, reason: 'deleted' }, id);
     void this.agentGateway.pushConfigToAll();
     return { deleted: true, id };
+  }
+
+  private audit(event: AuthAuditEvent, metadata: Record<string, unknown> = {}, userId?: string | null): void {
+    this.authAuditService?.record(event, metadata, userId);
   }
 
   async getDashboard(userId: string) {

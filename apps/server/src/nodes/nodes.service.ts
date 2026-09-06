@@ -5,6 +5,7 @@ import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
 import { BinaryResourcesService } from '../binaries/binary-resources.service';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
+import { hashAgentToken } from '../common/agent-token';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProbeNodeDto } from './dto/probe-node.dto';
 import { CreateNodeDto } from './dto/create-node.dto';
@@ -12,6 +13,7 @@ import { UpdateNodeDto } from './dto/update-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 import { SettingsService } from '../system/settings.service';
 import { appendPublicPath, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../common/public-url';
+import { encryptSecret } from '../common/secret-crypto';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
@@ -47,8 +49,8 @@ export class NodesService {
       node: {
         ...this.sanitize(node),
         installCommands: {
-          ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch, publicBaseUrl),
-          http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch, publicBaseUrl)
+          ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
+          http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
         },
         uninstallCommand: this.buildUninstallCommand()
       }
@@ -62,11 +64,13 @@ export class NodesService {
       configuredBaseUrl: settings?.publicBaseUrl,
       requestBaseUrl
     });
+    const agentToken = generateAgentToken();
     const node = await this.prisma.node.create({
       data: {
         name: dto.name?.trim() || `节点 ${dto.serverHost}`,
         serverHost: dto.serverHost.trim(),
-        agentToken: generateAgentToken(),
+        agentToken: encryptSecret(agentToken),
+        agentTokenHash: hashAgentToken(agentToken),
         communicationMode,
         pollIntervalSecs: settings?.defaultPollIntervalSecs ?? 15
       },
@@ -74,14 +78,28 @@ export class NodesService {
     });
     return {
       node: this.sanitize(node),
-      agentToken: node.agentToken,
-      installCommand: this.buildInstallCommand(node.agentToken, communicationMode, node.osArch, publicBaseUrl),
+      // Token 只在创建成功响应中返回一次；数据库字段保存的是加密密文。
+      agentToken,
+      installCommand: this.buildInstallCommand(communicationMode, node.osArch, publicBaseUrl),
       installCommands: {
-        ws: this.buildInstallCommand(node.agentToken, 'WS', node.osArch, publicBaseUrl),
-        http: this.buildInstallCommand(node.agentToken, 'HTTP', node.osArch, publicBaseUrl)
+        ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
+        http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
       },
       uninstallCommand: this.buildUninstallCommand()
     };
+  }
+
+  async rotateToken(id: string, operatorId?: string) {
+    const node = await this.requireNode(id);
+    if (node.isLocal) throw new ConflictException('主控本机节点请通过重置主控配置轮换凭证');
+    const token = generateAgentToken();
+    await this.prisma.node.update({ where: { id }, data: { agentToken: encryptSecret(token), agentTokenHash: hashAgentToken(token), status: 'OFFLINE' } });
+    this.agentGateway.disconnectNode(id);
+    const systemLog = (this.prisma as unknown as { systemLog?: { create: (args: Record<string, unknown>) => Promise<unknown> } }).systemLog;
+    if (systemLog) {
+      await systemLog.create({ data: { source: 'SERVER', level: 'WARN', module: 'Nodes', message: 'AgentToken rotated', metadata: JSON.stringify({ nodeId: id, operatorId: operatorId ?? null }), nodeId: id } });
+    }
+    return { nodeId: id, agentToken: token };
   }
 
   async requestReload(id: string) {
@@ -231,15 +249,15 @@ export class NodesService {
     return raw;
   }
 
-  private buildInstallCommand(token: string, mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
+  private buildInstallCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
     const platform = normalizeOsArch(osArch) ?? 'linux-amd64';
     const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
     const master = mode === 'HTTP'
       ? baseUrl
       : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent');
-    const downloadUrl = appendPublicPath(baseUrl, `api/v1/downloads/agent?token=${encodeURIComponent(token)}`);
-    const temp = `/tmp/riri-agent-${token.slice(0, 12)}`;
-    return `curl -fsSL --location -A 'riri-agent-installer/${platform}' '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token=${token} --master=${master}`;
+    const downloadUrl = appendPublicPath(baseUrl, 'api/v1/downloads/agent');
+    const temp = '/tmp/riri-agent-download';
+    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=${master}`;
   }
 
   private buildUninstallCommand() {
@@ -247,7 +265,7 @@ export class NodesService {
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {
-    const { entryLines, landingLines, lastProbeResult, ...rest } = node;
+    const { entryLines, landingLines, lastProbeResult, agentToken: _agentToken, agentTokenHash: _agentTokenHash, ...rest } = node;
     const toLine = (line: (typeof entryLines)[number] | (typeof landingLines)[number], role: 'DIRECT' | 'TRANSIT' | 'LANDING') => ({
       id: line.id,
       name: line.name,

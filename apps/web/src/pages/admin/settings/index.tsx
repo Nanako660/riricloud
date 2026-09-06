@@ -343,7 +343,7 @@ export default function AdminSettingsPage() {
             <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="min-w-0 space-y-6">
               <div className="max-w-2xl min-w-0"><SettingsInput name="jwtSessionDays" label="JWT 会话有效天数" type="number" min={1} max={30} description="安全提示：缩短会话周期可以降低长期凭据泄漏风险，修改后新登录会使用新周期。" /></div>
               <SettingsEditor name="customCss" label="自定义 CSS" extensions={[css()]} description="样式只注入当前面板页面，适合覆盖主题变量或品牌细节。" />
-              <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="内容会原样挂载到 document.head，请只粘贴可信代码。" />
+              <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="这是管理员可信边界：内容会原样挂载到 document.head，页面内脚本可能读取当前 JWT；默认 CSP 会阻止任意 inline script，请仅使用已审计的资源。" />
             </CardContent></Card></TabsContent>
           </Tabs>
           <div className="flex justify-end pt-4"><Button type="submit" className="w-full sm:w-auto" disabled={saveMutation.isPending}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button></div>

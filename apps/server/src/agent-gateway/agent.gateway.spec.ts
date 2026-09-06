@@ -85,6 +85,27 @@ describe('AgentGateway', () => {
     }
   });
 
+  it('拒绝日志洪泛、超深 metadata 和超大日志批次', () => {
+    const manyLogs = Array.from({ length: 51 }, () => ({ level: 'INFO', module: 'Agent', message: 'ok' }));
+    expect(parseAgentInboundMessage(JSON.stringify({ type: 'log_report', data: { logs: manyLogs } }))).toBeNull();
+
+    const deepMetadata = { a: { b: { c: { d: { e: { f: 'too-deep' } } } } } };
+    expect(parseAgentInboundMessage(JSON.stringify({
+      type: 'log_report',
+      data: { logs: [{ level: 'INFO', module: 'Agent', message: 'ok', metadata: deepMetadata }] }
+    }))).toBeNull();
+  });
+
+  it('按连接限制 Agent 消息速率和累计字节数', () => {
+    const gateway = createGateway();
+    const quotas = (gateway as unknown as { quotas: Map<unknown, { windowStartedAt: number; messages: number; bytes: number }> }).quotas;
+    quotas.set(client, { windowStartedAt: Date.now(), messages: 0, bytes: 0 });
+    const consumeQuota = (gateway as unknown as { consumeQuota: (socket: unknown, bytes: number) => boolean }).consumeQuota;
+
+    for (let index = 0; index < 120; index += 1) expect(consumeQuota.call(gateway, client, 1)).toBe(true);
+    expect(consumeQuota.call(gateway, client, 1)).toBe(false);
+  });
+
   it('按消息类型转发升级与探针回执', async () => {
     const gateway = createGateway();
     await gateway.handleMessage(
