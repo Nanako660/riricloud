@@ -139,7 +139,8 @@ gzip -dc artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar
 
 ```bash
 cp .env.image.example .env.image
-# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+# RIRICLOUD_ENCRYPTION_KEY 必须长期保持不变；已有数据库请继续使用原密钥，否则历史 AgentToken、SMTP、证书等密文无法解密。
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
 docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```
