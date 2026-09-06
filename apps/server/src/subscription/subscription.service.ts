@@ -187,12 +187,13 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async subscribe(userId: string, planId: string) {
+  async subscribe(userId: string, planId: string, transactionClient?: Prisma.TransactionClient) {
     this.requireSubscriptionDelegate();
-    const plan = await this.prisma.plan.findUnique({ where: { id: planId }, include: { template: true } });
+    const client = transactionClient ?? this.prisma;
+    const plan = await client.plan.findUnique({ where: { id: planId }, include: { template: true } });
     if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
     const now = new Date();
-    const result = await this.prisma.$transaction(async (tx) => {
+    const createSubscription = async (tx: Prisma.TransactionClient) => {
       const current = await tx.subscription.findUnique({ where: { userId } });
       if (current && this.isSubscriptionActive(current)) {
         throw new ConflictException('已有有效订阅，请使用升配操作');
@@ -214,7 +215,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       await this.chargePlan(tx, userId, plan.price, 'PLAN_BUY', '订购套餐', subscription.id);
       await this.syncUserMirror(tx, userId, subscription);
       return subscription;
-    });
+    };
+    const result = transactionClient ? await createSubscription(transactionClient) : await this.prisma.$transaction(createSubscription);
+    if (transactionClient) return result;
     void this.agentGateway?.pushConfigToAll();
     return this.get(result.id);
   }

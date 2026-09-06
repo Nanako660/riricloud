@@ -6,6 +6,7 @@ import {
   ProtocolType,
   TRAFFIC_CREDENTIAL_DELIMITER
 } from './constants';
+import { decryptSecret, encryptSecret, isEncryptedSecret } from './secret-crypto';
 
 export { TRAFFIC_CREDENTIAL_DELIMITER };
 
@@ -625,6 +626,33 @@ export function sanitizeInboundParams(params: Record<string, unknown>): Record<s
       const reality = tls.reality as Record<string, unknown>;
       delete reality.privateKey;
     }
+  }
+  return clone;
+}
+
+// Reality 私钥只在 Agent 配置组装时还原，数据库中的线路参数始终保存密文。
+export function protectInboundSecrets(params: Record<string, unknown>): Record<string, unknown> {
+  const clone = JSON.parse(JSON.stringify(params)) as Record<string, unknown>;
+  const tls = clone.tls;
+  if (!tls || typeof tls !== 'object' || Array.isArray(tls)) return clone;
+  const reality = (tls as Record<string, unknown>).reality;
+  if (!reality || typeof reality !== 'object' || Array.isArray(reality)) return clone;
+  const privateKey = (reality as Record<string, unknown>).privateKey;
+  if (typeof privateKey === 'string' && privateKey.length > 0 && !isEncryptedSecret(privateKey)) {
+    (reality as Record<string, unknown>).privateKey = encryptSecret(privateKey);
+  }
+  return clone;
+}
+
+export function revealInboundSecrets(params: Record<string, unknown>): Record<string, unknown> {
+  const clone = JSON.parse(JSON.stringify(params)) as Record<string, unknown>;
+  const tls = clone.tls;
+  if (!tls || typeof tls !== 'object' || Array.isArray(tls)) return clone;
+  const reality = (tls as Record<string, unknown>).reality;
+  if (!reality || typeof reality !== 'object' || Array.isArray(reality)) return clone;
+  const privateKey = (reality as Record<string, unknown>).privateKey;
+  if (typeof privateKey === 'string' && isEncryptedSecret(privateKey)) {
+    (reality as Record<string, unknown>).privateKey = decryptSecret(privateKey);
   }
   return clone;
 }

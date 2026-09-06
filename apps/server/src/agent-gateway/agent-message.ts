@@ -287,12 +287,33 @@ function isRestartAgentResultData(value: unknown): value is RestartAgentResultDa
 
 function isLogReportData(value: unknown): value is LogReportData {
   if (!isJsonObject(value) || !Array.isArray(value.logs)) return false;
+  if (value.logs.length > 50) return false;
+  let totalBytes = 0;
   return value.logs.every((item) => {
     if (!isJsonObject(item)) return false;
     const validLevel = ['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(item.level as string);
     const validMessage = typeof item.message === 'string' && item.message.length <= 8192;
     const validModule = typeof item.module === 'string' && item.module.length <= 128;
-    return validLevel && validMessage && validModule;
+    const validSource = item.source === undefined || item.source === 'AGENT' || item.source === 'SINGBOX';
+    const validMetadata = item.metadata === undefined || isSafeMetadata(item.metadata);
+    if (validMessage) totalBytes += Buffer.byteLength(item.message as string, 'utf8');
+    if (validModule) totalBytes += Buffer.byteLength(item.module as string, 'utf8');
+    return validLevel && validMessage && validModule && validSource && validMetadata && totalBytes <= 64 * 1024;
+  });
+}
+
+function isSafeMetadata(value: unknown, depth = 0): boolean {
+  if (depth > 5) return false;
+  if (value === null || typeof value !== 'object') {
+    return typeof value !== 'string' || value.length <= 4096;
+  }
+  if (Array.isArray(value) && value.length > 100) return false;
+  if (!Array.isArray(value) && Object.keys(value).length > 100) return false;
+  const entries = Array.isArray(value) ? value : Object.entries(value);
+  return entries.every((item) => {
+    if (Array.isArray(value)) return isSafeMetadata(item, depth + 1);
+    const [key, child] = item as [string, unknown];
+    return key.length <= 128 && isSafeMetadata(child, depth + 1);
   });
 }
 

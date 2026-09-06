@@ -1,23 +1,56 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import * as svgCaptcha from 'svg-captcha';
-import { getJwtSecret } from '../common/runtime-config';
+import { configuredHostname, hashAuthValue, safeEqual } from '../common/auth-security';
+import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
+import { RateLimitService } from '../common/rate-limit.service';
+import { AuthAuditService } from '../common/auth-audit.service';
 
 export interface CaptchaInput {
   captchaToken?: string;
   captchaAnswer?: string;
   turnstileToken?: string;
   remoteIp?: string;
+  action?: string;
 }
+
+type CaptchaClient = { captchaChallenge: CaptchaChallengeStore };
+
+const CAPTCHA_TTL_MS = 5 * 60 * 1000;
+const MAX_ATTEMPTS = 5;
+
+type CaptchaChallengeRow = {
+  id: string;
+  tokenHash: string;
+  answerHash: string;
+  ipHash: string | null;
+  attempts: number;
+  consumedAt: Date | null;
+  expiresAt: Date;
+};
+
+type CaptchaChallengeStore = {
+  create: (args: Record<string, unknown>) => Promise<CaptchaChallengeRow>;
+  findUnique: (args: Record<string, unknown>) => Promise<CaptchaChallengeRow | null>;
+  updateMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+  deleteMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+};
 
 @Injectable()
 export class CaptchaService {
-  private readonly consumedTokens = new Map<string, number>();
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settingsService: SettingsService,
+    private readonly rateLimitService: RateLimitService,
+    @Optional() private readonly authAuditService?: AuthAuditService
+  ) {}
 
-  constructor(private readonly settingsService: SettingsService) {}
-
-  createLocalChallenge() {
+  async createLocalChallenge(remoteIp = 'unknown') {
+    if (!this.rateLimitService.consume(`captcha:ip:${remoteIp}`, 20, 60_000)) {
+      this.authAuditService?.record('CAPTCHA_FAILURE', { reason: 'rate_limited', remoteIp });
+      throw new BadRequestException('请求过于频繁，请稍后再试');
+    }
     const captcha = svgCaptcha.createMathExpr({
       width: 160,
       height: 52,
@@ -29,18 +62,48 @@ export class CaptchaService {
       mathMin: 1,
       mathMax: 20
     });
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-    const payload = Buffer.from(JSON.stringify({ answer: captcha.text, expiresAt, nonce: randomUUID() })).toString('base64url');
-    const signature = this.sign(payload);
-    return { svg: captcha.data, captchaToken: `${payload}.${signature}`, expiresAt: new Date(expiresAt).toISOString() };
+    const expiresAt = new Date(Date.now() + CAPTCHA_TTL_MS);
+    const token = randomBytes(32).toString('base64url');
+    const normalizedIp = remoteIp.trim() || 'unknown';
+    const store = this.store(this.prisma);
+    await store.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+    await store.create({
+      data: {
+        tokenHash: hashAuthValue('captcha-token', token),
+        answerHash: hashAuthValue('captcha-answer', this.normalizeAnswer(captcha.text)),
+        ipHash: normalizedIp === 'unknown' ? null : hashAuthValue('captcha-ip', normalizedIp),
+        attempts: 0,
+        expiresAt
+      }
+    });
+    return { svg: captcha.data, captchaToken: token, expiresAt: expiresAt.toISOString() };
   }
 
-  async verifyCaptcha(input: CaptchaInput): Promise<void> {
+  async verifyCaptcha(input: CaptchaInput, client: unknown = this.prisma): Promise<void> {
+    try {
+      await this.verifyCaptchaInternal(input, client);
+      if ((await this.settingsService.getSettings()).captchaMode !== 'OFF') {
+        this.authAuditService?.record('CAPTCHA_VERIFIED', { action: input.action, remoteIp: input.remoteIp || 'unknown' });
+      }
+    } catch (error) {
+      this.authAuditService?.record('CAPTCHA_FAILURE', {
+        action: input.action,
+        remoteIp: input.remoteIp || 'unknown',
+        reason: error instanceof Error ? error.message : 'verification_failed'
+      });
+      throw error;
+    }
+  }
+
+  private async verifyCaptchaInternal(input: CaptchaInput, client: unknown): Promise<void> {
+    if (!this.rateLimitService.consume(`captcha:verify:${input.remoteIp || 'unknown'}`, 30, 60_000)) {
+      throw new BadRequestException('请求过于频繁，请稍后再试');
+    }
     const settings = await this.settingsService.getSettings();
     const mode = settings.captchaMode ?? 'OFF';
     if (mode === 'OFF') return;
     if (mode === 'LOCAL') {
-      this.verifyLocal(input);
+      await this.verifyLocal(input, client);
       return;
     }
     if (!input.turnstileToken || !settings.turnstileSecretKey) {
@@ -57,8 +120,21 @@ export class CaptchaService {
         body,
         signal: controller.signal
       });
-      const result = (await response.json()) as { success?: boolean };
+      const result = (await response.json()) as { success?: boolean; action?: string; hostname?: string; challenge_ts?: string };
       if (!response.ok || !result.success) throw new BadRequestException('人机验证未通过');
+      if (!input.action || result.action !== this.turnstileAction(input.action)) {
+        throw new BadRequestException('人机验证未通过');
+      }
+      const expectedHostname = configuredHostname(settings.publicBaseUrl || process.env.RIRICLOUD_PUBLIC_URL);
+      if (expectedHostname && result.hostname?.toLowerCase() !== expectedHostname) {
+        throw new BadRequestException('人机验证未通过');
+      }
+      if (result.challenge_ts) {
+        const challengeTime = Date.parse(result.challenge_ts);
+        if (!Number.isFinite(challengeTime) || Math.abs(Date.now() - challengeTime) > 10 * 60 * 1000) {
+          throw new BadRequestException('人机验证已过期');
+        }
+      }
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('人机验证服务暂时不可用');
@@ -67,37 +143,51 @@ export class CaptchaService {
     }
   }
 
-  private verifyLocal(input: CaptchaInput) {
+  private async verifyLocal(input: CaptchaInput, client: unknown) {
     if (!input.captchaToken || !input.captchaAnswer) throw new BadRequestException('请输入图形验证码');
-    const [payload, signature] = input.captchaToken.split('.');
-    if (!payload || !signature || !this.safeEqual(signature, this.sign(payload))) throw new BadRequestException('图形验证码已失效');
-    if (this.consumedTokens.has(input.captchaToken)) throw new BadRequestException('图形验证码已使用，请刷新后重试');
-    let parsed: { answer?: string; expiresAt?: number };
-    try {
-      parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { answer?: string; expiresAt?: number };
-    } catch {
-      throw new BadRequestException('图形验证码已失效');
+    const now = new Date();
+    const store = this.store(client);
+    await store.deleteMany({ where: { expiresAt: { lte: now } } });
+    const tokenHash = hashAuthValue('captcha-token', input.captchaToken);
+    const record = await store.findUnique({ where: { tokenHash } });
+    if (!record) throw new BadRequestException('图形验证码已失效');
+    if (record.consumedAt) throw new BadRequestException('图形验证码已使用，请刷新后重试');
+    if (record.expiresAt <= now) throw new BadRequestException('图形验证码已过期');
+    if (record.ipHash) {
+      const remoteIp = input.remoteIp?.trim() || 'unknown';
+      if (remoteIp === 'unknown') throw new BadRequestException('图形验证码已失效');
+      const ipHash = hashAuthValue('captcha-ip', remoteIp);
+      if (!safeEqual(record.ipHash, ipHash)) throw new BadRequestException('图形验证码已失效');
     }
-    if (!parsed.answer || !parsed.expiresAt || parsed.expiresAt <= Date.now()) throw new BadRequestException('图形验证码已过期');
-    if (parsed.answer.trim().toLowerCase() !== input.captchaAnswer.trim().toLowerCase()) throw new BadRequestException('图形验证码错误');
-    this.consumedTokens.set(input.captchaToken, parsed.expiresAt);
-    this.cleanupConsumedTokens();
-  }
 
-  private sign(payload: string): string {
-    return createHmac('sha256', getJwtSecret()).update(payload).digest('base64url');
-  }
-
-  private safeEqual(left: string, right: string): boolean {
-    const a = Buffer.from(left);
-    const b = Buffer.from(right);
-    return a.length === b.length && timingSafeEqual(a, b);
-  }
-
-  private cleanupConsumedTokens() {
-    const now = Date.now();
-    for (const [token, expiresAt] of this.consumedTokens) {
-      if (expiresAt <= now) this.consumedTokens.delete(token);
+    const answerHash = hashAuthValue('captcha-answer', this.normalizeAnswer(input.captchaAnswer));
+    if (!safeEqual(record.answerHash, answerHash)) {
+      const updated = await store.updateMany({
+        where: { id: record.id, consumedAt: null, expiresAt: { gt: now }, attempts: { lt: MAX_ATTEMPTS } },
+        data: { attempts: { increment: 1 } }
+      });
+      if (!updated.count) throw new BadRequestException('图形验证码错误次数过多，请刷新后重试');
+      const latest = await store.findUnique({ where: { id: record.id } });
+      if (!latest || latest.attempts >= MAX_ATTEMPTS) throw new BadRequestException('图形验证码错误次数过多，请刷新后重试');
+      throw new BadRequestException('图形验证码错误');
     }
+
+    const consumed = await store.updateMany({
+      where: { id: record.id, tokenHash, answerHash, consumedAt: null, expiresAt: { gt: now }, attempts: { lt: MAX_ATTEMPTS } },
+      data: { consumedAt: now }
+    });
+    if (!consumed.count) throw new BadRequestException('图形验证码已使用，请刷新后重试');
+  }
+
+  private store(client: unknown): CaptchaChallengeStore {
+    return (client as CaptchaClient).captchaChallenge;
+  }
+
+  private normalizeAnswer(value: string): string {
+    return value.trim().toLowerCase();
+  }
+
+  private turnstileAction(action: string): string {
+    return action.trim().toLowerCase().replace(/_/g, '-');
   }
 }

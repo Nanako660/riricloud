@@ -10,6 +10,7 @@ import {
   buildServerInbounds,
   normalizeShadowsocksPassword,
   parseTrafficCredential,
+  revealInboundSecrets,
   type InboundUserCredential
 } from '../common/inbound';
 import { resolveLineTags } from '../common/line-tags';
@@ -26,6 +27,8 @@ import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
 import { isLineAuthorized } from '../common/line-access';
 import { getTrafficPeriod } from '../common/traffic-reset';
+import { hashAgentToken } from '../common/agent-token';
+import { decryptSecret } from '../common/secret-crypto';
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
@@ -212,7 +215,7 @@ export class AgentService implements OnModuleDestroy {
     if (!token) {
       return { ok: false, message: '缺少 token' };
     }
-    const node = await this.prisma.node.findUnique({ where: { agentToken: token } });
+      const node = await this.prisma.node.findFirst({ where: { OR: [{ agentTokenHash: hashAgentToken(token) }, { agentToken: token }] } });
     if (!node) {
       return { ok: false, message: '无效的 AgentToken' };
     }
@@ -1225,7 +1228,7 @@ export class AgentService implements OnModuleDestroy {
     paramsJson: string;
     certificate?: { certificatePem: string; privateKeyPem: string } | null;
   }): Record<string, unknown> {
-    const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
+    const params = revealInboundSecrets(JSON.parse(line.paramsJson) as Record<string, unknown>);
     if (!line.certificate) return params;
     const tls = params.tls;
     if (!tls || typeof tls !== 'object' || Array.isArray(tls)) return params;
@@ -1234,7 +1237,7 @@ export class AgentService implements OnModuleDestroy {
       tls: {
         ...(tls as Record<string, unknown>),
         certificate: [line.certificate.certificatePem],
-        key: [line.certificate.privateKeyPem]
+        key: [decryptSecret(line.certificate.privateKeyPem)]
       }
     };
   }
@@ -1258,7 +1261,7 @@ export class AgentService implements OnModuleDestroy {
   ): Record<string, unknown> | undefined {
     if (!line.landingNode || !line.landingPort) return undefined;
     const protocolType = line.protocolType as ProtocolType;
-    const params = JSON.parse(line.paramsJson) as Record<string, unknown>;
+    const params = revealInboundSecrets(JSON.parse(line.paramsJson) as Record<string, unknown>);
     const tls = (params.tls ?? {}) as Record<string, unknown>;
     const reality = tls.reality as Record<string, unknown> | undefined;
     const fallbackServerName = typeof tls.serverName === 'string'

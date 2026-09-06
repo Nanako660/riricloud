@@ -17,12 +17,13 @@ set +a
 : "${DATABASE_URL:=file:./data/riri.db}"
 : "${PORT:=8080}"
 : "${AUTO_SEED:=false}"
+: "${RIRICLOUD_ENV:=production}"
 : "${MASTER_AGENT_ENABLED:=true}"
 : "${RIRICLOUD_BINARY_DIR:=$PWD/binaries}"
 : "${MASTER_AGENT_BINARY_PATH:=$RIRICLOUD_BINARY_DIR/agent-linux-amd64}"
 : "${SINGBOX_BINARY_PATH:=$RIRICLOUD_BINARY_DIR/singbox-linux-amd64}"
 
-export DATABASE_URL PORT AUTO_SEED MASTER_AGENT_ENABLED
+export DATABASE_URL PORT AUTO_SEED RIRICLOUD_ENV MASTER_AGENT_ENABLED
 
 if ! node -e "require('./prisma/admin-bootstrap').validateJwtSecret(process.env.JWT_SECRET)"; then
   echo "JWT_SECRET 无效：必须提供至少 32 位的随机密钥（见 .env.example）" >&2
@@ -37,6 +38,11 @@ case "${AUTO_SEED:-false}" in
     exit 1
     ;;
 esac
+
+if [ "$AUTO_SEED" = true ] && { [ "${NODE_ENV:-}" = production ] || [ "$RIRICLOUD_ENV" = production ]; }; then
+  echo "生产环境禁止 AUTO_SEED=true，请使用显式 ADMIN_EMAIL/ADMIN_PASSWORD 初始化管理员" >&2
+  exit 1
+fi
 
 case "${MASTER_AGENT_ENABLED:-true}" in
   true|TRUE|1|yes|YES|on|ON) MASTER_AGENT_ENABLED=true ;;

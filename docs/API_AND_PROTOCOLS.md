@@ -4,9 +4,9 @@
 
 生产环境推荐由 Nginx 负责 HTTPS 终止、反向代理和边缘路由。后端唯一真实订阅接口仍为 `GET /api/v1/sub/:token`；伪静态订阅地址由 Nginx 将严格匹配的 UUID 单段路径内部 rewrite 到该接口，不新增 NestJS 路由或通用代理 middleware。
 
-> **实现状态（v0.6.11）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。鉴权采用 JWT Bearer Token，除 `@Public()` 显式放行的端点（登录、注册、验证码发送、CAPTCHA、本地订阅、版本、站点公开信息、Agent 二进制下载）外一律需要鉴权；管理员端点要求 `role=ADMIN`。
+> **实现状态（v0.6.12）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。浏览器面板登录通过 `HttpOnly`、`SameSite=Lax` Cookie 保存 JWT；兼容脚本仍可使用 `Authorization: Bearer`，但登录/注册 JSON 不再返回 JWT。除 `@Public()` 显式放行的端点（登录、注册、验证码发送、CAPTCHA、本地订阅、版本、站点公开信息、Agent 二进制下载和 SSE 连接）外一律需要鉴权；管理员端点要求 `role=ADMIN`。AgentToken 只允许通过 `X-Agent-Token` 请求头传递，禁止放入 URL query。
 >
-> **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。首管理员由 Prisma seed 脚本播种（详见 `docs/DATA_MODELS.md` §种子数据），默认 `admin@riricloud.local`（密码经 `SEED_ADMIN_PASSWORD` 覆盖）。
+> **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。生产启动由 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 显式创建首管理员；完整 Prisma seed 的演示账号只允许在非生产环境且显式 `AUTO_SEED=true` 时使用。
 >
 > **统一分页结构**：列表端点返回 `{ data: T[], total: number, page: number, pageSize: number }`；查询参数 `page`（默认 1）、`pageSize`（默认 20，上限 100）。
 >
@@ -14,12 +14,13 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在返回 409；密码还需满足 `passwordMinLength`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
-  - 响应：`{ accessToken }`（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
-- `POST /auth/login`：登录获取 JWT 访问凭证 (`accessToken`)。⭐
+  - 请求：`{ email, password(8~64，含大小写/数字/特殊字符), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；密码长度需满足动态 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在统一返回 400 `注册信息无效`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
+  - 响应：`{ authenticated: true }`，并通过 `Set-Cookie` 建立 HttpOnly 会话（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
+- `POST /auth/login`：登录并通过 HttpOnly Cookie 建立 JWT 会话，响应 `{ authenticated: true }`。⭐
+- `POST /auth/logout`：递增当前用户 `sessionVersion` 使现有 JWT 立即失效，并清除认证 Cookie。⭐
 - `POST /auth/reset-password`：找回/重置登录密码。⭐
   - 请求：`{ email, code(6位数字), newPassword(8~64) }`。
-  - 邮箱不存在时返回 400（明确提示“该邮箱尚未注册”）；新密码长度必须满足系统设定的 `passwordMinLength`；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码。
+  - 邮箱不存在、验证码错误或过期时统一返回 400 `重置请求无效`；新密码长度必须满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码，并递增 `sessionVersion` 使旧会话失效。
   - 存量或未核验邮箱的用户重置成功后，系统自动将其标记为已核验（`emailVerifiedAt = now()`），并向在线节点推送配置恢复其节点代理访问。
   - 响应：`{ success: true, message: '密码重置成功' }`。
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐、角色与邮箱核验状态 (`emailVerifiedAt`)；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
@@ -29,7 +30,7 @@
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
-- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；旧密码校验通过后使用 bcrypt 更新。
+- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；新密码长度需满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；旧密码校验通过后使用 bcrypt 更新。
 - `PATCH /user/profile`：修改当前用户昵称。⭐ 请求 `{ nickname }`，服务端清洗首尾空白并限制为 2~20 个字符；响应 `{ uid, nickname }`。
 - `POST /user/verify-email`：核验当前账号邮箱所有权。⭐ 请求 `{ code }`（6 位数字验证码，需登录态）；核验 `VERIFY_CURRENT_EMAIL` 验证码成功后更新 `emailVerifiedAt = now()` 并向节点推送配置恢复订阅与节点连接，响应 `{ verified: true, emailVerifiedAt }`。
 - `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后标记 `emailVerifiedAt = now()` 并向节点推送配置，返回 `{ updated: true, email }`。
@@ -49,8 +50,8 @@
 
 #### 用户管理
 - `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
-- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码必须同时包含大写字母、小写字母、数字和特殊字符；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
+- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样必须同时包含大写字母、小写字母、数字和特殊字符。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
@@ -67,9 +68,9 @@
 Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最靠前的 ACTIVE 入口线路；没有匹配线路时保留 `lineId=null`。聚合历史流水时会按节点首选 ACTIVE 入口线路回退归组，仍无法归属的数据标记为“未分配线路（节点直连）”。
 
 #### 节点管理
-- `GET /admin/nodes`：获取所有节点详情（包含 AgentToken、遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
+- `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
 - `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
-- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`，只能通过禁用内置 Agent 或停止 Master 进程使其离线。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
@@ -80,10 +81,10 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 二进制分发中心
-- `GET /downloads/agent?token=<AGENT_TOKEN>`：公开返回 Agent 二进制的 `302` 重定向。⭐ 安装器通过 `User-Agent: riri-agent-installer/<os>-<arch>` 声明目标平台，主控支持 Linux、macOS 和 Windows 的已装配架构；缺省目标为 `linux-amd64`。重定向目标仍由 AgentToken 保护，该端点无需 JWT；重定向地址优先使用 `binaryDownloadBaseUrl`，其次使用 `publicBaseUrl`、`RIRICLOUD_PUBLIC_URL` 和当前请求域名，不再默认指向 localhost。
+- `GET /downloads/agent`：公开返回 Agent 二进制流。⭐ 安装器通过 `User-Agent: riri-agent-installer/<os>-<arch>` 声明目标平台，并通过 `X-Agent-Token: <AGENT_TOKEN>` 鉴权；缺省目标为 `linux-amd64`。该端点无需 JWT，但必须提供 Header 凭据，不接受 query token；响应设置 `Cache-Control: no-store` 与 `Referrer-Policy: no-referrer`。
 - `GET /admin/binaries/info`：管理员查询主控版本及各 OS/架构内置 Agent、Sing-box 二进制的版本、大小、SHA-256 和可用状态。⭐
 - `POST /admin/binaries/import`：管理员把自定义 Sing-box URL 下载到主控托管目录。⭐ 请求 `{ target: "singbox-linux-amd64"|"singbox-linux-arm64"|"singbox-macos-amd64"|"singbox-macos-arm64"|"singbox-windows-amd64", version, url, sha256 }`；服务端限制 100 MiB，并在落盘前完成 SHA-256 校验。
-- `GET /downloads/binaries/:target?token=<AGENT_TOKEN>`：Agent 内部下载端点。⭐ 仅接受有效且未禁用节点的 AgentToken，响应为二进制流；禁止匿名访问。
+- `GET /downloads/binaries/:target`：Agent 内部下载端点。⭐ 仅接受 `X-Agent-Token: <AGENT_TOKEN>` 且节点有效、未禁用的请求，响应为二进制流；禁止匿名访问，不接受 query token。
 
 #### 节点线路承载视图
 节点不再提供独立的 Inbound CRUD。节点详情只读返回当前作为线路入口/落地的角色、线路协议和派生监听端口（DIRECT/TRANSIT/LANDING）；新建或修改协议、参数、拓扑与端口统一通过线路 API 完成。
@@ -150,25 +151,28 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 #### 系统日志管理 (`/logs`)
 - `GET /logs?page&pageSize&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员分页多维查询系统日志。⭐ 支持日志级别（DEBUG/INFO/WARN/ERROR）、来源（SERVER/WEB/AGENT/KERNEL）、节点 UUID、TraceId 精确与关键词模糊搜索；返回统一分页结构 `{ data: SystemLog[], total, page, pageSize }`。
 - `GET /logs/metrics?hours=24`：管理员获取过去指定小时内日志大盘指标与趋势统计。⭐ 响应包含 `totalLogs`、`errorCount`、`warnCount`、`avgLatencyMs` 以及按小时聚合的分级时序柱状图数据 `trendSeries`。
-- `GET /logs/stream?token=<JWT_TOKEN>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 通过 URL query 参数 `token` 或 Bearer 头传递 JWT 认证；支持动态按级别、来源、节点和关键词过滤并实时推送最新日志事件。
+- `POST /logs/stream-ticket`：管理员创建一次性、60 秒有效的 SSE 票据。⭐
+- `GET /logs/stream?ticket=<ONE_TIME_TICKET>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 票据只允许消费一次且不得替代长期 JWT；支持动态按级别、来源、节点和关键词过滤并实时推送最新日志事件。
 - `POST /logs/frontend`：前端批量上报异常与关键操作日志。⭐ 无需管理员鉴权（`@Public()`）；请求 `{ logs: [{ level, module, message, traceId?, stack?, metadata? }] }`；服务端自动补齐 Client IP、User Agent 与当前登录用户 ID，深度脱敏后缓冲入库并广播至 SSE 监听端。
 - `DELETE /logs?retentionDays&maxRecords`：管理员手动或按策略触发日志清理。⭐ 请求可选指定天数与最大保留条数，返回 `{ count }`；未指定时自动根据系统配置中的 `logsRetentionDays` 与 `logsMaxCount` 进行清理。
 - `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员导出筛选范围内的日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
 
 ### 1.5 邮箱验证码与人机验证
-- `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；`captchaToken` 为带签名凭据，不返回明文答案。
+- `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；答案、令牌和绑定 IP 仅以 HMAC 保存于 SQLite，`captchaToken` 为不可解码的随机一次性凭据，默认 5 分钟过期，最多 5 次失败并绑定生成时客户端 IP。
 - `POST /verification/send-code`：发送邮箱验证码。⭐ 请求 `{ email, action: "REGISTER"|"CHANGE_EMAIL"|"VERIFY_CURRENT_EMAIL"|"RESET_PASSWORD", captchaToken?, captchaAnswer?, turnstileToken? }`；
-  - `REGISTER`：需要启用注册邮箱验证、邮箱未被占用，若 CAPTCHA 模式非 `OFF` 须先通过人机验证；
+  - `REGISTER`：需要启用注册邮箱验证；若 CAPTCHA 模式非 `OFF` 须先通过人机验证，再以通用响应隐藏邮箱是否已占用；
   - `CHANGE_EMAIL`：需要用户登录且新邮箱未被其他账号占用；
   - `VERIFY_CURRENT_EMAIL`：需要用户登录且提交的邮箱与当前账号邮箱一致；
-  - `RESET_PASSWORD`：需要邮箱已注册（未注册返回 400），若 CAPTCHA 模式非 `OFF` 须先通过人机验证；
-  - 相同邮箱和行为 60 秒内不可重复发送，验证码有效期 5 分钟，错误尝试最多 5 次；成功响应 `{ sent: true, expiresAt, cooldownSeconds: 60, messageId? }`。
+  - `RESET_PASSWORD`：未知邮箱也返回相同通用响应，若 CAPTCHA 模式非 `OFF` 须先通过人机验证；
+  - 相同邮箱和行为 60 秒内不可重复发送，验证码有效期 5 分钟，错误尝试最多 5 次；验证码只保存带 JWT 密钥域隔离的 HMAC，不写入明文日志或响应。成功响应 `{ sent: true, cooldownSeconds: 60, message }`。
 
-订阅调试：`GET /api/v1/sub/:token?templateId=<UUID>` 可临时指定模板进行渲染，显式 `templateId` 仅用于调试并优先于套餐模板；省略时按套餐模板、系统设置 `defaultTemplateId`、`isDefault=true` 模板的顺序回退。
+订阅调试：`GET /api/v1/sub/:token?templateId=<UUID>` 可临时指定模板进行渲染，显式 `templateId` 仅用于调试并优先于套餐模板；省略时按套餐模板、系统设置 `defaultTemplateId`、`isDefault=true` 模板的顺序回退。订阅、二进制和含凭据的响应统一设置 `Cache-Control: no-store`、`Pragma: no-cache` 与 `Referrer-Policy: no-referrer`。
+
+认证审计：Master 会为登录、注册、密码重置/修改、注销、账号禁用、验证码发送/消费、CAPTCHA 校验和限流写入脱敏 `AUTH` 事件；事件使用邮箱 HMAC 摘要而非原始邮箱，且不得包含密码、验证码、JWT、Cookie 或完整 token。系统日志仍受统一消息长度、metadata 大小、缓冲区和保留周期约束；服务重启或 SQLite 写入失败时，内存队列中的尚未落库日志可能丢失。
 
 ---
 
@@ -176,8 +180,10 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 Agent 与 Master 之间建立全双工长连接，连接地址为：
 ```
-ws(s)://<master-host>/ws/agent?token=<AGENT_TOKEN>
+ws(s)://<master-host>/ws/agent
 ```
+
+Agent 通过握手 Header `X-Agent-Token: <AGENT_TOKEN>` 鉴权；URL 不携带凭据，避免 Token 出现在访问日志、Referer 或浏览器历史中。
 
 ### 2.1 基础数据包格式 (JSON Frame)
 ```json

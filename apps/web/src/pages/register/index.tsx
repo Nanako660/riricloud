@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, Loader2, Mail, Timer } from 'lucide-react';
 import { api, extractErrorMessage } from '@/lib/api';
+import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ const registerSchema = z
   .object({
     email: z.string().email('请输入有效的邮箱地址'),
     nickname: z.string().max(20, '昵称最多 20 个字符').optional(),
-    password: z.string().min(8, '密码至少 8 位').max(64),
+    password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
     confirmPassword: z.string(),
     verificationCode: z.string().optional()
   })
@@ -42,6 +43,7 @@ export default function RegisterPage() {
   const emailVerificationEnabled = infoQuery.data?.emailVerificationEnabled ?? false;
   const captchaMode = infoQuery.data?.captchaMode ?? 'OFF';
   const siteKey = infoQuery.data?.turnstileSiteKey ?? '';
+  const passwordMinLength = infoQuery.data?.passwordMinLength ?? 8;
 
   useEffect(() => {
     if (infoQuery.data && !infoQuery.data.registrationEnabled) {
@@ -82,14 +84,12 @@ export default function RegisterPage() {
         password: values.password,
         ...(emailVerificationEnabled ? { verificationCode: values.verificationCode } : registerCaptcha ?? {})
       };
-      const { data } = await api.post<{ accessToken: string }>('/auth/register', payload);
-      const me = await api.get<{ id: string; email: string; role: 'ADMIN' | 'USER'; uid?: number | null; nickname?: string | null }>('/auth/me', {
-        headers: { Authorization: `Bearer ${data.accessToken}` }
-      });
-      return { token: data.accessToken, user: me.data };
+      await api.post<{ accessToken: string }>('/auth/register', payload);
+      const me = await api.get<{ id: string; email: string; role: 'ADMIN' | 'USER'; uid?: number | null; nickname?: string | null }>('/auth/me');
+      return { user: me.data };
     },
-    onSuccess: ({ token, user }) => {
-      setAuth(token, user);
+    onSuccess: ({ user }) => {
+      setAuth(user);
       toast.success('注册成功，欢迎使用');
       navigate('/', { replace: true });
     },
@@ -107,6 +107,10 @@ export default function RegisterPage() {
   };
 
   const onSubmit = (values: RegisterForm) => {
+    if (values.password.length < passwordMinLength) {
+      form.setError('password', { message: `密码至少 ${passwordMinLength} 位` });
+      return;
+    }
     if (!emailVerificationEnabled && captchaMode !== 'OFF' && !registerCaptcha) {
       toast.error('请先完成人机验证');
       return;
@@ -137,12 +141,12 @@ export default function RegisterPage() {
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
               <FormField control={form.control} name="email" render={({ field }) => <FormItem><FormLabel>邮箱</FormLabel><FormControl><Input type="email" placeholder="请输入常用邮箱" autoComplete="username" {...field} /></FormControl><FormMessage /></FormItem>} />
               <FormField control={form.control} name="nickname" render={({ field }) => <FormItem><FormLabel>昵称（选填）</FormLabel><FormControl><Input placeholder="留空则使用默认昵称" autoComplete="nickname" {...field} /></FormControl><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="password" render={({ field }) => <FormItem><FormLabel>密码</FormLabel><FormControl><Input type="password" placeholder="请设置 8-64 位密码" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
+              <FormField control={form.control} name="password" render={({ field }) => <FormItem><FormLabel>密码</FormLabel><FormControl><Input type="password" placeholder={`请设置 ${passwordMinLength}-64 位，含大小写、数字和特殊字符`} autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
               <FormField control={form.control} name="confirmPassword" render={({ field }) => <FormItem><FormLabel>确认密码</FormLabel><FormControl><Input type="password" placeholder="请再次输入密码" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
               {emailVerificationEnabled ? (
                 <FormField control={form.control} name="verificationCode" render={({ field }) => <FormItem><FormLabel>邮箱验证码</FormLabel><div className="flex gap-2"><FormControl><Input inputMode="numeric" placeholder="6 位验证码" autoComplete="one-time-code" {...field} /></FormControl><Button type="button" variant="outline" className="shrink-0" onClick={() => void requestCode()} disabled={cooldown > 0 || sendCodeMutation.isPending}><Mail />{cooldown ? `${cooldown}s` : '获取验证码'}</Button></div><FormMessage /></FormItem>} />
               ) : captchaMode !== 'OFF' ? (
-                <CaptchaInline mode={captchaMode} siteKey={siteKey} onChange={setRegisterCaptcha} />
+                <CaptchaInline mode={captchaMode} siteKey={siteKey} action="register" onChange={setRegisterCaptcha} />
               ) : null}
               <Button type="submit" className="w-full" disabled={registerMutation.isPending || infoQuery.isPending}>
                 {registerMutation.isPending ? <Loader2 className="animate-spin" /> : captchaMode !== 'OFF' && !emailVerificationEnabled ? <Timer /> : null}
@@ -157,7 +161,7 @@ export default function RegisterPage() {
         <SupportContactsInline settings={infoQuery.data} />
         {infoQuery.data?.footerCopyright ? <p>{infoQuery.data.footerCopyright}</p> : <p>© {new Date().getFullYear()} {siteName}</p>}
       </div>
-      <CaptchaDialog open={captchaOpen} mode={captchaMode} siteKey={siteKey} onOpenChange={setCaptchaOpen} onVerified={(payload) => sendCodeMutation.mutate(payload)} />
+      <CaptchaDialog open={captchaOpen} mode={captchaMode} siteKey={siteKey} action="register" onOpenChange={setCaptchaOpen} onVerified={(payload) => sendCodeMutation.mutate(payload)} />
     </div>
   );
 }

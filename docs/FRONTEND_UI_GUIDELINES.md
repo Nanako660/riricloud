@@ -441,6 +441,8 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 - CSS、YAML 与 HTML/JS 代码编辑器使用 CodeMirror，代码区域保持等宽字体、明确的内部滚动边界，并在复杂弹窗/抽屉中填充剩余高度；编辑器主题必须跟随 `next-themes` 的 `resolvedTheme`；头部注入仅接受管理员配置，文案需提示只粘贴可信代码。
 - CSS 与 HTML/JS 头部代码编辑器必须读取 `next-themes` 的 `resolvedTheme`，在浅色/深色模式下分别传入 CodeMirror 的 `light` / `dark` 主题，禁止依赖默认浅色主题造成深色页面出现白色编辑区；编辑器外层使用语义化背景与边框 Token。
 - JWT 会话有效期的安全说明属于字段辅助信息，应直接使用 shadcn/ui 的 `FormDescription` 放在对应输入框下方，不应在外层设置卡片内再嵌套等宽提示卡片。
+- 浏览器认证凭据由服务端通过 HttpOnly、SameSite Cookie 管理；登录/注册页面不得读取、展示或持久化 JWT，认证状态只在 Zustand 内存中保存当前用户，并通过统一 API 客户端的 `withCredentials` 请求维持会话。
+- 注册、找回密码和验证码发送表单必须对邮箱、密码和验证码执行前端长度/格式校验；新密码还必须提示并校验大写字母、小写字母、数字和特殊字符四类字符，并保留动态 `passwordMinLength` 提示；邮箱是否已注册不得由前端根据不同错误文案主动推断。
 - 默认探针目标使用“摘要入口 + 独立 Dialog”提供可视化增删编辑；Dialog 内使用本地 React Hook Form 草稿，点击“应用”后才回填外层设置表单，取消关闭不得污染父表单。每项使用 `Select`、`Input`、`FormMessage` 等原子组件，TCP 才显示端口，最多 32 项，保存顺序与节点探针快速预设顺序一致。列表保持平面表单结构，项之间使用 `Separator`，不得额外套用卡片、列表边框或控件自定义颜色/尺寸。
 
 ### 12.4 视觉验证登记

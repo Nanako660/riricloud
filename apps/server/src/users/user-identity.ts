@@ -24,7 +24,11 @@ export function normalizeNickname(value: string): string {
 }
 
 export function isUidUniqueConstraintError(error: unknown): boolean {
+  return isUniqueConstraintError(error, 'uid');
+}
+
+export function isUniqueConstraintError(error: unknown, field: string): boolean {
   const candidate = error as { code?: string; meta?: { target?: unknown } } | null;
   const target = candidate?.meta?.target;
-  return candidate?.code === 'P2002' && (target === 'uid' || (Array.isArray(target) && target.includes('uid')));
+  return candidate?.code === 'P2002' && (target === field || (Array.isArray(target) && target.includes(field)));
 }

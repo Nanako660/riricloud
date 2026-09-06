@@ -36,13 +36,13 @@
 | **`UI-06`** | 节点管理 | 添加节点弹窗 | `/admin/nodes`（点击“添加节点”） | `apps/web/src/pages/admin/nodes/components/node-form-dialog.tsx` | Dialog 居中、服务器地址与名称输入框、公开开关 Switch |
 | **`UI-07`** | 节点详情 | 线路承载与角色列表 Tab | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 当前承载线路、协议徽章、直连/中转/落地角色三态徽章、监听端口与线路状态 |
 | **`UI-08`** | 节点详情 | 派生监听端口卡片 | `/admin/nodes/:id` (Tab 1) | `apps/web/src/pages/admin/nodes/detail.tsx` | 线路派生端口按 DIRECT/TRANSIT/LANDING 三态角色展示、消除直连幽灵双端口、端口文本不溢出、无线路时 EmptyState |
-| **`UI-09`** | 节点详情 | 基础信息与遥测 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、Agent Token、通信模式、Agent/系统架构/内核版本画像、遥测与内核状态、统一时区上报时间 |
+| **`UI-09`** | 节点详情 | 基础信息与遥测 Tab | `/admin/nodes/:id` (Tab 2) | `apps/web/src/pages/admin/nodes/detail.tsx` | 节点基础信息编辑、AgentToken 仅创建/轮换时一次性展示的安全提示、通信模式、Agent/系统架构/内核版本画像、遥测与内核状态、统一时区上报时间 |
 | **`UI-10`** | 节点详情 | 高级与运维 Tab | `/admin/nodes/:id` (Tab 3) | `apps/web/src/pages/admin/nodes/detail.tsx` | Line 配置预览、JSON 覆盖编辑器、统一时区网络质量快照、格式化内核错误日志、重启/升级/删除操作 |
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | UID 与昵称列、邮箱验证状态 Badge（已验证/未验证）、UID 精确搜索和昵称/邮箱实时搜索、角色/账号状态/邮箱验证/订阅状态/套餐筛选（支持「无订阅 NONE」与「无套餐 NONE」精准筛选，状态下拉中英文对照）、套餐 Badge、订阅状态 Badge（有效/已取消/已过期/已吊销/无订阅）、流量进度条、统一时区到期日、流量数据自动刷新、操作列对无订阅用户置灰禁用重置订阅链接按钮并展示「该用户暂无有效订阅」Tooltip 提示、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select，纯套餐驱动（彻底移除手动流量配额与到期项输入，无套餐创建 0 配额无订阅用户，绑定套餐自动继承套餐配额与时长） |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色选择器、启用账号与邮箱已验证状态卡片对齐无挤压（rounded-lg border p-3 shadow-xs）、密码重置；订阅管理中无订阅用户隐藏重置订阅链接按钮，无订阅或选择无套餐时自适应隐藏配额/已用流量/到期日/额外线路输入项，展示状态说明或取消警告卡片；无订阅用户提示请选择套餐绑定且未选套餐前保存按钮禁用；已有订阅选择无套餐切换为红色「彻底取消订阅」按钮并触发二次确认弹窗；绑定具体套餐后流畅展开微调输入项与流量重置信息；Token 重置确认 |
-| **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、强制邮箱验证开关（限制订阅与节点连接）、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与二进制下载 URL 明确为覆盖项、默认模板只读展示与跳转管理、CodeMirror、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
-| **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
+| **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、强制邮箱验证开关（限制订阅与节点连接）、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与二进制下载 URL 明确为覆盖项、默认模板只读展示与跳转管理、CodeMirror、自定义 Head 可信边界与 JWT 风险提示、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
+| **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、服务端会话角色变化后管理员导航及时同步、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐卡片信息密度、公开/下架 Badge、节点匹配与模板标签、删除确认 |
 | **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、流量重置策略 Select、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认/内嵌 Badge、策略组/规则集/DNS 摘要、复制模板、快速预览抽屉、删除确认 |
@@ -60,6 +60,8 @@
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | Agent/Sing-box 类型、平台与状态筛选；独立资源版本、来源、默认/启停/归档状态、平台文件 SHA-256 与大小；本地上传、远程导入、资源详情、辅助文件、分发历史；明暗主题与移动端弹窗内滚动 |
 | **`UI-32`** | 监控与系统 | 系统日志可视化大盘 | `/admin/logs` | `apps/web/src/pages/admin/logs/**` | 4 大 KPI 指标卡、分级趋势堆叠柱状图、多维过滤器工具栏、高密度等宽日志流表格、Live Tail 实时推流条（悬浮控制、清屏、暂停、自动滚动）、详情抽屉（TraceId 穿透、调用堆栈、格式化元数据）、日志导出与安全清理确认弹窗；明暗主题自适应与移动端防溢出 |
 | **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
+
+认证页面的会话验证以 Cookie 为浏览器实现细节：视觉走查只需确认登录/注册成功后正确进入已认证路由、刷新页面仍保持登录态、注销后返回登录页；不得在页面 DOM、localStorage 或 sessionStorage 中出现 JWT 文本。
 
 ---
 
@@ -135,7 +137,7 @@ flowchart TD
 
 ### Step 1: 环境检查与就绪
 1. 确认后端服务（`http://localhost:3000`）与前端服务（`http://localhost:5173`）正常监听；
-2. 确保数据库已初始化并完成本地演示 seed（默认管理员账号：`admin@riricloud.local`，密码：`riri-admin-demo`）；生产环境使用 `.env` 中显式配置的管理员凭据，不依赖演示默认值。
+2. 确保数据库已初始化并完成本地演示 seed（默认管理员账号：`admin@riricloud.local`，密码：`RiriCloud-Admin-2026!`）；生产环境使用 `.env` 中显式配置的管理员凭据，不依赖演示默认值。
 
 ### Step 2: 浏览器视口与会话初始化
 1. 依次将浏览器页面视口调整至 `1440x900`、`375x812` 和 `768x1024`；

@@ -113,7 +113,14 @@ async function readPassword(passwordStdin) {
 
 async function main() {
   const { email, passwordStdin } = parseArgs(process.argv.slice(2));
-  const user = await prisma.user.findUnique({ where: { email } });
+  const password = await readPassword(passwordStdin);
+  await resetAdminPassword(prisma, email, password);
+  console.log(`管理员密码已重置：${email}`);
+}
+
+async function resetAdminPassword(client, inputEmail, inputPassword) {
+  const email = validateAdminEmail(inputEmail);
+  const user = await client.user.findUnique({ where: { email } });
   if (!user) {
     throw new Error(`账号 ${email} 不存在，密码重置不会创建账号`);
   }
@@ -121,19 +128,30 @@ async function main() {
     throw new Error(`账号 ${email} 不是 ADMIN，密码重置不会提权账号`);
   }
 
-  const password = validateAdminPassword(await readPassword(passwordStdin));
-  await prisma.user.update({
+  const password = validateAdminPassword(inputPassword, await resolvePasswordMinimum(client));
+  return client.user.update({
     where: { id: user.id },
-    data: { passwordHash: await bcrypt.hash(password, 10) }
+    data: { passwordHash: await bcrypt.hash(password, 10), sessionVersion: { increment: 1 } }
   });
-  console.log(`管理员密码已重置：${email}`);
 }
 
-main()
-  .catch((error) => {
-    console.error(`admin reset failed: ${error.message}`);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+async function resolvePasswordMinimum(client) {
+  const settingStore = client?.systemSetting;
+  if (!settingStore || typeof settingStore.findUnique !== 'function') return 8;
+  const setting = await settingStore.findUnique({ where: { key: 'passwordMinLength' }, select: { value: true } });
+  const value = Number(setting?.value);
+  return Number.isInteger(value) && value >= 8 && value <= 64 ? value : 8;
+}
+
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error(`admin reset failed: ${error.message}`);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
+
+module.exports = { parseArgs, resetAdminPassword };

@@ -1,12 +1,16 @@
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { MAX_EMAIL_LENGTH, normalizeEmail } from '../../common/auth-security';
 
 export const VERIFICATION_ACTIONS = ['REGISTER', 'CHANGE_EMAIL', 'VERIFY_CURRENT_EMAIL', 'RESET_PASSWORD'] as const;
 export type VerificationAction = (typeof VERIFICATION_ACTIONS)[number];
 
 export class SendCodeDto {
   @ApiProperty({ example: 'user@example.com' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
+  @MaxLength(MAX_EMAIL_LENGTH)
   email!: string;
 
   @ApiProperty({ enum: VERIFICATION_ACTIONS })
@@ -34,7 +38,9 @@ export class SendCodeDto {
 
 export class VerifyCodeDto {
   @ApiProperty({ example: 'user@example.com' })
+  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
   @IsEmail()
+  @MaxLength(MAX_EMAIL_LENGTH)
   email!: string;
 
   @ApiProperty({ enum: VERIFICATION_ACTIONS })

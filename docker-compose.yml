@@ -12,6 +12,14 @@ services:
         RIRICLOUD_IMAGE_TAGS: ${RIRICLOUD_IMAGE_TAGS:-latest}
     image: ${MASTER_IMAGE:-riricloud/master:latest}
     restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     # Linux/WSL 下使用 host network，让内置 Agent 的动态 TCP/UDP 线路端口直接暴露。
     network_mode: host
     environment:
@@ -26,6 +34,9 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       RIRICLOUD_PUBLIC_URL: ${RIRICLOUD_PUBLIC_URL:-}
+      RIRICLOUD_ENCRYPTION_KEY: ${RIRICLOUD_ENCRYPTION_KEY:?RIRICLOUD_ENCRYPTION_KEY must be set in .env}
+      RIRICLOUD_TRUST_PROXY: ${RIRICLOUD_TRUST_PROXY:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     volumes:
       - ${MASTER_DATA_PATH:-./data}:/app/data
     healthcheck:
@@ -52,6 +63,14 @@ services:
         SINGBOX_VERSION: ${SINGBOX_VERSION:-1.14.0}
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
     restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     network_mode: host
     depends_on:
       master:
@@ -61,5 +80,6 @@ services:
       MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:3000/ws/agent}
       AGENT_MODE: ${AGENT_MODE:-ws}
       POLL_INTERVAL_SECS: ${POLL_INTERVAL_SECS:-15}
+      RIRICLOUD_ENV: ${RIRICLOUD_ENV:-production}
     volumes:
       - ${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent

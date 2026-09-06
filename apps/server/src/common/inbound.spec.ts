@@ -8,8 +8,10 @@ import {
   generateRealityKeypair,
   normalizeShadowsocksPassword,
   normalizeInboundParams,
+  protectInboundSecrets,
   parseDest,
   REALITY_DEFAULTS,
+  revealInboundSecrets,
   resolveShadowsocksUserPassword,
   SS_DEFAULT_METHOD
 } from './inbound';
@@ -217,6 +219,27 @@ describe('normalizeInboundParams', () => {
 
   it('不支持的协议抛出 BadRequest', () => {
     expect(() => normalizeInboundParams('UNKNOWN_PROTO' as never, {})).toThrow(BadRequestException);
+  });
+});
+
+describe('线路敏感参数保护', () => {
+  const originalKey = process.env.RIRICLOUD_ENCRYPTION_KEY;
+
+  beforeEach(() => {
+    process.env.RIRICLOUD_ENCRYPTION_KEY = 'test-inbound-secret-key';
+  });
+
+  afterAll(() => {
+    if (originalKey === undefined) delete process.env.RIRICLOUD_ENCRYPTION_KEY;
+    else process.env.RIRICLOUD_ENCRYPTION_KEY = originalKey;
+  });
+
+  it('数据库保存 Reality 私钥密文，Agent 配置组装时可还原', () => {
+    const normalized = normalizeInboundParams('VLESS', {});
+    const protectedParams = protectInboundSecrets(normalized);
+    const stored = ((protectedParams.tls as Record<string, unknown>).reality as Record<string, unknown>).privateKey;
+    expect(stored).toMatch(/^enc:v1:/);
+    expect(revealInboundSecrets(protectedParams)).toEqual(normalized);
   });
 });
 

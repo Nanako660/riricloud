@@ -10,7 +10,7 @@ export function normalizePublicBaseUrl(value: string | null | undefined): string
 
   try {
     const url = new URL(raw);
-    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return undefined;
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return undefined;
     url.search = '';
     url.hash = '';
     url.pathname = url.pathname.replace(/\/+$/, '');
@@ -21,11 +21,15 @@ export function normalizePublicBaseUrl(value: string | null | undefined): string
 }
 
 export function getRequestBaseUrl(request: PublicUrlRequest): string | undefined {
-  const forwardedProto = firstHeader(request.headers?.['x-forwarded-proto']);
-  const forwardedHost = firstHeader(request.headers?.['x-forwarded-host']);
+  const trustProxy = process.env.RIRICLOUD_TRUST_PROXY === 'true';
+  const forwardedProto = trustProxy ? firstHeader(request.headers?.['x-forwarded-proto']) : undefined;
+  const forwardedHost = trustProxy ? firstHeader(request.headers?.['x-forwarded-host']) : undefined;
   const host = forwardedHost || request.get?.('host') || firstHeader(request.headers?.host);
   const protocol = forwardedProto || request.protocol;
   if (!host || !protocol) return undefined;
+  const allowedHosts = (process.env.RIRICLOUD_ALLOWED_HOSTS || '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (allowedHosts.length > 0 && !allowedHosts.includes(host.toLowerCase().split(':')[0])) return undefined;
+  if (process.env.RIRICLOUD_ALLOWED_PROTO && !process.env.RIRICLOUD_ALLOWED_PROTO.split(',').map((item) => item.trim()).includes(protocol)) return undefined;
   return normalizePublicBaseUrl(`${protocol}://${host}`);
 }
 

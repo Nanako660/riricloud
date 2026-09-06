@@ -2,6 +2,7 @@
 
 const { PrismaClient } = require('@prisma/client');
 const { findMasterAgentNode } = require('./master-agent-bootstrap');
+const { decryptSecret } = require('./secret-crypto');
 
 const prisma = new PrismaClient();
 
@@ -11,7 +12,7 @@ async function main() {
   if (!node.agentToken) throw new Error('Master-Local 节点缺少 AgentToken');
 
   if (process.argv.includes('--token')) {
-    process.stdout.write(`${node.agentToken}\n`);
+    process.stdout.write(`${decryptSecret(node.agentToken)}\n`);
     return;
   }
 

@@ -5,6 +5,7 @@ import { AgentService } from '../agent-gateway/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCertificateDto, ParseCertificateDto, UpdateCertificateDto } from './dto/create-certificate.dto';
 import { QueryCertificateDto } from './dto/query-certificate.dto';
+import { decryptSecret, encryptSecret } from '../common/secret-crypto';
 
 export type CertificateStatus = 'VALID' | 'EXPIRING' | 'EXPIRED' | 'NOT_YET_VALID';
 
@@ -149,7 +150,7 @@ export class CertificatesService {
       data: {
         name: dto.name.trim(),
         certificatePem: parsed.certificatePem,
-        privateKeyPem: dto.privateKeyPem.trim(),
+        privateKeyPem: encryptSecret(dto.privateKeyPem.trim()),
         subject: parsed.subject,
         issuer: parsed.issuer,
         serialNumber: parsed.serialNumber,
@@ -165,14 +166,14 @@ export class CertificatesService {
     const current = await this.prisma.certificate.findUnique({ where: { id }, include: certificateCount });
     if (!current) throw new NotFoundException('证书不存在');
     const certificatePem = dto.certificatePem?.trim() ?? current.certificatePem;
-    const privateKeyPem = dto.privateKeyPem?.trim() ?? current.privateKeyPem;
+    const privateKeyPem = dto.privateKeyPem?.trim() ?? decryptSecret(current.privateKeyPem);
     const parsed = parseCertificatePem(certificatePem, privateKeyPem);
     const updated = await this.prisma.certificate.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         certificatePem: parsed.certificatePem,
-        privateKeyPem,
+        privateKeyPem: encryptSecret(privateKeyPem),
         subject: parsed.subject,
         issuer: parsed.issuer,
         serialNumber: parsed.serialNumber,
@@ -235,7 +236,7 @@ export class CertificatesService {
       updatedAt: certificate.updatedAt
     };
     return includePrivateKey
-      ? { ...view, certificatePem: certificate.certificatePem, privateKeyPem: certificate.privateKeyPem }
+      ? { ...view, certificatePem: certificate.certificatePem, privateKeyPem: decryptSecret(certificate.privateKeyPem) }
       : view;
   }
 

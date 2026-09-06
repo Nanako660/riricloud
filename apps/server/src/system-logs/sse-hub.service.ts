@@ -1,5 +1,5 @@
-import { Injectable, type MessageEvent } from '@nestjs/common';
-import { filter, map, Observable, Subject } from 'rxjs';
+import { HttpException, HttpStatus, Injectable, type MessageEvent } from '@nestjs/common';
+import { filter, finalize, map, Observable, Subject } from 'rxjs';
 
 export interface SystemLogEntry {
   id: string;
@@ -24,6 +24,8 @@ export interface StreamFilter {
 @Injectable()
 export class SSEHubService {
   private readonly stream$ = new Subject<SystemLogEntry>();
+  private activeConnections = 0;
+  private readonly maxConnections = 32;
 
   /**
    * 发布单条实时日志到 SSE 广播池
@@ -36,6 +38,10 @@ export class SSEHubService {
    * 订阅实时日志流并根据入参过滤
    */
   subscribe(filterCriteria?: StreamFilter): Observable<MessageEvent> {
+    if (this.activeConnections >= this.maxConnections) {
+      throw new HttpException('实时日志连接数已达上限', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    this.activeConnections += 1;
     return this.stream$.pipe(
       filter((entry) => {
         if (!filterCriteria) return true;
@@ -68,7 +74,10 @@ export class SSEHubService {
       map((entry) => ({
         data: entry,
         id: entry.id
-      }))
+      })),
+      finalize(() => {
+        this.activeConnections = Math.max(0, this.activeConnections - 1);
+      })
     );
   }
 }

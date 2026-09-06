@@ -1,6 +1,7 @@
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { decryptSecret, encryptSecret } from '../common/secret-crypto';
 
 export type EmailDomainMode = 'none' | 'whitelist' | 'blacklist';
 export type ProbePresetType = 'tcp' | 'dns' | 'icmp';
@@ -138,6 +139,7 @@ export type PublicSystemSettings = Pick<
   | 'supportEmail'
   | 'supportCustomUrl'
   | 'registrationEnabled'
+  | 'passwordMinLength'
   | 'subscriptionBaseUrl'
   | 'subscriptionShortLinksEnabled'
   | 'customCss'
@@ -282,6 +284,10 @@ export class SettingsService {
   async getSettings(): Promise<SystemSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { in: SETTING_VALUES } } });
     const map = new Map(rows.map((row) => [row.key, row.value]));
+    for (const key of [SETTING_KEYS.SMTP_PASS, SETTING_KEYS.TURNSTILE_SECRET_KEY]) {
+      const stored = map.get(key);
+      if (stored) map.set(key, decryptSecret(stored));
+    }
     return {
       siteName: this.readString(map, 'siteName'),
       siteDescription: this.readString(map, 'siteDescription'),
@@ -361,6 +367,7 @@ export class SettingsService {
       supportEmail: settings.supportEmail,
       supportCustomUrl: settings.supportCustomUrl,
       registrationEnabled: settings.registrationEnabled,
+      passwordMinLength: settings.passwordMinLength,
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       customCss: settings.customCss,
@@ -384,10 +391,11 @@ export class SettingsService {
       for (const [key, value] of entries) {
         if ((key === 'smtpPass' || key === 'turnstileSecretKey') && value === '********') continue;
         const normalized = this.normalizeForStorage(key, value);
+        const stored = key === 'smtpPass' || key === 'turnstileSecretKey' ? encryptSecret(normalized) : normalized;
         await tx.systemSetting.upsert({
           where: { key },
-          update: { value: normalized },
-          create: { key, value: normalized, description: DESCRIPTIONS[key] }
+          update: { value: stored },
+          create: { key, value: stored, description: DESCRIPTIONS[key] }
         });
       }
 

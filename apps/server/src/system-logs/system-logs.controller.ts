@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   type MessageEvent,
   Post,
@@ -16,18 +17,23 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
 import { Public } from '../auth/public.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
+import { RateLimitService } from '../common/rate-limit.service';
 import { CreateFrontendLogsDto } from './dto/create-frontend-logs.dto';
 import { CleanLogsDto, ExportLogsDto, QueryLogsDto } from './dto/query-logs.dto';
 import { SSEHubService } from './sse-hub.service';
 import { SystemLogsService } from './system-logs.service';
+import { SseTicketService } from './sse-ticket.service';
 
 @ApiTags('system-logs')
 @Controller('logs')
 export class SystemLogsController {
   constructor(
     private readonly logsService: SystemLogsService,
-    private readonly sseHub: SSEHubService
+    private readonly sseHub: SSEHubService,
+    private readonly ticketService: SseTicketService,
+    private readonly rateLimit: RateLimitService
   ) {}
 
   @Get()
@@ -47,16 +53,27 @@ export class SystemLogsController {
     return this.logsService.getMetrics(hours ? Number(hours) : 24);
   }
 
-  @Sse('stream')
+  @Post('stream-ticket')
   @ApiBearerAuth()
   @Roles('ADMIN')
-  @ApiOperation({ summary: 'SSE 实时日志流推流通道' })
+  @ApiOperation({ summary: '创建一次性 SSE 实时日志票据' })
+  issueStreamTicket(@CurrentUser() user: { id: string }) {
+    return this.ticketService.issue(user.id);
+  }
+
+  @Public()
+  @Sse('stream')
+  @ApiOperation({ summary: 'SSE 实时日志流推流通道（一次性短期票据）' })
   streamLogs(
+    @Query('ticket') ticket: string | undefined,
     @Query('level') level?: string,
     @Query('source') source?: string,
     @Query('nodeId') nodeId?: string,
     @Query('keyword') keyword?: string
   ): Observable<MessageEvent> {
+    if (!ticket || !this.ticketService.consume(ticket)) {
+      throw new HttpException('SSE 票据无效或已过期', HttpStatus.UNAUTHORIZED);
+    }
     return this.sseHub.subscribe({ level, source, nodeId, keyword });
   }
 
@@ -68,7 +85,11 @@ export class SystemLogsController {
     @Body() dto: CreateFrontendLogsDto,
     @Req() req: Request & { user?: { id?: string }; traceId?: string }
   ) {
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket?.remoteAddress || '';
+    const forwarded = process.env.RIRICLOUD_TRUST_PROXY === 'true' ? req.headers['x-forwarded-for'] : undefined;
+    const clientIp = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || 'unknown';
+    if (!this.rateLimit.consume(`frontend-logs:${clientIp}`, 30, 60_000)) {
+      throw new HttpException('日志上报过于频繁', HttpStatus.TOO_MANY_REQUESTS);
+    }
     const userAgent = req.headers['user-agent'] || '';
     const userId = req.user?.id || null;
     const reqTraceId = req.traceId || (req.headers['x-request-id'] as string) || null;

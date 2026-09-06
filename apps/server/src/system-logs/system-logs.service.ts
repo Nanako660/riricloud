@@ -22,8 +22,11 @@ export interface EnqueueLogInput {
 
 @Injectable()
 export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
+  private static readonly MAX_BUFFER_ENTRIES = 5000;
+  private static readonly MAX_BUFFER_BYTES = 8 * 1024 * 1024;
   private readonly logger = new Logger(SystemLogsService.name);
   private buffer: Prisma.SystemLogCreateManyInput[] = [];
+  private bufferBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
   private isFlushing = false;
 
@@ -53,7 +56,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
   enqueue(input: EnqueueLogInput): void {
     const id = input.id || randomUUID();
     const createdAt = input.createdAt || new Date();
-    const maskedMessage = maskSensitiveString(input.message);
+    const maskedMessage = maskSensitiveString(input.message).slice(0, 8192);
 
     let metadataStr = '{}';
     if (typeof input.metadata === 'string') {
@@ -67,18 +70,26 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
       metadataStr = JSON.stringify(sanitizeLogMetadata(input.metadata));
     }
 
+    if (Buffer.byteLength(metadataStr, 'utf8') > 16 * 1024) metadataStr = JSON.stringify({ truncated: true });
+
     const entry: Prisma.SystemLogCreateManyInput = {
       id,
       traceId: input.traceId || null,
       source: input.source,
       level: input.level,
-      module: input.module,
+      module: input.module.slice(0, 128),
       message: maskedMessage,
       metadata: metadataStr,
       nodeId: input.nodeId || null,
       userId: input.userId || null,
       createdAt
     };
+
+    const entryBytes = Buffer.byteLength(maskedMessage, 'utf8') + Buffer.byteLength(metadataStr, 'utf8') + 256;
+    if (this.buffer.length >= SystemLogsService.MAX_BUFFER_ENTRIES || this.bufferBytes + entryBytes > SystemLogsService.MAX_BUFFER_BYTES) {
+      this.logger.warn('system log buffer limit reached; dropping incoming log');
+      return;
+    }
 
     // 1. 立即广播给当前活跃的 SSE 实时监听客户端（0ms 极低延迟）
     this.sseHub.publish({
@@ -90,6 +101,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
 
     // 2. 压入内存批量写入缓冲队列
     this.buffer.push(entry);
+    this.bufferBytes += entryBytes;
 
     // 3. 防抖阈值：积攒超过 50 条立即触发批量写入
     if (this.buffer.length >= 50) {
@@ -107,6 +119,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
     this.isFlushing = true;
     const toWrite = this.buffer;
     this.buffer = [];
+    this.bufferBytes = 0;
 
     try {
       await this.prisma.systemLog.createMany({
@@ -117,6 +130,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
       // 写入失败时，若队列过大则丢弃以防内存膨胀，否则放回头部稍后重试
       if (toWrite.length < 500) {
         this.buffer.unshift(...toWrite);
+        this.bufferBytes += toWrite.reduce((sum, item) => sum + Buffer.byteLength(item.message, 'utf8') + Buffer.byteLength(item.metadata ?? '{}', 'utf8') + 256, 0);
       }
     } finally {
       this.isFlushing = false;

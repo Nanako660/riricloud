@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
+	"github.com/Nanako660/riricloud/apps/agent/internal/security"
 	"github.com/Nanako660/riricloud/apps/agent/internal/system"
 )
 
@@ -158,9 +159,8 @@ func downloadSingbox(ctx context.Context, options Options, masterURL, destinatio
 }
 
 func fetch(ctx context.Context, rawURL, token string) ([]byte, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, fmt.Errorf("invalid download URL")
+	if err := security.ValidateHTTPURL(rawURL); err != nil {
+		return nil, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -169,7 +169,7 @@ func fetch(ctx context.Context, rawURL, token string) ([]byte, error) {
 	if token != "" {
 		request.Header.Set("X-Agent-Token", token)
 	}
-	response, err := (&http.Client{Timeout: 2 * time.Minute}).Do(request)
+	response, err := security.NewHTTPClient(2*time.Minute, token != "").Do(request)
 	if err != nil {
 		return nil, err
 	}

@@ -50,13 +50,14 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 
 ## 4. 安全红线
 
-1. **凭据管理**：JWT 密钥、AgentToken、Reality 私钥一律经环境变量或安全分发注入；**禁止**硬编码、入 git、入日志。
+1. **凭据管理**：JWT 密钥通过环境变量或外部密钥注入；AgentToken、SMTP/Turnstile Secret、Reality 私钥和证书私钥在数据库中使用 AES-GCM 应用层加密，AgentToken 另存 SHA-256 校验值；**禁止**明文硬编码、入 git、入日志或放入 URL query。
 2. **传输加密**：生产环境 Master 面板强制 HTTPS、Agent 通道强制 WSS；开发环境可降级为本地 ws/http，但代码不得内置"生产关闭 TLS"的开关。
-3. **密码存储**：`bcrypt`（成本因子 ≥ 10），禁止 MD5/SHA1/明文；禁止可逆加密存密码。
-4. **鉴权默认拒绝**：所有 API 默认挂 JWT Guard，公开端点须显式 `@Public()` 声明并逐一登记；Agent 鉴权失败必须断开连接。
+3. **密码存储**：`bcrypt`（成本因子 ≥ 10），禁止 MD5/SHA1/明文；禁止可逆加密存密码。浏览器 JWT 只允许放入 HttpOnly、SameSite Cookie，禁止 localStorage/sessionStorage；密码修改、重置、注销、禁用和管理员 CLI 重置必须递增 `sessionVersion`。
+4. **鉴权默认拒绝**：所有 API 默认挂 JWT Guard，公开端点须显式 `@Public()` 声明并逐一登记；Agent 鉴权失败必须断开连接；AgentToken 仅允许 Header，SSE 仅允许一次性短期票据。
 5. **输入校验**：服务端对一切外部输入（HTTP / WS / 订阅 token）校验后才使用（详见 [CODE_REVIEW.md](./CODE_REVIEW.md) §5）。
 6. **日志脱敏**：`passwordHash`、`agentToken`、`uuid`（用户凭证）不得以任何级别输出到日志。
-7. **依赖安全**：CI 中运行 `pnpm audit` 与 `govulncheck`，高危漏洞阻断合并。
+7. **认证输入与会话**：邮箱统一 trim/小写并限制 254 字符；密码统一受系统 `passwordMinLength` 与 64 字符上限约束；认证响应禁止缓存，注册/找回密码/验证码发送不得通过响应差异枚举邮箱。
+8. **依赖安全**：CI 中运行 `pnpm audit` 与 `govulncheck`，高危漏洞阻断合并。
 
 ---
 

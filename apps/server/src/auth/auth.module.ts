@@ -7,6 +7,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { CaptchaModule } from '../captcha/captcha.module';
 import { VerificationModule } from '../verification/verification.module';
+import { SystemLogsModule } from '../system-logs/system-logs.module';
 import { getJwtSecret } from '../common/runtime-config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -21,6 +22,7 @@ import { JwtStrategy } from './jwt.strategy';
     WalletModule,
     CaptchaModule,
     VerificationModule,
+    SystemLogsModule,
     JwtModule.register({
       secret: getJwtSecret(),
       signOptions: { expiresIn: '12h' }

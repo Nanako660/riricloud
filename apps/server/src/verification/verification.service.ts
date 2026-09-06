@@ -1,22 +1,24 @@
-import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import { assertEmailLength, hashAuthValue, normalizeEmail, normalizeVerificationCode, safeEqual } from '../common/auth-security';
 import { CaptchaService } from '../captcha/captcha.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { MailService } from '../mail/mail.service';
 import { SendCodeDto, VerificationAction } from './dto/send-code.dto';
+import { RateLimitService } from '../common/rate-limit.service';
+import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
 
 const CODE_TTL_MS = 5 * 60 * 1000;
 const CODE_COOLDOWN_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
-type VerificationCodeRow = { id: string; code: string; attempts: number; expiresAt: Date };
+type VerificationCodeRow = { id: string; codeHash: string; attempts: number; expiresAt: Date };
 type VerificationStore = {
   findFirst: (args: Record<string, unknown>) => Promise<VerificationCodeRow | null>;
   create: (args: Record<string, unknown>) => Promise<VerificationCodeRow>;
-  update: (args: Record<string, unknown>) => Promise<VerificationCodeRow>;
-  delete: (args: Record<string, unknown>) => Promise<VerificationCodeRow>;
-  deleteMany: (args: Record<string, unknown>) => Promise<unknown>;
+  updateMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+  deleteMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
 };
 
 @Injectable()
@@ -25,18 +27,29 @@ export class VerificationService {
     private readonly prisma: PrismaService,
     private readonly settingsService: SettingsService,
     private readonly mailService: MailService,
-    private readonly captchaService: CaptchaService
+    private readonly captchaService: CaptchaService,
+    @Optional() private readonly rateLimitService?: RateLimitService,
+    @Optional() private readonly authAuditService?: AuthAuditService
   ) {}
 
-  async sendCode(dto: SendCodeDto, userId?: string, remoteIp?: string) {
-    const email = dto.email.trim().toLowerCase();
+  async sendCode(dto: SendCodeDto, userId?: string, remoteIp?: string, deviceKey = 'unknown') {
+    const email = normalizeEmail(dto.email);
+    assertEmailLength(email);
+    const emailHash = this.authAuditService?.emailHash(email);
+    const metadata = { action: dto.action, emailHash, remoteIp: remoteIp || 'unknown' };
+    this.assertRateLimit(`verification:ip:${remoteIp || 'unknown'}`, 10, 60 * 60_000, metadata);
+    this.assertRateLimit(`verification:email:${email}:${dto.action}`, 3, 60 * 60_000, metadata);
+    this.assertRateLimit(`verification:device:${deviceKey || 'unknown'}`, 20, 60 * 60_000, metadata);
     const settings = await this.settingsService.getSettings();
     if (dto.action === 'REGISTER') {
       if (!settings.emailVerificationEnabled) throw new BadRequestException('注册邮箱验证未启用');
-      const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
-      if (existing) throw new ConflictException('邮箱已被注册');
       if (settings.captchaMode !== 'OFF') {
-        await this.captchaService.verifyCaptcha({ ...dto, remoteIp });
+        await this.captchaService.verifyCaptcha({ ...dto, remoteIp, action: dto.action });
+      }
+      const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (existing) {
+        this.audit('VERIFICATION_SENT', { ...metadata, delivered: false });
+        return this.genericResponse();
       }
     } else if (dto.action === 'CHANGE_EMAIL') {
       if (!userId) throw new UnauthorizedException('请先登录后换绑邮箱');
@@ -48,12 +61,15 @@ export class VerificationService {
       if (!userId) throw new UnauthorizedException('请先登录后验证邮箱');
       const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
       if (!user) throw new UnauthorizedException();
-      if (user.email.toLowerCase() !== email) throw new BadRequestException('只能验证当前登录账号绑定的邮箱');
+      if (normalizeEmail(user.email) !== email) throw new BadRequestException('只能验证当前登录账号绑定的邮箱');
     } else if (dto.action === 'RESET_PASSWORD') {
-      const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
-      if (!user) throw new BadRequestException('该邮箱尚未注册');
       if (settings.captchaMode !== 'OFF') {
-        await this.captchaService.verifyCaptcha({ ...dto, remoteIp });
+        await this.captchaService.verifyCaptcha({ ...dto, remoteIp, action: dto.action });
+      }
+      const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (!user) {
+        this.audit('VERIFICATION_SENT', { ...metadata, delivered: false });
+        return this.genericResponse();
       }
     }
 
@@ -64,40 +80,81 @@ export class VerificationService {
       where: { email, action: dto.action, createdAt: { gte: new Date(now.getTime() - CODE_COOLDOWN_MS) } },
       orderBy: { createdAt: 'desc' }
     });
-    if (recent) throw new HttpException('验证码发送过于频繁，请 60 秒后再试', HttpStatus.TOO_MANY_REQUESTS);
+    if (recent) {
+      this.audit('VERIFICATION_RATE_LIMITED', metadata);
+      throw new HttpException('验证码发送过于频繁，请 60 秒后再试', HttpStatus.TOO_MANY_REQUESTS);
+    }
 
     const code = randomInt(100000, 1000000).toString();
     const record = await store.create({
-      data: { email, code, action: dto.action, attempts: 0, expiresAt: new Date(now.getTime() + CODE_TTL_MS) }
+      data: {
+        email,
+        codeHash: hashAuthValue('verification-code', normalizeVerificationCode(code)),
+        action: dto.action,
+        attempts: 0,
+        expiresAt: new Date(now.getTime() + CODE_TTL_MS)
+      }
     });
     try {
-      const result = await this.mailService.sendVerificationCode(email, code, dto.action);
-      return { sent: true, expiresAt: record.expiresAt, cooldownSeconds: 60, messageId: result.messageId };
+      await this.mailService.sendVerificationCode(email, code, dto.action);
+      this.audit('VERIFICATION_SENT', { ...metadata, delivered: true });
+      return this.genericResponse();
     } catch (error) {
-      await store.delete({ where: { id: record.id } });
+      await store.deleteMany({ where: { id: record.id } });
+      this.audit('VERIFICATION_SEND_FAILURE', metadata);
       throw error;
     }
   }
 
-  async verifyCode(email: string, action: VerificationAction, code: string, client: VerificationClient = this.client(this.prisma)) {
-    const store = this.store(client);
-    const normalizedEmail = email.trim().toLowerCase();
+  async verifyCode(email: string, action: VerificationAction, code: string, client: unknown = this.prisma) {
+    const store = this.store(this.client(client));
+    const normalizedEmail = normalizeEmail(email);
+    assertEmailLength(normalizedEmail);
+    const normalizedCode = normalizeVerificationCode(code);
+    const metadata = { action, emailHash: this.authAuditService?.emailHash(normalizedEmail) };
+    if (!/^\d{6}$/.test(normalizedCode)) return this.failVerification(metadata, '验证码错误');
     const record = await store.findFirst({ where: { email: normalizedEmail, action }, orderBy: { createdAt: 'desc' } });
-    if (!record || record.expiresAt.getTime() <= Date.now()) throw new BadRequestException('验证码不存在或已过期');
-    if (record.attempts >= MAX_ATTEMPTS) throw new BadRequestException('验证码错误次数过多，请重新获取');
-    if (record.code !== code.trim()) {
-      const nextAttempts = record.attempts + 1;
-      const rootStore = this.store(this.client(this.prisma));
-      await rootStore.update({ where: { id: record.id }, data: { attempts: nextAttempts } });
-      if (nextAttempts >= MAX_ATTEMPTS) throw new BadRequestException('验证码错误次数过多，请重新获取');
-      throw new BadRequestException('验证码错误');
+    if (!record || record.expiresAt.getTime() <= Date.now()) return this.failVerification(metadata, '验证码不存在或已过期');
+    if (record.attempts >= MAX_ATTEMPTS) return this.failVerification(metadata, '验证码错误次数过多，请重新获取');
+    const codeHash = hashAuthValue('verification-code', normalizedCode);
+    if (!safeEqual(record.codeHash, codeHash)) {
+      const updated = await store.updateMany({
+        where: { id: record.id, attempts: { lt: MAX_ATTEMPTS } },
+        data: { attempts: { increment: 1 } }
+      });
+      if (!updated.count) return this.failVerification(metadata, '验证码错误次数过多，请重新获取');
+      const latest = await store.findFirst({ where: { id: record.id }, orderBy: { createdAt: 'desc' } });
+      if (!latest || latest.attempts >= MAX_ATTEMPTS) return this.failVerification(metadata, '验证码错误次数过多，请重新获取');
+      return this.failVerification(metadata, '验证码错误');
     }
-    await store.delete({ where: { id: record.id } });
+    const deleted = await store.deleteMany({ where: { id: record.id, codeHash, attempts: { lt: MAX_ATTEMPTS }, expiresAt: { gt: new Date() } } });
+    if (!deleted.count) return this.failVerification(metadata, '验证码不存在或已过期');
+    this.audit('VERIFICATION_CONSUMED', metadata);
     return { verified: true };
   }
 
-  private client(client: PrismaService): VerificationClient {
+  private failVerification(metadata: Record<string, unknown>, message: string): never {
+    this.audit('VERIFICATION_FAILURE', metadata);
+    throw new BadRequestException(message);
+  }
+
+  private audit(event: AuthAuditEvent, metadata: Record<string, unknown>): void {
+    this.authAuditService?.record(event, metadata);
+  }
+
+  private client(client: unknown): VerificationClient {
     return client as unknown as VerificationClient;
+  }
+
+  private genericResponse() {
+    return { sent: true, cooldownSeconds: 60, message: '如果邮箱已注册，验证码将在短时间内发送' };
+  }
+
+  private assertRateLimit(key: string, limit: number, windowMs: number, metadata: Record<string, unknown>): void {
+    if (this.rateLimitService && !this.rateLimitService.consume(key, limit, windowMs)) {
+      this.audit('VERIFICATION_RATE_LIMITED', metadata);
+      throw new HttpException('请求过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
+    }
   }
 
   private store(client: VerificationClient): VerificationStore {

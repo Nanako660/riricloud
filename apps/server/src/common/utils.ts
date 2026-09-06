@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 // 字节数格式化为人类可读（保留 2 位小数）
 export function formatBytes(bytes: number): string {
@@ -8,12 +8,9 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(2)} ${units[i]}`;
 }
 
-// 生成 64 位高熵十六进制 AgentToken（文档约定：每节点唯一凭证）
+// 生成 256 位 CSPRNG AgentToken（文档约定：每节点唯一凭证）
 export function generateAgentToken(): string {
-  return createHash('sha256')
-    .update(`${Date.now()}-${Math.random()}-${process.pid}`)
-    .digest('hex')
-    .slice(0, 64);
+  return randomBytes(32).toString('hex');
 }
 
 // 判断用户是否可正常使用订阅：激活 + 未过期 + 未超配额

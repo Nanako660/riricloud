@@ -78,12 +78,11 @@ func checkWSHandshake(ctx context.Context, cfg *config.Config) Check {
 	if err != nil {
 		return Check{Name: "Master 握手", Detail: err.Error()}
 	}
-	query := parsed.Query()
-	query.Set("token", cfg.AgentToken)
-	parsed.RawQuery = query.Encode()
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	conn, _, err := (&websocket.Dialer{HandshakeTimeout: 10 * time.Second}).DialContext(dialCtx, parsed.String(), nil)
+	header := http.Header{}
+	header.Set("X-Agent-Token", cfg.AgentToken)
+	conn, _, err := (&websocket.Dialer{HandshakeTimeout: 10 * time.Second}).DialContext(dialCtx, parsed.String(), header)
 	if err != nil {
 		return Check{Name: "Master 握手", Detail: err.Error()}
 	}

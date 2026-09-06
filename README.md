@@ -5,7 +5,7 @@
 **多节点 VPN / 代理管理系统**  
 *Master-Agent 分布式架构 · SQLite WAL 本地存储 · WSS/HTTP 双模式通信 · 多协议内核托管 · 多格式订阅输出*
 
-[![Version](https://img.shields.io/badge/version-0.6.12-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.13-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
 [![Go](https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8.svg?logo=go)](https://go.dev)
@@ -116,12 +116,12 @@ cd riricloud
 pnpm setup
 ```
 
-`pnpm setup` 用于本地开发演示，执行后会生成演示账号：
+`pnpm setup` 仅用于本地开发演示，执行后会生成演示账号。以下凭据不得用于生产环境；生产环境必须通过显式 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 初始化管理员：
 
 | 角色 | 邮箱 | 初始密码 |
 | :--- | :--- | :--- |
-| **系统管理员 (ADMIN)** | `admin@riricloud.local` | `riri-admin-demo` |
-| **普通用户 (USER)** | `demo@riricloud.local` | `riri-user-demo` |
+| **系统管理员 (ADMIN)** | `admin@riricloud.local` | `RiriCloud-Admin-2026!` |
+| **普通用户 (USER)** | `demo@riricloud.local` | `RiriCloud-User-2026!` |
 
 ### 3. 启动开发模式
 
@@ -166,7 +166,7 @@ AGENT_TOKEN="<AGENT_TOKEN>" MASTER_WS_URL="ws://localhost:3000/ws/agent" go run 
 ```bash
 # 在 Linux / WSL shell 中执行；Windows 环境必须从 WSL 调用
 cp .env.example .env
-# 编辑 .env：配置 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；可选设置 MASTER_DATA_PATH / AGENT_DATA_PATH 指定宿主机持久化目录；生产环境保持 AUTO_SEED=false（内嵌默认模板仍会自动创建）
+# 编辑 .env：配置 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；可选设置 MASTER_DATA_PATH / AGENT_DATA_PATH 指定宿主机持久化目录；生产环境必须保持 AUTO_SEED=false
 pnpm docker:build
 pnpm docker:up
 ```
@@ -179,7 +179,7 @@ wsl.exe -d Ubuntu -- bash -lc "cd /path/to/riricloud && pnpm docker:build"
 
 脚本会同时检查 Docker daemon 是否处于 Linux containers 模式；`pnpm docker:tags` 只读取版本和标签，不要求启动 Docker daemon。
 
-- **首管理员引导**：空库首次启动时，主控会使用 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 创建首个管理员账号；已有管理员时不会被环境变量覆盖。
+- **首管理员引导**：空库首次启动时，主控会使用 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 创建首个管理员账号；已有管理员时不会被环境变量覆盖。生产入口会拒绝 `AUTO_SEED=true`，不得依赖演示账号。
 - **内置本机节点**：主控启动时会自动注册 `Master-Local` 节点并启动内置 Agent 进程。
 - **离线镜像部署**：`pnpm docker:build` 会将镜像打包导出至 `artifacts/docker/v<version>/<os>-<arch>/`。在无网络环境的目标服务器上，可直接通过 `docker load` 导入镜像并使用 `docker-compose.image.yml` 启动：
 
@@ -217,12 +217,14 @@ pnpm --filter @riricloud/server start:prod
 在主控面板点击「添加节点」获取安装命令，在目标 VPS（Linux / macOS / Windows）上以管理员身份执行：
 
 ```bash
-# Linux amd64 原生安装示例
+# Linux amd64 原生安装示例；Token 只通过 Header 和本地标准输入传递，不放入 URL
+read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
 curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  'https://<master-domain>/api/v1/downloads/agent?token=<AGENT_TOKEN>' \
+  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
+  'https://<master-domain>/api/v1/downloads/agent' \
   -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
   rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token=<AGENT_TOKEN> --master=wss://<master-domain>/ws/agent
+  /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=wss://<master-domain>/ws/agent
 ```
 
 #### Bubble Tea 全屏 TUI 控制台

@@ -27,7 +27,9 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [用户登录注册系统全量安全审计整改 TODO（2026-09-07）](./archive/2026-09-07-auth-registration-security-audit.md) | `v0.6.13+` | 2026-09-07 | — |
 | [全栈可视化日志管理系统 (System Log Management)](./archive/2026-09-06-system-log-management.md) | `v0.6.11` | 2026-09-06 | — |
+| [安全审计整改 TODO（2026-09-06）](./archive/2026-09-06-security-audit-remediation-2026-09-06.md) | `v0.6.13+` | 2026-09-06 | — |
 | [强制邮箱验证、未验证禁用订阅与找回密码全链路](./archive/2026-09-06-email-verification-and-password-reset.md) | `v0.6.12` | 2026-09-06 | — |
 | [用户系统完善：随机数字 UID、自定义昵称、换绑邮箱、SMTP 邮箱验证与双模式人机验证](./archive/2026-09-05-user-system-enhancement.md) | `v0.6.11` | 2026-09-05 | — |
 | [系统设置梳理与全链路统一时区支持](./archive/2026-09-05-system-settings-timezone.md) | `v0.6.8` | 2026-09-05 | — |

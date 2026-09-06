@@ -12,7 +12,8 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 | **主控后端框架** | **NestJS + TypeScript** | 企业级 IoC/DI 依赖注入架构，模块化清晰，代码组织规范 |
 | **持久化与 ORM** | **SQLite + Prisma ORM (WAL 模式)** | 单文件数据库零外部依赖，Prisma 提供端到端类型安全与自动迁移 |
 | **主从通信网关** | **`@nestjs/websockets` + `ws`** | 高性能双向长连接，低延迟全双工推送心跳与配置 |
-| **认证与密码** | **JWT (Passport) + bcryptjs** | 无状态 Bearer Token 鉴权；bcryptjs 为 bcrypt 算法的纯 JS 实现（成本因子 ≥ 10），哈希产物与原生 bcrypt 兼容，免去 Windows/交叉编译环境的原生依赖问题 |
+| **认证与密码** | **JWT (Passport) + bcryptjs + HttpOnly Cookie** | JWT 由 Passport 校验并通过 HttpOnly/SameSite Cookie 传递；bcryptjs 为 bcrypt 算法的纯 JS 实现（成本因子 ≥ 10），哈希产物与原生 bcrypt 兼容，免去 Windows/交叉编译环境的原生依赖问题 |
+| **敏感配置保护** | **Node.js `crypto` AES-256-GCM** | AgentToken、SMTP/Turnstile Secret、证书私钥与 Reality 私钥按应用层加密保存；AgentToken 额外保存 SHA-256 校验值，运行时仅在必要的 Agent 配置/发信链路中解密 |
 | **边缘节点 Agent** | **Go (Golang 1.25+) + Cobra + Bubble Tea + Lip Gloss + kardianos/service** | 单一静态二进制，内置跨平台 CLI、全屏控制台 GUI/TUI、服务生命周期和前台运行模式 |
 | **代理协议内核** | **Sing-box** | 新一代全协议通用核心（VLESS-Reality / Hysteria2 / Shadowsocks / TUIC） |
 
@@ -24,7 +25,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - **Vite**：下一代前端构建工具，极速冷启动与秒级 HMR 热更新。
 - **React Router v6**：声明式路由管理，支持路由守卫（AuthGuard、AdminGuard）与懒加载。
 - **TanStack Query (React Query)**：处理服务端状态缓存、自动重新请求与加载状态管理。
-- **Zustand**：极简轻量的前端全局状态管理（存储当前登录用户信息、Token 及全局 UI 配置）。
+- **Zustand**：极简轻量的前端全局状态管理（仅存储内存中的当前登录用户信息及全局 UI 配置，JWT 不落入 Web Storage）。
 - **Tailwind CSS & shadcn/ui**：
   - 基于 Radix UI 原语的优质无障碍组件，采用 New York 风格预设与 Zinc 灰色系。
   - 直接复制代码进项目源码，杜绝第三方重型 UI 库的样式锁定与难以覆盖的问题。详细规范见 [FRONTEND_UI_GUIDELINES.md](./FRONTEND_UI_GUIDELINES.md)。
@@ -53,13 +54,17 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
   - Master 启动时显式设置 `journal_mode=WAL` 与 `busy_timeout=10000`；如果运行目录不支持 WAL，启动日志会记录调优失败。
   - Agent 心跳按节点串行落库，流量账务保留短事务，速率历史清理由低频巡检执行，避免高频心跳长期占用写锁。
 - **JWT & Passport**：
-  - 标准无状态 Bearer Token 认证。
+  - 服务端支持 Bearer 兼容鉴权，浏览器面板使用 HttpOnly、SameSite Cookie；JWT payload 带 `sessionVersion`，注销、改密、重置和禁用账号时立即失效旧会话。
 - **YAML 序列化（`yaml`）**：
   - Clash Meta 订阅输出需要将配置对象序列化为 YAML；选用纯 JS、零传递依赖且活跃维护的 [`yaml`](https://github.com/eemeli/yaml) 包，不引入原生编译依赖。
 - **SMTP 邮件（`nodemailer`）**：
   - 通过成熟的 Node.js SMTP 客户端发送注册与换绑邮箱验证码，并复用同一 Transporter 执行管理员测试邮件；连接参数来自 `SystemSetting`，不新增外部邮件服务或队列。
 - **本地 CAPTCHA（`svg-captcha`）**：
-  - 生成纯 SVG 图形/算术验证码，答案只保存在签名凭据中并在服务端校验；无需浏览器插件、原生编译或额外基础设施。Cloudflare Turnstile 作为可选在线模式，通过官方校验接口完成服务端验证。
+  - 生成纯 SVG 图形/算术验证码，答案、令牌和客户端 IP 仅以 HMAC 保存于 SQLite，令牌一次性消费并带过期、失败次数和并发保护；无需浏览器插件、原生编译或额外基础设施。Cloudflare Turnstile 作为可选在线模式，通过官方校验接口核对 success、action、hostname 和时间窗口。
+
+### 3.2 安全依赖审计说明
+
+截至 **2026-09-06**，`pnpm audit --prod` 仅报告一条已在根 `package.json` 忽略清单中登记的 High advisory：`deepmerge-ts` 经 `prisma -> @prisma/config` 引入（`GHSA-ggr8-5vv4-36mx`）。该依赖只存在于 Prisma CLI/config 合并链路，不进入 RiriCloud 的业务请求合并路径；业务线路与订阅配置使用服务端显式校验和本地合并函数。残余风险由 Prisma 版本升级、`pnpm audit --prod` 和发布门禁持续复核，若调用链或上游修复状态变化，必须移除忽略项或重新评估。
 
 ---
 

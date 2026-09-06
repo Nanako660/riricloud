@@ -1,8 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { LogOut, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useCurrentUser } from '@/lib/current-user';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,18 +17,13 @@ import {
 // 顶栏独立小巧用户菜单（点击弹出用户信息与退出）
 export function UserMenu() {
   const user = useAuthStore((s) => s.user);
-  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
-  const profile = useQuery({
-    queryKey: ['auth', 'me'],
-    queryFn: async () => (await api.get<{ email: string; role: 'ADMIN' | 'USER'; uid: number | null; nickname: string }>('/auth/me')).data,
-    enabled: Boolean(token),
-    staleTime: 60_000
-  });
+  const profile = useCurrentUser();
   const currentUser = profile.data ?? user;
 
-  const onLogout = () => {
+  const onLogout = async () => {
+    await api.post('/auth/logout').catch(() => undefined);
     logout();
     toast.success('已退出登录');
     navigate('/login');

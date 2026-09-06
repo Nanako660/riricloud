@@ -1,9 +1,10 @@
 // 生成管理端流量看板专用演示数据；每次执行都会刷新一批随机测试用户和流量流水。
 'use strict';
 
-const { randomBytes, randomInt } = require('node:crypto');
+const { createHash, randomBytes, randomInt } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
+const { encryptSecret } = require('./secret-crypto');
 
 const prisma = new PrismaClient();
 const MIB = 1024n ** 2n;
@@ -83,7 +84,10 @@ async function upsertNode(name, data) {
   };
   return existing
     ? prisma.node.update({ where: { id: existing.id }, data: payload })
-    : prisma.node.create({ data: { name, ...payload, agentToken: randomBytes(32).toString('hex') } });
+    : (() => {
+      const token = randomBytes(32).toString('hex');
+      return prisma.node.create({ data: { name, ...payload, agentToken: encryptSecret(token), agentTokenHash: createHash('sha256').update(token).digest('hex') } });
+    })();
 }
 
 async function clearPreviousUiRateMetrics() {

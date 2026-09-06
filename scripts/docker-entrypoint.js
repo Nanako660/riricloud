@@ -6,6 +6,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const { PrismaClient } = require('/app/node_modules/@prisma/client');
 const { validateJwtSecret } = require('/app/prisma/admin-bootstrap');
+const { decryptSecret } = require('/app/prisma/secret-crypto');
 
 const prismaCli = '/app/node_modules/prisma/build/index.js';
 const activeChildren = new Set();
@@ -40,6 +41,11 @@ function isEnabled(value) {
   return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
+function isProduction() {
+  return String(process.env.NODE_ENV ?? '').toLowerCase() === 'production' ||
+    String(process.env.RIRICLOUD_ENV ?? '').toLowerCase() === 'production';
+}
+
 function isBooleanValue(value) {
   return ['true', '1', 'yes', 'on', 'false', '0', 'no', 'off'].includes(String(value).toLowerCase());
 }
@@ -57,7 +63,7 @@ async function readMasterAgentToken() {
       select: { agentToken: true }
     });
     if (!node) throw new Error('Master-Local 节点不存在，请检查 bootstrap 是否成功');
-    return node.agentToken;
+    return decryptSecret(node.agentToken);
   } finally {
     await prisma.$disconnect();
   }
@@ -143,6 +149,7 @@ async function main() {
 
   const autoSeed = String(process.env.AUTO_SEED ?? 'false').toLowerCase();
   if (!isBooleanValue(autoSeed)) fail('AUTO_SEED must be true or false');
+  if (isEnabled(autoSeed) && isProduction()) fail('AUTO_SEED=true is forbidden in production; use an explicit administrator bootstrap instead');
 
   const embeddedAgent = String(process.env.MASTER_AGENT_ENABLED ?? 'true').toLowerCase();
   if (!isBooleanValue(embeddedAgent)) fail('MASTER_AGENT_ENABLED must be true or false');

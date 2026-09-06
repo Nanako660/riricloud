@@ -3,8 +3,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import type { Response } from 'express';
 import { ExportLogsDto } from './dto/query-logs.dto';
 import { SSEHubService } from './sse-hub.service';
+import { SseTicketService } from './sse-ticket.service';
 import { SystemLogsController } from './system-logs.controller';
 import { SystemLogsService } from './system-logs.service';
+import { RateLimitService } from '../common/rate-limit.service';
 
 describe('SystemLogsController', () => {
   let controller: SystemLogsController;
@@ -18,6 +20,10 @@ describe('SystemLogsController', () => {
   let sseHub: {
     subscribe: jest.Mock;
   };
+  let ticketService: {
+    issue: jest.Mock;
+    consume: jest.Mock;
+  };
 
   beforeEach(async () => {
     logsService = {
@@ -30,12 +36,18 @@ describe('SystemLogsController', () => {
     sseHub = {
       subscribe: jest.fn()
     };
+    ticketService = {
+      issue: jest.fn().mockReturnValue({ ticket: 'ticket-1', expiresAt: new Date(Date.now() + 60_000).toISOString() }),
+      consume: jest.fn().mockReturnValue('admin-1')
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SystemLogsController],
       providers: [
         { provide: SystemLogsService, useValue: logsService },
-        { provide: SSEHubService, useValue: sseHub }
+        { provide: SSEHubService, useValue: sseHub },
+        { provide: SseTicketService, useValue: ticketService },
+        RateLimitService
       ]
     }).compile();
 
@@ -44,6 +56,21 @@ describe('SystemLogsController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  it('为管理员创建一次性 SSE 票据，并在推流入口消费票据', () => {
+    expect(controller.issueStreamTicket({ id: 'admin-1' })).toEqual(expect.objectContaining({ ticket: 'ticket-1' }));
+    expect(ticketService.issue).toHaveBeenCalledWith('admin-1');
+
+    const stream = { subscribe: true };
+    sseHub.subscribe.mockReturnValue(stream);
+    expect(controller.streamLogs('ticket-1')).toBe(stream);
+    expect(ticketService.consume).toHaveBeenCalledWith('ticket-1');
+  });
+
+  it('拒绝无效或已消费的 SSE 票据', () => {
+    ticketService.consume.mockReturnValue(null);
+    expect(() => controller.streamLogs('expired-ticket')).toThrow('SSE 票据无效或已过期');
   });
 
   describe('ValidationPipe with ExportLogsDto', () => {

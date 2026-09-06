@@ -4,7 +4,9 @@ const { isEmail } = require('class-validator');
 const bcrypt = require('bcryptjs');
 
 const DEMO_ADMIN_EMAIL = 'admin@riricloud.local';
-const DEMO_ADMIN_PASSWORD = 'riri-admin-demo';
+const DEMO_ADMIN_PASSWORD = 'RiriCloud-Admin-2026!';
+const PASSWORD_STRENGTH_MESSAGE = '密码必须同时包含大写字母、小写字母、数字和特殊字符';
+const PASSWORD_STRENGTH_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/;
 
 const JWT_SECRET_PLACEHOLDER_PATTERNS = [
   /^replace-with-/i,
@@ -35,12 +37,16 @@ function validateAdminEmail(value) {
   if (!isEmail(email)) {
     throw new Error('管理员邮箱无效，请提供符合现有登录规则的邮箱地址');
   }
-  return email;
+  return email.toLowerCase();
 }
 
-function validateAdminPassword(value) {
-  if (typeof value !== 'string' || value.length < 8 || value.length > 64) {
-    throw new Error('管理员密码长度必须为 8-64 位');
+function validateAdminPassword(value, minimum = 8) {
+  const minLength = Number.isInteger(minimum) && minimum >= 8 && minimum <= 64 ? minimum : 8;
+  if (typeof value !== 'string' || value.length < minLength || value.length > 64) {
+    throw new Error(`管理员密码长度必须为 ${minLength}-64 位`);
+  }
+  if (!PASSWORD_STRENGTH_PATTERN.test(value)) {
+    throw new Error(PASSWORD_STRENGTH_MESSAGE);
   }
   return value;
 }

@@ -11,6 +11,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { sanitizeLogMetadata } from './masking.util';
 import { SystemLogsService } from './system-logs.service';
+import { resolveClientIp } from '../common/auth-security';
 
 const IGNORED_PATHS = [
   '/api/v1/logs/stream',
@@ -51,7 +52,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     }
 
     const startTime = Date.now();
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket?.remoteAddress || 'unknown';
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const clientIp = resolveClientIp(req.ip || req.socket?.remoteAddress, typeof forwardedFor === 'string' ? forwardedFor : undefined);
     const userAgent = req.headers['user-agent'] || '';
 
     const logRecord = (statusCode: number, err?: unknown) => {

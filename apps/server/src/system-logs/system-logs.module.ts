@@ -4,16 +4,20 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { SystemModule } from '../system/system.module';
 import { HttpLoggingInterceptor } from './http-logging.interceptor';
 import { SSEHubService } from './sse-hub.service';
+import { SseTicketService } from './sse-ticket.service';
 import { SystemLogsCleanupService } from './system-logs-cleanup.service';
 import { SystemLogsController } from './system-logs.controller';
 import { SystemLogsService } from './system-logs.service';
+import { AuthAuditService } from '../common/auth-audit.service';
 
 @Module({
   imports: [PrismaModule, SystemModule],
   controllers: [SystemLogsController],
   providers: [
     SystemLogsService,
+    AuthAuditService,
     SSEHubService,
+    SseTicketService,
     SystemLogsCleanupService,
     HttpLoggingInterceptor,
     {
@@ -21,6 +25,6 @@ import { SystemLogsService } from './system-logs.service';
       useClass: HttpLoggingInterceptor
     }
   ],
-  exports: [SystemLogsService, SSEHubService]
+  exports: [SystemLogsService, AuthAuditService, SSEHubService, SseTicketService]
 })
 export class SystemLogsModule {}

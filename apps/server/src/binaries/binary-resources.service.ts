@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
+import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
 import { BinariesService, normalizeOsArch } from './binaries.service';
 import { BINARY_KINDS, type BinaryResourceImportDto, type BinaryResourceUploadDto, type ManagedBinaryKind } from './dto/binary-resource.dto';
 
@@ -119,9 +120,7 @@ export class BinaryResourcesService implements OnModuleInit {
   }
 
   async importRemote(dto: BinaryResourceImportDto, operatorId?: string) {
-    const response = await fetch(dto.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`binary download failed: HTTP ${response.status}`);
-    const body = Buffer.from(await response.arrayBuffer());
+    const body = await fetchSafeRemoteBuffer(dto.url, { maxBytes: MAX_BINARY_SIZE });
     return this.saveResource(dto, body, operatorId, 'REMOTE');
   }
 
@@ -192,7 +191,7 @@ export class BinaryResourcesService implements OnModuleInit {
   async resolveForNode(
     kind: 'agent' | 'singbox',
     osArch: string | null | undefined,
-    token: string,
+    _token: string,
     requestBaseUrl?: string,
     releaseId?: string,
     node?: { agentProtocolVersion?: number | null; agentVersion?: string | null }
@@ -220,7 +219,7 @@ export class BinaryResourcesService implements OnModuleInit {
       size: file.size,
       url: appendPublicPath(
         base,
-        `${'assetFallback' in file && file.assetFallback ? 'api/v1/downloads/binary-assets' : 'api/v1/downloads/binary-files'}/${file.id}?token=${encodeURIComponent(token)}`
+        `${'assetFallback' in file && file.assetFallback ? 'api/v1/downloads/binary-assets' : 'api/v1/downloads/binary-files'}/${file.id}`
       )
     }));
     const main = files.find((file) => file.role === 'main') ?? files[0];
@@ -231,7 +230,7 @@ export class BinaryResourcesService implements OnModuleInit {
       target,
       version: this.versionOf(release),
       sha256: asset.sha256,
-      url: appendPublicPath(base, `api/v1/downloads/binary-assets/${asset.id}?token=${encodeURIComponent(token)}`),
+      url: appendPublicPath(base, `api/v1/downloads/binary-assets/${asset.id}`),
       files,
       mainFileId: main?.id ?? asset.id
     };

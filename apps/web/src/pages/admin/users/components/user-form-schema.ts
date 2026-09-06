@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
 
 export const GB = 1024 ** 3;
 
@@ -9,7 +10,7 @@ const optionalPositiveInt = z.preprocess(
 
 export const createUserSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
-  password: z.string().min(8, '密码至少 8 位').max(64),
+  password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
   role: z.enum(['USER', 'ADMIN']).default('USER'),
   planId: z.string().optional()
 });
@@ -18,7 +19,7 @@ export const editAccountSchema = z.object({
   role: z.enum(['USER', 'ADMIN']),
   isActive: z.boolean(),
   emailVerified: z.boolean(),
-  password: z.string().min(8, '密码至少 8 位').max(64).optional().or(z.literal(''))
+  password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE).optional().or(z.literal(''))
 });
 
 export const subscriptionSchema = z.object({

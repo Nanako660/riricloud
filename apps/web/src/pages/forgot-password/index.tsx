@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, KeyRound, Loader2, Mail } from 'lucide-react';
 import { api, extractErrorMessage } from '@/lib/api';
+import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +20,7 @@ const forgotPasswordSchema = z
   .object({
     email: z.string().email('请输入有效的邮箱地址'),
     verificationCode: z.string().min(6, '请输入 6 位验证码').max(6, '请输入 6 位验证码'),
-    newPassword: z.string().min(8, '密码至少 8 位').max(64),
+    newPassword: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
     confirmPassword: z.string()
   })
   .refine((v) => v.newPassword === v.confirmPassword, {
@@ -39,6 +40,7 @@ export default function ForgotPasswordPage() {
   const captchaMode = infoQuery.data?.captchaMode ?? 'OFF';
   const siteKey = infoQuery.data?.turnstileSiteKey ?? '';
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
+  const passwordMinLength = infoQuery.data?.passwordMinLength ?? 8;
 
   useEffect(() => {
     if (!cooldown) return;
@@ -90,6 +92,10 @@ export default function ForgotPasswordPage() {
   };
 
   const onSubmit = (values: ForgotPasswordForm) => {
+    if (values.newPassword.length < passwordMinLength) {
+      form.setError('newPassword', { message: `密码至少 ${passwordMinLength} 位` });
+      return;
+    }
     resetPasswordMutation.mutate(values);
   };
 
@@ -154,7 +160,7 @@ export default function ForgotPasswordPage() {
                   <FormItem>
                     <FormLabel>新密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="请设置 8-64 位新密码" autoComplete="new-password" {...field} />
+                      <Input type="password" placeholder={`请设置 ${passwordMinLength}-64 位，含大小写、数字和特殊字符`} autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -198,6 +204,7 @@ export default function ForgotPasswordPage() {
         open={captchaOpen}
         mode={captchaMode}
         siteKey={siteKey}
+        action="reset-password"
         onOpenChange={setCaptchaOpen}
         onVerified={(payload) => sendCodeMutation.mutate(payload)}
       />

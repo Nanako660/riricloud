@@ -60,6 +60,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "isLocal" BOOLEAN NOT NULL DEFAULT 0,
         "configOverride" TEXT,
         "agentToken" TEXT NOT NULL,
+        "agentTokenHash" TEXT,
         "communicationMode" TEXT NOT NULL DEFAULT 'WS',
         "pollIntervalSecs" INTEGER NOT NULL DEFAULT 15,
         "status" TEXT NOT NULL DEFAULT 'OFFLINE',
@@ -97,6 +98,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "uuid" TEXT NOT NULL,
         "password" TEXT,
         "isActive" BOOLEAN NOT NULL DEFAULT 1,
+        "sessionVersion" INTEGER NOT NULL DEFAULT 0,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`,

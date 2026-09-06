@@ -2,6 +2,7 @@ import { getRequestBaseUrl, normalizePublicBaseUrl, resolvePublicBaseUrl, toWebS
 
 describe('public-url', () => {
   it('从反向代理请求头解析公开地址', () => {
+    process.env.RIRICLOUD_TRUST_PROXY = 'true';
     expect(getRequestBaseUrl({
       headers: {
         host: '127.0.0.1:3000',
@@ -10,6 +11,7 @@ describe('public-url', () => {
       },
       protocol: 'http'
     })).toBe('https://panel.example.com');
+    delete process.env.RIRICLOUD_TRUST_PROXY;
   });
 
   it('优先使用显式配置，其次使用环境变量和请求地址', () => {

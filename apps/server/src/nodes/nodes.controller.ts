@@ -53,6 +53,11 @@ export class NodesController {
     return this.nodesService.requestReload(id);
   }
 
+  @Post(':id/rotate-token')
+  rotateToken(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: { id: string }) {
+    return this.nodesService.rotateToken(id, user.id);
+  }
+
   @Post(':id/upgrade')
   upgrade(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpgradeNodeDto, @CurrentUser() user: { id: string }, @Req() request: Request) {
     return this.nodesService.requestUpgrade(id, dto, getRequestBaseUrl(request), user.id);
