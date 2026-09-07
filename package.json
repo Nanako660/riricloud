@@ -1,6 +1,6 @@
 {
   "name": "riricloud",
-  "version": "0.6.14",
+  "version": "0.7.0",
   "private": true,
   "description": "RiriCloud — 多节点 VPN/代理管理系统（NestJS 主控 + React 面板 + Go 边缘 Agent）",
   "license": "GPL-3.0-only",
@@ -33,6 +33,10 @@
     "bump:patch": "node scripts/version-governance.mjs bump patch",
     "bump:minor": "node scripts/version-governance.mjs bump minor",
     "bump:major": "node scripts/version-governance.mjs bump major",
+    "bump:agent": "node scripts/version-governance.mjs bump-agent",
+    "bump:agent:patch": "node scripts/version-governance.mjs bump-agent patch",
+    "bump:agent:minor": "node scripts/version-governance.mjs bump-agent minor",
+    "bump:agent:major": "node scripts/version-governance.mjs bump-agent major",
     "gate:version": "node scripts/version-governance.mjs check",
     "gate:docs": "node scripts/doc-governance.mjs check",
     "gate:server": "pnpm --filter @riricloud/server exec tsc --noEmit && pnpm --filter @riricloud/server lint && pnpm --filter @riricloud/server test",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -47,6 +47,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
   // 创建成功后的 AgentToken / 安装命令展示（仅创建流程出现）
   const [created, setCreated] = useState<CreateNodeResult | null>(null);
   const [installMode, setInstallMode] = useState<CommunicationMode>('WS');
+  const [deployType, setDeployType] = useState<'native' | 'docker'>('native');
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
@@ -58,9 +59,20 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
     if (open) {
       setCreated(null);
       setInstallMode('WS');
+      setDeployType('native');
       createForm.reset();
     }
   }, [open, createForm]);
+
+  const currentCommand = useMemo(() => {
+    if (!created) return '';
+    if (deployType === 'docker') {
+      return installMode === 'HTTP'
+        ? (created.installCommands?.dockerHttp ?? '')
+        : (created.installCommands?.dockerWs ?? '');
+    }
+    return created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand ?? '';
+  }, [created, deployType, installMode]);
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
@@ -84,20 +96,26 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
               </DialogDescription>
             </DialogHeader>
             {/* min-w-0：Dialog 为 grid 布局，截断长文本固有宽度向上传递，避免内容撑出面板 */}
-             <div className="min-w-0 space-y-3">
-               <Tabs value={installMode.toLowerCase()} onValueChange={(value) => setInstallMode(value === 'http' ? 'HTTP' : 'WS')}>
-                 <TabsList className="grid w-full grid-cols-2">
-                   <TabsTrigger value="ws">WS / WSS</TabsTrigger>
-                   <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
-                 </TabsList>
-               </Tabs>
-               <div className="flex items-center gap-2">
+            <div className="min-w-0 space-y-3">
+              <Tabs value={deployType} onValueChange={(value) => setDeployType(value === 'docker' ? 'docker' : 'native')}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="native">原生 CLI</TabsTrigger>
+                  <TabsTrigger value="docker">Docker 容器</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Tabs value={installMode.toLowerCase()} onValueChange={(value) => setInstallMode(value === 'http' ? 'HTTP' : 'WS')}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="ws">WS / WSS</TabsTrigger>
+                  <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <div className="flex items-center gap-2">
                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.agentToken}</code>
                 <CopyButton value={created.agentToken} />
               </div>
               <div className="flex items-center gap-2">
-                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand}</code>
-                 <CopyButton value={created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand} />
+                <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{currentCommand}</code>
+                <CopyButton value={currentCommand} />
               </div>
             </div>
             <DialogFooter>

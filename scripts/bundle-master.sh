@@ -195,10 +195,17 @@ cp -r "$WORKTREE_DIR/apps/web/dist/." "$MASTER_DIR/web-dist/"
 echo "  -> 注入匹配架构 ($TARGET_NORM) 的内置 Agent 与 Sing-box..."
 mkdir -p "$MASTER_DIR/binaries"
 
+AGENT_VERSION=""
+if [ -f "$RIRI_ROOT/apps/agent/VERSION" ]; then
+  AGENT_VERSION="$(tr -d '[:space:]' < "$RIRI_ROOT/apps/agent/VERSION")"
+else
+  AGENT_VERSION="$VERSION"
+fi
+
 AGENT_SRC="$ARTIFACT_ROOT/binaries/agent/$TARGET_NORM/riri-agent"
 if [ ! -f "$AGENT_SRC" ]; then
   echo "    未找到 $AGENT_SRC，尝试实时构建 Agent..."
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --target "$TARGET" --version "$VERSION"
+  bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --target "$TARGET" --version "$AGENT_VERSION"
 fi
 [ -f "$AGENT_SRC" ] || die "缺少匹配架构的 Agent 二进制：$AGENT_SRC"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent-$TARGET_NORM"
@@ -206,6 +213,7 @@ chmod +x "$MASTER_DIR/binaries/agent-$TARGET_NORM"
 mkdir -p "$MASTER_DIR/binaries/agent/$TARGET_NORM"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 chmod +x "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
+printf '%s\n' "$AGENT_VERSION" > "$MASTER_DIR/binaries/AGENT_VERSION"
 
 SINGBOX_RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
 SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
@@ -232,7 +240,8 @@ echo "  -> 生成内置二进制资源 manifest..."
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
-   const [root, appVersion, singboxVersion, singboxRevision, cronetVersion, target] = process.argv.slice(1);
+  const [root, appVersion, singboxVersion, singboxRevision, cronetVersion, target, agentVersionArg] = process.argv.slice(1);
+  const agentVersion = agentVersionArg || appVersion;
   const fileInfo = (name, role, absolute) => {
     const body = fs.readFileSync(absolute);
     return { name, role, path: path.relative(root, absolute).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length };
@@ -243,10 +252,10 @@ echo "  -> 生成内置二进制资源 manifest..."
   const singboxPath = path.join(singboxDir, "sing-box");
   const cronetPath = path.join(singboxDir, "libcronet.so");
   const resources = [];
-  if (fs.existsSync(agentPath)) resources.push({ kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo(agentName, "main", agentPath)] }] });
-   if (fs.existsSync(singboxPath) && fs.existsSync(cronetPath)) resources.push({ kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(singboxRevision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo("sing-box", "main", singboxPath), fileInfo("libcronet.so", "auxiliary", cronetPath)] }] });
+  if (fs.existsSync(agentPath)) resources.push({ kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo(agentName, "main", agentPath)] }] });
+  if (fs.existsSync(singboxPath) && fs.existsSync(cronetPath)) resources.push({ kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(singboxRevision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo("sing-box", "main", singboxPath), fileInfo("libcronet.so", "auxiliary", cronetPath)] }] });
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
- ' "$MASTER_DIR/binaries" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION" "$TARGET_NORM"
+' "$MASTER_DIR/binaries" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION" "$TARGET_NORM" "$AGENT_VERSION"
 
 # 6. 固化 package.json 并生成 Prisma 引擎
 echo "  -> 固化 package.json 并生成 Prisma Client..."

@@ -19,6 +19,22 @@
 ### Fixed
 
 
+## [0.7.0] - 2026-09-07
+
+### Added
+- **Master 与 Agent 独立版本治理**：拆分主控与边缘程序版本管理，新增 `pnpm bump:agent` 系列脚本与 `agent-vA.B.C` Tag 体系；`pnpm gate:version` 与发布脚本深度支持双轨校验与分流发布。
+- **Docker 协同编排与镜像注入**：Docker Compose 默认协同拉起独立 `master` 与 `agent` 容器；支持通过 `AGENT_IMAGE` 注入 Agent 镜像与 `MASTER_LOCAL_AGENT_TOKEN` 环境变量自动对接本机节点。
+- **节点 Docker 部署支持**：管理端节点添加、详情与 Token 轮换弹窗新增原生 CLI 与 Docker 容器启动双 Tab 切换，`installCommands` 增加 `dockerWs` 与 `dockerHttp` 支持。
+
+### Changed
+- **主控与边缘守护进程彻底解耦**：Master 容器与自包含发行包移除内置 Agent 进程的联锁托管，Master 镜像仅暴露 3000 端口，专精于控制面与 Web 面板；构建期保留当前平台二进制注入 `/app/binaries/` 以维持私有离线分发能力。
+- **系统版本接口感知增强**：`GET /api/v1/system/version` 返回 `{ version, agentVersion, agentImage }`，同步感知主控版本、推荐 Agent 版本与镜像。
+
+### Fixed
+- **Docker 容器环境系统版本与分发清单推导**：修复 Master 容器中因独立 deploy 缺少根版本导致版本接口返回 0.0.0 的问题，构建期注入 package.json 版本、binaries/manifest.json 与 AGENT_VERSION 回退；修复节点管理中 Docker 示例命令挂载路径错误。
+
+
+
 ## [0.6.14] - 2026-09-07
 
 ### Fixed

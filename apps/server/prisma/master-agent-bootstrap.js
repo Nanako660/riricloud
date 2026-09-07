@@ -1,7 +1,7 @@
-'use strict';
-
+const fs = require('node:fs');
+const path = require('node:path');
 const { createHash, randomBytes } = require('node:crypto');
-const { encryptSecret } = require('./secret-crypto');
+const { decryptSecret, encryptSecret } = require('./secret-crypto');
 
 const MASTER_AGENT_NAME = 'Master-Local';
 const DEFAULT_MASTER_LOCAL_HOST = '127.0.0.1';
@@ -31,6 +31,26 @@ function resolveMasterLocalHost(env = process.env) {
   return DEFAULT_MASTER_LOCAL_HOST;
 }
 
+function syncTokenFile(token) {
+  if (!token) return;
+  const candidates = [
+    path.join('/app', 'data', 'agent'),
+    path.join(process.cwd(), 'data', 'agent'),
+    path.join(process.cwd(), '..', '..', 'data', 'agent')
+  ];
+  for (const dir of candidates) {
+    try {
+      if (fs.existsSync(dir)) {
+        const tokenFile = path.join(dir, 'token');
+        fs.writeFileSync(tokenFile, `${token.trim()}\n`, { mode: 0o600 });
+        return;
+      }
+    } catch {
+      // 忽略文件系统只读或权限错误
+    }
+  }
+}
+
 async function findMasterAgentNode(prisma) {
   return prisma.node.findFirst({
     where: { isLocal: true },
@@ -40,9 +60,29 @@ async function findMasterAgentNode(prisma) {
 
 async function ensureMasterAgentNode(prisma, env = process.env) {
   const existing = await findMasterAgentNode(prisma);
-  if (existing) return { node: existing, created: false };
+  const explicitToken = firstNonEmpty(env.MASTER_LOCAL_AGENT_TOKEN);
 
-  const token = randomBytes(32).toString('hex');
+  if (existing) {
+    if (explicitToken) {
+      const explicitHash = createHash('sha256').update(explicitToken).digest('hex');
+      if (existing.agentTokenHash !== explicitHash) {
+        const updated = await prisma.node.update({
+          where: { id: existing.id },
+          data: {
+            agentToken: encryptSecret(explicitToken),
+            agentTokenHash: explicitHash
+          }
+        });
+        console.log(`master agent bootstrap: synchronized token for ${updated.name}`);
+        syncTokenFile(explicitToken);
+        return { node: updated, created: false };
+      }
+    }
+    syncTokenFile(explicitToken || decryptSecret(existing.agentToken));
+    return { node: existing, created: false };
+  }
+
+  const token = explicitToken || randomBytes(32).toString('hex');
   const node = await prisma.node.create({
     data: {
       name: MASTER_AGENT_NAME,
@@ -55,6 +95,7 @@ async function ensureMasterAgentNode(prisma, env = process.env) {
   });
 
   console.log(`master agent bootstrap: created ${node.name}`);
+  syncTokenFile(token);
   return { node, created: true };
 }
 

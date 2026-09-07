@@ -27,8 +27,9 @@ services:
       DATABASE_URL: file:/app/data/riri.db
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       AUTO_SEED: ${AUTO_SEED:-false}
-      MASTER_AGENT_ENABLED: ${MASTER_AGENT_ENABLED:-true}
       MASTER_LOCAL_HOST: ${MASTER_LOCAL_HOST:-}
+      MASTER_LOCAL_AGENT_TOKEN: ${MASTER_LOCAL_AGENT_TOKEN:-}
+      AGENT_IMAGE: ${AGENT_IMAGE:-riricloud/agent:latest}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
@@ -37,9 +38,6 @@ services:
       RIRICLOUD_ENCRYPTION_KEY: ${RIRICLOUD_ENCRYPTION_KEY:?RIRICLOUD_ENCRYPTION_KEY must be set in .env}
       RIRICLOUD_TRUST_PROXY: ${RIRICLOUD_TRUST_PROXY:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
-      RIRICLOUD_DATA_DIR: /app/data/master-agent
-      RIRICLOUD_CONFIG_PATH: /app/data/master-agent/agent.yaml
-      RIRICLOUD_LOG_PATH: /app/data/master-agent/agent.log
     volumes:
       - ${MASTER_DATA_PATH:-./data}:/app/data
     healthcheck:
@@ -54,7 +52,6 @@ services:
       start_period: 20s
 
   agent:
-    profiles: ["agent"]
     build:
       context: .
       dockerfile: Dockerfile.agent
@@ -66,6 +63,7 @@ services:
         SINGBOX_VERSION: ${SINGBOX_VERSION:-1.14.0}
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
     restart: unless-stopped
+    command: ["run"]
     user: "65532:65532"
     read_only: true
     security_opt:
@@ -79,8 +77,8 @@ services:
       master:
         condition: service_healthy
     environment:
-      AGENT_TOKEN: ${AGENT_TOKEN:-}
-      MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:3000/ws/agent}
+      AGENT_TOKEN: ${MASTER_LOCAL_AGENT_TOKEN:-${AGENT_TOKEN:-}}
+      MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:${MASTER_PORT:-3000}/ws/agent}
       AGENT_MODE: ${AGENT_MODE:-ws}
       POLL_INTERVAL_SECS: ${POLL_INTERVAL_SECS:-15}
       RIRICLOUD_ENV: ${RIRICLOUD_ENV:-production}

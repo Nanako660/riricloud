@@ -28,6 +28,7 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [用户登录注册系统全量安全审计整改 TODO（2026-09-07）](./archive/2026-09-07-auth-registration-security-audit.md) | `v0.6.13+` | 2026-09-07 | — |
+| [arch-decouple-master-agent](./archive/2026-09-07-arch-decouple-master-agent.md) | `v0.6.15` | 2026-09-07 | — |
 | [全栈可视化日志管理系统 (System Log Management)](./archive/2026-09-06-system-log-management.md) | `v0.6.11` | 2026-09-06 | — |
 | [安全审计整改 TODO（2026-09-06）](./archive/2026-09-06-security-audit-remediation-2026-09-06.md) | `v0.6.13+` | 2026-09-06 | — |
 | [强制邮箱验证、未验证禁用订阅与找回密码全链路](./archive/2026-09-06-email-verification-and-password-reset.md) | `v0.6.12` | 2026-09-06 | — |

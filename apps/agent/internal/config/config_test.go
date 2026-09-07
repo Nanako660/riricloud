@@ -25,6 +25,25 @@ func TestLoadRequiresToken(t *testing.T) {
 	}
 }
 
+func TestLoadTokenFromFile(t *testing.T) {
+	root := isolateConfig(t)
+	t.Setenv("AGENT_TOKEN", "")
+	tokenDir := filepath.Join(root, "var")
+	if err := os.MkdirAll(tokenDir, 0o755); err != nil {
+		t.Fatalf("mkdir token dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tokenDir, "token"), []byte("file-token-123\n"), 0o600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AgentToken != "file-token-123" {
+		t.Fatalf("unexpected token loaded from file: %q", cfg.AgentToken)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	root := isolateConfig(t)
 	t.Setenv("AGENT_TOKEN", "tok")

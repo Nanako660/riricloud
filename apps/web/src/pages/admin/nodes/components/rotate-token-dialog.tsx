@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { KeyRound, RotateCcw } from 'lucide-react';
 import { CopyButton } from '@/components/shared/copy-button';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
@@ -16,14 +16,26 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
   const [result, setResult] = useState<RotateNodeTokenResult | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
   const [installMode, setInstallMode] = useState<InstallMode>('ws');
+  const [deployType, setDeployType] = useState<'native' | 'docker'>('native');
 
   const closeResult = (open: boolean) => {
     setResultOpen(open);
     if (!open) {
       setResult(null);
       setInstallMode('ws');
+      setDeployType('native');
     }
   };
+
+  const currentCommand = useMemo(() => {
+    if (!result) return '';
+    if (deployType === 'docker') {
+      return installMode === 'http'
+        ? (result.installCommands.dockerHttp ?? '')
+        : (result.installCommands.dockerWs ?? '');
+    }
+    return result.installCommands[installMode];
+  }, [result, deployType, installMode]);
 
   return (
     <>
@@ -49,6 +61,7 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
                 onSuccess: (data) => {
                   setResult(data);
                   setInstallMode('ws');
+                  setDeployType('native');
                   setResultOpen(true);
                 }
               })}
@@ -75,7 +88,13 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>重新安装 Agent</Label>
+                <Label>重新安装与启动命令</Label>
+                <Tabs value={deployType} onValueChange={(value) => setDeployType(value === 'docker' ? 'docker' : 'native')}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="native">原生 CLI</TabsTrigger>
+                    <TabsTrigger value="docker">Docker 容器</TabsTrigger>
+                  </TabsList>
+                </Tabs>
                 <Tabs value={installMode} onValueChange={(value) => setInstallMode(value === 'http' ? 'http' : 'ws')}>
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="ws">WS / WSS</TabsTrigger>
@@ -83,8 +102,8 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
                   </TabsList>
                 </Tabs>
                 <div className="flex min-w-0 items-start gap-2">
-                  <code className="min-w-0 flex-1 whitespace-pre-wrap break-all rounded-md border bg-muted/40 p-3 font-mono text-xs">{result.installCommands[installMode]}</code>
-                  <CopyButton value={result.installCommands[installMode]} />
+                  <code className="min-w-0 flex-1 whitespace-pre-wrap break-all rounded-md border bg-muted/40 p-3 font-mono text-xs">{currentCommand}</code>
+                  <CopyButton value={currentCommand} />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">关闭后主控不会再次返回这个明文 Token；安装命令会在终端中隐藏提示输入 Token。</p>

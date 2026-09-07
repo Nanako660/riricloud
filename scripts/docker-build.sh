@@ -46,17 +46,30 @@ else
 fi
 
 VERSION="$($NODE_BIN -p "require('./package.json').version")"
-IMAGE_VERSION="${RIRICLOUD_VERSION:-$VERSION}"
-IMAGE_VERSION="${IMAGE_VERSION#v}"
+MASTER_VERSION="${RIRICLOUD_VERSION:-$VERSION}"
+MASTER_VERSION="${MASTER_VERSION#v}"
 
-case "$IMAGE_VERSION" in
-  ''|*[!A-Za-z0-9_.-]*) die "RIRICLOUD_VERSION 不是合法的 Docker tag：$IMAGE_VERSION" ;;
+AGENT_VERSION="${RIRICLOUD_AGENT_VERSION:-}"
+if [ -z "$AGENT_VERSION" ]; then
+  if [ -f "$RIRI_ROOT/apps/agent/VERSION" ]; then
+    AGENT_VERSION="$(tr -d '[:space:]' < "$RIRI_ROOT/apps/agent/VERSION")"
+  else
+    AGENT_VERSION="$MASTER_VERSION"
+  fi
+fi
+AGENT_VERSION="${AGENT_VERSION#v}"
+
+case "$MASTER_VERSION" in
+  ''|*[!A-Za-z0-9_.-]*) die "MASTER_VERSION 不是合法的 Docker tag：$MASTER_VERSION" ;;
+esac
+case "$AGENT_VERSION" in
+  ''|*[!A-Za-z0-9_.-]*) die "AGENT_VERSION 不是合法的 Docker tag：$AGENT_VERSION" ;;
 esac
 
 MASTER_REPOSITORY="${MASTER_IMAGE_REPOSITORY:-riricloud/master}"
 AGENT_REPOSITORY="${AGENT_IMAGE_REPOSITORY:-riricloud/agent}"
-MASTER_VERSION_IMAGE="${MASTER_IMAGE:-${MASTER_REPOSITORY}:${IMAGE_VERSION}}"
-AGENT_VERSION_IMAGE="${AGENT_IMAGE:-${AGENT_REPOSITORY}:${IMAGE_VERSION}}"
+MASTER_VERSION_IMAGE="${MASTER_IMAGE:-${MASTER_REPOSITORY}:${MASTER_VERSION}}"
+AGENT_VERSION_IMAGE="${AGENT_IMAGE:-${AGENT_REPOSITORY}:${AGENT_VERSION}}"
 MASTER_LATEST_IMAGE="${MASTER_LATEST_IMAGE:-${MASTER_REPOSITORY}:latest}"
 AGENT_LATEST_IMAGE="${AGENT_LATEST_IMAGE:-${AGENT_REPOSITORY}:latest}"
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
@@ -100,17 +113,13 @@ if [ -n "${DOCKER_PLATFORM:-}" ]; then
   platform_args+=(--platform "$DOCKER_PLATFORM")
 fi
 
-common_build_args=(
-  --build-arg "RIRICLOUD_VERSION=$IMAGE_VERSION"
-  --build-arg "RIRICLOUD_VCS_REF=$VCS_REF"
-  --build-arg "RIRICLOUD_BUILD_DATE=$BUILD_DATE"
-  --build-arg "RIRICLOUD_IMAGE_TAGS=$IMAGE_VERSION,latest"
-)
-
 build_images() {
   echo "构建 Master 镜像：$MASTER_VERSION_IMAGE、$MASTER_LATEST_IMAGE"
   docker build "${platform_args[@]}" \
-    "${common_build_args[@]}" \
+    --build-arg "RIRICLOUD_VERSION=$MASTER_VERSION" \
+    --build-arg "RIRICLOUD_VCS_REF=$VCS_REF" \
+    --build-arg "RIRICLOUD_BUILD_DATE=$BUILD_DATE" \
+    --build-arg "RIRICLOUD_IMAGE_TAGS=$MASTER_VERSION,latest" \
     --build-arg "SINGBOX_VERSION=$SINGBOX_VERSION" \
     --build-arg "SINGBOX_REVISION=$SINGBOX_REVISION" \
     --build-arg "CRONET_VERSION=$CRONET_VERSION" \
@@ -123,7 +132,10 @@ build_images() {
 
   echo "构建 Agent 镜像：$AGENT_VERSION_IMAGE、$AGENT_LATEST_IMAGE"
   docker build "${platform_args[@]}" \
-    "${common_build_args[@]}" \
+    --build-arg "RIRICLOUD_VERSION=$AGENT_VERSION" \
+    --build-arg "RIRICLOUD_VCS_REF=$VCS_REF" \
+    --build-arg "RIRICLOUD_BUILD_DATE=$BUILD_DATE" \
+    --build-arg "RIRICLOUD_IMAGE_TAGS=$AGENT_VERSION,latest" \
     --build-arg "SINGBOX_VERSION=$SINGBOX_VERSION" \
     --build-arg "SINGBOX_REVISION=$SINGBOX_REVISION" \
     --build-arg "CRONET_VERSION=$CRONET_VERSION" \
@@ -158,10 +170,10 @@ export_images() {
   mkdir -p "$output_dir"
   EXPORT_DIR="$output_dir"
 
-  local master_archive="$EXPORT_DIR/riricloud-master_${IMAGE_VERSION}_${PLATFORM_NAME}.tar.gz"
-  local agent_archive="$EXPORT_DIR/riricloud-agent_${IMAGE_VERSION}_${PLATFORM_NAME}.tar.gz"
-  local checksum_file="$EXPORT_DIR/riricloud-docker-images_${IMAGE_VERSION}_${PLATFORM_NAME}.sha256"
-  local manifest_file="$EXPORT_DIR/riricloud-docker-images_${IMAGE_VERSION}_${PLATFORM_NAME}.manifest.json"
+  local master_archive="$EXPORT_DIR/riricloud-master_${MASTER_VERSION}_${PLATFORM_NAME}.tar.gz"
+  local agent_archive="$EXPORT_DIR/riricloud-agent_${AGENT_VERSION}_${PLATFORM_NAME}.tar.gz"
+  local checksum_file="$EXPORT_DIR/riricloud-docker-images_${MASTER_VERSION}_${PLATFORM_NAME}.sha256"
+  local manifest_file="$EXPORT_DIR/riricloud-docker-images_${MASTER_VERSION}_${PLATFORM_NAME}.manifest.json"
   local master_label_version="$(image_label "$MASTER_VERSION_IMAGE" "org.opencontainers.image.version")"
   local master_label_revision="$(image_label "$MASTER_VERSION_IMAGE" "org.opencontainers.image.revision")"
   local master_label_created="$(image_label "$MASTER_VERSION_IMAGE" "org.opencontainers.image.created")"
@@ -236,7 +248,7 @@ export_images() {
       ]
     };
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  ' "$manifest_node_path" "$IMAGE_VERSION" "$NORMALIZED_PLATFORM" \
+  ' "$manifest_node_path" "$MASTER_VERSION" "$NORMALIZED_PLATFORM" \
     "$MASTER_VERSION_IMAGE" "$MASTER_LATEST_IMAGE" "$AGENT_VERSION_IMAGE" "$AGENT_LATEST_IMAGE" \
     "$(basename "$master_archive")" "$(basename "$agent_archive")" "$master_digest" "$agent_digest" \
     "${agent_singbox_version:-$SINGBOX_VERSION}" "$(image_label "$AGENT_VERSION_IMAGE" "io.riricloud.singbox.revision")" "$(image_label "$AGENT_VERSION_IMAGE" "io.riricloud.cronet.version")" \
@@ -283,10 +295,11 @@ cleanup_exported_images() {
 }
 
 compose() {
-  RIRICLOUD_VERSION="$IMAGE_VERSION" \
+  RIRICLOUD_VERSION="$MASTER_VERSION" \
+  RIRICLOUD_AGENT_VERSION="$AGENT_VERSION" \
   RIRICLOUD_VCS_REF="$VCS_REF" \
   RIRICLOUD_BUILD_DATE="$BUILD_DATE" \
-  RIRICLOUD_IMAGE_TAGS="$IMAGE_VERSION,latest" \
+  RIRICLOUD_IMAGE_TAGS="$MASTER_VERSION,latest" \
   MASTER_IMAGE="$MASTER_LATEST_IMAGE" \
   AGENT_IMAGE="$AGENT_LATEST_IMAGE" \
   docker compose "$@"

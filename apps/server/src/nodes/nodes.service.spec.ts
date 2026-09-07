@@ -41,6 +41,10 @@ describe('NodesService', () => {
     expect(result.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
     expect(result.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
     expect(result.installCommands.http).toContain('--master=https://panel.example.com');
+    expect(result.installCommands.dockerWs).toContain('docker run -d --name riri-agent');
+    expect(result.installCommands.dockerWs).toContain('-v /var/lib/riri-agent:/var/lib/riri-agent');
+    expect(result.installCommands.dockerWs).toContain("AGENT_MASTER_URL='wss://panel.example.com/ws/agent'");
+    expect(result.installCommands.dockerHttp).toContain("AGENT_MASTER_URL='https://panel.example.com'");
     expect(result.installCommands.ws).not.toContain('<master-domain>');
     expect(result.node).toHaveProperty('lines', []);
   });
@@ -62,6 +66,8 @@ describe('NodesService', () => {
     expect(result.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
     expect(result.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
     expect(result.installCommands.http).toContain('--master=https://panel.example.com');
+    expect(result.installCommands.dockerWs).toContain('docker run -d --name riri-agent');
+    expect(result.installCommands.dockerWs).toContain('-v /var/lib/riri-agent:/var/lib/riri-agent');
     expect(result.installCommand).toBe(result.installCommands.ws);
     expect(result.installCommand).not.toContain(result.agentToken);
     expect(result.uninstallCommand).toContain('riri-agent uninstall');

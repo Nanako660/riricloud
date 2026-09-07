@@ -196,17 +196,26 @@ export interface AdminNode {
   entryLines: NodeLine[];
   landingLines: NodeLine[];
   servicePorts: Array<{ lineId: string; lineName: string; protocolType: ProtocolType; role: 'DIRECT' | 'TRANSIT' | 'LANDING'; port: number }>;
-  installCommands?: { ws: string; http: string };
+  installCommands?: NodeInstallCommands;
+  agentImage?: string;
   uninstallCommand?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NodeInstallCommands {
+  ws: string;
+  http: string;
+  dockerWs?: string;
+  dockerHttp?: string;
 }
 
 export interface CreateNodeResult {
   node: { id: string; name: string; communicationMode?: CommunicationMode };
   agentToken: string;
   installCommand: string;
-  installCommands?: { ws: string; http: string };
+  installCommands?: NodeInstallCommands;
+  agentImage?: string;
   uninstallCommand?: string;
 }
 
@@ -214,7 +223,8 @@ export interface RotateNodeTokenResult {
   nodeId: string;
   agentToken: string;
   installCommand: string;
-  installCommands: { ws: string; http: string };
+  installCommands: NodeInstallCommands;
+  agentImage?: string;
   uninstallCommand: string;
 }
 

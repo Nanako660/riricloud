@@ -21,13 +21,19 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const PKG_PATH = path.resolve(ROOT_DIR, 'package.json');
 const CHANGELOG_PATH = path.resolve(ROOT_DIR, 'CHANGELOG.md');
 const README_PATH = path.resolve(ROOT_DIR, 'README.md');
+const AGENT_VERSION_PATH = path.resolve(ROOT_DIR, 'apps/agent/VERSION');
+const AGENT_CHANGELOG_PATH = path.resolve(ROOT_DIR, 'apps/agent/CHANGELOG.md');
 
-// 核心代码路径前缀（这些路径下的改动要求必须在 CHANGELOG.md 的 [Unreleased] 中维护记录）
-const CORE_CODE_PREFIXES = [
+// Master 核心代码路径前缀（仅 Master 相关的核心代码）
+const MASTER_CORE_CODE_PREFIXES = [
   'apps/server/',
   'apps/web/',
-  'apps/agent/',
   'prisma/',
+];
+
+// Agent 核心代码路径前缀
+const AGENT_CORE_CODE_PREFIXES = [
+  'apps/agent/',
 ];
 
 const UNRELEASED_TEMPLATE = `## [Unreleased]
@@ -270,6 +276,70 @@ function cmdBump(args) {
 }
 
 /**
+ * 执行 Agent 独立版本自增 (pnpm bump:agent [patch|minor|major|<version>])
+ */
+function cmdBumpAgent(args) {
+  const bumpType = args[0] || 'patch';
+
+  if (!fs.existsSync(AGENT_VERSION_PATH)) {
+    logError(`未找到 Agent 版本文件: ${AGENT_VERSION_PATH}`);
+    process.exit(1);
+  }
+
+  const currentVersion = fs.readFileSync(AGENT_VERSION_PATH, 'utf-8').trim();
+  const nextVersion = bumpSemVer(currentVersion, bumpType);
+  const today = getTodayString();
+
+  // 1. 更新 apps/agent/VERSION
+  fs.writeFileSync(AGENT_VERSION_PATH, `${nextVersion}\n`, 'utf-8');
+  logSuccess(`apps/agent/VERSION 版本已从 ${colors.yellow}v${currentVersion}${colors.reset} 递增至 ${colors.green}v${nextVersion}${colors.reset}`);
+
+  // 2. 更新 apps/agent/CHANGELOG.md
+  if (fs.existsSync(AGENT_CHANGELOG_PATH)) {
+    let changelog = fs.readFileSync(AGENT_CHANGELOG_PATH, 'utf-8');
+    const { hasUnreleased, content: unreleasedContent, startIndex, endIndex } = extractUnreleasedContent(changelog);
+
+    const lines = unreleasedContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const hasMeaningfulContent = lines.some(l => l.startsWith('- ') || l.startsWith('* '));
+
+    let newVersionSection = '';
+    if (hasMeaningfulContent) {
+      const cleanedContent = unreleasedContent
+        .replace(/###\s+(Added|Changed|Fixed|Removed|Security|Deprecated)\s*(?=(?:\r?\n)*###|$)/g, '')
+        .trim();
+      newVersionSection = `## [${nextVersion}] - ${today}\n\n${cleanedContent}\n\n`;
+    } else {
+      newVersionSection = `## [${nextVersion}] - ${today}\n\n### Added\n\n- \n\n### Changed\n\n- \n\n### Fixed\n\n- \n\n`;
+    }
+
+    if (hasUnreleased) {
+      const before = changelog.slice(0, startIndex);
+      const after = changelog.slice(endIndex).replace(/^\r?\n+/, '\n\n');
+      changelog = `${before}${UNRELEASED_TEMPLATE}\n${newVersionSection}${after}`;
+      fs.writeFileSync(AGENT_CHANGELOG_PATH, changelog, 'utf-8');
+      logSuccess(`apps/agent/CHANGELOG.md 已将 [Unreleased] 转换为 ## [${nextVersion}] - ${today}，并重置顶部 [Unreleased] 模板`);
+    } else {
+      const firstVersionRegex = /^##\s*\[(\d+\.\d+\.\d+)\]/m;
+      const match = changelog.match(firstVersionRegex);
+      const combined = `${UNRELEASED_TEMPLATE}\n${newVersionSection}`;
+
+      if (match && match.index !== undefined) {
+        changelog = changelog.slice(0, match.index) + combined + changelog.slice(match.index);
+      } else {
+        changelog += `\n${combined}`;
+      }
+      fs.writeFileSync(AGENT_CHANGELOG_PATH, changelog, 'utf-8');
+      logSuccess(`apps/agent/CHANGELOG.md 已插入新的版本小节 ## [${nextVersion}] - ${today} 与顶部 [Unreleased] 模板`);
+    }
+  } else {
+    logWarn(`未找到 apps/agent/CHANGELOG.md，跳过日志更新`);
+  }
+
+  console.log('');
+  logInfo(`下一步：请检查 apps/agent/CHANGELOG.md 中的 ## [${nextVersion}] 版本说明，并提 Agent Release PR（Tag: agent-v${nextVersion}）。`);
+}
+
+/**
  * 查找 git 基准 commit / 分支
  */
 function getGitBaseRef() {
@@ -328,14 +398,13 @@ function getBasePackageVersion(baseRef) {
     return null;
   }
 }
-
 /**
- * 校验 CHANGELOG.md 是否有有效新增条目
+ * 校验 CHANGELOG 文件是否有有效新增条目
  */
-function hasChangelogAdditions(baseRef) {
+function hasChangelogAdditions(baseRef, changelogRelativePath = 'CHANGELOG.md') {
   try {
     const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
-    const diffOutput = execSync(`git diff ${diffTarget} HEAD -- CHANGELOG.md`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    const diffOutput = execSync(`git diff ${diffTarget} HEAD -- ${changelogRelativePath}`, { encoding: 'utf-8', cwd: ROOT_DIR });
     const addedLines = diffOutput
       .split(/\r?\n/)
       .filter(line => line.startsWith('+') && !line.startsWith('+++'))
@@ -349,6 +418,19 @@ function hasChangelogAdditions(baseRef) {
 }
 
 /**
+ * 获取基准分支的 apps/agent/VERSION 版本
+ */
+function getBaseAgentVersion(baseRef) {
+  try {
+    const target = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
+    const content = execSync(`git show ${target}:apps/agent/VERSION`, { encoding: 'utf-8', cwd: ROOT_DIR, stdio: ['pipe', 'pipe', 'ignore'] });
+    return content.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 执行版本门禁检查 (pnpm gate:version)
  */
 function cmdCheck() {
@@ -356,7 +438,7 @@ function cmdCheck() {
   const errors = [];
   const warnings = [];
 
-  // ---------- 1. 根 package.json 版本校验 ----------
+  // ---------- 1. 根 package.json 版本校验 (Master) ----------
   if (!fs.existsSync(PKG_PATH)) {
     errors.push(`未找到根 package.json: ${PKG_PATH}`);
     printCheckResult(errors, warnings);
@@ -370,7 +452,7 @@ function cmdCheck() {
   if (!parsedCurrent) {
     errors.push(`根 package.json 版本号 "${currentVersion}" 不符合 SemVer 规范 (MAJOR.MINOR.PATCH)`);
   } else {
-    logSuccess(`根 package.json 版本号合法: ${colors.green}v${currentVersion}${colors.reset}`);
+    logSuccess(`Master (根 package.json) 版本号合法: ${colors.green}v${currentVersion}${colors.reset}`);
   }
 
   // ---------- 2. 子应用私有版本号校验（禁止私设版本） ----------
@@ -385,7 +467,22 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 3. CHANGELOG.md 结构与一致性校验 ----------
+  // ---------- 3. Agent 独立版本号校验 (apps/agent/VERSION) ----------
+  let currentAgentVersion = null;
+  let parsedAgent = null;
+  if (!fs.existsSync(AGENT_VERSION_PATH)) {
+    errors.push(`未找到 Agent 版本文件: ${AGENT_VERSION_PATH}`);
+  } else {
+    currentAgentVersion = fs.readFileSync(AGENT_VERSION_PATH, 'utf-8').trim();
+    parsedAgent = parseSemVer(currentAgentVersion);
+    if (!parsedAgent) {
+      errors.push(`apps/agent/VERSION 版本号 "${currentAgentVersion}" 不符合 SemVer 规范 (MAJOR.MINOR.PATCH)`);
+    } else {
+      logSuccess(`Agent (apps/agent/VERSION) 版本号合法: ${colors.green}v${currentAgentVersion}${colors.reset}`);
+    }
+  }
+
+  // ---------- 4. Master CHANGELOG.md 结构与一致性校验 ----------
   if (!fs.existsSync(CHANGELOG_PATH)) {
     errors.push(`未找到 CHANGELOG.md`);
   } else {
@@ -433,7 +530,51 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 4. README.md 顶部 Version 徽标一致性校验 ----------
+  // ---------- 5. Agent apps/agent/CHANGELOG.md 结构与一致性校验 ----------
+  if (!fs.existsSync(AGENT_CHANGELOG_PATH)) {
+    errors.push(`未找到 Agent 独立更新日志: ${AGENT_CHANGELOG_PATH}`);
+  } else {
+    const agentChangelog = fs.readFileSync(AGENT_CHANGELOG_PATH, 'utf-8');
+
+    const hasAgentUnreleased = /^##\s*\[Unreleased\]/m.test(agentChangelog);
+    if (!hasAgentUnreleased) {
+      warnings.push(`apps/agent/CHANGELOG.md 顶部缺少 ## [Unreleased] 缓冲区，建议补充`);
+    } else {
+      logSuccess(`apps/agent/CHANGELOG.md 顶部已配置 [Unreleased] 缓冲区`);
+    }
+
+    const agentHeaderRegex = /^##\s*\[(\d+\.\d+\.\d+)\](?:\s*-\s*([^\r\n]+))?/gm;
+    const agentMatches = [];
+    let am;
+    while ((am = agentHeaderRegex.exec(agentChangelog)) !== null) {
+      agentMatches.push({
+        title: am[0],
+        version: am[1].trim(),
+        date: (am[2] || '').trim(),
+        index: am.index,
+      });
+    }
+
+    if (agentMatches.length === 0) {
+      errors.push(`apps/agent/CHANGELOG.md 未找到任何具体版本小节（格式应为 ## [X.Y.Z] - YYYY-MM-DD）`);
+    } else if (currentAgentVersion) {
+      const firstConcrete = agentMatches[0];
+
+      if (firstConcrete.version !== currentAgentVersion) {
+        errors.push(
+          `apps/agent/CHANGELOG.md 首个具体版本小节 [${firstConcrete.version}] 与 apps/agent/VERSION [${currentAgentVersion}] 不一致！`
+        );
+      } else {
+        logSuccess(`apps/agent/CHANGELOG.md 最新定稿版本小节与 apps/agent/VERSION 一致: ${colors.green}[${firstConcrete.version}]${colors.reset}`);
+      }
+
+      if (firstConcrete.date && !/^\d{4}-\d{2}-\d{2}$/.test(firstConcrete.date)) {
+        errors.push(`apps/agent/CHANGELOG.md 版本小节 [${firstConcrete.version}] 的日期格式不合法 ("${firstConcrete.date}")，必须为 YYYY-MM-DD`);
+      }
+    }
+  }
+
+  // ---------- 6. README.md 顶部 Version 徽标一致性校验 ----------
   if (!fs.existsSync(README_PATH)) {
     warnings.push(`未找到根目录 README.md`);
   } else {
@@ -456,51 +597,92 @@ function cmdCheck() {
     }
   }
 
-  // ---------- 5. Git 变更与版本 / CHANGELOG 维护约束校验 ----------
+  // ---------- 7. Git 变更与版本 / CHANGELOG 维护约束校验 ----------
   const baseInfo = getGitBaseRef();
   if (baseInfo) {
     const baseRefName = typeof baseInfo === 'object' ? baseInfo.ref : baseInfo;
     const baseVersion = getBasePackageVersion(baseInfo);
+    const baseAgentVersion = getBaseAgentVersion(baseInfo);
     const changedFiles = getChangedFiles(baseInfo);
 
+    let isMainBranch = false;
+    try {
+      const curBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: ROOT_DIR }).trim();
+      isMainBranch = curBranch === 'main' || curBranch === 'master';
+    } catch {
+      // ignore
+    }
+
+    // 7.1 Master 变更约束
     if (baseVersion && parsedCurrent) {
       const cmp = compareSemVer(currentVersion, baseVersion);
-      const coreChanges = changedFiles.filter(file =>
-        CORE_CODE_PREFIXES.some(prefix => file.startsWith(prefix))
+      const masterChanges = changedFiles.filter(file =>
+        MASTER_CORE_CODE_PREFIXES.some(prefix => file.startsWith(prefix))
       );
 
       if (cmp < 0) {
         errors.push(
-          `当前分支版本 (v${currentVersion}) 低于基准分支 ${baseRefName} 的版本 (v${baseVersion})，禁止降级版本！`
+          `当前分支 Master 版本 (v${currentVersion}) 低于基准分支 ${baseRefName} 的版本 (v${baseVersion})，禁止降级版本！`
         );
       } else if (cmp > 0) {
-        // 发版 PR 场景：版本号已自增
         logSuccess(
-          `发版模式：检测到版本号已递增 ${colors.yellow}v${baseVersion}${colors.reset} → ${colors.green}v${currentVersion}${colors.reset}（对比 ${baseRefName}）`
+          `Master 发版模式：检测到版本号已递增 ${colors.yellow}v${baseVersion}${colors.reset} → ${colors.green}v${currentVersion}${colors.reset}（对比 ${baseRefName}）`
         );
       } else {
-        // cmp === 0：日常特性 / 修复 PR 场景
-        let isMainBranch = false;
-        try {
-          const curBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8', cwd: ROOT_DIR }).trim();
-          isMainBranch = curBranch === 'main' || curBranch === 'master';
-        } catch {
-          // ignore
-        }
-
-        if (!isMainBranch && coreChanges.length > 0) {
-          const hasAdditions = hasChangelogAdditions(baseInfo);
+        if (!isMainBranch && masterChanges.length > 0) {
+          const hasAdditions = hasChangelogAdditions(baseInfo, 'CHANGELOG.md');
           if (!hasAdditions) {
             errors.push(
-              `检测到核心代码发生变更（${coreChanges.length} 个文件变动，如 ${coreChanges.slice(0, 3).join(', ')}${coreChanges.length > 3 ? ' 等' : ''}），` +
-              `但 CHANGELOG.md 的 [Unreleased] 缓冲区未检测到新增日志记录！\n` +
+              `检测到 Master 核心代码发生变更（${masterChanges.length} 个文件变动，如 ${masterChanges.slice(0, 3).join(', ')}${masterChanges.length > 3 ? ' 等' : ''}），` +
+              `但根 CHANGELOG.md 的 [Unreleased] 缓冲区未检测到新增日志记录！\n` +
               `👉 解决方式：请在 CHANGELOG.md 顶部的 ## [Unreleased] 下记录本次变更（按 Added/Changed/Fixed 分类）。`
             );
           } else {
-            logSuccess(`检测到核心代码变更，CHANGELOG.md [Unreleased] 缓冲区已同步维护变更条目（当前版本保持 v${currentVersion}）`);
+            logSuccess(`检测到 Master 核心代码变更，CHANGELOG.md [Unreleased] 缓冲区已同步维护变更条目（当前版本保持 v${currentVersion}）`);
           }
-        } else if (!isMainBranch && changedFiles.length > 0) {
-          logInfo(`检测到仅有非核心代码变动（文档/脚本/配置），允许免增 CHANGELOG（当前版本: v${currentVersion}）`);
+        }
+      }
+    }
+
+    // 7.2 Agent 变更约束
+    if (currentAgentVersion && parsedAgent) {
+      const agentChanges = changedFiles.filter(file =>
+        AGENT_CORE_CODE_PREFIXES.some(prefix => file.startsWith(prefix)) &&
+        file !== 'apps/agent/VERSION' &&
+        file !== 'apps/agent/CHANGELOG.md'
+      );
+
+      if (baseAgentVersion) {
+        const agentCmp = compareSemVer(currentAgentVersion, baseAgentVersion);
+        if (agentCmp < 0) {
+          errors.push(
+            `当前分支 Agent 版本 (v${currentAgentVersion}) 低于基准分支 ${baseRefName} 的版本 (v${baseAgentVersion})，禁止降级！`
+          );
+        } else if (agentCmp > 0) {
+          logSuccess(
+            `Agent 发版模式：检测到 Agent 版本已递增 ${colors.yellow}v${baseAgentVersion}${colors.reset} → ${colors.green}v${currentAgentVersion}${colors.reset}（对比 ${baseRefName}）`
+          );
+        } else {
+          if (!isMainBranch && agentChanges.length > 0) {
+            const hasAgentAdditions = hasChangelogAdditions(baseInfo, 'apps/agent/CHANGELOG.md');
+            if (!hasAgentAdditions) {
+              errors.push(
+                `检测到 Agent 核心代码发生变更（${agentChanges.length} 个文件变动，如 ${agentChanges.slice(0, 3).join(', ')}${agentChanges.length > 3 ? ' 等' : ''}），` +
+                `但 apps/agent/CHANGELOG.md 的 [Unreleased] 缓冲区未检测到新增日志记录！\n` +
+                `👉 解决方式：请在 apps/agent/CHANGELOG.md 顶部的 ## [Unreleased] 下记录本次变更（按 Added/Changed/Fixed 分类）。`
+              );
+            } else {
+              logSuccess(`检测到 Agent 核心代码变更，apps/agent/CHANGELOG.md [Unreleased] 缓冲区已同步维护变更条目（当前版本保持 v${currentAgentVersion}）`);
+            }
+          }
+        }
+      } else {
+        // 基准分支尚无 apps/agent/VERSION（架构分水岭初次落地）
+        if (!isMainBranch && agentChanges.length > 0) {
+          const hasAgentAdditions = hasChangelogAdditions(baseInfo, 'apps/agent/CHANGELOG.md');
+          if (hasAgentAdditions) {
+            logSuccess(`Agent 独立版本与更新日志初始化生效（基线版本: v${currentAgentVersion}）`);
+          }
         }
       }
     }
@@ -542,6 +724,8 @@ const args = process.argv.slice(3);
 
 if (command === 'bump') {
   cmdBump(args);
+} else if (command === 'bump-agent' || command === 'bump:agent') {
+  cmdBumpAgent(args);
 } else if (command === 'check') {
   cmdCheck();
 } else {
@@ -549,8 +733,10 @@ if (command === 'bump') {
 ${colors.bold}RiriCloud 版本管理与门禁工具${colors.reset}
 
 用法：
-  pnpm bump [patch|minor|major|<version>]   将 [Unreleased] 转化为定稿版本小节并更新 package.json 与 README.md
-  pnpm gate:version                         校验当前分支版本号、CHANGELOG 格式与 [Unreleased] 维护约束
+  pnpm bump [patch|minor|major|<version>]         将 Master [Unreleased] 转化为定稿版本小节并更新 package.json 与 README.md
+  pnpm bump:agent [patch|minor|major|<version>]   将 Agent [Unreleased] 转化为定稿版本小节并更新 apps/agent/VERSION
+  pnpm gate:version                               校验当前分支 Master 与 Agent 版本号、CHANGELOG 格式与 [Unreleased] 维护约束
 `);
   process.exit(1);
 }
+

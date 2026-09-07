@@ -159,7 +159,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员导出筛选范围内的日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
 
 ### 1.4 系统模块 (`/system`)
-- `GET /system/version`：返回统一版本号（读取根 `package.json`，见 `docs/VERSIONING.md` §3）。⭐
+- `GET /system/version`：返回主控版本、Agent 独立版本与推荐镜像（`{ version, agentVersion, agentImage }`，见 `docs/VERSIONING.md` §3）。⭐
 - `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
 
 ### 1.5 邮箱验证码与人机验证

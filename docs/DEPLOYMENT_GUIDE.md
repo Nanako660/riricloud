@@ -15,7 +15,7 @@
 ```bash
 tar -xzf riri-master_<version>_linux_amd64.tar.gz && cd riri-master_<version>_linux_amd64
 cp .env.example .env   # 编辑：JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD 必填
-./start.sh             # 首启自动：生成 Prisma client → migrate deploy → admin/Master-Local bootstrap → 启动 Master + 内置 Agent
+./start.sh             # 首启自动：生成 Prisma client → migrate deploy → admin/Master-Local bootstrap → 启动 Master
 ```
 
 - 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
@@ -59,11 +59,17 @@ pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模�
 
 ### 1.4 方式三：Docker Compose
 
-仓库根目录提供主控 `Dockerfile`、远程节点 `Dockerfile.agent` 与 `docker-compose.yml`。主控镜像已经内置 Linux Agent 和启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 的 Sing-box；`Dockerfile.agent` 仅用于远程 VPS 节点。Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL，PowerShell/Git Bash 不直接承担 Docker 操作：
+仓库根目录提供主控 `Dockerfile`、边缘节点 `Dockerfile.agent`、默认协同编排 `docker-compose.yml` 与离线运行模板 `docker-compose.image.yml`。
+
+在解耦架构下，**Docker Compose 默认同时拉起 `master` 与 `agent`（Master-Local 本机节点）两个独立容器**：
+- **Master 容器**：专注控制平面与 Web 面板，仅暴露 3000 端口，不再以子进程托管 Agent；但在构建期会将当前宿主平台的 `riri-agent` 与定制 Sing-box 打入 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供 Agent 二进制与内核的下载和升级分发。
+- **Agent 容器（Master-Local）**：独立容器运行，镜像通过 `AGENT_IMAGE`（默认 `riricloud/agent:latest`）注入；采用 `network_mode: host` 与 `NET_ADMIN` 能力直接监听宿主机网络，并通过 `MASTER_LOCAL_AGENT_TOKEN` 环境变量与 Master 服务端完成 Token 预置与生命周期对接。
+
+Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL，PowerShell/Git Bash 不直接承担 Docker 操作：
 
 ```bash
 cp .env.example .env  # 或手动创建 .env
-# 填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；生产环境保持 AUTO_SEED=false
+# 填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST；可选填写 MASTER_LOCAL_AGENT_TOKEN 与 AGENT_IMAGE
 pnpm docker:build
 pnpm docker:up
 ```
@@ -83,14 +89,12 @@ bash scripts/docker-build.sh build
 bash scripts/docker-build.sh up
 ```
 
-脚本会自动读取根 `package.json` 版本，并兼容 WSL 的 `node.exe` 路径。
-
-`pnpm docker:build` 会从根 `package.json` 读取当前版本号，并为两个组件各创建两个标签：
+脚本会自动读取根 `package.json`（Master 版本）与 `apps/agent/VERSION`（Agent 版本），并为两个组件分别打标：
 
 ```text
-riricloud/master:<version>
+riricloud/master:<master-version>
 riricloud/master:latest
-riricloud/agent:<version>
+riricloud/agent:<agent-version>
 riricloud/agent:latest
 ```
 
@@ -99,67 +103,41 @@ riricloud/agent:latest
 同一次构建默认还会把镜像导出到 `artifacts/docker/<os>-<arch>/`。该目录已加入 `.dockerignore`，不会再次进入 Docker 构建上下文：
 
 ```text
-artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz
-artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz
-artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.manifest.json
-artifacts/docker/linux-amd64/riricloud-docker-images_<version>_linux_amd64.sha256
+artifacts/docker/linux-amd64/riricloud-master_<master-version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-agent_<agent-version>_linux_amd64.tar.gz
+artifacts/docker/linux-amd64/riricloud-docker-images_<master-version>_linux_amd64.manifest.json
+artifacts/docker/linux-amd64/riricloud-docker-images_<master-version>_linux_amd64.sha256
 ```
 
 导出包内同时保留版本标签和 `latest` 标签；manifest 记录组件、标签、平台、Sing-box 版本、OCI 元数据和 SHA-256。只导出现有镜像可执行 `pnpm docker:export`，查看本次构建的完整标签可执行 `pnpm docker:tags`。导出目录可通过 `DOCKER_EXPORT_DIR=/path/to/output` 覆盖，构建但不导出可使用 `DOCKER_EXPORT=false pnpm docker:build`。镜像归档、校验文件和 manifest 全部成功生成后，脚本默认自动删除 Docker daemon 中本次导出的四个镜像标签，避免 WSL 中长期积累 Master/Agent 镜像；设置 `DOCKER_CLEANUP=false pnpm docker:export` 可保留本地镜像。该清理不会删除 `artifacts/docker/` 导出包、BuildKit 依赖缓存或其他无关镜像；若镜像仍被容器使用，脚本会告警并保留无法删除的镜像。
 
-运行时镜像使用 Distroless 基础镜像。以 2026-08-31 在 WSL Ubuntu 构建的 `linux/amd64` 结果为参考，Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 的 Prisma Client 在构建阶段生成，并清理非 SQLite 运行时文件；Docker 构建上下文排除 TypeScript `*.tsbuildinfo` 与本地 `artifacts/` 产物，避免增量元数据和离线包拖大上下文；构建阶段使用 BuildKit cache mount 持久化 pnpm、Corepack、Go module/build 和 sing-box 下载缓存，源码变化时无需重复下载未变化的依赖；Server 编译完成后会在 `pnpm deploy --prod` 前暂存 `dist`，再显式复制到最终部署目录，确保 Docker 镜像包含编译入口；Docker 构建还会断言 `/out/server/dist/main.js` 或兼容的 `/out/server/dist/src/main.js` 存在。Agent 的主要体积来自内置的 sing-box，实际体积会随平台和上游基础镜像更新略有变化。Docker 构建缓存存储在 Docker BuildKit/ Docker Desktop 中，不由 WSL 项目目录下的 `.cache/` 自动提供；执行 `docker builder prune` 后首次构建仍会重新填充这些缓存。
-
-主控容器监听容器内 `3000` 端口，内置 Agent 与 Sing-box 使用同一容器运行，SQLite 数据通过宿主机绑定路径 `${MASTER_DATA_PATH:-./data}:/app/data` 持久化；同时镜像出厂默认将当前宿主架构的 `agent-linux-<arch>`、`singbox-linux-<arch>` 及 `libcronet.so` 内置于 `/app/binaries/`（静态分发基线仓），即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供同平台 Agent 与定制 Sing-box 的下载与升级分发。启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，只有非生产环境显式设置 `AUTO_SEED=true` 才幂等播种演示数据（默认 `false`），生产入口会直接拒绝该配置。容器入口（`docker-entrypoint.js`）与发行包启动脚本（`start.sh`）均具备编译产物路径容错机制，优先引导 `dist/main.js` 并兼容 `dist/src/main.js` 布局。内置 Agent 由入口显式使用 `riri-agent run` 守护进程子命令启动，不会因继承容器终端而进入 Bubble Tea TUI。容器内显式重置命令为：
+运行时镜像使用 Distroless 基础镜像。Master 镜像约 `376 MB`、压缩导出包约 `87 MB`；Agent 镜像约 `155 MB`、压缩导出包约 `38 MB`。Master 容器启动入口自动执行 `migrate deploy`、管理员 bootstrap 和 `Master-Local` bootstrap，并可通过 `MASTER_LOCAL_AGENT_TOKEN` 自动为本机节点对齐通信凭证。容器内显式重置管理员密码命令为：
 
 ```bash
 docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com
 printf '%s\n' 'New-admin-password1!' | docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
 ```
 
-Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控制 Master 面板监听端口；本机 Agent 动态使用的 TCP/UDP 线路端口会直接监听宿主机，不需要映射上万条端口。Compose 不固定 `container_name`，可用项目名同时运行多个实例。生产环境应设置 `MASTER_LOCAL_HOST`，或设置 `RIRICLOUD_PUBLIC_URL` 让 bootstrap 自动推导本机线路对外地址。Compose 默认引用 `latest`，`pnpm docker:up` 会注入当前版本和 Git 构建元数据。
-
-Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。内置 Agent 的自身配置与日志固定放在 Master 持久化目录下的 `master-agent/`（容器内默认 `/app/data/master-agent/`），远程 Agent 容器才使用 `/var/lib/riri-agent/`。
-
-认证运行边界：认证接口的快速限流使用 Master 进程内存，当前最多保留 `10,000` 个哈希计数键并定期清理过期窗口。进程重启会清空计数，多实例部署不会共享计数，因此生产环境应在可信反向代理处配置同源限流，并优先保持单 Master 实例；不能把该内存限流当作跨实例或持久化风控。多实例必须使用外部具备共享状态的边缘限流方案，但项目本身不引入 Redis、MQ 或其他外部运行时依赖。反向代理仅在链路完全受信时设置 `RIRICLOUD_TRUST_PROXY=true`，否则客户端可伪造 `X-Forwarded-For` 影响 IP 维度限流。
-
-认证审计事件写入现有 SQLite 系统日志队列，事件只包含事件类型、哈希化邮箱标识、用户 ID、动作和客户端 IP 等有限元数据；日志服务会统一脱敏、限制消息/metadata 大小并按既有保留策略清理。密码、验证码、JWT、Cookie、AgentToken 和完整 CAPTCHA/Turnstile token 不得写入环境变量以外的日志或备份导出。部署或迁移 `20260907120000_auth_registration_security` 时，`VerificationCode` 会重建为 `codeHash` 字段，迁移前的明文验证码不会被转换而是全部失效；回滚前必须备份 SQLite 主文件及 WAL/SHM 文件，不能通过回滚恢复旧明文验证码。
-
-v0.5.0 新增 `TrafficCursor` 表，并将 Master-Agent 流量协议升级为 v2。迁移会由 `prisma migrate deploy` 创建表；升级前应先备份 SQLite 主文件及其 `-wal`/`-shm` 文件，确认备份可读。不要通过增大 `busy_timeout` 或并行启动多个 Master 来处理写锁问题，单 Master、WAL、本地可靠文件系统和应用层单写者调度器是本版本的运行前提。
+Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 控制 Master 面板监听端口（默认 3000）；Agent 容器直接在 host 网络中监听配置的入站 TCP/UDP 端口。持久化目录：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent`。
 
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash
-gzip -dc artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar.gz | docker load
-# 只有需要在同一 Compose 中联调远程 Agent 时，才额外加载 Agent 镜像
-# gzip -dc artifacts/docker/linux-amd64/riricloud-agent_<version>_linux_amd64.tar.gz | docker load
-(cd artifacts/docker/linux-amd64 && sha256sum -c riricloud-docker-images_<version>_linux_amd64.sha256)
+gzip -dc artifacts/docker/linux-amd64/riricloud-master_<master-version>_linux_amd64.tar.gz | docker load
+gzip -dc artifacts/docker/linux-amd64/riricloud-agent_<agent-version>_linux_amd64.tar.gz | docker load
+(cd artifacts/docker/linux-amd64 && sha256sum -c riricloud-docker-images_<master-version>_linux_amd64.sha256)
 ```
 
-仓库另提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像。该模板不包含 `build` 配置，并设置 `pull_policy: never`，适合离线或受限网络环境：
+仓库提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像（`pull_policy: never`，适合离线环境）：
 
 ```bash
 cp .env.image.example .env.image
-# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
-# RIRICLOUD_ENCRYPTION_KEY 必须长期保持不变；已有数据库请继续使用原密钥，否则历史 AgentToken、SMTP、证书等密文无法解密。
-docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
+# 编辑 .env.image：确认 MASTER_IMAGE 与 AGENT_IMAGE 镜像标签；填写配置
+docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build
 docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```
 
-Master 本机 Agent 会随 `master` 服务自动启动，无需启用独立 Agent profile。只有在同一 Compose 中联调额外远程节点时，才创建节点并取得该远程节点的 AgentToken 后启用 Agent profile：
-
-```bash
-docker compose --env-file .env.image -f docker-compose.image.yml --profile agent up -d --no-build
-```
-
-该模板与标准 `docker-compose.yml` 使用相同的宿主机绑定路径：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，远程 Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent`。可在 `.env` 或 `.env.image` 中指定绝对路径；相对路径以 Compose 文件所在目录为基准。停止服务使用 `docker compose ... down`，宿主机数据目录不会因停止或删除容器而被删除。
-
-远程节点容器使用 `--network host` 语义，内置静态 `riri-agent` 与启用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建的 Sing-box `1.14.0`，默认不自动启动以避免空 AgentToken 容器反复重启。Master 本机 Agent 不使用该服务；创建远程节点并取得 Token 后，在 `.env` 中设置 `AGENT_TOKEN`，再执行：
-
-```bash
-COMPOSE_PROFILES=agent pnpm docker:up
-```
-
-可通过 `AGENT_MASTER_URL`、`AGENT_MODE=http`、`POLL_INTERVAL_SECS` 切换 Agent 的主控地址与 HTTP 轮询模式。停止并清理容器：
+停止并清理容器：
 
 ```bash
 pnpm docker:down
