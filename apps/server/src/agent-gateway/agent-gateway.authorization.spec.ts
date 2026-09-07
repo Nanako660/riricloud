@@ -1,4 +1,5 @@
 import { AgentService } from './agent-gateway.service';
+import { INTERNAL_SPEEDTEST_EMAIL, INTERNAL_SPEEDTEST_UUID } from '../common/constants';
 
 describe('AgentService per-line authorization', () => {
   const userOne = {
@@ -89,14 +90,17 @@ describe('AgentService per-line authorization', () => {
     const publicInbound = inbounds.find((inbound) => inbound.tag === 'line-public-line');
     const hiddenInbound = inbounds.find((inbound) => inbound.tag === 'line-hidden-line');
 
+    const speedtestUser = { uuid: INTERNAL_SPEEDTEST_UUID, name: INTERNAL_SPEEDTEST_EMAIL, flow: 'xtls-rprx-vision' };
     expect(publicInbound?.users).toEqual([
       { uuid: userOne.uuid, name: `${userOne.email}::public-line`, flow: 'xtls-rprx-vision' },
-      { uuid: userTwo.uuid, name: `${userTwo.email}::public-line`, flow: 'xtls-rprx-vision' }
+      { uuid: userTwo.uuid, name: `${userTwo.email}::public-line`, flow: 'xtls-rprx-vision' },
+      speedtestUser
     ]);
     expect(hiddenInbound?.users).toEqual([
-      { uuid: userTwo.uuid, name: `${userTwo.email}::hidden-line`, flow: 'xtls-rprx-vision' }
+      { uuid: userTwo.uuid, name: `${userTwo.email}::hidden-line`, flow: 'xtls-rprx-vision' },
+      speedtestUser
     ]);
     expect((result.singboxConfig.experimental as { v2ray_api: { stats: { users: string[] } } }).v2ray_api.stats.users)
-      .toEqual([`${userOne.email}::public-line`, `${userTwo.email}::public-line`, `${userTwo.email}::hidden-line`]);
+      .toEqual([`${userOne.email}::public-line`, `${userTwo.email}::public-line`, INTERNAL_SPEEDTEST_EMAIL, `${userTwo.email}::hidden-line`]);
   });
 });

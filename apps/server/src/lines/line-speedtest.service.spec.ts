@@ -163,4 +163,84 @@ describe('LineSpeedtestService', () => {
 
     testLineSpy.mockRestore();
   });
+
+  it('当线路为 Hysteria 2 纯 UDP 且端到端探测失败时，跳过 TCP 握手降级', async () => {
+    const hy2Line = {
+      ...rawLine,
+      id: 'line-hy2',
+      protocolType: 'HYSTERIA2'
+    };
+    prisma.line.findUnique.mockResolvedValue(hy2Line);
+    prisma.line.update.mockResolvedValue({ ...hy2Line, lastLatencyMs: null, lastTestStatus: 'TIMEOUT' });
+
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+      runSingboxProbe: (...args: unknown[]) => Promise<number>;
+      tcpPing: (...args: unknown[]) => Promise<number>;
+    };
+
+    jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary').mockResolvedValue('/usr/local/bin/sing-box');
+    const runSingboxProbeSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'runSingboxProbe')
+      .mockRejectedValue(new Error('代理探测连接超时（3000ms）'));
+    const tcpPingSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'tcpPing');
+
+    const result = await service.testLine(hy2Line.id);
+
+    expect(result.status).toBe('TIMEOUT');
+    expect(result.mode).toBe('END_TO_END');
+    expect(result.message).toContain('代理探测连接超时');
+    // 纯 UDP 线路绝不调用 tcpPing，避免报 ECONNREFUSED
+    expect(tcpPingSpy).not.toHaveBeenCalled();
+
+    runSingboxProbeSpy.mockRestore();
+    tcpPingSpy.mockRestore();
+  });
+
+  it('当没有 sing-box 内核且线路为 Hysteria 2 纯 UDP 时，直接报错且不调用 tcpPing', async () => {
+    const hy2Line = {
+      ...rawLine,
+      id: 'line-hy2',
+      protocolType: 'HYSTERIA2'
+    };
+    prisma.line.findUnique.mockResolvedValue(hy2Line);
+    prisma.line.update.mockResolvedValue({ ...hy2Line, lastLatencyMs: null, lastTestStatus: 'ERROR' });
+
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+      tcpPing: (...args: unknown[]) => Promise<number>;
+    };
+
+    jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary').mockResolvedValue(null);
+    const tcpPingSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'tcpPing');
+
+    const result = await service.testLine(hy2Line.id);
+
+    expect(result.status).toBe('ERROR');
+    expect(result.message).toContain('纯 UDP');
+    expect(tcpPingSpy).not.toHaveBeenCalled();
+
+    tcpPingSpy.mockRestore();
+  });
+
+  it('当 Master 本机节点测试失败时，在错误信息中追加诊断提示', async () => {
+    const localLine = {
+      ...rawLine,
+      id: 'line-local',
+      protocolType: 'HYSTERIA2',
+      entryNode: { ...entryNode, isLocal: true }
+    };
+    prisma.line.findUnique.mockResolvedValue(localLine);
+    prisma.line.update.mockResolvedValue({ ...localLine, lastLatencyMs: null, lastTestStatus: 'ERROR' });
+
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+    };
+
+    jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary').mockResolvedValue(null);
+
+    const result = await service.testLine(localLine.id);
+
+    expect(result.status).toBe('ERROR');
+    expect(result.message).toContain('Master 本机节点');
+  });
 });

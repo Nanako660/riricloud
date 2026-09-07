@@ -4,7 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   INTERNAL_RELAY_TRANSIT_EMAIL,
   INTERNAL_RELAY_TRANSIT_SECRET,
-  INTERNAL_RELAY_TRANSIT_UUID
+  INTERNAL_RELAY_TRANSIT_UUID,
+  INTERNAL_SPEEDTEST_EMAIL,
+  INTERNAL_SPEEDTEST_UUID
 } from '../common/constants';
 import { AgentGatewayService } from './agent-gateway.service';
 import type { HeartbeatData } from './agent-message';
@@ -117,7 +119,7 @@ describe('AgentGatewayService', () => {
         listen: '127.0.0.1:10085',
         stats: {
           enabled: true,
-          users: ['user@example.com::line-1', 'user@example.com::line-hy2', 'user@example.com::line-shadowtls'],
+          users: ['user@example.com::line-1', INTERNAL_SPEEDTEST_EMAIL, 'user@example.com::line-hy2', 'user@example.com::line-shadowtls'],
           inbounds: ['line-line-1', 'line-line-hy2', 'line-line-ss', 'line-line-shadowtls', 'line-line-shadowtls-inner']
         }
       }
@@ -364,10 +366,12 @@ describe('AgentGatewayService', () => {
     });
   });
 
-  it('内部中继凭证只更新游标，不创建流水或扣减任何用户配额', async () => {
+  it('内部中继与测速探针凭证只更新游标，不创建流水或扣减任何用户配额', async () => {
     txTrafficCursorFindMany.mockResolvedValue([
       { credential: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: 100n, downloadTotal: 100n },
-      { credential: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: 100n, downloadTotal: 100n }
+      { credential: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: 100n, downloadTotal: 100n },
+      { credential: INTERNAL_SPEEDTEST_EMAIL, uploadTotal: 100n, downloadTotal: 100n },
+      { credential: INTERNAL_SPEEDTEST_UUID, uploadTotal: 100n, downloadTotal: 100n }
     ]);
 
     await service.handleHeartbeat('node-2', {
@@ -377,17 +381,19 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 3,
       trafficSnapshots: [
         { userUuid: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: '10', downloadTotal: '20' },
-        { userUuid: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: '30', downloadTotal: '40' }
+        { userUuid: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: '30', downloadTotal: '40' },
+        { userUuid: INTERNAL_SPEEDTEST_EMAIL, uploadTotal: '50', downloadTotal: '60' },
+        { userUuid: INTERNAL_SPEEDTEST_UUID, uploadTotal: '70', downloadTotal: '80' }
       ]
     });
 
     expect(txTrafficCreateMany).not.toHaveBeenCalled();
     expect(txUserUpdate).not.toHaveBeenCalled();
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
-    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(2);
+    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(4);
     expect(txTrafficCursorUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { nodeId_credential: { nodeId: 'node-2', credential: INTERNAL_RELAY_TRANSIT_EMAIL } },
-      update: { uploadTotal: 10n, downloadTotal: 20n }
+      where: { nodeId_credential: { nodeId: 'node-2', credential: INTERNAL_SPEEDTEST_EMAIL } },
+      update: { uploadTotal: 50n, downloadTotal: 60n }
     }));
     expect((service as unknown as { trafficCounterResetCount: number }).trafficCounterResetCount).toBe(0);
   });

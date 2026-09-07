@@ -98,7 +98,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
 - `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/落地节点与端口，不建立真实连接。⭐
-- `POST /admin/lines/:id/speedtest`：对单条线路执行即时测速（优先端到端 204 探测，不可用时降级为入口 TCP 握手），响应 `{ lineId, lineName, latencyMs, status, message, testedAt, mode }`，并持久化到 Line 最新快照。⭐
+- `POST /admin/lines/:id/speedtest`：对单条线路执行即时测速（优先端到端 204 探测，不可用时针对 TCP 类协议降级为入口 TCP 握手，纯 UDP 类协议直接透传真实代理探测诊断，避免误报拒连；使用内部专用探针凭据且不计入账单），响应 `{ lineId, lineName, latencyMs, status, message, testedAt, mode }`，并持久化到 Line 最新快照。⭐
 - `POST /admin/lines/speedtest-all`：受控并发（限制并发度 4）批量测试所有已启用的线路，响应 `{ total, success, failed }`。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
@@ -277,9 +277,9 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 }
 ```
 
-> 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。
+> 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 
-> 中继注入规则：协议代理/异构桥接出站使用上述内部中继凭证，出口节点的内部凭证流量仅维护 `TrafficCursor`，不生成 `TrafficLog`，不扣减任何普通用户或订阅配额。
+> 中继与测速凭证流量规则：协议代理/异构桥接出站使用上述内部中继凭证，Master 测速探针使用内部测速凭据；各节点上的内部专用凭证流量仅维护 `TrafficCursor` 基线，不生成 `TrafficLog`，不扣减任何普通用户或订阅配额。
 
 中继配置示例：盲转发线路在入口节点生成如下端口转发入站；协议代理线路生成与 Line 协议对应的入口入站、出口 outbound 以及 route rule；`TARGET_LINE` 则将 outbound 的协议、参数、目标地址和端口取自所引用的直连线路。
 ```json

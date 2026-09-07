@@ -1,11 +1,16 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import * as net from 'node:net';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { sanitizeInboundParams } from '../common/inbound';
-import { type ProtocolType } from '../common/constants';
+import {
+  INTERNAL_SPEEDTEST_SECRET,
+  INTERNAL_SPEEDTEST_UUID,
+  type ProtocolType
+} from '../common/constants';
 import { buildSingboxOutbound, type SubEntry, type SubLine, type SubUser } from '../subscription/builders';
 
 export interface SpeedTestExecutionResult {
@@ -95,6 +100,8 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
 
     // 优先尝试端到端代理探测（若内核可用）
     const singboxBin = await this.resolveSingboxBinary();
+    const isUdpOnly = this.isUdpOnlyProtocol(line.protocolType);
+
     if (singboxBin) {
       try {
         const e2eResult = await this.runSingboxProbe(singboxBin, line, targetUrl, timeoutMs);
@@ -103,30 +110,47 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
         message = `204 OK (端到端 ${latencyMs}ms)`;
         mode = 'END_TO_END';
       } catch (e2eErr) {
-        // 端到端失败后，尝试 TCP 握手降级测试以区分为完全失联还是仅端到端异常
+        if (isUdpOnly) {
+          // 纯 UDP 协议无法通过 TCP 握手探测，直接如实反映端到端探测失败诊断，避免误报 ECONNREFUSED
+          status = this.isTimeoutError(e2eErr) ? 'TIMEOUT' : 'ERROR';
+          message = e2eErr instanceof Error ? e2eErr.message : String(e2eErr);
+          mode = 'END_TO_END';
+        } else {
+          // 端到端失败后，TCP 协议尝试 TCP 握手降级测试以区分为完全失联还是仅端到端异常
+          try {
+            const tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
+            latencyMs = tcpLatency;
+            status = 'SUCCESS';
+            message = `TCP 握手 (${tcpLatency}ms, 端到端未就绪: ${e2eErr instanceof Error ? e2eErr.message : String(e2eErr)})`;
+            mode = 'TCP_HANDSHAKE';
+          } catch (tcpErr) {
+            status = this.isTimeoutError(tcpErr) ? 'TIMEOUT' : 'ERROR';
+            message = tcpErr instanceof Error ? tcpErr.message : String(tcpErr);
+          }
+        }
+      }
+    } else {
+      if (isUdpOnly) {
+        status = 'ERROR';
+        message = '未检测到 sing-box 内核，且协议为纯 UDP（Hysteria 2/TUIC），不支持 TCP 握手降级探测';
+        mode = 'END_TO_END';
+      } else {
+        // 无 sing-box 内核直接执行入口 TCP 握手延时探测
         try {
           const tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
           latencyMs = tcpLatency;
           status = 'SUCCESS';
-          message = `TCP 握手 (${tcpLatency}ms, 端到端未就绪: ${e2eErr instanceof Error ? e2eErr.message : String(e2eErr)})`;
+          message = `TCP 握手 (${tcpLatency}ms)`;
           mode = 'TCP_HANDSHAKE';
-        } catch (tcpErr) {
-          status = this.isTimeoutError(tcpErr) ? 'TIMEOUT' : 'ERROR';
-          message = tcpErr instanceof Error ? tcpErr.message : String(tcpErr);
+        } catch (err) {
+          status = this.isTimeoutError(err) ? 'TIMEOUT' : 'ERROR';
+          message = err instanceof Error ? err.message : String(err);
         }
       }
-    } else {
-      // 无 sing-box 内核直接执行入口 TCP 握手延时探测
-      try {
-        const tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
-        latencyMs = tcpLatency;
-        status = 'SUCCESS';
-        message = `TCP 握手 (${tcpLatency}ms)`;
-        mode = 'TCP_HANDSHAKE';
-      } catch (err) {
-        status = this.isTimeoutError(err) ? 'TIMEOUT' : 'ERROR';
-        message = err instanceof Error ? err.message : String(err);
-      }
+    }
+
+    if (status !== 'SUCCESS' && line.entryNode?.isLocal) {
+      message += '（Master 本机节点：请检查主机防火墙/UDP端口开放及云厂商 NAT 回环策略）';
     }
 
     const testedAt = new Date();
@@ -269,12 +293,12 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
       line: subLine
     };
 
-    const dummyUser: SubUser = {
-      uuid: '11111111-2222-3333-4444-555555555555',
-      credential: 'dummy-credential-for-speedtest'
+    const probeUser: SubUser = {
+      uuid: INTERNAL_SPEEDTEST_UUID,
+      credential: INTERNAL_SPEEDTEST_SECRET
     };
 
-    const outboundConfig = buildSingboxOutbound(dummyUser, subEntry);
+    const outboundConfig = buildSingboxOutbound(probeUser, subEntry);
     outboundConfig.tag = 'probe-out';
 
     // 随机分配一个本地测试端口（20000 - 60000）
@@ -403,19 +427,35 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
     if (this.singboxBinaryChecked) return this.cachedSingboxPath;
     this.singboxBinaryChecked = true;
 
-    const envPath = process.env.SINGBOX_BINARY_PATH || '/usr/local/bin/sing-box';
-    try {
-      const stat = await fs.stat(envPath);
-      if (stat.isFile()) {
-        this.cachedSingboxPath = envPath;
-        return envPath;
+    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+    const candidates = [
+      process.env.SINGBOX_BINARY_PATH,
+      '/usr/local/bin/sing-box',
+      `/app/binaries/singbox-linux-${arch}`,
+      path.resolve(process.cwd(), 'binaries', `singbox-linux-${arch}`),
+      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box'),
+      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box.exe')
+    ].filter((p): p is string => Boolean(p));
+
+    for (const candidate of candidates) {
+      try {
+        const stat = await fs.stat(candidate);
+        if (stat.isFile()) {
+          this.cachedSingboxPath = candidate;
+          return candidate;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
 
     this.cachedSingboxPath = null;
     return null;
+  }
+
+  private isUdpOnlyProtocol(protocolType: string): boolean {
+    const upper = protocolType?.toUpperCase() || '';
+    return upper === 'HYSTERIA2' || upper === 'TUIC';
   }
 
   private isTimeoutError(err: unknown): boolean {

@@ -19,6 +19,9 @@ import {
   INTERNAL_RELAY_TRANSIT_EMAIL,
   INTERNAL_RELAY_TRANSIT_SECRET,
   INTERNAL_RELAY_TRANSIT_UUID,
+  INTERNAL_SPEEDTEST_EMAIL,
+  INTERNAL_SPEEDTEST_SECRET,
+  INTERNAL_SPEEDTEST_UUID,
   type ProtocolType
 } from '../common/constants';
 import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData } from './agent-message';
@@ -423,7 +426,7 @@ export class AgentService implements OnModuleDestroy {
       for (const [credential, current] of snapshotsByCredential) {
         cursorUpdates.set(credential, current);
         const parsed = parsedByCredential.get(credential) ?? { rawCredential: credential, lineId: null };
-        if (this.isInternalRelayCredential(parsed.rawCredential)) continue;
+        if (this.isInternalSystemCredential(parsed.rawCredential)) continue;
 
         const previous = cursorByCredential.get(credential);
         const previousUpload = previous?.uploadTotal ?? 0n;
@@ -516,8 +519,13 @@ export class AgentService implements OnModuleDestroy {
     return resetCount > 0;
   }
 
-  private isInternalRelayCredential(credential: string): boolean {
-    return credential === INTERNAL_RELAY_TRANSIT_UUID || credential === INTERNAL_RELAY_TRANSIT_EMAIL;
+  private isInternalSystemCredential(credential: string): boolean {
+    return (
+      credential === INTERNAL_RELAY_TRANSIT_UUID ||
+      credential === INTERNAL_RELAY_TRANSIT_EMAIL ||
+      credential === INTERNAL_SPEEDTEST_UUID ||
+      credential === INTERNAL_SPEEDTEST_EMAIL
+    );
   }
 
   private normalizeTrafficRate(value: number | null | undefined): number {
@@ -1075,7 +1083,7 @@ export class AgentService implements OnModuleDestroy {
           credential: subscription.user.password ?? subscription.user.uuid
         }));
       lineUsers.forEach((user) => authorizedUsers.set(user.uuid, user));
-      return lineUsers;
+      return [...lineUsers, this.internalSpeedtestUser()];
     };
     for (const line of lines.values()) {
       if (!publicLinesEnabled) continue;
@@ -1343,6 +1351,14 @@ export class AgentService implements OnModuleDestroy {
       uuid: INTERNAL_RELAY_TRANSIT_UUID,
       email: INTERNAL_RELAY_TRANSIT_EMAIL,
       credential: INTERNAL_RELAY_TRANSIT_SECRET
+    };
+  }
+
+  private internalSpeedtestUser(): InboundUserCredential {
+    return {
+      uuid: INTERNAL_SPEEDTEST_UUID,
+      email: INTERNAL_SPEEDTEST_EMAIL,
+      credential: INTERNAL_SPEEDTEST_SECRET
     };
   }
 

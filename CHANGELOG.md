@@ -17,6 +17,10 @@
 ### Changed
 
 ### Fixed
+- **服务端线路测速全链路与协议自适应降级**：
+  - 修复 Master 镜像分离后缺失 `sing-box` 内核导致端到端代理测速失效的问题，在 Master 容器中恢复 `/usr/local/bin/sing-box` 与 `SINGBOX_BINARY_PATH`（仅作为 CLI 探针调用，维持与 Agent 守护进程解耦）；
+  - 引入内部测速专用凭据（`INTERNAL_SPEEDTEST_UUID` / `SECRET`），在节点配置同步中自动注入并在心跳统计中过滤，杜绝虚构凭据导致的鉴权失败与用户流量污染；
+  - 实现协议自适应降级：对于 Hysteria 2、TUIC 等纯 UDP 协议，在端到端探测受阻时不盲目发起 TCP 握手，消除对 UDP 端口发送 TCP SYN 导致的误导性 `connect ECONNREFUSED` 报错；对 Master 本机节点测试失败增加详细排查指引。
 
 
 ## [0.7.0] - 2026-09-07

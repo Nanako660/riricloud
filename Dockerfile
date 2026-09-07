@@ -157,7 +157,8 @@ ARG TARGETARCH=amd64
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATABASE_URL=file:/app/data/riri.db
+    DATABASE_URL=file:/app/data/riri.db \
+    SINGBOX_BINARY_PATH=/usr/local/bin/sing-box
 
 ARG RIRICLOUD_VERSION=dev
 ARG RIRICLOUD_VCS_REF=unknown
@@ -181,6 +182,8 @@ COPY --from=build /out/server/ ./
 COPY --from=build --chown=65532:65532 /tmp/app-data/ /app/data/
 COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=build /out/binaries/ ./binaries/
+COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
+COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 65532:65532
