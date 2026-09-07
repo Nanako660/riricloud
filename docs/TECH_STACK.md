@@ -84,6 +84,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 - `github.com/charmbracelet/bubbletea`：提供 raw mode、方向键事件、全屏备用缓冲区和异步命令消息循环；无参数运行时的 TUI 不依赖按行输入或数字菜单。
 - `github.com/kardianos/service`：封装 Linux systemd/OpenRC/SysVinit、Windows Service 和 macOS Launchd 的注册与控制。
 - `github.com/charmbracelet/lipgloss`：全屏 TUI 的 Banner、表单、状态卡片、结果页和诊断颜色。
+- `github.com/mattn/go-isatty`：精准检测 Stdin / Stdout 真实终端控制台与 Cygwin/MSYS TTY，确保 Docker 容器与无交互环境静默运行后台守护进程、交互终端下唤起全屏 TUI。
 - `gopkg.in/yaml.v3`：读写 `/etc/riri-agent/config.yaml`（Windows 使用 `%ProgramData%\RiriCloud\config.yaml`），并以环境变量覆盖容器运行时配置。
 
 Docker 与发行包中的 Sing-box 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建标签，以启用按用户流量统计、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站；Agent 仍保持 `CGO_ENABLED=0` 静态构建。

@@ -92,6 +92,7 @@ RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked
 RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
     --mount=type=cache,id=riricloud-pnpm,target=/workspace/.cache/pnpm,sharing=locked \
     pnpm --filter @riricloud/server deploy --prod /out/server \
+    && node -e "const r = require('./package.json'); const s = require('/out/server/package.json'); s.version = r.version; require('fs').writeFileSync('/out/server/package.json', JSON.stringify(s, null, 2) + '\n');" \
     && mkdir -p /out/server/dist \
     && cp -a /tmp/server-dist/. /out/server/dist/ \
     && if [ ! -f /out/server/dist/main.js ] && [ ! -f /out/server/dist/src/main.js ]; then \
@@ -123,6 +124,7 @@ COPY --from=singbox-build /libcronet.so /tmp/libcronet.so
 RUN mkdir -p \
       /out/binaries/agent-linux-${TARGETARCH} \
       /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH} \
+    && cp /workspace/apps/agent/VERSION /out/binaries/AGENT_VERSION \
     && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH}/riri-agent \
     && cp /tmp/sing-box /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box \
     && cp /tmp/libcronet.so /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/libcronet.so \

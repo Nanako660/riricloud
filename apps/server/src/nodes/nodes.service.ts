@@ -294,7 +294,7 @@ export class NodesService {
       : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent');
     const agentMode = mode === 'HTTP' ? 'http' : 'ws';
     const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
-    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; docker run -d --name riri-agent --restart unless-stopped --network host --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE -v /var/lib/riri-agent:/app/data -e AGENT_TOKEN="$RIRI_AGENT_TOKEN" -e AGENT_MASTER_URL='${master}' -e AGENT_MODE='${agentMode}' ${agentImage}`;
+    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; docker run -d --name riri-agent --restart unless-stopped --network host --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE -v /var/lib/riri-agent:/var/lib/riri-agent -e AGENT_TOKEN="$RIRI_AGENT_TOKEN" -e AGENT_MASTER_URL='${master}' -e AGENT_MODE='${agentMode}' ${agentImage}`;
   }
 
   private buildUninstallCommand() {

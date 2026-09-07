@@ -49,6 +49,7 @@ services:
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
     pull_policy: never
     restart: unless-stopped
+    command: ["run"]
     user: "65532:65532"
     read_only: true
     security_opt:

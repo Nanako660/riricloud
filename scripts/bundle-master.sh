@@ -213,6 +213,7 @@ chmod +x "$MASTER_DIR/binaries/agent-$TARGET_NORM"
 mkdir -p "$MASTER_DIR/binaries/agent/$TARGET_NORM"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 chmod +x "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
+printf '%s\n' "$AGENT_VERSION" > "$MASTER_DIR/binaries/AGENT_VERSION"
 
 SINGBOX_RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
 SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"

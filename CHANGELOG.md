@@ -22,6 +22,7 @@
 - **系统版本接口感知增强**：`GET /api/v1/system/version` 返回 `{ version, agentVersion, agentImage }`，同步感知主控版本、推荐 Agent 版本与镜像。
 
 ### Fixed
+- **Docker 容器环境系统版本与分发清单推导**：修复 Master 容器中因独立 deploy 缺少根版本导致版本接口返回 0.0.0 的问题，构建期注入 package.json 版本、binaries/manifest.json 与 AGENT_VERSION 回退；修复节点管理中 Docker 示例命令挂载路径错误。
 
 
 

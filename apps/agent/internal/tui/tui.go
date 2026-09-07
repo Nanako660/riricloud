@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-isatty"
 )
 
 var (
@@ -53,8 +54,12 @@ func IsInteractive() bool {
 	if os.Getenv("RIRICLOUD_NON_INTERACTIVE") == "1" || os.Getenv("CI") != "" {
 		return false
 	}
-	info, err := os.Stdin.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0 && os.Getenv("TERM") != "dumb"
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	stdinIsTTY := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+	stdoutIsTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+	return stdinIsTTY && stdoutIsTTY
 }
 
 func Banner(version string) string {

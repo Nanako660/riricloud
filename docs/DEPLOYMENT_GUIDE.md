@@ -118,7 +118,7 @@ docker compose exec master /nodejs/bin/node /app/prisma/admin-reset.js --email a
 printf '%s\n' 'New-admin-password1!' | docker compose exec -T master /nodejs/bin/node /app/prisma/admin-reset.js --email admin@example.com --password-stdin
 ```
 
-Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 控制 Master 面板监听端口（默认 3000）；Agent 容器直接在 host 网络中监听配置的入站 TCP/UDP 端口。持久化目录：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/app/data`。
+Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 控制 Master 面板监听端口（默认 3000）；Agent 容器直接在 host 网络中监听配置的入站 TCP/UDP 端口。持久化目录：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent`。
 
 导入离线镜像时，在目标 Docker 环境执行：
 

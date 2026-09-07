@@ -18,6 +18,7 @@
 - **独立版本构建适配**：构建脚本优先读取 `apps/agent/VERSION` 独立版本注入二进制版本标识，解耦对主控根 package.json 的依赖。
 
 ### Fixed
+- **无交互与 Docker 环境 TTY 判定修复**：引入 `github.com/mattn/go-isatty` 精准判定控制台终端，修复非交互与 Docker 容器环境因 Stdin 为 `/dev/null` 误触发 Bubble Tea 全屏 TUI 导致 cancelreader epoll 崩溃退出的缺陷；镜像默认补充 `CMD ["run"]` 守护指令。
 
 
 

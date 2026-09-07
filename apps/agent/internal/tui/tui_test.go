@@ -101,3 +101,22 @@ func TestInstallFormSupportsFocusEditingAndAsyncResult(t *testing.T) {
 		t.Fatalf("unexpected install form: %+v", received)
 	}
 }
+
+func TestIsInteractiveHonorsEnvironment(t *testing.T) {
+	t.Setenv("RIRICLOUD_NON_INTERACTIVE", "1")
+	if IsInteractive() {
+		t.Fatal("IsInteractive should be false when RIRICLOUD_NON_INTERACTIVE=1")
+	}
+
+	t.Setenv("RIRICLOUD_NON_INTERACTIVE", "")
+	t.Setenv("CI", "true")
+	if IsInteractive() {
+		t.Fatal("IsInteractive should be false when CI is set")
+	}
+
+	t.Setenv("CI", "")
+	t.Setenv("TERM", "dumb")
+	if IsInteractive() {
+		t.Fatal("IsInteractive should be false when TERM=dumb")
+	}
+}

@@ -24,12 +24,22 @@ export class SystemService {
     const candidates = [join(process.cwd(), '..', '..', 'package.json'), join(process.cwd(), 'package.json')];
     for (const p of candidates) {
       try {
-        return JSON.parse(readFileSync(p, 'utf8')).version ?? '0.0.0';
+        const v = JSON.parse(readFileSync(p, 'utf8')).version;
+        if (typeof v === 'string' && v.trim()) return v.trim();
       } catch {
         // 尝试下一个候选路径
       }
     }
-    return process.env.npm_package_version ?? '0.0.0';
+    try {
+      const manifestPath = join(process.cwd(), 'binaries', 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      if (typeof manifest?.applicationVersion === 'string' && manifest.applicationVersion.trim()) {
+        return manifest.applicationVersion.trim();
+      }
+    } catch {
+      // 尝试环境变量
+    }
+    return process.env.RIRICLOUD_VERSION ?? process.env.npm_package_version ?? '0.0.0';
   }
 
   private static readAgentVersion(): string {
@@ -47,6 +57,16 @@ export class SystemService {
         // 尝试下一个候选路径
       }
     }
-    return process.env.AGENT_VERSION ?? '0.0.0';
+    try {
+      const manifestPath = join(process.cwd(), 'binaries', 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const agentRes = manifest?.resources?.find((r: { kind?: string }) => r?.kind === 'AGENT');
+      if (typeof agentRes?.upstreamVersion === 'string' && agentRes.upstreamVersion.trim()) {
+        return agentRes.upstreamVersion.trim();
+      }
+    } catch {
+      // 尝试环境变量
+    }
+    return process.env.RIRICLOUD_AGENT_VERSION ?? process.env.AGENT_VERSION ?? '0.0.0';
   }
 }

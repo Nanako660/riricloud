@@ -63,6 +63,7 @@ services:
         SINGBOX_VERSION: ${SINGBOX_VERSION:-1.14.0}
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
     restart: unless-stopped
+    command: ["run"]
     user: "65532:65532"
     read_only: true
     security_opt:

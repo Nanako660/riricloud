@@ -117,3 +117,4 @@ USER 65532:65532
 
 VOLUME ["/var/lib/riri-agent"]
 ENTRYPOINT ["/usr/local/bin/riri-agent"]
+CMD ["run"]
