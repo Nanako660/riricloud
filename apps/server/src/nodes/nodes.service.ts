@@ -45,13 +45,17 @@ export class NodesService {
       configuredBaseUrl: settings?.publicBaseUrl,
       requestBaseUrl
     });
+    const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
     return {
       node: {
         ...this.sanitize(node),
         installCommands: {
           ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-          http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
+          http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
+          dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
+          dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
         },
+        agentImage,
         uninstallCommand: this.buildUninstallCommand()
       }
     };
@@ -76,6 +80,7 @@ export class NodesService {
       },
       include: nodeLinesInclude
     });
+    const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
     return {
       node: this.sanitize(node),
       // Token 只在创建成功响应中返回一次；数据库字段保存的是加密密文。
@@ -83,8 +88,11 @@ export class NodesService {
       installCommand: this.buildInstallCommand(communicationMode, node.osArch, publicBaseUrl),
       installCommands: {
         ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-        http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
+        http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
+        dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
+        dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
       },
+      agentImage,
       uninstallCommand: this.buildUninstallCommand()
     };
   }
@@ -104,15 +112,19 @@ export class NodesService {
     if (systemLog) {
       await systemLog.create({ data: { source: 'SERVER', level: 'WARN', module: 'Nodes', message: 'AgentToken rotated', metadata: JSON.stringify({ nodeId: id, operatorId: operatorId ?? null }), nodeId: id } });
     }
+    const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
     const installCommands = {
       ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-      http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
+      http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
+      dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
+      dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
     };
     return {
       nodeId: id,
       agentToken: token,
       installCommand: installCommands[node.communicationMode === 'HTTP' ? 'http' : 'ws'],
       installCommands,
+      agentImage,
       uninstallCommand: this.buildUninstallCommand()
     };
   }
@@ -273,6 +285,16 @@ export class NodesService {
     const downloadUrl = appendPublicPath(baseUrl, 'api/v1/downloads/agent');
     const temp = '/tmp/riri-agent-download';
     return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=${master}`;
+  }
+
+  private buildDockerCommand(mode: 'WS' | 'HTTP', publicBaseUrl?: string) {
+    const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
+    const master = mode === 'HTTP'
+      ? baseUrl
+      : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent');
+    const agentMode = mode === 'HTTP' ? 'http' : 'ws';
+    const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
+    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; docker run -d --name riri-agent --restart unless-stopped --network host --cap-add=NET_ADMIN --cap-add=NET_BIND_SERVICE -v /var/lib/riri-agent:/app/data -e AGENT_TOKEN="$RIRI_AGENT_TOKEN" -e AGENT_MASTER_URL='${master}' -e AGENT_MODE='${agentMode}' ${agentImage}`;
   }
 
   private buildUninstallCommand() {

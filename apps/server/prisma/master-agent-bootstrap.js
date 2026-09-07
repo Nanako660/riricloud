@@ -40,9 +40,27 @@ async function findMasterAgentNode(prisma) {
 
 async function ensureMasterAgentNode(prisma, env = process.env) {
   const existing = await findMasterAgentNode(prisma);
-  if (existing) return { node: existing, created: false };
+  const explicitToken = firstNonEmpty(env.MASTER_LOCAL_AGENT_TOKEN);
 
-  const token = randomBytes(32).toString('hex');
+  if (existing) {
+    if (explicitToken) {
+      const explicitHash = createHash('sha256').update(explicitToken).digest('hex');
+      if (existing.agentTokenHash !== explicitHash) {
+        const updated = await prisma.node.update({
+          where: { id: existing.id },
+          data: {
+            agentToken: encryptSecret(explicitToken),
+            agentTokenHash: explicitHash
+          }
+        });
+        console.log(`master agent bootstrap: synchronized token for ${updated.name}`);
+        return { node: updated, created: false };
+      }
+    }
+    return { node: existing, created: false };
+  }
+
+  const token = explicitToken || randomBytes(32).toString('hex');
   const node = await prisma.node.create({
     data: {
       name: MASTER_AGENT_NAME,

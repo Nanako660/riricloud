@@ -39,6 +39,7 @@ type MockPrisma = {
   node: {
     findFirst: jest.Mock;
     create: jest.Mock;
+    update: jest.Mock;
   };
   subscriptionTemplate: {
     findFirst: jest.Mock;
@@ -62,7 +63,8 @@ describe('管理员 bootstrap', () => {
       },
       node: {
         findFirst: jest.fn(),
-        create: jest.fn()
+        create: jest.fn(),
+        update: jest.fn()
       },
       subscriptionTemplate: {
         findFirst: jest.fn(),
@@ -171,13 +173,49 @@ describe('管理员 bootstrap', () => {
   });
 
   it('已有 Master-Local 时复用原节点和 Token，不覆盖配置', async () => {
-    const node = { id: 'node-local', name: '自定义本机节点', serverHost: 'old.example.com', isLocal: true, agentToken: 'old-token', status: 'ONLINE' };
+    const node = { id: 'node-local', name: '自定义本机节点', serverHost: 'old.example.com', isLocal: true, agentToken: 'old-token', agentTokenHash: 'old-hash', status: 'ONLINE' };
     prisma.node.findFirst.mockResolvedValue(node);
 
     const result = await ensureMasterAgentNode(prisma, { MASTER_LOCAL_HOST: 'new.example.com' });
 
     expect(result).toEqual({ node, created: false });
     expect(prisma.node.create).not.toHaveBeenCalled();
+    expect(prisma.node.update).not.toHaveBeenCalled();
+  });
+
+  it('显式传入 MASTER_LOCAL_AGENT_TOKEN 时创建并使用指定 Token', async () => {
+    const node = { id: 'node-local', name: 'Master-Local', serverHost: '127.0.0.1', isLocal: true, agentToken: 'enc', agentTokenHash: 'hash', status: 'OFFLINE' };
+    prisma.node.findFirst.mockResolvedValue(null);
+    prisma.node.create.mockResolvedValue(node);
+
+    const result = await ensureMasterAgentNode(prisma, { MASTER_LOCAL_AGENT_TOKEN: 'custom-token-123' });
+
+    expect(result).toEqual({ node, created: true });
+    expect(prisma.node.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Master-Local',
+        isLocal: true,
+        agentTokenHash: expect.any(String)
+      })
+    });
+  });
+
+  it('显式传入 MASTER_LOCAL_AGENT_TOKEN 且与已有 TokenHash 不一致时同步更新 Token', async () => {
+    const node = { id: 'node-local', name: 'Master-Local', serverHost: '127.0.0.1', isLocal: true, agentToken: 'old-enc', agentTokenHash: 'old-hash', status: 'ONLINE' };
+    const updatedNode = { ...node, agentToken: 'new-enc', agentTokenHash: 'new-hash' };
+    prisma.node.findFirst.mockResolvedValue(node);
+    prisma.node.update.mockResolvedValue(updatedNode);
+
+    const result = await ensureMasterAgentNode(prisma, { MASTER_LOCAL_AGENT_TOKEN: 'new-token-456' });
+
+    expect(result).toEqual({ node: updatedNode, created: false });
+    expect(prisma.node.update).toHaveBeenCalledWith({
+      where: { id: 'node-local' },
+      data: expect.objectContaining({
+        agentToken: expect.any(String),
+        agentTokenHash: expect.any(String)
+      })
+    });
   });
 
   it('从公网 URL 推导新本机节点的订阅地址', () => {

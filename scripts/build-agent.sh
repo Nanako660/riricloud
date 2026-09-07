@@ -199,7 +199,11 @@ resolve_go
 resolve_node
 
 if [ -z "$VERSION" ]; then
-  VERSION="$($NODE_BIN -p "require('./package.json').version")"
+  if [ -f "$ROOT/apps/agent/VERSION" ]; then
+    VERSION="$(tr -d '[:space:]' < "$ROOT/apps/agent/VERSION")"
+  else
+    VERSION="$($NODE_BIN -p "require('./package.json').version")"
+  fi
 fi
 
 if [ "$ALL_TARGETS" = "1" ]; then

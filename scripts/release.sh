@@ -39,9 +39,18 @@ remove_dir_safe() {
 DRY_RUN=0
 SKIP_BUILD=0
 TAG_PARAM=""
+RELEASE_TARGET="master"
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --master)
+      RELEASE_TARGET="master"
+      shift
+      ;;
+    --agent)
+      RELEASE_TARGET="agent"
+      shift
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -52,16 +61,18 @@ while [ $# -gt 0 ]; do
       ;;
     -h|--help)
       cat <<'EOF'
-用法：bash scripts/release.sh [选项] [vX.Y.Z]
+用法：bash scripts/release.sh [选项] [tag]
 
 选项：
+  --master        发布 Master 主控端（默认，Tag 为 vX.Y.Z）
+  --agent         发布 Agent 边缘程序（Tag 为 agent-vA.B.C）
   --dry-run       演练模式：完整执行构建、打包与校验，不上推 Tag、不发布 GitHub Release
   --skip-build    复用已有 artifacts/packages 产物直接执行发布
   -h, --help      显示帮助
 EOF
       exit 0
       ;;
-    v[0-9]*)
+    v[0-9]*|agent-v[0-9]*)
       TAG_PARAM="$1"
       shift
       ;;
@@ -82,15 +93,33 @@ resolve_node() {
 resolve_node
 
 VERSION="$($NODE_BIN -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
-TAG="${TAG_PARAM:-v${VERSION}}"
+if [ -f "apps/agent/VERSION" ]; then
+  AGENT_VERSION="$(tr -d '[:space:]' < "apps/agent/VERSION")"
+else
+  AGENT_VERSION="$VERSION"
+fi
+
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
 SINGBOX_REVISION="${SINGBOX_REVISION:-1}"
 CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 
 # ---------- 前置校验 ----------
-echo "[1/7] 检查前置条件与版本一致性"
-[ "v${VERSION}" = "$TAG" ] || die "Tag $TAG 与根 package.json 版本 v$VERSION 不一致（见 docs/VERSIONING.md §3）"
-grep -q "^## \[${VERSION}\]" CHANGELOG.md || die "CHANGELOG.md 未找到 [${VERSION}] 版本小节（见 docs/VERSIONING.md §5）"
+if [ "$RELEASE_TARGET" = "master" ]; then
+  TAG="${TAG_PARAM:-v${VERSION}}"
+  echo "[1/7] 检查 Master 前置条件与版本一致性（目标版本：$TAG）"
+  [ "v${VERSION}" = "$TAG" ] || die "Tag $TAG 与根 package.json 版本 v$VERSION 不一致（见 docs/VERSIONING.md）"
+  grep -q "^## \[${VERSION}\]" CHANGELOG.md || die "CHANGELOG.md 未找到 [${VERSION}] 版本小节（见 docs/VERSIONING.md）"
+  CHANGELOG_FILE="$RIRI_ROOT/CHANGELOG.md"
+  NOTES_VERSION="$VERSION"
+else
+  TAG="${TAG_PARAM:-agent-v${AGENT_VERSION}}"
+  echo "[1/7] 检查 Agent 前置条件与版本一致性（目标版本：$TAG）"
+  [ "agent-v${AGENT_VERSION}" = "$TAG" ] || die "Tag $TAG 与 apps/agent/VERSION agent-v$AGENT_VERSION 不一致（见 docs/VERSIONING.md）"
+  [ -f "apps/agent/CHANGELOG.md" ] || die "缺少 apps/agent/CHANGELOG.md"
+  grep -q "^## \[${AGENT_VERSION}\]" apps/agent/CHANGELOG.md || die "apps/agent/CHANGELOG.md 未找到 [${AGENT_VERSION}] 版本小节（见 docs/VERSIONING.md）"
+  CHANGELOG_FILE="$RIRI_ROOT/apps/agent/CHANGELOG.md"
+  NOTES_VERSION="$AGENT_VERSION"
+fi
 
 if [ "$DRY_RUN" = "0" ]; then
   [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || die "正式发布必须在 main 分支执行"
@@ -145,70 +174,107 @@ if [ "$SKIP_BUILD" = "0" ]; then
   remove_dir_safe "$WORKTREE"
   git worktree add --detach "$WORKTREE" HEAD >/dev/null
 
-  echo "[3/7] 在工作区中执行三端质量门禁"
-  (
-    cd "$WORKTREE"
-    pnpm install --frozen-lockfile
-    pnpm --filter @riricloud/server exec tsc --noEmit
-    pnpm --filter @riricloud/server lint
-    pnpm --filter @riricloud/server test
-    pnpm --filter @riricloud/server build
-    pnpm --filter @riricloud/web exec tsc --noEmit
-    pnpm --filter @riricloud/web lint
-    pnpm --filter @riricloud/web build
-    bash scripts/gate-agent.sh
-  )
+  if [ "$RELEASE_TARGET" = "master" ]; then
+    echo "[3/7] 在工作区中执行三端全量质量门禁"
+    (
+      cd "$WORKTREE"
+      pnpm install --frozen-lockfile
+      pnpm --filter @riricloud/server exec tsc --noEmit
+      pnpm --filter @riricloud/server lint
+      pnpm --filter @riricloud/server test
+      pnpm --filter @riricloud/server build
+      pnpm --filter @riricloud/web exec tsc --noEmit
+      pnpm --filter @riricloud/web lint
+      pnpm --filter @riricloud/web build
+      bash scripts/gate-agent.sh
+    )
 
-  echo "[4/7] 编译多平台 Agent 与 Sing-box 定制内核"
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$VERSION" \
-    --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
+    echo "[4/7] 编译多平台 Agent 与 Sing-box 定制内核"
+    bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$AGENT_VERSION" \
+      --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
 
-  echo "[5/7] 打包 Agent 多平台归档包"
-  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
-  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" -C "$BINARIES_DIR/agent/linux-arm64" riri-agent
-  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" -C "$BINARIES_DIR/agent/darwin-amd64" riri-agent
-  tar -czf "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" -C "$BINARIES_DIR/agent/darwin-arm64" riri-agent
+    echo "[5/7] 打包 Agent 多平台归档包（嵌入与独立分发）"
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" -C "$BINARIES_DIR/agent/linux-arm64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" -C "$BINARIES_DIR/agent/darwin-amd64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" -C "$BINARIES_DIR/agent/darwin-arm64" riri-agent
 
-  if command -v zip >/dev/null 2>&1; then
-    (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" riri-agent.exe)
+    if command -v zip >/dev/null 2>&1; then
+      (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" riri-agent.exe)
+    else
+      WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
+      WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip")"
+      powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
+    fi
+
+    echo "[6/7] 精准装配主控端发行包（linux-amd64，仅含对应架构）"
+    bash "$RIRI_ROOT/scripts/bundle-master.sh" \
+      --target linux-amd64 \
+      --worktree "$WORKTREE" \
+      --version "$VERSION" \
+      --singbox-version "$SINGBOX_VERSION" \
+      --singbox-revision "$SINGBOX_REVISION" \
+      --archive-dir "$PACKAGE_DIR"
+
+    (
+      cd "$PACKAGE_DIR"
+      sha256sum "riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_windows_amd64.zip" \
+                "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
+    )
   else
-    WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
-    WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip")"
-    powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
+    echo "[3/7] 在工作区中执行 Agent 质量门禁"
+    (
+      cd "$WORKTREE"
+      pnpm install --frozen-lockfile
+      bash scripts/gate-agent.sh
+    )
+
+    echo "[4/7] 编译多平台 Agent 程序"
+    bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --all --version "$AGENT_VERSION"
+
+    echo "[5/7] 打包 Agent 多平台归档包"
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" -C "$BINARIES_DIR/agent/linux-arm64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" -C "$BINARIES_DIR/agent/darwin-amd64" riri-agent
+    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" -C "$BINARIES_DIR/agent/darwin-arm64" riri-agent
+
+    if command -v zip >/dev/null 2>&1; then
+      (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" riri-agent.exe)
+    else
+      WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
+      WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip")"
+      powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
+    fi
+
+    echo "[6/7] 生成校验和"
+    (
+      cd "$PACKAGE_DIR"
+      sha256sum "riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
+                "riri-agent_${AGENT_VERSION}_windows_amd64.zip" > "$PACKAGE_DIR/checksums.txt"
+    )
   fi
-
-  echo "[6/7] 精准装配主控端发行包（linux-amd64，仅含对应架构）"
-  bash "$RIRI_ROOT/scripts/bundle-master.sh" \
-    --target linux-amd64 \
-    --worktree "$WORKTREE" \
-    --version "$VERSION" \
-    --singbox-version "$SINGBOX_VERSION" \
-    --singbox-revision "$SINGBOX_REVISION" \
-    --archive-dir "$PACKAGE_DIR"
-
-  (
-    cd "$PACKAGE_DIR"
-    sha256sum "riri-agent_${VERSION}_linux_amd64.tar.gz" \
-              "riri-agent_${VERSION}_linux_arm64.tar.gz" \
-              "riri-agent_${VERSION}_darwin_amd64.tar.gz" \
-              "riri-agent_${VERSION}_darwin_arm64.tar.gz" \
-              "riri-agent_${VERSION}_windows_amd64.zip" \
-              "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
-  )
 fi
 
 # ---------- 提取发布说明 ----------
-echo "  -> 提取 CHANGELOG 版本说明..."
+echo "  -> 提取版本发布说明（${NOTES_VERSION}）..."
 "$NODE_BIN" -e '
   const fs = require("fs");
   const version = process.argv[1];
-  const md = fs.readFileSync(process.argv[3], "utf8");
+  const file = process.argv[3];
+  const md = fs.readFileSync(file, "utf8");
   const start = md.indexOf(`## [${version}]`);
-  if (start < 0) { console.error(`CHANGELOG.md 未找到 [${version}] 小节`); process.exit(1); }
+  if (start < 0) { console.error(`${file} 未找到 [${version}] 小节`); process.exit(1); }
   let end = md.indexOf("\n## [", start + 1);
   if (end < 0) end = md.length;
   fs.writeFileSync(process.argv[2], md.slice(start, end).trim() + "\n");
-' "$VERSION" "$(to_os_path "$PACKAGE_DIR/release-notes.md")" "$(to_os_path "$RIRI_ROOT/CHANGELOG.md")"
+' "$NOTES_VERSION" "$(to_os_path "$PACKAGE_DIR/release-notes.md")" "$(to_os_path "$CHANGELOG_FILE")"
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ""
@@ -227,15 +293,27 @@ if [ "$NEW_TAG" = "1" ]; then
   git push origin "$TAG"
 fi
 
-gh release create "$TAG" \
-  --title "$TAG" \
-  --notes-file "$PACKAGE_DIR/release-notes.md" \
-  "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
-  "$PACKAGE_DIR/riri-agent_${VERSION}_linux_amd64.tar.gz" \
-  "$PACKAGE_DIR/riri-agent_${VERSION}_linux_arm64.tar.gz" \
-  "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_amd64.tar.gz" \
-  "$PACKAGE_DIR/riri-agent_${VERSION}_darwin_arm64.tar.gz" \
-  "$PACKAGE_DIR/riri-agent_${VERSION}_windows_amd64.zip" \
-  "$PACKAGE_DIR/checksums.txt"
+if [ "$RELEASE_TARGET" = "master" ]; then
+  gh release create "$TAG" \
+    --title "$TAG" \
+    --notes-file "$PACKAGE_DIR/release-notes.md" \
+    "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" \
+    "$PACKAGE_DIR/checksums.txt"
+else
+  gh release create "$TAG" \
+    --title "$TAG" \
+    --notes-file "$PACKAGE_DIR/release-notes.md" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
+    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" \
+    "$PACKAGE_DIR/checksums.txt"
+fi
 
 echo "==> 发布完成：$TAG"

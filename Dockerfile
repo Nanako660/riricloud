@@ -12,8 +12,9 @@ RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 COPY apps/agent/ ./
 RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
+    agent_ver="$(cat VERSION 2>/dev/null || echo ${RIRICLOUD_VERSION:-dev})" && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
-    -ldflags "-s -w -X main.Version=${RIRICLOUD_VERSION}" \
+    -ldflags "-s -w -X main.Version=${agent_ver}" \
     -o /out/riri-agent .
 
 FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS singbox-build
@@ -138,8 +139,10 @@ RUN node - /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVIS
   const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: path.relative(root, file).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
   const platform = `linux-${arch}`;
   const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${revision}`, platform);
+  const agentVerFile = path.join("/workspace/apps/agent/VERSION");
+  const agentVersion = fs.existsSync(agentVerFile) ? fs.readFileSync(agentVerFile, "utf8").trim() : appVersion;
   const resources = [
-    { kind: "AGENT", upstreamVersion: appVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: appVersion, isDefault: true, assets: [{ target: `agent-${platform}`, os: "linux", arch, files: [info("riri-agent", "main", path.join(root, `agent-${platform}`, "riri-agent"))] }] },
+    { kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${platform}`, os: "linux", arch, files: [info("riri-agent", "main", path.join(root, `agent-${platform}`, "riri-agent"))] }] },
     { kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(revision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${platform}`, os: "linux", arch, files: [info("sing-box", "main", path.join(singboxDir, "sing-box")), info("libcronet.so", "auxiliary", path.join(singboxDir, "libcronet.so"))] }] }
   ];
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
@@ -152,11 +155,7 @@ ARG TARGETARCH=amd64
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
-    DATABASE_URL=file:/app/data/riri.db \
-    MASTER_AGENT_ENABLED=true \
-    MASTER_AGENT_BINARY_PATH=/usr/local/bin/riri-agent \
-    SINGBOX_BINARY_PATH=/usr/local/bin/sing-box \
-    MASTER_AGENT_CONFIG_PATH=/app/data/master-agent/config.json
+    DATABASE_URL=file:/app/data/riri.db
 
 ARG RIRICLOUD_VERSION=dev
 ARG RIRICLOUD_VCS_REF=unknown
@@ -180,13 +179,10 @@ COPY --from=build /out/server/ ./
 COPY --from=build --chown=65532:65532 /tmp/app-data/ /app/data/
 COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=build /out/binaries/ ./binaries/
-COPY --from=agent-build /out/riri-agent /usr/local/bin/riri-agent
-COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
-COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 65532:65532
 
 VOLUME ["/app/data"]
-EXPOSE 3000 20000-29999/tcp 20000-29999/udp
+EXPOSE 3000
 ENTRYPOINT ["/nodejs/bin/node", "/app/docker-entrypoint.js"]

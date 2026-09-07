@@ -2,11 +2,21 @@ import { Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// 从仓库根 package.json 读取统一版本号（唯一版本源，见 docs/VERSIONING.md §3）
+export interface SystemVersionResponse {
+  version: string;
+  agentVersion: string;
+  agentImage: string;
+}
+
+// 读取 Master 版本号（根 package.json）与 Agent 独立版本号及推荐镜像（见 docs/VERSIONING.md）
 @Injectable()
 export class SystemService {
-  getVersion(): { version: string } {
-    return { version: SystemService.readRootVersion() };
+  getVersion(): SystemVersionResponse {
+    return {
+      version: SystemService.readRootVersion(),
+      agentVersion: SystemService.readAgentVersion(),
+      agentImage: process.env.AGENT_IMAGE || 'riricloud/agent:latest'
+    };
   }
 
   private static readRootVersion(): string {
@@ -20,5 +30,23 @@ export class SystemService {
       }
     }
     return process.env.npm_package_version ?? '0.0.0';
+  }
+
+  private static readAgentVersion(): string {
+    const candidates = [
+      join(process.cwd(), '..', 'agent', 'VERSION'),
+      join(process.cwd(), 'apps', 'agent', 'VERSION'),
+      join(process.cwd(), 'binaries', 'AGENT_VERSION'),
+      join(process.cwd(), 'AGENT_VERSION')
+    ];
+    for (const p of candidates) {
+      try {
+        const v = readFileSync(p, 'utf8').trim();
+        if (v) return v;
+      } catch {
+        // 尝试下一个候选路径
+      }
+    }
+    return process.env.AGENT_VERSION ?? '0.0.0';
   }
 }
