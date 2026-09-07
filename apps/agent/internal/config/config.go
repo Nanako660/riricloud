@@ -130,6 +130,12 @@ func LoadFrom(path string) (*Config, error) {
 	c.Mode = mode
 	c.MasterWsURL = c.MasterURL
 	if c.AgentToken == "" {
+		tokenPath := filepath.Join(dataDir, "token")
+		if data, err := os.ReadFile(tokenPath); err == nil {
+			c.AgentToken = strings.TrimSpace(string(data))
+		}
+	}
+	if c.AgentToken == "" {
 		return nil, fmt.Errorf("AGENT_TOKEN is required")
 	}
 	if c.HeartbeatSecs < 1 || c.HeartbeatSecs > 300 {
