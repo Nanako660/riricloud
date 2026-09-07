@@ -201,7 +201,7 @@ sequenceDiagram
     Nginx-->>User: 原样转发订阅响应
 ```
 
-订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开、启用且入口/出口节点在线，额外线路可绕过公开性和套餐规则但仍要求启用且两端在线，全局 `publicLinesEnabled=false` 作为总开关。Master 重启后的 60 秒恢复窗口内，若离线节点最近一次心跳仍处于其通信模式对应的健康窗口内，线路计算会临时保留该节点线路，避免 Agent 重连期间刷新订阅造成客户端配置抖动；手动禁用或长期无心跳的节点仍会被过滤。节点离线扫描按 `lastSeenAt` 做乐观并发校验，避免旧扫描结果覆盖扫描期间已恢复的节点。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
+订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开且处于启用状态（`status=ACTIVE`），额外线路可绕过公开性和套餐规则但仍要求启用，若为目标线路桥接模式（`TARGET_LINE`）则要求目标直连线路亦处于启用状态，全局 `publicLinesEnabled=false` 作为总开关。控制平面与数据平面彻底解耦：订阅下发不再与节点 Agent 心跳状态强绑定，即使节点 Agent 暂时失联，只要线路本身启用均全量下发，由客户端本地测速（url-test/fallback）实现健康检查与自动切换，避免服务端单点网络抖动导致订阅节点全量失效。节点离线扫描按 `lastSeenAt` 做乐观并发校验，避免旧扫描结果覆盖扫描期间已恢复的节点。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
 
 ### 3.5 远程升级与网络探针时序
 

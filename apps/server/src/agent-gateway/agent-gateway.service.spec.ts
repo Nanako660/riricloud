@@ -4,7 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   INTERNAL_RELAY_TRANSIT_EMAIL,
   INTERNAL_RELAY_TRANSIT_SECRET,
-  INTERNAL_RELAY_TRANSIT_UUID
+  INTERNAL_RELAY_TRANSIT_UUID,
+  INTERNAL_SPEEDTEST_EMAIL,
+  INTERNAL_SPEEDTEST_UUID
 } from '../common/constants';
 import { AgentGatewayService } from './agent-gateway.service';
 import type { HeartbeatData } from './agent-message';
@@ -117,7 +119,7 @@ describe('AgentGatewayService', () => {
         listen: '127.0.0.1:10085',
         stats: {
           enabled: true,
-          users: ['user@example.com::line-1', 'user@example.com::line-hy2', 'user@example.com::line-shadowtls'],
+          users: ['user@example.com::line-1', INTERNAL_SPEEDTEST_EMAIL, 'user@example.com::line-hy2', 'user@example.com::line-shadowtls'],
           inbounds: ['line-line-1', 'line-line-hy2', 'line-line-ss', 'line-line-shadowtls', 'line-line-shadowtls-inner']
         }
       }
@@ -169,6 +171,17 @@ describe('AgentGatewayService', () => {
     expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'direct', listen_port: 25001, override_address: '198.51.100.20', override_port: 25002 })]));
 
     prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], landingLines: [{ ...relay, entryNode: { id: 'node-1', status: 'ONLINE' } }] });
+    const exitConfig = await service.buildConfigSync('node-2');
+    expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
+  });
+
+  it('中继线路配置生成解耦对端节点在线状态，落地或入口离线依然正常下发转发规则', async () => {
+    const relay = line({ id: 'blind-decoupled', name: '盲转发解耦', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: 'node-1', entryPort: 25001, landingNodeId: 'node-2', landingPort: 25002, landingNode: { serverHost: '198.51.100.20', status: 'OFFLINE' } });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], landingLines: [] });
+    const entryConfig = await service.buildConfigSync('node-1');
+    expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'direct', listen_port: 25001, override_address: '198.51.100.20', override_port: 25002 })]));
+
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], landingLines: [{ ...relay, entryNode: { id: 'node-1', status: 'OFFLINE' } }] });
     const exitConfig = await service.buildConfigSync('node-2');
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
   });
@@ -364,10 +377,12 @@ describe('AgentGatewayService', () => {
     });
   });
 
-  it('内部中继凭证只更新游标，不创建流水或扣减任何用户配额', async () => {
+  it('内部中继与测速探针凭证只更新游标，不创建流水或扣减任何用户配额', async () => {
     txTrafficCursorFindMany.mockResolvedValue([
       { credential: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: 100n, downloadTotal: 100n },
-      { credential: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: 100n, downloadTotal: 100n }
+      { credential: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: 100n, downloadTotal: 100n },
+      { credential: INTERNAL_SPEEDTEST_EMAIL, uploadTotal: 100n, downloadTotal: 100n },
+      { credential: INTERNAL_SPEEDTEST_UUID, uploadTotal: 100n, downloadTotal: 100n }
     ]);
 
     await service.handleHeartbeat('node-2', {
@@ -377,17 +392,19 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 3,
       trafficSnapshots: [
         { userUuid: INTERNAL_RELAY_TRANSIT_EMAIL, uploadTotal: '10', downloadTotal: '20' },
-        { userUuid: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: '30', downloadTotal: '40' }
+        { userUuid: INTERNAL_RELAY_TRANSIT_UUID, uploadTotal: '30', downloadTotal: '40' },
+        { userUuid: INTERNAL_SPEEDTEST_EMAIL, uploadTotal: '50', downloadTotal: '60' },
+        { userUuid: INTERNAL_SPEEDTEST_UUID, uploadTotal: '70', downloadTotal: '80' }
       ]
     });
 
     expect(txTrafficCreateMany).not.toHaveBeenCalled();
     expect(txUserUpdate).not.toHaveBeenCalled();
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
-    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(2);
+    expect(txTrafficCursorUpsert).toHaveBeenCalledTimes(4);
     expect(txTrafficCursorUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { nodeId_credential: { nodeId: 'node-2', credential: INTERNAL_RELAY_TRANSIT_EMAIL } },
-      update: { uploadTotal: 10n, downloadTotal: 20n }
+      where: { nodeId_credential: { nodeId: 'node-2', credential: INTERNAL_SPEEDTEST_EMAIL } },
+      update: { uploadTotal: 50n, downloadTotal: 60n }
     }));
     expect((service as unknown as { trafficCounterResetCount: number }).trafficCounterResetCount).toBe(0);
   });
