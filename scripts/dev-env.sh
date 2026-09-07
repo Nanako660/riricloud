@@ -1,8 +1,44 @@
 #!/usr/bin/env bash
-# 开发环境变量：本地开发时所有依赖缓存与便携工具链收进项目目录（.cache/ 与 .tools/ 均不入库）。
+# 开发环境变量：Linux 使用系统级运行时与用户默认缓存；Windows Git Bash 保留项目内兼容缓存。
 # 用法：source scripts/dev-env.sh（Git Bash / bash 通用）。
-# CI 环境（CI=true）自动跳过缓存重定向，使用 runner 原生缓存机制。
+# CI 环境（CI=true）使用 runner 原生工具链与缓存机制。
 RIRI_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Linux 是本项目的首选本地开发环境，Node.js、pnpm 与 Go 必须来自系统 PATH。
+# 直接返回可避免旧 Windows 便携工具链或仓库缓存污染当前 shell。
+if [ "$(uname -s 2>/dev/null || true)" = "Linux" ]; then
+  case "${GOROOT:-}" in
+    "$RIRI_ROOT/.tools/"*) unset GOROOT GOTOOLCHAIN ;;
+  esac
+  case "${COREPACK_HOME:-}" in
+    "$RIRI_ROOT/.cache/"*) unset COREPACK_HOME ;;
+  esac
+  case "${npm_config_cache:-}" in
+    "$RIRI_ROOT/.cache/"*) unset npm_config_cache ;;
+  esac
+  case "${npm_config_store_dir:-}" in
+    "$RIRI_ROOT/.cache/"*) unset npm_config_store_dir ;;
+  esac
+  case "${PNPM_STORE_DIR:-}" in
+    "$RIRI_ROOT/.cache/"*) unset PNPM_STORE_DIR ;;
+  esac
+  case "${PRISMA_CACHE_DIR:-}" in
+    "$RIRI_ROOT/.cache/"*) unset PRISMA_CACHE_DIR ;;
+  esac
+  case "${GOPATH:-}" in
+    "$RIRI_ROOT/.cache/"*) unset GOPATH ;;
+  esac
+  case "${GOMODCACHE:-}" in
+    "$RIRI_ROOT/.cache/"*) unset GOMODCACHE ;;
+  esac
+  case "${GOCACHE:-}" in
+    "$RIRI_ROOT/.cache/"*) unset GOCACHE ;;
+  esac
+  case "${GOTMPDIR:-}" in
+    "$RIRI_ROOT/.cache/"*) unset GOTMPDIR ;;
+  esac
+  return 0 2>/dev/null || exit 0
+fi
 
 # 便携 Go 工具链注入（.tools/go 存在即启用，本地与 CI 通用）
 if [ -d "$RIRI_ROOT/.tools/go" ]; then

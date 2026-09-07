@@ -15,6 +15,7 @@
 ### Added
 
 ### Changed
+- **统一 Linux 开发机工具链策略**：Node.js、pnpm 与 Go 改为系统安装，pnpm/npm/Prisma/Go 缓存使用用户默认路径；`scripts/dev-env.sh` 仅为 Windows Git Bash 保留仓库内兼容缓存与便携工具链。
 - **Master 与 Agent 的 Release 发布流水线与产物彻底解耦**：
   - 改造 `scripts/release.sh`，发布产物目录按目标隔离为 `artifacts/packages/master` 与 `artifacts/packages/agent`，避免历史产物残留与校验和交叉污染；
   - Master 发布（`pnpm release:master`）仅编译装配主控生产包所需的单目标架构（`linux-amd64`）内置二进制，不再交叉编译其他平台 Agent，GitHub Release (`vX.Y.Z`) 仅挂载 `riri-master_${VERSION}_linux_amd64.tar.gz` 与单项校验和，不再附带各架构 Agent 压缩包；
@@ -22,6 +23,7 @@
   - 在 `package.json` 中新增 `release:master` 与 `release:agent` 便捷命令，对齐双轨版本治理规范。
 
 ### Fixed
+- **修复 Linux 开发联调误选 Windows Sing-box**：`scripts/dev-e2e.sh` 按操作系统与 CPU 架构过滤内核候选，并通过 `sing-box version` 验证可执行性，自动复用 Linux 缓存或回退构建，不再因 `.exe` 文件优先导致 `Exec format error`。
 
 
 ## [0.7.1] - 2026-09-07

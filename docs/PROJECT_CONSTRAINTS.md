@@ -15,11 +15,22 @@
 | 主控后端 | NestJS + TypeScript |
 | 持久化 | SQLite (WAL) + Prisma ORM |
 | 实时通信 | `@nestjs/websockets` + `ws`（WSS） |
-| 边缘节点 | Go ≥ 1.22+（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI、Bubble Tea TUI 与系统服务适配） |
+| 边缘节点 | Go ≥ 1.25（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI、Bubble Tea TUI 与系统服务适配） |
 | 代理内核 | Sing-box |
 | Node.js / pnpm 版本 | Node ≥ 20，pnpm ≥ 9 |
 
 在既有选型内新增**小型**辅助库不受限，但须遵守 [CODE_REVIEW.md](./CODE_REVIEW.md) §4 的依赖说明义务。
+
+### 1.1 Linux 开发环境与工具安装
+
+Linux 是本项目的首选本地开发环境，Node.js、pnpm 与 Go 必须安装到系统环境并从系统 `PATH` 使用：
+
+- Node.js `>=20.0.0`（推荐使用与 CI 一致的 22.x）。
+- pnpm `9.15.9`（根 `package.json` 的 `packageManager` 为唯一版本来源），通过系统 npm 全局安装。
+- Go `>=1.25`，以 `apps/agent/go.mod` 的 `go 1.25.0` 为最低兼容基线。
+- Linux 不得通过 `.npmrc`、`scripts/dev-env.sh` 或其他脚本把运行时、pnpm store、npm cache、Prisma cache 或 Go cache 重定向到仓库内；项目依赖本身仍按 pnpm Workspace 安装到本地 `node_modules`。
+- `source scripts/dev-env.sh` 在 Linux 下必须保持系统 `PATH` 与用户默认缓存不变。`.cache/`、`.tools/` 只用于 Windows Git Bash 兼容场景和临时构建产物，不作为 Linux 工具链来源。
+- CI 使用 runner 提供的 Node.js、pnpm、Go 与缓存，不依赖开发机 `.cache/` 或 `.tools/`。
 
 ---
 

@@ -10,7 +10,7 @@
 #
 # 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / SERVER_ENV_FILE / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
 # 资源同步覆盖：E2E_RESOURCE_VERSION / E2E_AGENT_RESOURCE_FILE / E2E_AGENT_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_FILE / E2E_SINGBOX_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_VERSION
-# sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > .tools/sing-box/ > tools/ > PATH
+# sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > 当前平台缓存 > tools/ > PATH
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -146,18 +146,70 @@ pick_server_port() {
   return 1
 }
 
+singbox_binary_works() {
+  local candidate="$1"
+  [ -n "$candidate" ] && [ -x "$candidate" ] || return 1
+  "$candidate" version >/dev/null 2>&1
+}
+
+singbox_host_arch() {
+  case "$(uname -m 2>/dev/null || true)" in
+    x86_64|amd64) printf 'amd64' ;;
+    aarch64|arm64) printf 'arm64' ;;
+    armv7l|armv7) printf 'arm' ;;
+    *) printf '%s' "$(uname -m 2>/dev/null || printf unknown)" ;;
+  esac
+}
+
 find_singbox() {
-  local candidates=(
-    "${SINGBOX_BINARY_PATH:-}"
-    "$ROOT/.tools/sing-box/sing-box.exe" "$ROOT/.tools/sing-box/sing-box"
-    "$ROOT/.tools/sing-box.exe" "$ROOT/.tools/sing-box"
-    "$ROOT/tools/sing-box.exe" "$ROOT/tools/sing-box"
-  )
+  local host_arch
+  local version="${SINGBOX_VERSION:-1.14.0}"
+  local candidates=()
+  local path_candidate
+  host_arch="$(singbox_host_arch)"
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*)
+      candidates=(
+        "${SINGBOX_BINARY_PATH:-}"
+        "$ROOT/.tools/sing-box/sing-box.exe"
+        "$ROOT/.tools/sing-box.exe"
+        "$ROOT/.cache/sing-box-v2ray-api/$version/windows-$host_arch/sing-box.exe"
+        "$ROOT/tools/sing-box.exe"
+      )
+      ;;
+    Linux*)
+      candidates=(
+        "${SINGBOX_BINARY_PATH:-}"
+        "$ROOT/.tools/sing-box/sing-box"
+        "$ROOT/.cache/sing-box-v2ray-api/$version/linux-$host_arch/sing-box"
+        "$ROOT/artifacts/binaries/singbox/linux-$host_arch/sing-box"
+        "$ROOT/tools/sing-box"
+      )
+      ;;
+    Darwin*)
+      candidates=(
+        "${SINGBOX_BINARY_PATH:-}"
+        "$ROOT/.tools/sing-box/sing-box"
+        "$ROOT/.cache/sing-box-v2ray-api/$version/darwin-$host_arch/sing-box"
+        "$ROOT/tools/sing-box"
+      )
+      ;;
+    *)
+      candidates=("${SINGBOX_BINARY_PATH:-}" "$ROOT/.tools/sing-box/sing-box" "$ROOT/tools/sing-box")
+      ;;
+  esac
+
   local c
   for c in "${candidates[@]}"; do
-    if [ -n "$c" ] && [ -x "$c" ]; then echo "$c"; return 0; fi
+    if singbox_binary_works "$c"; then echo "$c"; return 0; fi
   done
-  command -v sing-box || return 1
+
+  path_candidate="$(command -v sing-box || true)"
+  if singbox_binary_works "$path_candidate"; then
+    echo "$path_candidate"
+    return 0
+  fi
+  return 1
 }
 
 singbox_has_required_features() {
