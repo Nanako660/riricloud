@@ -1092,14 +1092,7 @@ export class AgentService implements OnModuleDestroy {
       const lineTags = resolveLineTags(line);
       const isEntry = line.entryNodeId === nodeId;
       const isLanding = line.landingNodeId === nodeId;
-      const otherNodeOnline = isEntry
-        ? (line.type === 'DIRECT'
-            ? true
-            : line.relayMode === 'TARGET_LINE'
-              ? line.targetLine?.entryNode.status === 'ONLINE'
-              : line.landingNode?.status === 'ONLINE')
-        : line.entryNode?.status === 'ONLINE';
-      if (node.status !== 'ONLINE' || !otherNodeOnline) continue;
+      if (node.status === 'DISABLED') continue;
       const users = usersForLine(line);
       const inboundUsers = line.type === 'DIRECT' && line.relaySources?.length
         ? [...new Map(

@@ -175,6 +175,17 @@ describe('AgentGatewayService', () => {
     expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
   });
 
+  it('中继线路配置生成解耦对端节点在线状态，落地或入口离线依然正常下发转发规则', async () => {
+    const relay = line({ id: 'blind-decoupled', name: '盲转发解耦', type: 'RELAY', relayMode: 'BLIND_FORWARD', entryNodeId: 'node-1', entryPort: 25001, landingNodeId: 'node-2', landingPort: 25002, landingNode: { serverHost: '198.51.100.20', status: 'OFFLINE' } });
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], landingLines: [] });
+    const entryConfig = await service.buildConfigSync('node-1');
+    expect(entryConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'direct', listen_port: 25001, override_address: '198.51.100.20', override_port: 25002 })]));
+
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE', configOverride: null, entryLines: [], landingLines: [{ ...relay, entryNode: { id: 'node-1', status: 'OFFLINE' } }] });
+    const exitConfig = await service.buildConfigSync('node-2');
+    expect(exitConfig.singboxConfig.inbounds).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'vless', listen_port: 25002 })]));
+  });
+
   it('协议代理中继生成协议入口、协议出口和路由规则', async () => {
     const relay = line({ id: 'proxy', tag: 'relay-proxy', type: 'RELAY', relayMode: 'PROTOCOL_PROXY', entryNodeId: 'node-1', entryPort: 25101, landingNodeId: 'node-2', landingPort: 25102 });
     prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [relay], landingLines: [] });

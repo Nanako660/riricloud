@@ -126,7 +126,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
 - `GET /admin/plans/:id`：查询套餐详情。⭐
 - `GET /admin/plans/:id/nodes`：兼容路径，按套餐规则计算当前可用线路。⭐
-- `GET /admin/plans/:id/lines`：按套餐规则计算当前可用公开线路。正常情况下要求入口/出口节点在线；Master 重启后的 60 秒恢复窗口内，若离线节点最近一次心跳仍在其通信模式对应的健康窗口内，也暂时保留线路，等待 Agent 重连。⭐
+- `GET /admin/plans/:id/lines`：按套餐规则计算当前可用公开线路。控制平面与数据平面解耦：订阅与套餐线路下发以线路自身的启用状态（status=ACTIVE）及中继目标状态为基准，不与节点 Agent 的心跳在线状态强绑定；线路实际可用性交由客户端本地测速（url-test/fallback）自适应决策。⭐
 - `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, trafficResetMode?: "NONE"|"CALENDAR_MONTH"|"SUBSCRIPTION_CYCLE", lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。
 - `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存，支持更新 `trafficResetMode`。⭐
 - `DELETE /admin/plans/:id`：删除未被订阅使用的套餐；已被使用时应改为 `isPublic=false` 下架。⭐

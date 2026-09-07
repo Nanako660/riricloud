@@ -24,14 +24,6 @@ import { SettingsService } from '../system/settings.service';
 import { isLineAuthorized } from '../common/line-access';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
-const availabilityNodeSummary = {
-  select: {
-    ...nodeSummary.select,
-    lastSeenAt: true,
-    communicationMode: true,
-    pollIntervalSecs: true
-  }
-} as const;
 const certificateSummary = {
   select: { id: true, name: true, subject: true, issuer: true, sansJson: true, validFrom: true, validTo: true }
 } as const;
@@ -49,22 +41,8 @@ const targetLineSummary = {
     entryNode: nodeSummary
   }
 } as const;
-const availabilityTargetLineSummary = {
-  select: {
-    ...targetLineSummary.select,
-    entryNode: availabilityNodeSummary
-  }
-} as const;
 const lineInclude = { entryNode: nodeSummary, landingNode: nodeSummary, targetLine: targetLineSummary, certificate: certificateSummary } as const;
-const availabilityLineInclude = {
-  ...lineInclude,
-  entryNode: availabilityNodeSummary,
-  landingNode: availabilityNodeSummary,
-  targetLine: availabilityTargetLineSummary
-} as const;
 type LineWithRelations = Prisma.LineGetPayload<{ include: typeof lineInclude }>;
-type LineWithAvailabilityRelations = Prisma.LineGetPayload<{ include: typeof availabilityLineInclude }>;
-type AvailabilityNode = LineWithAvailabilityRelations['entryNode'];
 
 type LineInput = {
   name?: string;
@@ -94,12 +72,9 @@ type LineInput = {
 };
 
 const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
-const NODE_RECONNECT_GRACE_MS = 60_000;
 
 @Injectable()
 export class LinesService {
-  private readonly processStartedAt = Date.now();
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentGateway: AgentService,
@@ -221,45 +196,14 @@ export class LinesService {
           ...(extraIds.length ? [{ id: { in: extraIds } }] : [])
         ]
       },
-      include: availabilityLineInclude,
+      include: lineInclude,
       orderBy: [{ sortOrder: 'asc' }, { level: 'desc' }, { createdAt: 'asc' }]
     });
-    const now = Date.now();
-    const heartbeatTimeoutMs = (settings?.heartbeatTimeoutSecs ?? 15) * 1000;
     return rows
       .filter((line) => line.status === undefined || line.status === 'ACTIVE')
-      .filter((line) => this.isNodeAvailableForSubscription(line.entryNode, now, heartbeatTimeoutMs))
-      .filter((line) => !line.landingNode || this.isNodeAvailableForSubscription(line.landingNode, now, heartbeatTimeoutMs))
-      .filter((line) => line.relayMode !== 'TARGET_LINE' || (line.targetLine?.status === 'ACTIVE' && this.isNodeAvailableForSubscription(line.targetLine.entryNode, now, heartbeatTimeoutMs)))
+      .filter((line) => line.relayMode !== 'TARGET_LINE' || line.targetLine?.status === 'ACTIVE')
       .filter((line) => isLineAuthorized(plan, line, extraIds))
-      .map((line) => this.toView(this.stripAvailabilityFields(line)));
-  }
-
-  private isNodeAvailableForSubscription(node: AvailabilityNode, now: number, heartbeatTimeoutMs: number): boolean {
-    if (!node) return false;
-    if (node.status === 'ONLINE') return true;
-    if (node.status !== 'OFFLINE' || !node.lastSeenAt) return false;
-    if (now - this.processStartedAt >= NODE_RECONNECT_GRACE_MS) return false;
-
-    const thresholdMs = node.communicationMode === 'HTTP'
-      ? Math.max(heartbeatTimeoutMs, node.pollIntervalSecs * 3_000)
-      : heartbeatTimeoutMs;
-    return this.processStartedAt - node.lastSeenAt.getTime() <= thresholdMs;
-  }
-
-  private stripAvailabilityFields(line: LineWithAvailabilityRelations): LineWithRelations {
-    const publicLine = { ...line } as LineWithRelations & {
-      entryNode: Record<string, unknown>;
-      landingNode?: Record<string, unknown> | null;
-      targetLine?: { entryNode?: Record<string, unknown> } | null;
-    };
-    for (const node of [publicLine.entryNode, publicLine.landingNode, publicLine.targetLine?.entryNode]) {
-      if (!node) continue;
-      delete node.lastSeenAt;
-      delete node.communicationMode;
-      delete node.pollIntervalSecs;
-    }
-    return publicLine;
+      .map((line) => this.toView(line));
   }
 
   private async findRaw(id: string): Promise<LineWithRelations> {

@@ -17,6 +17,10 @@
 ### Changed
 
 ### Fixed
+- **订阅线路下发与节点 Agent 心跳状态彻底解耦**：
+  - 订阅与套餐可用线路判定改以线路自身的启用状态（`status=ACTIVE`）及中继目标状态为唯一基准，移除对 `node.status === 'ONLINE'` 的强依赖及 60 秒重启宽限期过度设计；
+  - 避免节点 Agent 因短暂心跳超时、网络抖动或正在重启导致其承载的可用线路被全量从客户端订阅中剔除，交由客户端本地测速（`url-test` / `fallback`）进行自适应健康检查与节点切换；
+  - 优化 `AgentGatewayService.buildConfigSync` 配置同步逻辑，移除中继线路对对端节点在线状态（`otherNodeOnline`）的不必要阻断，确保中转与落地节点的端口转发与协议入站规则持续稳定下发。
 - **服务端线路测速全链路与协议自适应降级**：
   - 修复 Master 镜像分离后缺失 `sing-box` 内核导致端到端代理测速失效的问题，在 Master 容器中恢复 `/usr/local/bin/sing-box` 与 `SINGBOX_BINARY_PATH`（仅作为 CLI 探针调用，维持与 Agent 守护进程解耦）；
   - 引入内部测速专用凭据（`INTERNAL_SPEEDTEST_UUID` / `SECRET`），在节点配置同步中自动注入并在心跳统计中过滤，杜绝虚构凭据导致的鉴权失败与用户流量污染；

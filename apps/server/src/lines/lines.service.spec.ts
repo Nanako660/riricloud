@@ -25,7 +25,6 @@ describe('LinesService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (service as unknown as { processStartedAt: number }).processStartedAt = Date.now();
     prisma.line.findMany.mockResolvedValue([]);
     prisma.line.findFirst.mockResolvedValue(null);
     prisma.line.findUnique.mockReset();
@@ -166,29 +165,25 @@ describe('LinesService', () => {
     expect(prisma.line.create).not.toHaveBeenCalled();
   });
 
-  it('套餐线路匹配只返回公开、启用且入口出口均在线的线路', async () => {
+  it('套餐线路匹配解耦节点在线状态，即使节点离线依然正常返回', async () => {
     const relayLine = { ...rawLine, type: 'RELAY', relayMode: 'BLIND_FORWARD', landingNode: exitNode };
-    prisma.line.findMany.mockResolvedValue([relayLine, { ...relayLine, id: 'offline', landingNode: { ...exitNode, status: 'OFFLINE' } }]);
+    const offlineRelayLine = { ...relayLine, id: 'offline-landing', landingNode: { ...exitNode, status: 'OFFLINE' } };
+    const offlineEntryLine = { ...rawLine, id: 'offline-entry', entryNode: { ...entryNode, status: 'OFFLINE' } };
+    prisma.line.findMany.mockResolvedValue([relayLine, offlineRelayLine, offlineEntryLine]);
     const result = await service.getAvailableForPlan({ lineMatchMode: 'TAGS', lineTagsJson: '["premium"]', lineIdsJson: '[]' });
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe(relayLine.id);
+    expect(result).toHaveLength(3);
+    expect(result.map((line) => line.id)).toEqual(['line-1', 'offline-landing', 'offline-entry']);
   });
 
-  it('Master 重启宽限期内保留最近失联节点的线路', async () => {
-    const masterStartedAt = Date.now() - 20_000;
-    const lastSeenAt = new Date(masterStartedAt - 10_000);
-    (service as unknown as { processStartedAt: number }).processStartedAt = masterStartedAt;
-    const relayLine = { ...rawLine, type: 'RELAY', relayMode: 'BLIND_FORWARD', landingNode: exitNode };
-    prisma.line.findMany.mockResolvedValue([{
-      ...relayLine,
-      landingNode: { ...exitNode, status: 'OFFLINE', lastSeenAt, communicationMode: 'WS', pollIntervalSecs: 15 }
-    }]);
+  it('套餐线路匹配仅根据线路自身的启用状态过滤，禁用线路被剔除', async () => {
+    const activeLine = { ...rawLine, id: 'active-1', status: 'ACTIVE' };
+    const disabledLine = { ...rawLine, id: 'disabled-1', status: 'DISABLED' };
+    prisma.line.findMany.mockResolvedValue([activeLine, disabledLine]);
 
     const result = await service.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
 
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe(relayLine.id);
-    expect((result[0] as unknown as { landingNode?: Record<string, unknown> }).landingNode).not.toHaveProperty('lastSeenAt');
+    expect(result[0].id).toBe('active-1');
   });
 
   it('套餐线路视图会解析对外端点覆盖', async () => {
