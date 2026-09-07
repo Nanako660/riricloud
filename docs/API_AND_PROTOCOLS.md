@@ -71,6 +71,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
 - `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
 - `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
+- `POST /admin/nodes/:id/rotate-token`：轮换远程节点 AgentToken。⭐ 管理员确认后立即使旧凭证失效、断开在线 Agent 并将节点标记为 `OFFLINE`；响应 `{ nodeId, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，新 Token 仅在本次响应中返回一次，安装命令通过终端隐藏输入 Token，不在命令或 URL 中内嵌凭证。`isLocal=true` 的 `Master-Local` 返回 `409`，必须通过主控配置重置凭证。
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`，只能通过禁用内置 Agent 或停止 Master 进程使其离线。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐

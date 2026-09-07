@@ -56,6 +56,8 @@ esac
 DATABASE_PATH="$(node -e "const value = process.argv[1].replace(/^file:/, '').split('?')[0]; console.log(value.startsWith('/') ? value : 'prisma/' + value);" "$DATABASE_URL")"
 mkdir -p "$(dirname "$DATABASE_PATH")"
 MASTER_AGENT_CONFIG_PATH="${MASTER_AGENT_CONFIG_PATH:-$(dirname "$DATABASE_PATH")/master-agent/config.json}"
+MASTER_AGENT_DATA_DIR="$(dirname "$MASTER_AGENT_CONFIG_PATH")"
+MASTER_AGENT_AGENT_CONFIG_PATH="${MASTER_AGENT_AGENT_CONFIG_PATH:-$MASTER_AGENT_DATA_DIR/agent.yaml}"
 export MASTER_AGENT_CONFIG_PATH
 
 # 首启生成 Prisma client（目标平台引擎）并应用迁移
@@ -87,11 +89,15 @@ case "$MASTER_AGENT_MASTER_URL" in
   *) echo "MASTER_AGENT_MASTER_URL 必须使用 ws:// 或 wss://" >&2; exit 1 ;;
 esac
 AGENT_TOKEN="$(node prisma/master-agent-config.js --token)"
-export MASTER_AGENT_MASTER_URL AGENT_TOKEN MASTER_URL AGENT_MODE SINGBOX_CONFIG_PATH SINGBOX_BINARY_PATH
+export MASTER_AGENT_MASTER_URL AGENT_TOKEN MASTER_URL AGENT_MODE RIRICLOUD_DATA_DIR RIRICLOUD_CONFIG_PATH RIRICLOUD_LOG_PATH SINGBOX_CONFIG_PATH SINGBOX_BINARY_PATH
 MASTER_URL="$MASTER_AGENT_MASTER_URL"
 AGENT_MODE=ws
+RIRICLOUD_DATA_DIR="$MASTER_AGENT_DATA_DIR"
+RIRICLOUD_CONFIG_PATH="$MASTER_AGENT_AGENT_CONFIG_PATH"
+RIRICLOUD_LOG_PATH="$MASTER_AGENT_DATA_DIR/agent.log"
 SINGBOX_CONFIG_PATH="$MASTER_AGENT_CONFIG_PATH"
 mkdir -p "$(dirname "$MASTER_AGENT_CONFIG_PATH")"
+mkdir -p "$MASTER_AGENT_DATA_DIR"
 
 echo "starting riri-master on port ${PORT} with embedded Agent ..."
 node "$MASTER_ENTRY" &
@@ -130,7 +136,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 NODE
 
 # 内置 Agent 必须走守护进程模式，避免继承启动终端后误入交互式 TUI。
-"$MASTER_AGENT_BINARY_PATH" run &
+"$MASTER_AGENT_BINARY_PATH" run --config "$MASTER_AGENT_AGENT_CONFIG_PATH" &
 AGENT_PID=$!
 
 set +e

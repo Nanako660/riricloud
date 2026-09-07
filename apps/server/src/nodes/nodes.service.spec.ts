@@ -7,10 +7,11 @@ import { NodesService } from './nodes.service';
 
 describe('NodesService', () => {
   let service: NodesService;
-  const baseNode = { id: 'node-1', name: '东京节点', serverHost: '198.51.100.10', isLocal: false, configOverride: null, agentToken: 'token', status: 'ONLINE', lastSeenAt: null, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, kernelRunning: true, configError: null, lastProbeResult: null, agentVersion: null, osArch: null, kernelVersion: null, createdAt: new Date(), updatedAt: new Date() };
+  const baseNode = { id: 'node-1', name: '东京节点', serverHost: '198.51.100.10', isLocal: false, configOverride: null, agentToken: 'token', status: 'ONLINE', communicationMode: 'WS', pollIntervalSecs: 15, lastSeenAt: null, cpuUsage: 1, memoryUsage: 2, bandwidthRate: 3, kernelRunning: true, configError: null, lastProbeResult: null, agentVersion: null, osArch: null, kernelVersion: null, createdAt: new Date(), updatedAt: new Date() };
   const nodeWithLines = { ...baseNode, entryLines: [], landingLines: [] };
   const prisma = {
-    node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() }
+    node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    systemLog: { create: jest.fn() }
   };
   const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn() };
   const binaries = { resolveForNode: jest.fn() };
@@ -49,6 +50,44 @@ describe('NodesService', () => {
     const result = await service.detail(baseNode.id, 'https://panel.example.com');
     expect(result.node.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
     expect(result.node.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
+  });
+
+  it('轮换远程节点 AgentToken 并返回一次性安装命令', async () => {
+    prisma.node.findUnique.mockResolvedValue({ ...baseNode, osArch: 'linux/amd64' });
+    prisma.node.update.mockResolvedValue({ ...baseNode, status: 'OFFLINE' });
+
+    const result = await service.rotateToken(baseNode.id, 'admin-1', 'https://panel.example.com');
+
+    expect(result.agentToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
+    expect(result.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
+    expect(result.installCommands.http).toContain('--master=https://panel.example.com');
+    expect(result.installCommand).toBe(result.installCommands.ws);
+    expect(result.installCommand).not.toContain(result.agentToken);
+    expect(result.uninstallCommand).toContain('riri-agent uninstall');
+    expect(prisma.node.update).toHaveBeenCalledWith({
+      where: { id: baseNode.id },
+      data: expect.objectContaining({
+        agentToken: expect.stringMatching(/^enc:v1:/),
+        agentTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        status: 'OFFLINE'
+      })
+    });
+    expect(gateway.disconnectNode).toHaveBeenCalledWith(baseNode.id);
+    expect(prisma.systemLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        nodeId: baseNode.id,
+        metadata: JSON.stringify({ nodeId: baseNode.id, operatorId: 'admin-1' })
+      })
+    });
+  });
+
+  it('本机节点禁止通过节点管理轮换 AgentToken', async () => {
+    prisma.node.findUnique.mockResolvedValue({ ...baseNode, isLocal: true });
+
+    await expect(service.rotateToken(baseNode.id, 'admin-1', 'https://panel.example.com')).rejects.toThrow(ConflictException);
+    expect(prisma.node.update).not.toHaveBeenCalled();
+    expect(gateway.disconnectNode).not.toHaveBeenCalled();
   });
 
   it('未提供自定义地址时使用主控内置二进制', async () => {

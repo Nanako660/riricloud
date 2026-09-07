@@ -89,9 +89,14 @@ export class NodesService {
     };
   }
 
-  async rotateToken(id: string, operatorId?: string) {
+  async rotateToken(id: string, operatorId?: string, requestBaseUrl?: string) {
     const node = await this.requireNode(id);
     if (node.isLocal) throw new ConflictException('主控本机节点请通过重置主控配置轮换凭证');
+    const settings = await this.settingsService?.getSettings();
+    const publicBaseUrl = resolvePublicBaseUrl({
+      configuredBaseUrl: settings?.publicBaseUrl,
+      requestBaseUrl
+    });
     const token = generateAgentToken();
     await this.prisma.node.update({ where: { id }, data: { agentToken: encryptSecret(token), agentTokenHash: hashAgentToken(token), status: 'OFFLINE' } });
     this.agentGateway.disconnectNode(id);
@@ -99,7 +104,17 @@ export class NodesService {
     if (systemLog) {
       await systemLog.create({ data: { source: 'SERVER', level: 'WARN', module: 'Nodes', message: 'AgentToken rotated', metadata: JSON.stringify({ nodeId: id, operatorId: operatorId ?? null }), nodeId: id } });
     }
-    return { nodeId: id, agentToken: token };
+    const installCommands = {
+      ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
+      http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl)
+    };
+    return {
+      nodeId: id,
+      agentToken: token,
+      installCommand: installCommands[node.communicationMode === 'HTTP' ? 'http' : 'ws'],
+      installCommands,
+      uninstallCommand: this.buildUninstallCommand()
+    };
   }
 
   async requestReload(id: string) {

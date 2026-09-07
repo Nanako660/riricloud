@@ -210,6 +210,14 @@ export interface CreateNodeResult {
   uninstallCommand?: string;
 }
 
+export interface RotateNodeTokenResult {
+  nodeId: string;
+  agentToken: string;
+  installCommand: string;
+  installCommands: { ws: string; http: string };
+  uninstallCommand: string;
+}
+
 export interface NodeTaskStatus {
   taskId: string;
   status: 'PENDING' | 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED';
@@ -265,6 +273,17 @@ export function useNodeMutations() {
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
+  });
+
+  const rotateToken = useMutation({
+    mutationFn: async ({ id }: { id: string }) =>
+      (await api.post<RotateNodeTokenResult>(`/admin/nodes/${id}/rotate-token`)).data,
+    onSuccess: (_data, variables) => {
+      toast.success('AgentToken 已轮换');
+      invalidate();
+      invalidateDetail(variables.id);
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, 'AgentToken 轮换失败'))
   });
 
   const updateNode = useMutation({
@@ -354,5 +373,5 @@ export function useNodeMutations() {
     return undefined;
   };
 
-  return { createNode, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask };
+  return { createNode, rotateToken, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask };
 }

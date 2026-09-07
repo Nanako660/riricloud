@@ -118,7 +118,7 @@ printf '%s\n' 'New-admin-password1!' | docker compose exec -T master /nodejs/bin
 
 Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 同时控制 Master 面板监听端口；本机 Agent 动态使用的 TCP/UDP 线路端口会直接监听宿主机，不需要映射上万条端口。Compose 不固定 `container_name`，可用项目名同时运行多个实例。生产环境应设置 `MASTER_LOCAL_HOST`，或设置 `RIRICLOUD_PUBLIC_URL` 让 bootstrap 自动推导本机线路对外地址。Compose 默认引用 `latest`，`pnpm docker:up` 会注入当前版本和 Git 构建元数据。
 
-Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。
+Master 启动后会自动为 SQLite 数据库设置 `journal_mode=WAL` 与 `busy_timeout=10000`。数据库目录必须使用支持可靠文件锁的本地持久化卷；如果启动日志出现 `SQLite runtime tuning failed`，应检查挂载目录权限、文件系统类型和是否存在其他进程同时打开同一数据库文件。不要让多个 Master 实例共享同一个 SQLite 文件。内置 Agent 的自身配置与日志固定放在 Master 持久化目录下的 `master-agent/`（容器内默认 `/app/data/master-agent/`），远程 Agent 容器才使用 `/var/lib/riri-agent/`。
 
 认证运行边界：认证接口的快速限流使用 Master 进程内存，当前最多保留 `10,000` 个哈希计数键并定期清理过期窗口。进程重启会清空计数，多实例部署不会共享计数，因此生产环境应在可信反向代理处配置同源限流，并优先保持单 Master 实例；不能把该内存限流当作跨实例或持久化风控。多实例必须使用外部具备共享状态的边缘限流方案，但项目本身不引入 Redis、MQ 或其他外部运行时依赖。反向代理仅在链路完全受信时设置 `RIRICLOUD_TRUST_PROXY=true`，否则客户端可伪造 `X-Forwarded-For` 影响 IP 维度限流。
 
@@ -139,7 +139,8 @@ gzip -dc artifacts/docker/linux-amd64/riricloud-master_<version>_linux_amd64.tar
 
 ```bash
 cp .env.image.example .env.image
-# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+# 编辑 .env.image：确认镜像标签（如 0.4.5 或 latest）；填写 JWT_SECRET、RIRICLOUD_ENCRYPTION_KEY、ADMIN_EMAIL、ADMIN_PASSWORD、MASTER_LOCAL_HOST
+# RIRICLOUD_ENCRYPTION_KEY 必须长期保持不变；已有数据库请继续使用原密钥，否则历史 AgentToken、SMTP、证书等密文无法解密。
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build master
 docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```
@@ -267,7 +268,7 @@ NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调�
 E2E_SYNC_RESOURCES=0 bash scripts/dev-e2e.sh # 跳过本地构建产物同步
 ```
 
-- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录，使用临时权限受限 Cookie jar 调用管理 API（登录响应不再读取 `accessToken` JSON；解析器兼容 curl Netscape 格式的 `#HttpOnly_` Cookie 标记），默认复用 seed 预置的 `Master-Local` 节点，并通过本地 Prisma bootstrap helper 读取其 AgentToken（节点列表 API 已脱敏，不再返回凭证），再构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点；复用既有独立节点时必须显式设置 `AGENT_TOKEN`，否则脚本会提示删除旧节点后重新创建对应端口的 VLESS Reality 线路。
+- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录，优先使用显式 `ADMIN_EMAIL`/`ADMIN_PASSWORD`，其次读取 `apps/server/.env` 中的正式或兼容 `SEED_ADMIN_*` 配置，最后才回退到本地演示默认值；也可通过 `SERVER_ENV_FILE` 指定凭据配置文件。使用临时权限受限 Cookie jar 调用管理 API（登录响应不再读取 `accessToken` JSON；解析器兼容 curl Netscape 格式的 `#HttpOnly_` Cookie 标记）。登录失败时会显示 HTTP 状态和对应排查提示，不再直接暴露 `curl (22)`。脚本默认复用 seed 预置的 `Master-Local` 节点，并通过本地 Prisma bootstrap helper 读取其 AgentToken（节点列表 API 已脱敏，不再返回凭证），再构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点；复用既有独立节点时必须显式设置 `AGENT_TOKEN`，否则脚本会提示删除旧节点后重新创建对应端口的 VLESS Reality 线路。
 - 默认情况下，脚本会在启动 Agent 前通过 `scripts/dev-e2e-sync-resource.mjs` 比对当前构建文件的 SHA-256；当复用已有主控或 e2e 数据库且资源文件发生变化时，自动创建新的资源 revision、激活并设为默认，避免升级任务下载到旧文件或因文件哈希不一致失败。设置 `E2E_SYNC_RESOURCES=0` 可跳过；也可用 `E2E_RESOURCE_VERSION`、`E2E_AGENT_RESOURCE_FILE`、`E2E_AGENT_RESOURCE_TARGET`、`E2E_SINGBOX_RESOURCE_FILE`、`E2E_SINGBOX_RESOURCE_TARGET` 和 `E2E_SINGBOX_RESOURCE_VERSION` 覆盖同步目标，例如为 WSL 节点同步 `singbox-linux-amd64` 资源。
 - 主控端默认尝试 `http://localhost:3000`；若未检测到可复用的服务且该端口无法绑定（例如 Windows 系统排除端口），脚本会自动向后探测最多 1000 个可用端口，并同步更新主控地址、Web API 代理地址和 Agent WebSocket 地址。可通过 `SERVER_PORT` 或 `PORT` 固定端口，或通过 `SERVER_PORT_SCAN_LIMIT` 调整探测范围。手动启动 Web 时可用 `VITE_API_PROXY_TARGET` 指定 `/api` 代理目标。
 - StatsService 默认监听 `127.0.0.1:10085`；若该端口无法绑定，开发联调会自动探测可用端口并通过 `STATS_API_LISTEN` 注入主控配置，Agent 会自动读取下发配置中的 StatsService 地址。也可手动设置 `STATS_API_LISTEN=127.0.0.1:xxxx`。
