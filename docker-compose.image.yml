@@ -64,7 +64,7 @@ services:
         condition: service_healthy
     environment:
       AGENT_TOKEN: ${MASTER_LOCAL_AGENT_TOKEN:-${AGENT_TOKEN:-}}
-      MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:3000/ws/agent}
+      MASTER_URL: ${AGENT_MASTER_URL:-ws://127.0.0.1:${MASTER_PORT:-3000}/ws/agent}
       AGENT_MODE: ${AGENT_MODE:-ws}
       POLL_INTERVAL_SECS: ${POLL_INTERVAL_SECS:-15}
       RIRICLOUD_ENV: ${RIRICLOUD_ENV:-production}
