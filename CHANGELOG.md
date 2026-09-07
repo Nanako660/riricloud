@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.7.0] - 2026-09-07
+
+### Added
 - **Master 与 Agent 独立版本治理**：拆分主控与边缘程序版本管理，新增 `pnpm bump:agent` 系列脚本与 `agent-vA.B.C` Tag 体系；`pnpm gate:version` 与发布脚本深度支持双轨校验与分流发布。
 - **Docker 协同编排与镜像注入**：Docker Compose 默认协同拉起独立 `master` 与 `agent` 容器；支持通过 `AGENT_IMAGE` 注入 Agent 镜像与 `MASTER_LOCAL_AGENT_TOKEN` 环境变量自动对接本机节点。
 - **节点 Docker 部署支持**：管理端节点添加、详情与 Token 轮换弹窗新增原生 CLI 与 Docker 容器启动双 Tab 切换，`installCommands` 增加 `dockerWs` 与 `dockerHttp` 支持。
