@@ -37,6 +37,9 @@ services:
       RIRICLOUD_ENCRYPTION_KEY: ${RIRICLOUD_ENCRYPTION_KEY:?RIRICLOUD_ENCRYPTION_KEY must be set in .env}
       RIRICLOUD_TRUST_PROXY: ${RIRICLOUD_TRUST_PROXY:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      RIRICLOUD_DATA_DIR: /app/data/master-agent
+      RIRICLOUD_CONFIG_PATH: /app/data/master-agent/agent.yaml
+      RIRICLOUD_LOG_PATH: /app/data/master-agent/agent.log
     volumes:
       - ${MASTER_DATA_PATH:-./data}:/app/data
     healthcheck:

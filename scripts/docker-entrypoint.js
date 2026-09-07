@@ -4,6 +4,7 @@
 
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const path = require('node:path');
 const { PrismaClient } = require('/app/node_modules/@prisma/client');
 const { validateJwtSecret } = require('/app/prisma/admin-bootstrap');
 const { decryptSecret } = require('/app/prisma/secret-crypto');
@@ -189,19 +190,25 @@ async function main() {
   const agentPath = process.env.MASTER_AGENT_BINARY_PATH || '/usr/local/bin/riri-agent';
   const singboxPath = process.env.SINGBOX_BINARY_PATH || '/usr/local/bin/sing-box';
   const configPath = process.env.MASTER_AGENT_CONFIG_PATH || '/app/data/master-agent/config.json';
+  const agentDataDir = path.dirname(configPath);
+  const agentConfigPath = process.env.MASTER_AGENT_AGENT_CONFIG_PATH || path.join(agentDataDir, 'agent.yaml');
   const agentMode = process.env.MASTER_AGENT_MODE || 'ws';
   const agentMasterUrl = process.env.MASTER_AGENT_MASTER_URL || `ws://127.0.0.1:${port}/ws/agent`;
   if (!fs.existsSync(agentPath)) throw new Error(`内置 Agent 不存在：${agentPath}`);
   if (!fs.existsSync(singboxPath)) throw new Error(`内置 sing-box 不存在：${singboxPath}`);
+  fs.mkdirSync(agentDataDir, { recursive: true });
 
   // 内置 Agent 必须走守护进程模式，避免继承容器终端后误入交互式 TUI。
-  const agent = trackChild(spawn(agentPath, ['run'], {
-    cwd: '/app/data/master-agent',
+  const agent = trackChild(spawn(agentPath, ['run', '--config', agentConfigPath], {
+    cwd: agentDataDir,
     env: {
       ...process.env,
       AGENT_TOKEN: token,
       MASTER_URL: agentMasterUrl,
       AGENT_MODE: agentMode,
+      RIRICLOUD_DATA_DIR: agentDataDir,
+      RIRICLOUD_CONFIG_PATH: agentConfigPath,
+      RIRICLOUD_LOG_PATH: path.join(agentDataDir, 'agent.log'),
       SINGBOX_CONFIG_PATH: configPath,
       SINGBOX_BINARY_PATH: singboxPath
     },
