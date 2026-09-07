@@ -64,7 +64,9 @@
 | **日志缓冲** | 根 `CHANGELOG.md` 的 `[Unreleased]` | `apps/agent/CHANGELOG.md` 的 `[Unreleased]` |
 | **自增命令** | `pnpm bump` (`patch`/`minor`/`major`) | `pnpm bump:agent` (`patch`/`minor`/`major`) |
 | **发布 Tag** | `vX.Y.Z` | `agent-vA.B.C` |
-| **发布命令** | `bash scripts/release.sh --master` | `bash scripts/release.sh --agent` |
+| **发布命令** | `pnpm release:master` (`bash scripts/release.sh --master`) | `pnpm release:agent` (`bash scripts/release.sh --agent`) |
+| **产物目录** | `artifacts/packages/master/` | `artifacts/packages/agent/` |
+| **Release 附件** | `riri-master_${VERSION}_linux_amd64.tar.gz` + `checksums.txt` | 5 架构 `riri-agent_${AGENT_VERSION}_*` + `checksums.txt` |
 | **README 徽标** | 跟踪 Master 版本 | — |
 
 ---
@@ -148,8 +150,16 @@ flowchart TD
 
 ### 6.3 正式发布 (Release)
 
-- **Master 发布**：`bash scripts/release.sh --master [vX.Y.Z]`
-- **Agent 发布**：`bash scripts/release.sh --agent [agent-vA.B.C]`
+Master 与 Agent 的 Release 发布流程与产物附件完全解耦独立：
+
+- **Master 发布**：`pnpm release:master`（底层调用 `bash scripts/release.sh --master [vX.Y.Z]`）
+  - 产物输出至 `artifacts/packages/master/`；
+  - 装配主控生产发行包（包含 Web 前端、生产依赖、对应宿主架构内置 Agent/Sing-box 与启动脚本）；
+  - GitHub Release (`vX.Y.Z`) 仅上传 `riri-master_${VERSION}_linux_amd64.tar.gz` 与主控校验和文件。
+- **Agent 发布**：`pnpm release:agent`（底层调用 `bash scripts/release.sh --agent [agent-vA.B.C]`）
+  - 产物输出至 `artifacts/packages/agent/`；
+  - 交叉编译 5 大架构（linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64）程序并打包归档；
+  - GitHub Release (`agent-vA.B.C`) 仅上传这 5 个平台的 Agent 压缩包与 Agent 校验和文件。
 
 ## 8. 应用版本与可分发二进制资源版本
 

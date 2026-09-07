@@ -15,6 +15,11 @@
 ### Added
 
 ### Changed
+- **Master 与 Agent 的 Release 发布流水线与产物彻底解耦**：
+  - 改造 `scripts/release.sh`，发布产物目录按目标隔离为 `artifacts/packages/master` 与 `artifacts/packages/agent`，避免历史产物残留与校验和交叉污染；
+  - Master 发布（`pnpm release:master`）仅编译装配主控生产包所需的单目标架构（`linux-amd64`）内置二进制，不再交叉编译其他平台 Agent，GitHub Release (`vX.Y.Z`) 仅挂载 `riri-master_${VERSION}_linux_amd64.tar.gz` 与单项校验和，不再附带各架构 Agent 压缩包；
+  - Agent 发布（`pnpm release:agent`）专用于构建并上传 5 大平台的 `riri-agent_${AGENT_VERSION}_*` 压缩包与对应校验和至 `agent-vA.B.C`；
+  - 在 `package.json` 中新增 `release:master` 与 `release:agent` 便捷命令，对齐双轨版本治理规范。
 
 ### Fixed
 

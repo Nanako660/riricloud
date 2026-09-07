@@ -29,6 +29,8 @@ mkdir -p "$RIRI_ROOT/.cache/pnpm" "$RIRI_ROOT/.cache/npm" "$RIRI_ROOT/.cache/cor
 # Node / pnpm：corepack 下载缓存与 npm 元数据缓存
 export COREPACK_HOME="$(to_native "$RIRI_ROOT/.cache/corepack")"
 export npm_config_cache="$(to_native "$RIRI_ROOT/.cache/npm")"
+export npm_config_store_dir="$(to_native "$RIRI_ROOT/.cache/pnpm/store")"
+export PNPM_STORE_DIR="$(to_native "$RIRI_ROOT/.cache/pnpm/store")"
 
 # Prisma CLI 二进制缓存
 export PRISMA_CACHE_DIR="$(to_native "$RIRI_ROOT/.cache/prisma")"

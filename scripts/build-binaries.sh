@@ -135,6 +135,9 @@ fi
 if [ "$BUILD_AGENT" = "1" ]; then
   echo "==> 构建 Agent 多平台产物（版本：v${VERSION}）"
   for target in "${TARGETS[@]}"; do
+    if [[ "$target" == *"-"* ]] && [[ "$target" != *"/"* ]]; then
+      target="${target/-//}"
+    fi
     target_clean="${target//\//-}"
     GOOS_FLAG="${target%%/*}"
     GOARCH_FLAG="${target#*/}"

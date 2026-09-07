@@ -64,10 +64,10 @@ while [ $# -gt 0 ]; do
 用法：bash scripts/release.sh [选项] [tag]
 
 选项：
-  --master        发布 Master 主控端（默认，Tag 为 vX.Y.Z）
-  --agent         发布 Agent 边缘程序（Tag 为 agent-vA.B.C）
+  --master        发布 Master 主控端（默认，Tag 为 vX.Y.Z，产物输出至 artifacts/packages/master）
+  --agent         发布 Agent 边缘程序（Tag 为 agent-vA.B.C，产物输出至 artifacts/packages/agent）
   --dry-run       演练模式：完整执行构建、打包与校验，不上推 Tag、不发布 GitHub Release
-  --skip-build    复用已有 artifacts/packages 产物直接执行发布
+  --skip-build    复用已有 artifacts/packages/<target> 产物直接执行发布
   -h, --help      显示帮助
 EOF
       exit 0
@@ -81,6 +81,12 @@ EOF
       ;;
   esac
 done
+
+if [ "$RELEASE_TARGET" = "master" ]; then
+  echo "==> 发布目标：Master 主控端（模式：$([ "$DRY_RUN" = "1" ] && echo "演练 dry-run" || echo "正式 release")）"
+else
+  echo "==> 发布目标：Agent 边缘程序（模式：$([ "$DRY_RUN" = "1" ] && echo "演练 dry-run" || echo "正式 release")）"
+fi
 
 resolve_node() {
   NODE_BIN="${NODE_BIN:-node}"
@@ -148,7 +154,7 @@ fi
 
 ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 BINARIES_DIR="$ARTIFACT_ROOT/binaries"
-PACKAGE_DIR="$ARTIFACT_ROOT/packages"
+PACKAGE_DIR="$ARTIFACT_ROOT/packages/$RELEASE_TARGET"
 WORKTREE="$RIRI_ROOT/.cache/release-worktree"
 
 cleanup() {
@@ -165,6 +171,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$SKIP_BUILD" = "0" ]; then
+  remove_dir_safe "$PACKAGE_DIR"
   mkdir -p "$PACKAGE_DIR"
 
   # ---------- Worktree 隔离 ----------
@@ -189,25 +196,11 @@ if [ "$SKIP_BUILD" = "0" ]; then
       bash scripts/gate-agent.sh
     )
 
-    echo "[4/7] 编译多平台 Agent 与 Sing-box 定制内核"
-    bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$AGENT_VERSION" \
+    echo "[4/7] 准备主控端内置目标架构（linux-amd64）Agent 与 Sing-box 二进制"
+    bash "$RIRI_ROOT/scripts/build-binaries.sh" --target linux/amd64 --version "$AGENT_VERSION" \
       --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
 
-    echo "[5/7] 打包 Agent 多平台归档包（嵌入与独立分发）"
-    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
-    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" -C "$BINARIES_DIR/agent/linux-arm64" riri-agent
-    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" -C "$BINARIES_DIR/agent/darwin-amd64" riri-agent
-    tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" -C "$BINARIES_DIR/agent/darwin-arm64" riri-agent
-
-    if command -v zip >/dev/null 2>&1; then
-      (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" riri-agent.exe)
-    else
-      WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
-      WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip")"
-      powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
-    fi
-
-    echo "[6/7] 精准装配主控端发行包（linux-amd64，仅含对应架构）"
+    echo "[5/7] 装配主控端生产发行包（linux-amd64）"
     bash "$RIRI_ROOT/scripts/bundle-master.sh" \
       --target linux-amd64 \
       --worktree "$WORKTREE" \
@@ -216,14 +209,10 @@ if [ "$SKIP_BUILD" = "0" ]; then
       --singbox-revision "$SINGBOX_REVISION" \
       --archive-dir "$PACKAGE_DIR"
 
+    echo "[6/7] 生成主控端校验和"
     (
       cd "$PACKAGE_DIR"
-      sha256sum "riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
-                "riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
-                "riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
-                "riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
-                "riri-agent_${AGENT_VERSION}_windows_amd64.zip" \
-                "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
+      sha256sum "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
     )
   else
     echo "[3/7] 在工作区中执行 Agent 质量门禁"
@@ -250,7 +239,7 @@ if [ "$SKIP_BUILD" = "0" ]; then
       powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
     fi
 
-    echo "[6/7] 生成校验和"
+    echo "[6/7] 生成 Agent 归档包校验和"
     (
       cd "$PACKAGE_DIR"
       sha256sum "riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
@@ -260,6 +249,9 @@ if [ "$SKIP_BUILD" = "0" ]; then
                 "riri-agent_${AGENT_VERSION}_windows_amd64.zip" > "$PACKAGE_DIR/checksums.txt"
     )
   fi
+else
+  [ -d "$PACKAGE_DIR" ] || die "未找到产物目录 $PACKAGE_DIR，无法使用 --skip-build"
+  [ -f "$PACKAGE_DIR/checksums.txt" ] || die "未找到 $PACKAGE_DIR/checksums.txt，无法使用 --skip-build"
 fi
 
 # ---------- 提取发布说明 ----------
@@ -298,11 +290,6 @@ if [ "$RELEASE_TARGET" = "master" ]; then
     --title "$TAG" \
     --notes-file "$PACKAGE_DIR/release-notes.md" \
     "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
-    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
-    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \
-    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_amd64.tar.gz" \
-    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_darwin_arm64.tar.gz" \
-    "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" \
     "$PACKAGE_DIR/checksums.txt"
 else
   gh release create "$TAG" \

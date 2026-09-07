@@ -267,34 +267,46 @@ PR 与 main 推送自动触发 `.github/workflows/ci.yml`：三端门禁（serve
 已评估豁免的 npm advisory 在根 `package.json` 的 `pnpm.auditConfig.ignoreGhsas` 登记（附 GHSA 编号与理由）。
 
 ### 3.2 发布流程（本地脚本）
-发布不依赖 GitHub Actions，在本地执行（Git Bash，需已登录 `gh` CLI）：
+发布不依赖 GitHub Actions，在本地执行（Git Bash，需已登录 `gh` CLI）。Master 与 Agent 采用独立发布的双轨流程：
 
 ```bash
-bash scripts/release.sh          # 缺省发布根 package.json 当前版本
-bash scripts/release.sh vX.Y.Z   # 或显式指定 Tag
+# 1. 发布 Master 主控端（缺省模式，Tag 为 vX.Y.Z）
+pnpm release:master          # 或 bash scripts/release.sh --master [vX.Y.Z]
+
+# 2. 发布 Agent 边缘程序（Tag 为 agent-vA.B.C）
+pnpm release:agent           # 或 bash scripts/release.sh --agent [agent-vA.B.C]
 ```
 
 脚本自动完成（流程约定见 [VERSIONING.md](./VERSIONING.md) §6）：
 
-1. 前置校验：main 分支、工作区干净且与远端同步、Tag 与根 `package.json` 统一版本号一致、CHANGELOG 存在对应版本小节、Release 未重复创建；
-2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑三端质量门禁（与 CI 同一套命令）；
-3. 交叉编译 Agent 多平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`；
-4. 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建或校验启用统计服务、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站的 Sing-box，再装配**主控端自包含发行包**（`pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/README/.env.example + 版本号 package.json，模板维护在 `scripts/master-bundle/`）；Windows 构建时会清理 workspace 元目录并将包内绝对符号链接改写为相对链接，保证发行包可移动；
-5. 打包 tar.gz / zip（Windows 环境无 zip 时自动回退 PowerShell `Compress-Archive`）并生成 `checksums.txt`（SHA-256，含主控端包）；
-6. 提取 `CHANGELOG.md` 对应版本小节作为 Release Notes；
-7. 通过 `gh` CLI 创建 GitHub Release 并附上全部产物与校验和——**Release 覆盖主控端发行包 + Agent Linux、macOS、Windows 多平台二进制**。
+1. 前置校验：main 分支、工作区干净且与远端同步、目标 Tag 与对应版本源一致（Master 对齐 `package.json`，Agent 对齐 `apps/agent/VERSION`）、CHANGELOG 存在对应版本小节、Release 未重复创建；
+2. 在 Tag 指向的提交上（`git worktree` 隔离检出，不污染工作区）复跑对应质量门禁；
+3. **Master 发布构建**：
+   - 准备目标架构（`linux-amd64`）的内置 Agent 与 Sing-box 二进制；
+   - 装配**主控端生产发行包**（`riri-master_${VERSION}_linux_amd64.tar.gz`，包含 `pnpm --prod deploy` 生产依赖 + `web-dist/` 面板资源 + `start.sh`/`admin-reset.sh`/README/.env.example）；
+   - 输出至 `artifacts/packages/master/`，生成单项校验和文件；
+   - 创建 GitHub Release (`vX.Y.Z`)，仅挂载主控包与校验和，彻底解耦 Agent 归档包。
+4. **Agent 发布构建**：
+   - 交叉编译 Agent 5 大平台产物（`CGO_ENABLED=0` + `-trimpath`，版本号经 `-ldflags` 注入）：`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`；
+   - 打包 tar.gz / zip 输出至 `artifacts/packages/agent/` 并生成校验和文件；
+   - 创建 GitHub Release (`agent-vA.B.C`)，仅挂载这 5 个平台的 Agent 归档包与校验和。
 
-Tag 已存在则在该提交上构建（要求位于 main 历史上）；不存在则在当前 main HEAD 创建附注 Tag，发布成功后推送。
-
-Release 本地工作目录为 `artifacts/releases/v<version>/`，结构如下：
+产物输出目录结构如下（按发布目标物理隔离）：
 
 ```text
-artifacts/releases/v<version>/
-├── agent/<os>-<arch>/       # 未压缩的 Agent 二进制
-├── master/linux-amd64/      # 未压缩的主控自包含目录
-├── packages/                # tar.gz / zip 可分发包
-├── checksums.txt
-└── release-notes.md
+artifacts/packages/
+├── master/                      # Master 发布产物
+│   ├── riri-master_<version>_linux_amd64.tar.gz
+│   ├── checksums.txt
+│   └── release-notes.md
+└── agent/                       # Agent 发布产物
+    ├── riri-agent_<agent_version>_linux_amd64.tar.gz
+    ├── riri-agent_<agent_version>_linux_arm64.tar.gz
+    ├── riri-agent_<agent_version>_darwin_amd64.tar.gz
+    ├── riri-agent_<agent_version>_darwin_arm64.tar.gz
+    ├── riri-agent_<agent_version>_windows_amd64.zip
+    ├── checksums.txt
+    └── release-notes.md
 ```
 
 ### 3.3 节点 Agent 升级

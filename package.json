@@ -29,6 +29,8 @@
     "build:agent:all": "bash scripts/build-agent.sh --all",
     "build:binaries": "bash scripts/build-binaries.sh",
     "bundle:master": "bash scripts/bundle-master.sh",
+    "release:master": "bash scripts/release.sh --master",
+    "release:agent": "bash scripts/release.sh --agent",
     "bump": "node scripts/version-governance.mjs bump",
     "bump:patch": "node scripts/version-governance.mjs bump patch",
     "bump:minor": "node scripts/version-governance.mjs bump minor",
