@@ -127,8 +127,9 @@ pnpm --filter @riricloud/server exec prisma db seed
 pnpm build:agent
 AGENT_TOKEN=<token> MASTER_WS_URL=ws://localhost:3000/ws/agent ./artifacts/binaries/agent/<os>-<arch>/riri-agent[.exe]
 
-# 发布版本（本地脚本：门禁复跑 → 三平台构建 → 打包校验 → gh CLI 创建 Release）
-bash scripts/release.sh
+# 发布版本（本地脚本：门禁复跑 → 目标构建 → 打包校验 → gh CLI 创建 Release）
+pnpm release:master        # 发布 Master 主控端（Tag 为 vX.Y.Z，仅上传 riri-master 发行包）
+pnpm release:agent         # 发布 Agent 边缘端（Tag 为 agent-vA.B.C，仅上传 5 架构 Agent 包）
 ```
 
 ### 标准 Git 分支与 PR 工作流（强制执行 SOP）
