@@ -18,6 +18,7 @@
 
 ### Fixed
 - **Docker 内置 Agent 路径修复**：启动内嵌 Agent 时显式传入独立的 Agent 配置路径，并将日志与运行数据统一放入 Master 持久化目录；Compose 同步注入兼容路径变量，避免非 root 容器误写 `/var/lib/riri-agent` 导致主控启动循环。
+- **节点管理 AgentToken 轮换闭环**：补齐远程节点轮换入口、旧凭证立即失效与在线连接断开，并在管理台一次性展示新 Token 和不内嵌凭证的 WS/HTTP 安装命令；Master-Local 继续禁止普通轮换。
 
 
 ## [0.6.13] - 2026-09-06
