@@ -8,7 +8,7 @@
 #   NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 自定义独立节点端口
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
-# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
+# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / SERVER_ENV_FILE / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
 # 资源同步覆盖：E2E_RESOURCE_VERSION / E2E_AGENT_RESOURCE_FILE / E2E_AGENT_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_FILE / E2E_SINGBOX_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_VERSION
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > .tools/sing-box/ > tools/ > PATH
 set -euo pipefail
@@ -18,11 +18,38 @@ cd "$ROOT"
 # 开发环境缓存/便携工具链（go、pnpm store），失败不致命（系统已装 go 时可直接用）
 source scripts/dev-env.sh >/dev/null 2>&1 || true
 
+read_dotenv_value() {
+  local file="$1"
+  local key="$2"
+  [ -f "$file" ] || return 0
+  node - "$file" "$key" <<'NODE'
+const fs = require('fs');
+
+const [file, key] = process.argv.slice(2);
+const line = fs.readFileSync(file, 'utf8').split(/\r?\n/).find((item) => {
+  const match = item.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+  return match?.[1] === key;
+});
+if (!line) process.exit(0);
+
+let value = line.slice(line.indexOf('=') + 1).trim();
+if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  value = value.slice(1, -1);
+}
+process.stdout.write(value);
+NODE
+}
+
 SERVER_URL_OVERRIDE="${SERVER_URL:-}"
 SERVER_URL="${SERVER_URL:-http://localhost:3000}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
-ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-admin@riricloud.local}"
-ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-RiriCloud-Admin-2026!}"
+SERVER_ENV_FILE="${SERVER_ENV_FILE:-$ROOT/apps/server/.env}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" ADMIN_EMAIL)}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-${SEED_ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" SEED_ADMIN_EMAIL)}}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@riricloud.local}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(read_dotenv_value "$SERVER_ENV_FILE" ADMIN_PASSWORD)}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-${SEED_ADMIN_PASSWORD:-$(read_dotenv_value "$SERVER_ENV_FILE" SEED_ADMIN_PASSWORD)}}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-RiriCloud-Admin-2026!}"
 NODE_NAME="${NODE_NAME:-local-e2e}"
 NODE_HOST="${NODE_HOST:-127.0.0.1}"
 NODE_PORT="${NODE_PORT:-8443}"
@@ -47,6 +74,7 @@ LOG_DIR="$ROOT/.cache/logs"
 SINGBOX_CONF_DIR="$ROOT/.cache/agent"
 mkdir -p "$LOG_DIR" "$SINGBOX_CONF_DIR"
 COOKIE_JAR=""
+LOGIN_RESPONSE_FILE=""
 
 say() { printf '\033[1;36m[dev-e2e]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[dev-e2e]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -61,6 +89,7 @@ cleanup() {
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
   [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
   [ -n "$COOKIE_JAR" ] && rm -f -- "$COOKIE_JAR"
+  [ -n "$LOGIN_RESPONSE_FILE" ] && rm -f -- "$LOGIN_RESPONSE_FILE"
 }
 trap cleanup EXIT INT TERM
 
@@ -304,11 +333,23 @@ fi
 # ---------- 4. 登录管理员并准备联调节点 ----------
 COOKIE_JAR="$(mktemp "$ROOT/.cache/dev-e2e-cookie.XXXXXX")"
 chmod 600 "$COOKIE_JAR"
+LOGIN_RESPONSE_FILE="$(mktemp "$ROOT/.cache/dev-e2e-login.XXXXXX")"
+chmod 600 "$LOGIN_RESPONSE_FILE"
 LOGIN_BODY=$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")
-LOGIN_RESULT="$(curl -fsS --max-time 5 -c "$COOKIE_JAR" -b "$COOKIE_JAR" -H 'Content-Type: application/json' -d "$LOGIN_BODY" "$SERVER_URL/api/v1/auth/login")"
+LOGIN_STATUS="$(curl -sS --max-time 5 -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -H 'Content-Type: application/json' -d "$LOGIN_BODY" \
+  -o "$LOGIN_RESPONSE_FILE" -w '%{http_code}' "$SERVER_URL/api/v1/auth/login")" \
+  || die "管理员登录请求失败：无法访问 $SERVER_URL/api/v1/auth/login"
+LOGIN_RESULT="$(<"$LOGIN_RESPONSE_FILE")"
+case "$LOGIN_STATUS" in
+  200) ;;
+  401) die "管理员登录失败（HTTP 401）：请通过 ADMIN_EMAIL/ADMIN_PASSWORD 提供当前管理员凭据；复用已有数据库时脚本不会自动重置管理员密码" ;;
+  429) die "管理员登录失败（HTTP 429）：登录请求过于频繁，请稍后重试" ;;
+  *) die "管理员登录失败（HTTP $LOGIN_STATUS）：请检查主控日志和 ADMIN_EMAIL/ADMIN_PASSWORD" ;;
+esac
 ADMIN_AUTHENTICATED="$(printf '%s' "$LOGIN_RESULT" | jsonget authenticated)"
 [ "$ADMIN_AUTHENTICATED" = "true" ] && grep -q $'\triricloud_access\t' "$COOKIE_JAR" \
-  || die "管理员登录失败：请检查 ADMIN_EMAIL/ADMIN_PASSWORD（默认 admin@riricloud.local / RiriCloud-Admin-2026!）"
+  || die "管理员登录失败：响应未建立管理员会话，请检查 ADMIN_EMAIL/ADMIN_PASSWORD"
 
 AUTH=(-b "$COOKIE_JAR")
 AGENT_TOKEN="${AGENT_TOKEN:-}"
