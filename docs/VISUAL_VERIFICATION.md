@@ -60,6 +60,7 @@
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | Agent/Sing-box 类型、平台与状态筛选；独立资源版本、来源、默认/启停/归档状态、平台文件 SHA-256 与大小；本地上传、远程导入、资源详情、辅助文件、分发历史；明暗主题与移动端弹窗内滚动 |
 | **`UI-32`** | 监控与系统 | 系统日志可视化大盘 | `/admin/logs` | `apps/web/src/pages/admin/logs/**` | 4 大 KPI 指标卡、分级趋势堆叠柱状图、多维过滤器工具栏、高密度等宽日志流表格、Live Tail 实时推流条（悬浮控制、清屏、暂停、自动滚动）、详情抽屉（TraceId 穿透、调用堆栈、格式化元数据）、日志导出与安全清理确认弹窗；明暗主题自适应与移动端防溢出 |
 | **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
+| **`UI-34`** | 网络与节点 | 镜像站列表、编辑与测试结果 | `/admin/mirrors` | `apps/web/src/pages/admin/mirrors/**` | 上游域名、指定节点与 `mirror_proxy` 能力、访问模式、启用状态和最近请求结果的表格扫描；创建/编辑表单、分享 Token 一次性展示与轮换、删除确认、测试结果对话框；明暗主题、移动端表格局部滚动和弹窗内滚动 |
 
 认证页面的会话验证以 Cookie 为浏览器实现细节：视觉走查只需确认登录/注册成功后正确进入已认证路由、刷新页面仍保持登录态、注销后返回登录页；不得在页面 DOM、localStorage 或 sessionStorage 中出现 JWT 文本。
 
@@ -128,6 +129,7 @@ flowchart TD
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 | `apps/web/src/pages/admin/logs/**` | `UI-32` | **增量** |
+| `apps/web/src/pages/admin/mirrors/**` | `UI-34` | **增量** |
 
 ---
 

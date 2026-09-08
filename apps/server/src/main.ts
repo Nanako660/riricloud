@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -14,7 +14,15 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   configureRequestBodyParser(app);
   app.useWebSocketAdapter(new WsAdapter(app));
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    // 镜像地址是面向外部客户端的资源 URL，不带管理 API 前缀；管理接口仍位于 /api/v1。
+    exclude: [
+      { path: 'mirror/:slug', method: RequestMethod.ALL },
+      { path: 'mirror/:slug/*path', method: RequestMethod.ALL },
+      { path: 'mirror/share/:token', method: RequestMethod.ALL },
+      { path: 'mirror/share/:token/*path', method: RequestMethod.ALL }
+    ]
+  });
   // 默认所有端点需要 JWT，@Public() 显式放行（安全红线：服务端默认拒绝）
   app.useGlobalGuards(new JwtAuthGuard(app.get(Reflector)));
   app.useGlobalPipes(

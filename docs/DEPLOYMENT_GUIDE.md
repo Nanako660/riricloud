@@ -246,12 +246,12 @@ NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 使用独立联调�
 E2E_SYNC_RESOURCES=0 bash scripts/dev-e2e.sh # 跳过本地构建产物同步
 ```
 
-- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录，优先使用显式 `ADMIN_EMAIL`/`ADMIN_PASSWORD`，其次读取 `apps/server/.env` 中的正式或兼容 `SEED_ADMIN_*` 配置，最后才回退到本地演示默认值；也可通过 `SERVER_ENV_FILE` 指定凭据配置文件。使用临时权限受限 Cookie jar 调用管理 API（登录响应不再读取 `accessToken` JSON；解析器兼容 curl Netscape 格式的 `#HttpOnly_` Cookie 标记）。登录失败时会显示 HTTP 状态和对应排查提示，不再直接暴露 `curl (22)`。脚本默认复用 seed 预置的 `Master-Local` 节点，并通过本地 Prisma bootstrap helper 读取其 AgentToken（节点列表 API 已脱敏，不再返回凭证），再构建并启动 Agent（`SINGBOX_BINARY_PATH` 默认查找 `.tools/sing-box/`）。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点；复用既有独立节点时必须显式设置 `AGENT_TOKEN`，否则脚本会提示删除旧节点后重新创建对应端口的 VLESS Reality 线路。
+- 脚本在启动新主控前会检查并应用数据库迁移，数据库首次创建时再执行种子播种；若主控已经在运行则跳过迁移，避免运行中的 SQLite 写锁阻塞联调。随后自动完成管理员登录，优先使用显式 `ADMIN_EMAIL`/`ADMIN_PASSWORD`，其次读取 `apps/server/.env` 中的正式或兼容 `SEED_ADMIN_*` 配置，最后才回退到本地演示默认值；也可通过 `SERVER_ENV_FILE` 指定凭据配置文件。使用临时权限受限 Cookie jar 调用管理 API（登录响应不再读取 `accessToken` JSON；解析器兼容 curl Netscape 格式的 `#HttpOnly_` Cookie 标记）。登录失败时会显示 HTTP 状态和对应排查提示，不再直接暴露 `curl (22)`。脚本默认复用 seed 预置的 `Master-Local` 节点，并通过本地 Prisma bootstrap helper 读取其 AgentToken（节点列表 API 已脱敏，不再返回凭证），再构建并启动 Agent。`SINGBOX_BINARY_PATH` 可显式指定内核；未指定时脚本会按当前系统与 CPU 架构自动过滤候选文件，Linux 优先查找 `.cache/sing-box-v2ray-api/<version>/linux-<arch>/sing-box`，Windows 优先查找 `.exe`，并通过 `sing-box version` 验证文件确实可执行。如需使用独立联调节点，可设置 `USE_MASTER_LOCAL=0`，脚本会按 `127.0.0.1:<NODE_PORT>` 查找或创建节点；复用既有独立节点时必须显式设置 `AGENT_TOKEN`，否则脚本会提示删除旧节点后重新创建对应端口的 VLESS Reality 线路。
 - 默认情况下，脚本会在启动 Agent 前通过 `scripts/dev-e2e-sync-resource.mjs` 比对当前构建文件的 SHA-256；当复用已有主控或 e2e 数据库且资源文件发生变化时，自动创建新的资源 revision、激活并设为默认，避免升级任务下载到旧文件或因文件哈希不一致失败。设置 `E2E_SYNC_RESOURCES=0` 可跳过；也可用 `E2E_RESOURCE_VERSION`、`E2E_AGENT_RESOURCE_FILE`、`E2E_AGENT_RESOURCE_TARGET`、`E2E_SINGBOX_RESOURCE_FILE`、`E2E_SINGBOX_RESOURCE_TARGET` 和 `E2E_SINGBOX_RESOURCE_VERSION` 覆盖同步目标，例如为 WSL 节点同步 `singbox-linux-amd64` 资源。
 - 主控端默认尝试 `http://localhost:3000`；若未检测到可复用的服务且该端口无法绑定（例如 Windows 系统排除端口），脚本会自动向后探测最多 1000 个可用端口，并同步更新主控地址、Web API 代理地址和 Agent WebSocket 地址。可通过 `SERVER_PORT` 或 `PORT` 固定端口，或通过 `SERVER_PORT_SCAN_LIMIT` 调整探测范围。手动启动 Web 时可用 `VITE_API_PROXY_TARGET` 指定 `/api` 代理目标。
 - StatsService 默认监听 `127.0.0.1:10085`；若该端口无法绑定，开发联调会自动探测可用端口并通过 `STATS_API_LISTEN` 注入主控配置，Agent 会自动读取下发配置中的 StatsService 地址。也可手动设置 `STATS_API_LISTEN=127.0.0.1:xxxx`。
 - 开发联调启动的 Agent 会显式使用非交互模式，避免 Git Bash 后台进程误判为 Bubble Tea 终端并触发无效 console handle 错误。
-- 开发联调要求 Sing-box 启用 `with_v2ray_api`、`with_utls`、`with_quic` 和 `with_naive_outbound`。若默认找到的 `.tools/sing-box/` 二进制缺少这些标签，脚本会使用项目内 Go 工具链从 `SINGBOX_VERSION`（默认 `1.14.0`）源码构建并缓存到 `.cache/sing-box-v2ray-api/`；显式设置 `SINGBOX_BINARY_PATH` 时不会自动替换不兼容的二进制。
+- 开发联调要求 Sing-box 启用 `with_v2ray_api`、`with_utls`、`with_quic` 和 `with_naive_outbound`。脚本会先按当前系统与 CPU 架构选择可执行的内核并检查这些标签；如果缓存中没有匹配版本，脚本会使用项目内 Go 工具链从 `SINGBOX_VERSION`（默认 `1.14.0`）源码构建并缓存到 `.cache/sing-box-v2ray-api/`。显式设置 `SINGBOX_BINARY_PATH` 时，若文件无法执行或缺少所需标签会直接报错，不会静默切换到其他内核。
 - 未显式设置 `JWT_SECRET` 时，脚本会为本次本地联调进程生成随机密钥，避免空白开发 `.env` 阻止主控启动；生产环境仍必须按源码部署要求手动配置强随机密钥。Cookie 会话仅在本次脚本生命周期内使用，退出时清理临时 jar。
 - 已在运行的主控/Web 服务会被复用而非重启；脚本退出只回收其自身启动的主控/Web 进程。若主控端口发生变化，需先停止旧的 5173 Web 进程，再重新执行脚本，使 Vite 重新读取 API 代理目标。
 - 若主控进程启动失败，脚本会立即输出 `server.log` 最近 40 行并退出，不再静默等待完整超时；迁移、登录或节点准备阶段失败也会回收本次已启动的主控/Web 进程。
@@ -488,3 +488,11 @@ Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_
 ### 8.3 运行时资源管理
 
 管理员从 `/admin/binaries` 管理内置、上传和远程导入资源。资源激活后才可分发；服务端会校验节点 OS/架构、Agent 协议兼容性和资产 SHA-256。升级失败时应从节点详情重试或选择上一资源回滚，回滚会重新发送完整平台资产包。
+
+## 9. 实时节点镜像站部署
+
+镜像站依赖节点通过 WS/WSS 长连接宣告 `mirror_proxy` 能力。生产环境必须由 Nginx 或同类入口终止 HTTPS，并将 `/mirror/`、`/api/` 和 `/ws/agent` 正确转发到 Master；Master 的直接 HTTP 端口不应暴露到公网。生产配置要求镜像上游使用 HTTPS、Agent 使用 WSS，并保持反向代理的 Upgrade、Connection、超时和响应流配置正确。
+
+首次上线应只创建 `ADMIN` 或短期 `SHARE` 镜像验证指定节点的实际出口、GitHub Raw/API/Release 响应、重定向白名单和 Range 行为，确认监控后再逐站启用 `PUBLIC`。服务端默认限制单请求 10 分钟、响应 256 MiB、单节点并发 4；公开请求还按 IP/镜像站限速。禁止把 GitHub PAT、Cookie、Authorization、响应体或完整分享 Token 写入日志，日志仅记录镜像 ID、节点 ID、最终 host、状态码、字节数、耗时和稳定错误码。
+
+发布前先备份 SQLite 主文件及对应 `-wal`、`-shm`，再部署 Master 数据库迁移，最后滚动升级并确认 Agent 心跳能力。旧 Agent 会继续运行既有功能但不会接收镜像任务。回滚时先关闭镜像站入口或全部禁用配置，进行中的流按失败处理；不要求旧版本恢复进行中的镜像会话。

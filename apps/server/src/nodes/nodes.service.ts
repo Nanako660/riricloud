@@ -302,7 +302,7 @@ export class NodesService {
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {
-    const { entryLines, landingLines, lastProbeResult, agentToken: _agentToken, agentTokenHash: _agentTokenHash, ...rest } = node;
+    const { entryLines, landingLines, lastProbeResult, capabilitiesJson, agentToken: _agentToken, agentTokenHash: _agentTokenHash, ...rest } = node;
     const toLine = (line: (typeof entryLines)[number] | (typeof landingLines)[number], role: 'DIRECT' | 'TRANSIT' | 'LANDING') => ({
       id: line.id,
       name: line.name,
@@ -354,7 +354,8 @@ export class NodesService {
     }
 
     const lines = [...linesMap.values()];
-    return { ...rest, lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines, landingLines, servicePorts };
+    const capabilities = this.parseStringArray(capabilitiesJson);
+    return { ...rest, capabilities, supportsMirrorProxy: capabilities.includes('mirror_proxy'), lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines, landingLines, servicePorts };
   }
 
   private parseTags(value: string) {
@@ -372,6 +373,15 @@ export class NodesService {
       return JSON.parse(value);
     } catch {
       return null;
+    }
+  }
+
+  private parseStringArray(value: string): string[] {
+    try {
+      const parsed: unknown = JSON.parse(value || '[]');
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
     }
   }
 }

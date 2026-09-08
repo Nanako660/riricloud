@@ -717,3 +717,23 @@ model SystemLog {
 1. **内存队列与批量入库**：高频日志优先写入 Master 内存环形队列，每隔 1 秒或积攒 50 条日志异步执行批量写入（`createMany`），消除 SQLite 单写锁争用风险。
 2. **生命周期双上限自动清理**：后台定时巡检任务按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀。
 3. **敏感信息脱敏红线**：所有 Token、密码、UUID 凭证与 Cookie 在入库前必须经过不可逆掩码处理（如 `eyJ...***`）。
+
+## 6. 实时节点镜像站模型
+
+`Node.capabilitiesJson` 保存 Agent 最近一次心跳宣告的能力数组；管理端只向前端暴露解析后的能力和 `supportsMirrorProxy` 布尔值。只有在线、WS/WSS 且宣告 `mirror_proxy` 的节点可以承载实时镜像请求。
+
+`MirrorSite` 是可复用的实时反向代理配置，不保存响应体：
+
+| 字段 | 类型 | 说明与约束 |
+| :--- | :--- | :--- |
+| `id` / `name` / `slug` | String | 主键、展示名、唯一访问 slug；slug 只允许小写字母、数字和连字符 |
+| `enabled` | Boolean | 是否允许非管理员访问 |
+| `upstreamBaseUrl` | String | 规范化的公开 HTTP/HTTPS 基址，不得含凭据、查询或片段 |
+| `allowedOriginsJson` | String (JSON) | 允许的上游域名集合，必须包含基址域名 |
+| `nodeId` | String | 指定出网节点，节点删除时级联删除镜像配置 |
+| `accessMode` | String | `ADMIN`、`SHARE` 或 `PUBLIC` |
+| `shareTokenHash` | String? | 分享 Token 的 SHA-256 哈希；绝不返回 API 或日志 |
+| `shareExpiresAt` / `shareRotatedAt` | DateTime? | 分享地址过期时间与最近轮换时间 |
+| `lastRequestAt` / `lastStatusCode` / `lastErrorCode` | DateTime?/Int/String? | 最近一次请求的低敏运行摘要 |
+
+`slug` 具有唯一约束，`nodeId`、`enabled`、`createdAt` 及其组合建立查询索引。迁移、备份和回滚只涉及 SQLite 结构与配置元数据；禁止写入响应 BLOB，也不引入外部数据库、缓存或对象存储。生产备份必须同时考虑 SQLite 主文件及 WAL/SHM 文件，分享 Token 轮换后旧哈希立即失效。

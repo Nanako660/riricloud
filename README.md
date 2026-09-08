@@ -5,10 +5,10 @@
 **多节点 VPN / 代理管理系统**  
 *Master-Agent 分布式架构 · SQLite WAL 本地存储 · WSS/HTTP 双模式通信 · 多协议内核托管 · 多格式订阅输出*
 
-[![Version](https://img.shields.io/badge/version-0.7.1-blue.svg)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
-[![Go](https://img.shields.io/badge/Go-%3E%3D1.22-00ADD8.svg?logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-%3E%3D1.25-00ADD8.svg?logo=go)](https://go.dev)
 [![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E.svg?logo=nestjs)](https://nestjs.com)
 [![React](https://img.shields.io/badge/React-19.x-61DAFB.svg?logo=react)](https://react.dev)
 [![Prisma](https://img.shields.io/badge/Prisma-6.x-2D3748.svg?logo=prisma)](https://prisma.io)
@@ -100,10 +100,22 @@ graph TB
 ### 1. 环境准备
 
 - **Node.js**：`>= 20.0.0`
-- **pnpm**：`>= 9.0.0`
-- **Go**：`>= 1.22`（未安装系统 Go 时，可直接使用项目内置的便携工具链）
+- **pnpm**：`9.15.9`（系统 npm 全局安装）
+- **Go**：`>= 1.25`（以 `apps/agent/go.mod` 为准）
 
-> **开发环境提示**：在 Git Bash 中执行 `source scripts/dev-env.sh` 即可自动配置项目内隔离的依赖缓存与本地便携 Go 工具链路径。
+> **Linux 开发环境**：Node.js、pnpm 与 Go 使用系统安装，依赖缓存使用当前用户默认路径。`source scripts/dev-env.sh` 在 Linux 下不会改写 `PATH` 或缓存路径；Windows Git Bash 才使用项目内兼容缓存与便携 Go 工具链。
+
+Ubuntu/Debian 示例：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nodejs golang-go
+sudo npm install --global pnpm@9.15.9
+node --version       # >= 20.0.0
+pnpm --version       # 9.15.9
+go version           # >= 1.25
+source scripts/dev-env.sh
+```
 
 ### 2. 本地初始化与演示数据播种
 
@@ -324,8 +336,8 @@ riricloud/
 │   ├── dev/agent/         # 本地构建的 Agent 二进制
 │   ├── releases/          # scripts/release.sh 生成的发行包与校验和
 │   └── docker/            # scripts/docker-build.sh 导出的 Docker 离线镜像
-├── .cache/                # 【gitignore】本地便携依赖缓存
-├── .tools/                # 【gitignore】便携开发工具链（如本地 Go）
+├── .cache/                # 【gitignore】Windows 兼容缓存与临时构建缓存
+├── .tools/                # 【gitignore】Windows 兼容工具链与临时构建资源
 ├── AGENTS.md              # AI 代理与协作者工作规范
 ├── CHANGELOG.md           # 遵循 Keep a Changelog 的版本变更日志
 └── package.json           # Monorepo 统一版本管理与全局 scripts

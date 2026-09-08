@@ -14,7 +14,7 @@
 - [x] ⭐ 配置全局 TypeScript 与代码规范。
 - [x] ⭐ 落地工程治理工具链：`commitlint`（Conventional Commits 校验）+ `husky`（pre-commit 钩子）+ `lint-staged` + `.editorconfig`，规范见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) 与 [CODE_REVIEW.md](./CODE_REVIEW.md)。
 - [x] ⭐ 以 `v0.1.0` 为目标建立首次发布基线：统一版本号写入根 `package.json`，维护 [CHANGELOG.md](../CHANGELOG.md) 并按 [VERSIONING.md](./VERSIONING.md) §6 流程打 Tag。
-- [x] ⭐ 开发环境缓存策略：pnpm store / Go module cache / 便携工具链等全部收进项目目录（`.cache/`、`.tools/`，见 `scripts/dev-env.sh`）。
+- [x] ⭐ 开发环境策略：Linux 使用系统 Node.js / pnpm / Go 与用户默认缓存；Windows Git Bash 保留 `.cache/`、`.tools/` 兼容方案（见 `scripts/dev-env.sh`）。
 
 ### Phase 2: 主控端核心服务开发 (`apps/server`)
 - [x] ⭐ 初始化 NestJS 工程，集成 Prisma ORM。

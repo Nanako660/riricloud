@@ -75,6 +75,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "lastProbeResult" TEXT,
         "agentVersion" TEXT,
         "agentProtocolVersion" INTEGER,
+        "capabilitiesJson" TEXT NOT NULL DEFAULT '[]',
         "currentAgentAssetId" TEXT,
         "currentSingboxAssetId" TEXT,
         "osArch" TEXT,

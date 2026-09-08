@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useCurrentUser } from '@/lib/current-user';
-import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText } from 'lucide-react';
+import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import { SupportDialog } from '@/components/shared/support-dialog';
@@ -54,7 +54,8 @@ export function AppSidebar() {
               { to: '/admin/lines', label: '线路管理', icon: GitBranch, end: false },
               { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },
               { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
-              { to: '/admin/binaries', label: '资源管理', icon: Binary, end: false }
+              { to: '/admin/binaries', label: '资源管理', icon: Binary, end: false },
+              { to: '/admin/mirrors', label: '镜像站', icon: Waypoints, end: false }
             ]
           },
           {

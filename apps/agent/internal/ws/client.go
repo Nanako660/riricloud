@@ -3,7 +3,9 @@ package ws
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/mirror"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
@@ -62,6 +65,41 @@ type heartbeatData struct {
 	OSArch           string             `json:"osArch"`
 	KernelVersion    string             `json:"kernelVersion"`
 	TrafficSnapshots []heartbeatTraffic `json:"trafficSnapshots"`
+	Capabilities     []string           `json:"capabilities,omitempty"`
+}
+
+type mirrorRequest struct {
+	TaskID         string            `json:"taskId"`
+	Method         string            `json:"method"`
+	URL            string            `json:"url"`
+	AllowedHosts   []string          `json:"allowedHosts"`
+	RequestHeaders map[string]string `json:"requestHeaders"`
+	TimeoutMs      int               `json:"timeoutMs"`
+	MaxBytes       int64             `json:"maxBytes"`
+}
+
+type mirrorCancel struct {
+	TaskID string `json:"taskId"`
+}
+
+type mirrorResponseHeaders struct {
+	TaskID        string            `json:"taskId"`
+	StatusCode    int               `json:"statusCode"`
+	Headers       map[string]string `json:"headers"`
+	ContentLength int64             `json:"contentLength,omitempty"`
+	FinalHost     string            `json:"finalHost"`
+}
+
+type mirrorResponseEnd struct {
+	TaskID  string `json:"taskId"`
+	Bytes   int64  `json:"bytes"`
+	Success bool   `json:"success"`
+}
+
+type mirrorError struct {
+	TaskID  string `json:"taskId"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // configApplyResult config_sync 的处理回执（Agent -> Master）
@@ -141,27 +179,32 @@ type logReportData struct {
 
 // Client 长连接客户端：负责连接、鉴权、心跳与配置接收
 type Client struct {
-	masterURL  string
-	token      string
-	heartbeat  time.Duration
-	singboxMgr *singbox.Manager
-	version    string
-	osArch     string
-	log        *logrus.Entry
-	traffic    *trafficstats.Collector
-	writeMu    sync.Mutex
+	masterURL     string
+	token         string
+	heartbeat     time.Duration
+	singboxMgr    *singbox.Manager
+	version       string
+	osArch        string
+	log           *logrus.Entry
+	traffic       *trafficstats.Collector
+	writeMu       sync.Mutex
+	mirrorExec    *mirror.Executor
+	mirrorMu      sync.Mutex
+	mirrorCancels map[string]context.CancelFunc
 }
 
 func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, version, osArch string, log *logrus.Entry) *Client {
 	return &Client{
-		masterURL:  masterURL,
-		token:      token,
-		heartbeat:  heartbeat,
-		singboxMgr: singboxMgr,
-		version:    version,
-		osArch:     osArch,
-		log:        log,
-		traffic:    trafficstats.NewCollector(log),
+		masterURL:     masterURL,
+		token:         token,
+		heartbeat:     heartbeat,
+		singboxMgr:    singboxMgr,
+		version:       version,
+		osArch:        osArch,
+		log:           log,
+		traffic:       trafficstats.NewCollector(log),
+		mirrorExec:    mirror.NewExecutor(),
+		mirrorCancels: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -247,6 +290,7 @@ func (c *Client) runOnce(ctx context.Context) error {
 
 // readLoop 持续读取服务端消息；升级与探针任务在该连接的可取消上下文中执行。
 func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
+	defer c.cancelAllMirrors()
 	for {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
@@ -305,9 +349,86 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				continue
 			}
 			c.handleRestart(conn, task)
+		case "mirror_request":
+			var task mirrorRequest
+			if err := json.Unmarshal(msg.Data, &task); err != nil || task.TaskID == "" {
+				c.sendMirrorError(conn, task.TaskID, "INVALID_REQUEST", "invalid mirror_request payload")
+				continue
+			}
+			go c.handleMirror(ctx, conn, task)
+		case "mirror_cancel":
+			var task mirrorCancel
+			if err := json.Unmarshal(msg.Data, &task); err == nil && task.TaskID != "" {
+				c.cancelMirror(task.TaskID)
+			}
 		default:
 			c.log.WithField("type", msg.Type).Debug("unknown message")
 		}
+	}
+}
+
+func (c *Client) handleMirror(parent context.Context, conn *websocket.Conn, task mirrorRequest) {
+	ctx, cancel := context.WithCancel(parent)
+	c.mirrorMu.Lock()
+	if _, exists := c.mirrorCancels[task.TaskID]; exists {
+		c.mirrorMu.Unlock()
+		cancel()
+		c.sendMirrorError(conn, task.TaskID, "DUPLICATE_TASK", "mirror task already exists")
+		return
+	}
+	c.mirrorCancels[task.TaskID] = cancel
+	c.mirrorMu.Unlock()
+	defer func() {
+		cancel()
+		c.mirrorMu.Lock()
+		delete(c.mirrorCancels, task.TaskID)
+		c.mirrorMu.Unlock()
+	}()
+
+	bytes, err := c.mirrorExec.Do(ctx, mirror.Request{
+		Method: task.Method, URL: task.URL, AllowedHosts: task.AllowedHosts,
+		Headers: task.RequestHeaders, TimeoutMs: task.TimeoutMs, MaxBytes: task.MaxBytes,
+	}, func(headers mirror.Headers) error {
+		return c.sendMirrorHeaders(conn, mirrorResponseHeaders{
+			TaskID: task.TaskID, StatusCode: headers.StatusCode, Headers: headers.Headers,
+			ContentLength: headers.ContentLength, FinalHost: headers.FinalHost,
+		})
+	}, func(chunk []byte) error {
+		return c.sendMirrorChunk(conn, task.TaskID, chunk)
+	})
+	if err != nil {
+		var typed *mirror.Error
+		if errors.As(err, &typed) {
+			c.sendMirrorError(conn, task.TaskID, typed.Code, typed.Message)
+		} else if ctx.Err() != nil {
+			c.sendMirrorError(conn, task.TaskID, "CANCELED", "mirror request canceled")
+		} else {
+			c.sendMirrorError(conn, task.TaskID, "UPSTREAM_ERROR", "upstream request failed")
+		}
+		return
+	}
+	c.sendMirrorEnd(conn, mirrorResponseEnd{TaskID: task.TaskID, Bytes: bytes, Success: true})
+}
+
+func (c *Client) cancelMirror(taskID string) {
+	c.mirrorMu.Lock()
+	cancel := c.mirrorCancels[taskID]
+	c.mirrorMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (c *Client) cancelAllMirrors() {
+	c.mirrorMu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(c.mirrorCancels))
+	for _, cancel := range c.mirrorCancels {
+		cancels = append(cancels, cancel)
+	}
+	c.mirrorCancels = make(map[string]context.CancelFunc)
+	c.mirrorMu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
 	}
 }
 
@@ -440,6 +561,7 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				OSArch:           c.osArch,
 				KernelVersion:    kernel.Version,
 				TrafficSnapshots: make([]heartbeatTraffic, 0, len(trafficSnapshots)),
+				Capabilities:     []string{"mirror_proxy"},
 			}
 			for _, record := range trafficSnapshots {
 				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{
@@ -525,17 +647,58 @@ func (c *Client) sendLogReport(conn *websocket.Conn, logs []agentLogItem) {
 	c.sendFrame(conn, "log_report", data)
 }
 
+func (c *Client) sendMirrorHeaders(conn *websocket.Conn, headers mirrorResponseHeaders) error {
+	data, err := json.Marshal(headers)
+	if err != nil {
+		return err
+	}
+	return c.sendFrameWithError(conn, "mirror_response_headers", data)
+}
+
+func (c *Client) sendMirrorEnd(conn *websocket.Conn, result mirrorResponseEnd) {
+	data, err := json.Marshal(result)
+	if err == nil {
+		_ = c.sendFrameWithError(conn, "mirror_response_end", data)
+	}
+}
+
+func (c *Client) sendMirrorError(conn *websocket.Conn, taskID, code, messageText string) {
+	data, err := json.Marshal(mirrorError{TaskID: taskID, Code: code, Message: messageText})
+	if err == nil {
+		_ = c.sendFrameWithError(conn, "mirror_error", data)
+	}
+}
+
+func (c *Client) sendMirrorChunk(conn *websocket.Conn, taskID string, chunk []byte) error {
+	if len(taskID) > 128 {
+		return fmt.Errorf("mirror task id is too long")
+	}
+	frame := make([]byte, 2+len(taskID)+len(chunk))
+	binary.BigEndian.PutUint16(frame[:2], uint16(len(taskID)))
+	copy(frame[2:], taskID)
+	copy(frame[2+len(taskID):], chunk)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return conn.WriteMessage(websocket.BinaryMessage, frame)
+}
+
 func (c *Client) sendFrame(conn *websocket.Conn, messageType string, data json.RawMessage) {
+	_ = c.sendFrameWithError(conn, messageType, data)
+}
+
+func (c *Client) sendFrameWithError(conn *websocket.Conn, messageType string, data json.RawMessage) error {
 	frame, err := json.Marshal(message{Type: messageType, Data: data})
 	if err != nil {
 		c.log.WithError(err).Warn("marshal agent frame failed")
-		return
+		return err
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
 		c.log.WithError(err).Warn("send agent frame failed")
+		return err
 	}
+	return nil
 }
 
 // jitter 指数退避加 ±25% 抖动（G5 约束）

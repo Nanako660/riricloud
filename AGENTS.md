@@ -10,7 +10,7 @@
 
 **当前进度：v0.4.5 基线全链路与工程治理已落地。** 控制平面与数据平面解耦、节点与中继线路解耦、Master 内置 Agent、管理员引导与安全重置、Docker 离线镜像双标签导出、Agent Cobra CLI 与 Bubble Tea 全屏 TUI 控制台、网络探针与升级分发、多格式通用订阅与五合一质量门禁已全量就绪；完整路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
-> **开发环境**：所有依赖缓存与便携工具链收进项目目录（`.cache/`、`.tools/`，已 gitignore）。开发前先在 Git Bash 中 `source scripts/dev-env.sh`——它会设置 pnpm store、Prisma 缓存、Go 工具链（`.tools/go`）与 Go module cache 的项目内路径。首次搭建：pnpm 环境下执行 `pnpm setup`（install + 迁移 + 种子数据）。
+> **开发环境**：Linux 是首选本地开发环境，Node.js、pnpm 与 Go 必须使用系统安装，pnpm/npm/Prisma/Go 缓存使用当前用户默认路径。Linux 下执行 `source scripts/dev-env.sh` 不会改写 `PATH` 或缓存；Windows Git Bash 才使用项目内 `.cache/` 与 `.tools/` 兼容缓存和便携 Go 工具链。首次搭建：pnpm 环境下执行 `pnpm setup`（install + 迁移 + 种子数据）。
 
 ### 目录结构
 
@@ -24,8 +24,8 @@ riricloud/
 │   └── agent/         # Go 边缘节点守护程序（Cobra CLI + Bubble Tea TUI）
 ├── scripts/           # dev-env.sh、doc-governance.mjs、version-governance.mjs 等
 ├── artifacts/         # 【gitignore】统一的本地 Agent、Release 与 Docker 产物目录
-├── .cache/            # 【gitignore】依赖缓存（pnpm/npm/corepack/go）
-├── .tools/            # 【gitignore】便携工具链（如本地 Go）
+├── .cache/            # 【gitignore】Windows 兼容缓存与临时构建缓存
+├── .tools/            # 【gitignore】Windows 兼容工具链与临时构建资源
 ├── AGENTS.md          # 本文件
 └── CHANGELOG.md       # 变更日志
 ```
@@ -89,7 +89,7 @@ riricloud/
 
 ## 常用命令
 
-> 所有命令在 Git Bash 中执行；Go 相关命令需先 `source scripts/dev-env.sh`（未装系统 Go 时自动使用 `.tools/go`）。
+> 所有命令在 bash 中执行；Linux 使用系统 Node.js、pnpm 与 Go，Windows Git Bash 的兼容工具链由 `source scripts/dev-env.sh` 注入。
 
 ```bash
 # 首次搭建（安装依赖 + 数据库迁移 + 种子数据，含演示管理员）

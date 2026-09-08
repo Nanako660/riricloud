@@ -16,6 +16,7 @@ import { TrafficModule } from './traffic/traffic.module';
 import { WalletModule } from './wallet/wallet.module';
 import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
 import { SystemLogsModule } from './system-logs/system-logs.module';
+import { MirrorsModule } from './mirrors/mirrors.module';
 
 // Web 静态托管在 main.ts 以中间件方式注册（@nestjs/serve-static 与 Express 5 不兼容）
 @Module({
@@ -36,7 +37,8 @@ import { SystemLogsModule } from './system-logs/system-logs.module';
     TrafficModule,
     WalletModule,
     RedeemCodesModule,
-    SystemLogsModule
+    SystemLogsModule,
+    MirrorsModule
   ]
 })
 export class AppModule {}
