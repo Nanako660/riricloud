@@ -28,7 +28,10 @@ function MirrorForm({ open, editing, nodes, pending, onOpenChange, onSubmit }: {
   const [accessMode, setAccessMode] = React.useState<MirrorAccessMode>('ADMIN');
   const [enabled, setEnabled] = React.useState(false);
   const [expires, setExpires] = React.useState('');
-  const availableNodes = (nodes ?? []).filter((node) => node.communicationMode === 'WS' && node.status === 'ONLINE' && node.supportsMirrorProxy);
+  const availableNodes = React.useMemo(
+    () => (nodes ?? []).filter((node) => node.communicationMode === 'WS' && node.status === 'ONLINE' && node.supportsMirrorProxy),
+    [nodes]
+  );
   React.useEffect(() => {
     if (!open) return;
     setName(editing?.name ?? ''); setSlug(editing?.slug ?? ''); setUpstream(editing?.upstreamBaseUrl ?? ''); setOrigins(editing?.allowedOrigins.join('\n') ?? ''); setNodeId(editing?.nodeId ?? availableNodes[0]?.id ?? ''); setAccessMode(editing?.accessMode ?? 'ADMIN'); setEnabled(editing?.enabled ?? false); setExpires(editing?.shareExpiresAt ? editing.shareExpiresAt.slice(0, 16) : '');
