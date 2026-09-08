@@ -10,7 +10,12 @@ export type AgentMessageType =
   | 'probe_result'
   | 'restart_agent_task'
   | 'restart_agent_result'
-  | 'log_report';
+  | 'log_report'
+  | 'mirror_request'
+  | 'mirror_cancel'
+  | 'mirror_response_headers'
+  | 'mirror_response_end'
+  | 'mirror_error';
 
 export const AGENT_PROTOCOL_VERSION = 2;
 
@@ -50,6 +55,37 @@ export interface HeartbeatData {
   agentVersion?: string; // Agent 编译版本
   osArch?: string; // Agent 运行平台与架构
   kernelVersion?: string; // sing-box 内核版本
+  capabilities?: string[]; // Agent 能力列表
+}
+
+export interface MirrorRequestData {
+  taskId: string;
+  method: 'GET' | 'HEAD';
+  url: string;
+  allowedHosts: string[];
+  requestHeaders: Record<string, string>;
+  timeoutMs: number;
+  maxBytes: number;
+}
+
+export interface MirrorResponseHeadersData {
+  taskId: string;
+  statusCode: number;
+  headers: Record<string, string>;
+  contentLength?: number;
+  finalHost: string;
+}
+
+export interface MirrorResponseEndData {
+  taskId: string;
+  bytes: number;
+  success: boolean;
+}
+
+export interface MirrorErrorData {
+  taskId: string;
+  code: string;
+  message: string;
 }
 
 // config_sync 的处理回执（Agent -> Master，v0.3.0）
@@ -166,7 +202,10 @@ export type AgentInboundMessage =
   | AgentMessage<UpgradeResultData> & { type: 'upgrade_result' }
   | AgentMessage<ProbeResultData> & { type: 'probe_result' }
   | AgentMessage<RestartAgentResultData> & { type: 'restart_agent_result' }
-  | AgentMessage<LogReportData> & { type: 'log_report' };
+  | AgentMessage<LogReportData> & { type: 'log_report' }
+  | AgentMessage<MirrorResponseHeadersData> & { type: 'mirror_response_headers' }
+  | AgentMessage<MirrorResponseEndData> & { type: 'mirror_response_end' }
+  | AgentMessage<MirrorErrorData> & { type: 'mirror_error' };
 
 type JsonObject = Record<string, unknown>;
 
@@ -224,6 +263,7 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (value.agentVersion !== undefined && !isNonEmptyString(value.agentVersion, 128)) return false;
   if (value.osArch !== undefined && !isNonEmptyString(value.osArch, 128)) return false;
   if (value.kernelVersion !== undefined && !isNonEmptyString(value.kernelVersion, 128)) return false;
+  if (value.capabilities !== undefined && (!Array.isArray(value.capabilities) || value.capabilities.length > 32 || !value.capabilities.every((item) => isNonEmptyString(item, 64)))) return false;
   return value.trafficSnapshots.every((record) => {
     if (!isJsonObject(record)) return false;
     return (
@@ -283,6 +323,20 @@ function isRestartAgentResultData(value: unknown): value is RestartAgentResultDa
     typeof value.message === 'string' &&
     value.message.length <= 8192
   );
+}
+
+function isMirrorResponseHeadersData(value: unknown): value is MirrorResponseHeadersData {
+  if (!isJsonObject(value) || !isNonEmptyString(value.taskId, 128) || !isSafeNonNegativeInteger(value.statusCode) || !isNonEmptyString(value.finalHost, 256)) return false;
+  if (value.contentLength !== undefined && !isSafeNonNegativeInteger(value.contentLength)) return false;
+  return isJsonObject(value.headers) && Object.keys(value.headers).length <= 64 && Object.entries(value.headers).every(([key, item]) => key.length <= 128 && typeof item === 'string' && item.length <= 8192);
+}
+
+function isMirrorResponseEndData(value: unknown): value is MirrorResponseEndData {
+  return isJsonObject(value) && isNonEmptyString(value.taskId, 128) && isSafeNonNegativeInteger(value.bytes) && typeof value.success === 'boolean';
+}
+
+function isMirrorErrorData(value: unknown): value is MirrorErrorData {
+  return isJsonObject(value) && isNonEmptyString(value.taskId, 128) && isNonEmptyString(value.code, 64) && typeof value.message === 'string' && value.message.length <= 1024;
 }
 
 function isLogReportData(value: unknown): value is LogReportData {
@@ -352,6 +406,18 @@ export function parseAgentInboundMessage(raw: string): AgentInboundMessage | nul
         : null;
     case 'log_report':
       return isLogReportData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'mirror_response_headers':
+      return isMirrorResponseHeadersData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'mirror_response_end':
+      return isMirrorResponseEndData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'mirror_error':
+      return isMirrorErrorData(parsed.data)
         ? { type: parsed.type, data: parsed.data }
         : null;
     default:

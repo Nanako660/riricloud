@@ -189,6 +189,8 @@ export interface AdminNode {
   agentVersion: string | null;
   osArch: string | null;
   kernelVersion: string | null;
+  capabilities: string[];
+  supportsMirrorProxy?: boolean;
   agentProtocolVersion?: number | null;
   currentAgentAssetId?: string | null;
   currentSingboxAssetId?: string | null;

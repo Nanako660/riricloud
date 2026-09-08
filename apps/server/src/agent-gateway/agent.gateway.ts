@@ -34,7 +34,20 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const authResult = await this.gatewayService.register(auth.nodeId, client);
     this.registry.set(client, auth.nodeId);
     this.quotas.set(client, { windowStartedAt: Date.now(), messages: 0, bytes: 0 });
-    client.on('message', (raw) => {
+    client.on('message', (raw, isBinary) => {
+      if (isBinary) {
+        const binary = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+        if (!this.consumeQuota(client, binary.length)) {
+          this.logger.warn(`agent binary quota exceeded: node=${auth.nodeId}`);
+          client.close(1008, 'message quota exceeded');
+          return;
+        }
+        const nodeId = this.registry.get(client);
+        if (nodeId && this.gatewayService.isCurrentSocket(nodeId, client)) {
+          this.gatewayService.handleMirrorBinary(nodeId, binary);
+        }
+        return;
+      }
       const rawText = raw.toString();
       if (!this.consumeQuota(client, Buffer.byteLength(rawText, 'utf8'))) {
         this.logger.warn(`agent message quota exceeded: node=${auth.nodeId}`);
@@ -122,6 +135,11 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.gatewayService.handleLogReport(nodeId, message.data);
         break;
       }
+      case 'mirror_response_headers':
+      case 'mirror_response_end':
+      case 'mirror_error':
+        this.gatewayService.handleMirrorText(nodeId, message.type, message.data);
+        break;
     }
   }
 }

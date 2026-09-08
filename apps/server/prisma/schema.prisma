@@ -93,6 +93,7 @@ model Node {
   agentProtocolVersion  Int? // Agent 上报的 Master-Agent 协议版本
   osArch                String? // Agent 运行平台与架构，例如 linux/amd64
   kernelVersion         String? // sing-box 内核版本
+  capabilitiesJson      String   @default("[]")
   currentAgentAssetId   String?
   currentSingboxAssetId String?
   createdAt             DateTime  @default(now())
@@ -107,9 +108,35 @@ model Node {
   rateMetrics           NodeRateMetric[]
   binaryDeploymentTasks BinaryDeploymentTask[]
   systemLogs            SystemLog[]
+  mirrorSites           MirrorSite[]
 
   @@index([status])
   @@index([isLocal])
+}
+
+model MirrorSite {
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  enabled            Boolean  @default(false)
+  upstreamBaseUrl    String
+  allowedOriginsJson String   @default("[]")
+  nodeId             String
+  accessMode         String   @default("ADMIN")
+  shareTokenHash     String?  @unique
+  shareExpiresAt     DateTime?
+  shareRotatedAt     DateTime?
+  lastRequestAt      DateTime?
+  lastStatusCode     Int?
+  lastErrorCode      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId])
+  @@index([enabled, createdAt])
+  @@index([accessMode, enabled])
 }
 
 model NodeRateMetric {

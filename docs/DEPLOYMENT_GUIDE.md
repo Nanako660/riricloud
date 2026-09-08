@@ -488,3 +488,11 @@ Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_
 ### 8.3 运行时资源管理
 
 管理员从 `/admin/binaries` 管理内置、上传和远程导入资源。资源激活后才可分发；服务端会校验节点 OS/架构、Agent 协议兼容性和资产 SHA-256。升级失败时应从节点详情重试或选择上一资源回滚，回滚会重新发送完整平台资产包。
+
+## 9. 实时节点镜像站部署
+
+镜像站依赖节点通过 WS/WSS 长连接宣告 `mirror_proxy` 能力。生产环境必须由 Nginx 或同类入口终止 HTTPS，并将 `/mirror/`、`/api/` 和 `/ws/agent` 正确转发到 Master；Master 的直接 HTTP 端口不应暴露到公网。生产配置要求镜像上游使用 HTTPS、Agent 使用 WSS，并保持反向代理的 Upgrade、Connection、超时和响应流配置正确。
+
+首次上线应只创建 `ADMIN` 或短期 `SHARE` 镜像验证指定节点的实际出口、GitHub Raw/API/Release 响应、重定向白名单和 Range 行为，确认监控后再逐站启用 `PUBLIC`。服务端默认限制单请求 10 分钟、响应 256 MiB、单节点并发 4；公开请求还按 IP/镜像站限速。禁止把 GitHub PAT、Cookie、Authorization、响应体或完整分享 Token 写入日志，日志仅记录镜像 ID、节点 ID、最终 host、状态码、字节数、耗时和稳定错误码。
+
+发布前先备份 SQLite 主文件及对应 `-wal`、`-shm`，再部署 Master 数据库迁移，最后滚动升级并确认 Agent 心跳能力。旧 Agent 会继续运行既有功能但不会接收镜像任务。回滚时先关闭镜像站入口或全部禁用配置，进行中的流按失败处理；不要求旧版本恢复进行中的镜像会话。

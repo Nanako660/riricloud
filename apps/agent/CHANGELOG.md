@@ -15,6 +15,16 @@
 ### Added
 
 ### Changed
+
+### Fixed
+
+
+## [0.7.0] - 2026-09-09
+
+### Added
+- **节点镜像代理**：新增 `mirror_proxy` 能力宣告与受限 HTTP/HTTPS GET/HEAD 执行器，支持安全重定向、Range/条件请求、二进制流式回传、取消、超时、响应大小和并发限制。
+
+### Changed
 - **独立版本构建适配**：构建脚本优先读取 `apps/agent/VERSION` 独立版本注入二进制版本标识，解耦对主控根 package.json 的依赖。
 
 ### Fixed

@@ -562,3 +562,39 @@ Master 订阅编译引擎（`builders.ts`）支持通过 `SubscriptionTemplate` 
 - **语义化 DNS 与防污染编译 (`dnsConfigJson`)**：
   - 支持语义化 DNS 配置（`enable`、`fakeIp`、`directDns`、`proxyDns`、`ipv6`）及经典 Clash DNS 格式自动归一化。
   - 当 `fakeIp: true` 时，Clash 输出 `enhanced-mode: fake-ip` 与 `fake-ip-range`；Sing-box 输出 `dns_fakeip` 服务器定义、`fakeip` 范围（`198.18.0.0/15`）及 A/AAAA 查询劫持规则；国内 DoH DNS 直连，国外 DNS 走代理节点解析，根除 DNS 污染。
+
+## 4. 实时节点镜像协议
+
+### 4.1 Master REST 与访问路由
+
+管理员接口统一挂在 `/api/v1/admin/mirrors`：
+
+| 方法 | 路径 | 说明 |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/admin/mirrors` | 查询镜像站及节点能力摘要 |
+| `GET` | `/api/v1/admin/mirrors/:id` | 查看镜像站详情 |
+| `POST` | `/api/v1/admin/mirrors` | 创建镜像站；`SHARE` 模式仅在响应中返回一次明文 Token |
+| `PATCH` | `/api/v1/admin/mirrors/:id` | 更新镜像配置 |
+| `DELETE` | `/api/v1/admin/mirrors/:id` | 删除并撤销镜像站 |
+| `POST` | `/api/v1/admin/mirrors/:id/rotate-share-token` | 轮换分享 Token，旧 Token 立即失效 |
+| `POST` | `/api/v1/admin/mirrors/:id/test` | 通过指定节点执行受限 HEAD 测试 |
+
+实时访问路由不使用 API 前缀，避免被 SPA fallback 接管：`GET/HEAD /mirror/:slug/*path` 由镜像配置决定 `ADMIN`、`SHARE` 或 `PUBLIC` 鉴权；分享地址为 `GET/HEAD /mirror/share/:token/*path`。目标 URL 由服务端保存的基址、路径和原始查询参数拼接，客户端不能覆盖 scheme 或 host。第一版仅允许 GET/HEAD，请求头只允许 `Range`、条件请求、`Accept` 和 `Accept-Encoding`；响应只转发内容类型、长度/范围、缓存协商、ETag、Last-Modified、Vary 和 Content-Encoding 等安全字段，不转发 Cookie、Authorization、Set-Cookie 或 hop-by-hop headers。
+
+### 4.2 Master-Agent WS 消息
+
+Agent 心跳可携带 `capabilities: string[]`；仅能力包含 `mirror_proxy` 的在线 WS 节点接收以下任务：
+
+```json
+{ "type": "mirror_request", "data": { "taskId": "...", "method": "GET", "url": "https://github.com/...", "allowedHosts": ["github.com", "objects.githubusercontent.com"], "requestHeaders": {}, "timeoutMs": 600000, "maxBytes": 268435456 } }
+{ "type": "mirror_cancel", "data": { "taskId": "..." } }
+{ "type": "mirror_response_headers", "data": { "taskId": "...", "statusCode": 200, "headers": {}, "contentLength": 123, "finalHost": "github.com" } }
+{ "type": "mirror_response_end", "data": { "taskId": "...", "bytes": 123, "success": true } }
+{ "type": "mirror_error", "data": { "taskId": "...", "code": "REDIRECT_BLOCKED", "message": "safe error" } }
+```
+
+响应体使用 WS 二进制帧，不做 Base64：前 2 字节为大端序 `taskId` 长度，随后是 UTF-8 `taskId`，剩余内容为 body chunk。所有 Agent 写操作复用连接写锁；Master 对每个 taskId 维护会话，浏览器断开、超时或节点断线都会发送 `mirror_cancel` 并清理会话。
+
+### 4.3 限额与错误码
+
+Agent 默认单请求超时 10 分钟、响应上限 256 MiB、单节点镜像并发上限 4、最多跟随 5 次重定向。目标 URL 和每次重定向都必须通过 HTTP/HTTPS、允许域名、公网 DNS/IP 与无凭据校验；拒绝 loopback、私网、链路本地、保留地址、IPv4-mapped 私网和云 metadata 地址。稳定错误码包括 `INVALID_URL`、`PRIVATE_ADDRESS`、`DNS_ERROR`、`REDIRECT_BLOCKED`、`REDIRECT_LIMIT`、`RESPONSE_TOO_LARGE`、`TIMEOUT`、`CANCELED`、`NODE_DISCONNECTED` 和 `UPSTREAM_ERROR`。

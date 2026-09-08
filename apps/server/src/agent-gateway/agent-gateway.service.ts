@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, Optional, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,7 +24,7 @@ import {
   INTERNAL_SPEEDTEST_UUID,
   type ProtocolType
 } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
@@ -34,7 +34,16 @@ import { hashAgentToken } from '../common/agent-token';
 import { decryptSecret } from '../common/secret-crypto';
 
 // 活跃连接注册表：nodeId → WebSocket
-export type AgentSocket = { send: (data: string) => void; close: (code?: number, reason?: string) => void };
+export type AgentSocket = { send: (data: string | Buffer) => void; close: (code?: number, reason?: string) => void };
+
+export type MirrorStreamHandlers = {
+  onHeaders: (data: MirrorResponseHeadersData) => void;
+  onChunk: (chunk: Buffer) => void;
+  onEnd: (data: MirrorResponseEndData) => void;
+  onError: (data: MirrorErrorData) => void;
+};
+
+type MirrorSession = { nodeId: string; handlers: MirrorStreamHandlers };
 
 type SubscriptionUserSnapshot = {
   uuid: string;
@@ -185,6 +194,7 @@ export class AgentService implements OnModuleDestroy {
   private readonly pendingTasks = new Map<string, PendingTask[]>();
   private readonly taskResults = new Map<string, TaskResult>();
   private readonly configCache = new Map<string, ConfigSyncData>();
+  private readonly mirrorSessions = new Map<string, MirrorSession>();
   private readonly pendingHeartbeats = new Map<string, PendingHeartbeat>();
   private readonly heartbeatRetryTimers = new Map<string, NodeJS.Timeout>();
   private writeTail: Promise<void> = Promise.resolve();
@@ -341,7 +351,8 @@ export class AgentService implements OnModuleDestroy {
         ...(data.lastError === '' ? { configError: null } : {}),
         ...(data.agentVersion !== undefined ? { agentVersion: data.agentVersion } : {}),
         ...(data.osArch !== undefined ? { osArch: data.osArch } : {}),
-        ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {})
+        ...(data.kernelVersion !== undefined ? { kernelVersion: data.kernelVersion } : {}),
+        ...(data.capabilities !== undefined ? { capabilitiesJson: JSON.stringify([...new Set(data.capabilities)].slice(0, 32)) } : {})
       }
     });
     const trafficSnapshots = data.trafficSnapshots ?? [];
@@ -1487,6 +1498,73 @@ export class AgentService implements OnModuleDestroy {
     return { taskId, requested: sent };
   }
 
+  async startMirrorTask(nodeId: string, request: MirrorRequestData, handlers: MirrorStreamHandlers): Promise<() => void> {
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      select: { status: true, communicationMode: true, capabilitiesJson: true }
+    });
+    if (node?.status !== 'ONLINE' || node.communicationMode !== 'WS' || !this.parseCapabilities(node.capabilitiesJson).includes('mirror_proxy')) {
+      throw new ConflictException('节点未在线或未宣告 mirror_proxy 能力');
+    }
+    const socket = this.sockets.get(nodeId);
+    if (!socket) throw new ConflictException('节点 WebSocket 连接不可用');
+    if (this.mirrorSessions.has(request.taskId)) throw new ConflictException('镜像任务已存在');
+    this.mirrorSessions.set(request.taskId, { nodeId, handlers });
+    try {
+      socket.send(JSON.stringify({ type: 'mirror_request', data: request }));
+    } catch (error) {
+      this.mirrorSessions.delete(request.taskId);
+      throw error;
+    }
+    return () => this.cancelMirrorTask(request.taskId);
+  }
+
+  cancelMirrorTask(taskId: string): void {
+    const session = this.mirrorSessions.get(taskId);
+    if (!session) return;
+    this.mirrorSessions.delete(taskId);
+    try {
+      this.sockets.get(session.nodeId)?.send(JSON.stringify({ type: 'mirror_cancel', data: { taskId } }));
+    } catch (error) {
+      this.logger.warn(`send mirror cancel failed: task=${taskId} error=${error}`);
+    }
+  }
+
+  handleMirrorText(nodeId: string, type: string, data: unknown): void {
+    if (!['mirror_response_headers', 'mirror_response_end', 'mirror_error'].includes(type)) return;
+    const taskId = typeof (data as { taskId?: unknown })?.taskId === 'string' ? (data as { taskId: string }).taskId : '';
+    const session = this.mirrorSessions.get(taskId);
+    if (!session || session.nodeId !== nodeId) return;
+    if (type === 'mirror_response_headers') session.handlers.onHeaders(data as MirrorResponseHeadersData);
+    if (type === 'mirror_response_end') {
+      this.mirrorSessions.delete(taskId);
+      session.handlers.onEnd(data as MirrorResponseEndData);
+    }
+    if (type === 'mirror_error') {
+      this.mirrorSessions.delete(taskId);
+      session.handlers.onError(data as MirrorErrorData);
+    }
+  }
+
+  handleMirrorBinary(nodeId: string, raw: Buffer): void {
+    if (raw.length < 3) return;
+    const taskIdLength = raw.readUInt16BE(0);
+    if (taskIdLength < 1 || taskIdLength > 128 || raw.length < taskIdLength + 2) return;
+    const taskId = raw.subarray(2, taskIdLength + 2).toString('utf8');
+    const session = this.mirrorSessions.get(taskId);
+    if (!session || session.nodeId !== nodeId) return;
+    session.handlers.onChunk(raw.subarray(taskIdLength + 2));
+  }
+
+  private parseCapabilities(raw: string | null | undefined): string[] {
+    try {
+      const parsed: unknown = JSON.parse(raw ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
   private async sendTask(nodeId: string, type: 'upgrade_task' | 'probe_task' | 'restart_agent_task', data: unknown): Promise<boolean> {
     const socket = this.sockets.get(nodeId);
     if (socket) {
@@ -1635,6 +1713,12 @@ export class AgentService implements OnModuleDestroy {
       return;
     }
     this.sockets.delete(nodeId);
+    for (const [taskId, session] of this.mirrorSessions) {
+      if (session.nodeId === nodeId) {
+        this.mirrorSessions.delete(taskId);
+        session.handlers.onError({ taskId, code: 'NODE_DISCONNECTED', message: '节点连接已断开' });
+      }
+    }
     this.logger.log(`agent offline: nodeId=${nodeId}`);
   }
 
@@ -1707,6 +1791,7 @@ export class AgentService implements OnModuleDestroy {
     this.pendingTasks.clear();
     this.taskResults.clear();
     this.configCache.clear();
+    this.mirrorSessions.clear();
     this.pendingHeartbeats.clear();
     for (const timer of this.heartbeatRetryTimers.values()) clearTimeout(timer);
     this.heartbeatRetryTimers.clear();

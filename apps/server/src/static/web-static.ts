@@ -16,7 +16,7 @@ export function registerWebStatic(app: NestExpressApplication): void {
   const indexHtml = join(root, 'index.html');
   const fallback: import('express').RequestHandler = (req, res, next) => {
     // 仅拦截非 /api 的页面导航请求，API 404 交回 Express 默认处理
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/mirror')) {
       res.sendFile(indexHtml, (err) => {
         if (err) {
           next(err);

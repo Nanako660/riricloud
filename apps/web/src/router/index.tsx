@@ -54,6 +54,12 @@ export const router = createBrowserRouter([
                 })
               },
               {
+                path: '/admin/mirrors',
+                lazy: async () => ({
+                  Component: (await import('@/pages/admin/mirrors')).default
+                })
+              },
+              {
                 path: '/admin/lines',
                 lazy: async () => ({
                   Component: (await import('@/pages/admin/lines')).default
