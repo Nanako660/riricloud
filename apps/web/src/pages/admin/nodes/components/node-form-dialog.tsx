@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -55,14 +56,11 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
   });
 
   // 打开时重置到初始状态
-  useEffect(() => {
-    if (open) {
-      setCreated(null);
-      setInstallMode('WS');
-      setDeployType('native');
-      createForm.reset();
-    }
-  }, [open, createForm]);
+  useFormResetOnKey({
+    open,
+    resetKey: 'create',
+    reset: () => { setCreated(null); setInstallMode('WS'); setDeployType('native'); createForm.reset(); }
+  });
 
   const currentCommand = useMemo(() => {
     if (!created) return '';

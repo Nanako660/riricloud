@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -43,24 +44,27 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
   const createForm = useForm<CreateUserForm>({ resolver: zodResolver(createUserSchema), defaultValues: emptyCreateValues });
   const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 0, usedGB: 0, expireAt: '', addDays: undefined, extraLineIds: [] } });
 
-  useEffect(() => {
-    if (!open) return;
-    if (!user) {
-      createForm.reset(emptyCreateValues);
-      return;
+  useFormResetOnKey({
+    open,
+    resetKey: user?.id ?? 'create',
+    reset: () => {
+      if (!user) {
+        createForm.reset(emptyCreateValues);
+        return;
+      }
+      accountForm.reset({ role: user.role, isActive: user.isActive, emailVerified: !!user.emailVerifiedAt, password: '' });
+      const subscription = user.subscription;
+      subscriptionForm.reset({
+        planId: subscription?.plan?.id ?? '',
+        status: subscription?.status ?? 'ACTIVE',
+        quotaGB: (subscription?.trafficLimitBytes ?? 0) / GB,
+        usedGB: (subscription?.trafficUsedBytes ?? 0) / GB,
+        expireAt: subscription?.expireAt ? subscription.expireAt.slice(0, 10) : '',
+        addDays: undefined,
+        extraLineIds: subscription?.extraLineIds ?? []
+      });
     }
-    accountForm.reset({ role: user.role, isActive: user.isActive, emailVerified: !!user.emailVerifiedAt, password: '' });
-    const subscription = user.subscription;
-    subscriptionForm.reset({
-      planId: subscription?.plan?.id ?? '',
-      status: subscription?.status ?? 'ACTIVE',
-      quotaGB: (subscription?.trafficLimitBytes ?? 0) / GB,
-      usedGB: (subscription?.trafficUsedBytes ?? 0) / GB,
-      expireAt: subscription?.expireAt ? subscription.expireAt.slice(0, 10) : '',
-      addDays: undefined,
-      extraLineIds: subscription?.extraLineIds ?? []
-    });
-  }, [accountForm, createForm, open, subscriptionForm, user]);
+  });
 
   const submitAccount = (values: EditAccountForm) => {
     if (!user) return;

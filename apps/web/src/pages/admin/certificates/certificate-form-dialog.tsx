@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FileKey2, FileText, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -51,14 +52,20 @@ export function CertificateFormDialog({
   const certificatePem = form.watch('certificatePem');
   const privateKeyPem = form.watch('privateKeyPem');
 
-  React.useEffect(() => {
-    if (!open) return;
-    if (!certificateId) {
-      form.reset({ name: '', certificatePem: '', privateKeyPem: '' });
-    } else if (detail.data) {
-      form.reset({ name: detail.data.name, certificatePem: detail.data.certificatePem, privateKeyPem: '' });
+  // 仅在打开弹窗或切换证书时初始化草稿；详情重新获取不得清空已粘贴的 PEM 与私钥
+  useFormResetOnKey({
+    open,
+    resetKey: certificateId ?? 'create',
+    dataRevision: certificateId ? detail.dataUpdatedAt : undefined,
+    isDirty: form.formState.isDirty,
+    reset: () => {
+      if (!certificateId) {
+        form.reset({ name: '', certificatePem: '', privateKeyPem: '' });
+      } else if (detail.data) {
+        form.reset({ name: detail.data.name, certificatePem: detail.data.certificatePem, privateKeyPem: '' });
+      }
     }
-  }, [certificateId, detail.data, form, open]);
+  });
 
   React.useEffect(() => {
     resetParse();

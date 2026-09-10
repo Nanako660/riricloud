@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
@@ -56,7 +57,7 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
   onSubmit: (values: { probes: Values[] }) => void;
 }) {
   const settingsQuery = useQuery({
-    queryKey: ['admin', 'settings'],
+    queryKey: ['admin', 'settings', 'probe-presets'],
     queryFn: async () => (await api.get<{ probePresetTargets: Array<{ type: Values['type']; target: string; port?: number; timeoutMs?: number }> }>('/admin/settings')).data,
     enabled: open,
     staleTime: 60_000
@@ -79,19 +80,25 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
     ];
   }, [settingsQuery.data?.probePresetTargets]);
 
-  React.useEffect(() => {
-    const first = availablePresets[0];
-    if (open && first && !availablePresets.some((item) => item.value === preset)) {
-      setPreset(first.value);
-      form.reset(first.probe);
+  // 打开弹窗或切换预设时初始化一次探针草稿；预设列表刷新不得覆盖用户输入
+  useFormResetOnKey({
+    open,
+    resetKey: preset,
+    reset: () => {
+      const selected = availablePresets.find((item) => item.value === preset);
+      if (selected) form.reset(selected.probe);
     }
-  }, [availablePresets, form, open, preset]);
+  });
 
-  const applyPreset = (value: string) => {
-    setPreset(value);
-    const selected = availablePresets.find((item) => item.value === value);
-    if (selected) form.reset(selected.probe);
-  };
+  // 非破坏性校正：当前预设被系统设置移除时，只切换预设键，由上面的初始化重新填充
+  React.useEffect(() => {
+    if (!open) return;
+    if (availablePresets.some((item) => item.value === preset)) return;
+    const first = availablePresets[0];
+    if (first) setPreset(first.value);
+  }, [availablePresets, open, preset]);
+
+  const applyPreset = (value: string) => setPreset(value);
 
   return <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
     <ResponsiveDialogContent size="compact">

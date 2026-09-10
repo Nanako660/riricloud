@@ -35,7 +35,27 @@ module.exports = tseslint.config(
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }]
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // 表单草稿初始化契约（见 docs/FRONTEND_UI_GUIDELINES.md §5）：
+      // 初始化只允许经 useFormResetOnKey，禁止让 effect 依赖会随轮询/refetch 变化的引用
+      'no-restricted-syntax': ['error',
+        {
+          selector: "CallExpression[callee.name='useEffect'] CallExpression[callee.property.name='reset']",
+          message: '禁止在 useEffect 内初始化表单草稿：请改用 useFormResetOnKey（apps/web/src/hooks/use-form-reset.ts），以 open + 业务 id 作为触发条件。'
+        },
+        {
+          selector: "CallExpression[callee.property.name='useEffect'] CallExpression[callee.property.name='reset']",
+          message: '禁止在 useEffect 内初始化表单草稿：请改用 useFormResetOnKey（apps/web/src/hooks/use-form-reset.ts），以 open + 业务 id 作为触发条件。'
+        },
+        {
+          selector: "CallExpression[callee.name='useEffect'] > ArrayExpression > MemberExpression[property.name='data']",
+          message: '禁止把 query 的 data 对象放进 useEffect 依赖：该引用会随每次轮询/refetch 变化。表单草稿请改用 dataUpdatedAt + isDirty，确属服务端状态整体同步时请加 // eslint-disable-next-line no-restricted-syntax -- 理由 显式豁免。'
+        },
+        {
+          selector: "CallExpression[callee.property.name='useEffect'] > ArrayExpression > MemberExpression[property.name='data']",
+          message: '禁止把 query 的 data 对象放进 useEffect 依赖：该引用会随每次轮询/refetch 变化。表单草稿请改用 dataUpdatedAt + isDirty，确属服务端状态整体同步时请加 // eslint-disable-next-line no-restricted-syntax -- 理由 显式豁免。'
+        }
+      ]
     }
   },
   {

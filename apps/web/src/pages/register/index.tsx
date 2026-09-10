@@ -50,6 +50,7 @@ export default function RegisterPage() {
       toast.error('当前站点未开放注册');
       navigate('/login', { replace: true });
     }
+    // eslint-disable-next-line no-restricted-syntax -- 站点关闭注册时的一次性跳转判断，非表单草稿
   }, [infoQuery.data, navigate]);
 
   useEffect(() => {

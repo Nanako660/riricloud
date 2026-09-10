@@ -58,6 +58,7 @@ export function SiteRuntime() {
       document.head.querySelectorAll(`[${CUSTOM_HEAD_ATTRIBUTE}]`).forEach((node) => node.remove());
       document.querySelector('link[data-riricloud-favicon]')?.remove();
     };
+    // eslint-disable-next-line no-restricted-syntax -- 站点品牌运行时（标题/Favicon/自定义 CSS/Head）需按服务端设置整体重建；非表单草稿
   }, [settingsQuery.data]);
 
   return null;

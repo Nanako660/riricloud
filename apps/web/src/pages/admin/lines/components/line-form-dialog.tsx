@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -34,11 +35,11 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
   });
   const realityKeypair = useRealityKeypair();
 
-  useEffect(() => {
-    if (!open) return;
-    setTab('inbound');
-    form.reset(line ? lineToFormValues(line) : newLineFormValues());
-  }, [form, line, open]);
+  useFormResetOnKey({
+    open,
+    resetKey: line?.id ?? 'create',
+    reset: () => { setTab('inbound'); form.reset(line ? lineToFormValues(line) : newLineFormValues()); }
+  });
 
   const changeProtocol = (protocolType: ProtocolType) => {
     const current = form.getValues();

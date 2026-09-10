@@ -1,4 +1,5 @@
 import { useEffect, useState, type InputHTMLAttributes } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { Link } from 'react-router-dom';
 import { useForm, useFormContext, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -198,9 +199,14 @@ export default function AdminSettingsPage() {
     })
   });
 
-  useEffect(() => {
-    if (settingsQuery.data) form.reset(toForm(settingsQuery.data));
-  }, [settingsQuery.data, form]);
+  // 服务端设置回灌：仅在表单没有未保存修改时跟随数据版本同步，
+  // 避免后台 refetch 或别处 invalidate 清空管理员正在编辑的设置项
+  useFormResetOnKey({
+    resetKey: settingsQuery.data ? 'settings' : null,
+    dataRevision: settingsQuery.dataUpdatedAt,
+    isDirty: form.formState.isDirty,
+    reset: () => { if (settingsQuery.data) form.reset(toForm(settingsQuery.data)); }
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (values: SettingsForm) => (await api.put<SystemSettings>('/admin/settings', toPayload(values))).data,

@@ -29,6 +29,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [web-form-init-clobber](./archive/2026-09-10-web-form-init-clobber.md) | `v0.8.2` | 2026-09-10 | — |
 | [用户登录注册系统全量安全审计整改 TODO（2026-09-07）](./archive/2026-09-07-auth-registration-security-audit.md) | `v0.6.13+` | 2026-09-07 | — |
 | [arch-decouple-master-agent](./archive/2026-09-07-arch-decouple-master-agent.md) | `v0.6.15` | 2026-09-07 | — |
 | [全栈可视化日志管理系统 (System Log Management)](./archive/2026-09-06-system-log-management.md) | `v0.6.11` | 2026-09-06 | — |

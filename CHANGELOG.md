@@ -15,8 +15,12 @@
 ### Added
 
 ### Changed
+- **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。
 
 ### Fixed
+- **镜像站弹窗输入被轮询清空（0.8.1 未根治的复发）**：`/admin/mirrors` 新增/编辑弹窗输入后约 5 秒被节点列表轮询重置；现迁移为 React Hook Form + Zod 并按业务身份初始化，出网节点选项保持实时刷新而不再回写用户输入。
+- **节点详情表单被 5 秒轮询回写**：节点名称、对外地址与覆盖配置 JSON 每 5 秒被详情轮询覆盖，现按 `node.id` 初始化一次，遥测、内核状态与错误回执继续实时刷新。
+- **同类隐患收敛**：系统设置页与证书编辑弹窗改为按 `dataUpdatedAt` + `isDirty` 回灌（后台 refetch 不再清空未保存修改），个人中心昵称草稿加 dirty 守卫；线路/套餐/模板/节点创建/节点升级弹窗统一改走 `useFormResetOnKey`；探针弹窗改用独立 queryKey（原与设置页共用 key 但响应形态不同，会污染设置缓存）；资源导入弹窗把「类型与平台联动」移入选择事件，删除派生数组入依赖的写法。
 
 ### Security
 - **`multer` 传递依赖强制升级**：新披露 3 条 High DoS advisory（`GHSA-wc9g-mqfw-jrwm`、`GHSA-qfvm-cv95-jqjf`、`GHSA-535w-7cp7-47q4`）影响经 `@nestjs/platform-express` 传递引入的 `multer@2.2.0`；因 NestJS 11.x 最新版仍精确依赖该版本，改由根 `package.json` 的 `pnpm.overrides` 强制 `multer@2.3.0`（临时安全锁定，待上游依赖 `>=2.3.0` 后移除，说明见 `docs/TECH_STACK.md` §3.2）。
