@@ -9,6 +9,7 @@
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
 # 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / SERVER_ENV_FILE / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
+# 联调端口：主控端默认 30800（避开 Windows 保留/动态端口区间），实际使用端口写入 .cache/dev-e2e-server-port 供后续运行复用
 # 资源同步覆盖：E2E_RESOURCE_VERSION / E2E_AGENT_RESOURCE_FILE / E2E_AGENT_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_FILE / E2E_SINGBOX_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_VERSION
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > 当前平台缓存 > tools/ > PATH
 set -euo pipefail
@@ -41,7 +42,7 @@ NODE
 }
 
 SERVER_URL_OVERRIDE="${SERVER_URL:-}"
-SERVER_URL="${SERVER_URL:-http://localhost:3000}"
+SERVER_URL="${SERVER_URL:-http://localhost:30800}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
 SERVER_ENV_FILE="${SERVER_ENV_FILE:-$ROOT/apps/server/.env}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" ADMIN_EMAIL)}"
@@ -59,9 +60,9 @@ SERVER_PORT_SCAN_LIMIT="${SERVER_PORT_SCAN_LIMIT:-1000}"
 SERVER_PORT_OVERRIDE="${SERVER_PORT:-${PORT:-}}"
 STATS_API_LISTEN_OVERRIDE="${STATS_API_LISTEN:-}"
 if [ -z "$SERVER_PORT_OVERRIDE" ] && [ -n "$SERVER_URL_OVERRIDE" ]; then
-  SERVER_PORT_OVERRIDE="$(node -e 'try { const url = new URL(process.argv[1]); console.log(url.port || "3000") } catch { console.log("3000") }' "$SERVER_URL")"
+  SERVER_PORT_OVERRIDE="$(node -e 'try { const url = new URL(process.argv[1]); console.log(url.port || "30800") } catch { console.log("30800") }' "$SERVER_URL")"
 fi
-SERVER_PORT="${SERVER_PORT_OVERRIDE:-3000}"
+SERVER_PORT="${SERVER_PORT_OVERRIDE:-30800}"
 if [ -n "$SERVER_PORT_OVERRIDE" ] && [ -z "$SERVER_URL_OVERRIDE" ]; then
   SERVER_URL="http://localhost:$SERVER_PORT"
 fi
@@ -83,11 +84,47 @@ SERVER_PID=""
 WEB_PID=""
 AGENT_PID=""
 
+# 记录本次实际使用的主控端口：端口一旦漂移，仅探测默认地址无法发现既有主控端，
+# 二次启动会重复拉起并抢占同一端口（Windows 下表现为 EADDRINUSE 竞态）。
+E2E_PORT_FILE="$ROOT/.cache/dev-e2e-server-port"
+RECORDED_PORT=""
+if [ -z "$SERVER_PORT_OVERRIDE" ] && [ -z "$SERVER_URL_OVERRIDE" ] && [ -f "$E2E_PORT_FILE" ]; then
+  read -r RECORDED_PORT <"$E2E_PORT_FILE" || true
+  case "$RECORDED_PORT" in
+    ''|*[!0-9]*) RECORDED_PORT="" ;;
+  esac
+  if [ -n "$RECORDED_PORT" ] && [ "${#RECORDED_PORT}" -le 5 ] \
+    && curl -fsS --max-time 2 "http://localhost:$RECORDED_PORT/api/v1/system/version" >/dev/null 2>&1; then
+    SERVER_PORT="$RECORDED_PORT"
+    SERVER_URL="http://localhost:$RECORDED_PORT"
+    say "发现 $SERVER_URL 上已有主控端在运行，复用该端口"
+  fi
+fi
+
+# 终止整棵进程树：MSYS/Git Bash 的 kill 只结束 MSYS 侧进程，pnpm 派生的 nest/sing-box
+# 会成为孤儿并继续占用端口；必须先把 MSYS PID 翻译成 Windows PID（/proc/<pid>/winpid），
+# 再用 taskkill /T 回收整棵树。二者 PID 体系不同，直接 taskkill 既无效还可能误杀同号进程。
+kill_process_tree() {
+  local pid="$1"
+  [ -n "$pid" ] || return 0
+  local winpid=""
+  if [ -r "/proc/$pid/winpid" ]; then
+    winpid="$(cat "/proc/$pid/winpid" 2>/dev/null || true)"
+  fi
+  case "$winpid" in
+    ''|*[!0-9]*) winpid="" ;;
+  esac
+  if [ -n "$winpid" ] && command -v taskkill >/dev/null 2>&1; then
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' taskkill /PID "$winpid" /T /F >/dev/null 2>&1 || true
+  fi
+  kill "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-  [ -n "$AGENT_PID" ] && kill "$AGENT_PID" 2>/dev/null || true
+  kill_process_tree "$AGENT_PID"
   # 只回收本次脚本启动的服务；已在运行的复用实例保持不动
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  [ -n "$WEB_PID" ] && kill "$WEB_PID" 2>/dev/null || true
+  kill_process_tree "$SERVER_PID"
+  kill_process_tree "$WEB_PID"
   [ -n "$COOKIE_JAR" ] && rm -f -- "$COOKIE_JAR"
   [ -n "$LOGIN_RESPONSE_FILE" ] && rm -f -- "$LOGIN_RESPONSE_FILE"
 }
@@ -336,38 +373,73 @@ else
     SERVER_PORT="$(pick_server_port "$SERVER_PORT_START")" \
       || die "未找到可用的主控端口（已从 $SERVER_PORT_START 开始探测 $SERVER_PORT_SCAN_LIMIT 个端口）；可通过 SERVER_PORT=xxxx 或 PORT=xxxx 指定"
     SERVER_URL="http://localhost:$SERVER_PORT"
-    say "主控端默认端口不可用，改用 $SERVER_URL"
+    if [ "$SERVER_PORT" != "$SERVER_PORT_START" ]; then
+      say "主控端默认端口 $SERVER_PORT_START 不可用，改用 $SERVER_URL"
+    fi
   fi
   if [ -z "$STATS_API_LISTEN_OVERRIDE" ]; then
     STATS_API_PORT_START="${STATS_API_PORT_START:-10085}"
     STATS_API_PORT="$(pick_server_port "$STATS_API_PORT_START")" \
       || die "未找到可用的 StatsService 端口（已从 $STATS_API_PORT_START 开始探测 $SERVER_PORT_SCAN_LIMIT 个端口）；可通过 STATS_API_LISTEN=127.0.0.1:xxxx 指定"
     STATS_API_LISTEN="127.0.0.1:$STATS_API_PORT"
-    say "StatsService 默认端口不可用，改用 $STATS_API_LISTEN"
+    if [ "$STATS_API_PORT" != "$STATS_API_PORT_START" ]; then
+      say "StatsService 默认端口 $STATS_API_PORT_START 不可用，改用 $STATS_API_LISTEN"
+    fi
   fi
-  rm -f apps/server/*.tsbuildinfo
-  say "启动主控端（日志：$LOG_DIR/server.log）…"
-  PORT="$SERVER_PORT" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
-  SERVER_PID=$!
+
+  SERVER_ATTEMPTS="${SERVER_START_ATTEMPTS:-5}"
   SERVER_READY=0
-  for i in $(seq 1 60); do
-    if server_up; then
-      SERVER_READY=1
+  for attempt in $(seq 1 "$SERVER_ATTEMPTS"); do
+    rm -f apps/server/*.tsbuildinfo
+    say "启动主控端（端口 $SERVER_PORT，日志：$LOG_DIR/server.log）…"
+    PORT="$SERVER_PORT" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
+    SERVER_PID=$!
+    SERVER_EADDRINUSE=0
+    for _ in $(seq 1 60); do
+      if server_up; then
+        SERVER_READY=1
+        break
+      fi
+      # 端口可能在探测与绑定之间被其他进程抢占：顺延到下一个可用端口重试，而不是直接失败
+      if grep -q 'EADDRINUSE' "$LOG_DIR/server.log" 2>/dev/null; then
+        SERVER_EADDRINUSE=1
+        break
+      fi
+      if grep -q 'Error:' "$LOG_DIR/server.log" 2>/dev/null; then
+        say "主控端启动失败，最近日志：" >&2
+        tail -n 40 "$LOG_DIR/server.log" >&2 || true
+        die "主控端进程启动后立即退出"
+      fi
+      if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        say "主控端进程已退出，最近日志：" >&2
+        tail -n 40 "$LOG_DIR/server.log" >&2 || true
+        die "主控端启动失败"
+      fi
+      sleep 1
+    done
+
+    if [ "$SERVER_READY" = "1" ]; then
       break
     fi
-    if grep -q 'Error:' "$LOG_DIR/server.log" 2>/dev/null; then
-      say "主控端启动失败，最近日志：" >&2
-      tail -n 40 "$LOG_DIR/server.log" >&2 || true
-      die "主控端进程启动后立即退出"
+    if [ "$SERVER_EADDRINUSE" = "1" ]; then
+      kill_process_tree "$SERVER_PID"
+      SERVER_PID=""
+      if [ -n "$SERVER_PORT_OVERRIDE" ]; then
+        die "主控端口 $SERVER_PORT 已被占用（固定 SERVER_PORT/PORT 时不会自动顺延），请更换端口后重试"
+      fi
+      SERVER_PORT="$(pick_server_port "$((SERVER_PORT + 1))")" \
+        || die "主控端口被占用后未能在 $SERVER_PORT_SCAN_LIMIT 个端口内找到可用端口"
+      SERVER_URL="http://localhost:$SERVER_PORT"
+      say "端口被占用，改用 $SERVER_URL 重试（第 $attempt/$SERVER_ATTEMPTS 次）"
+      continue
     fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-      say "主控端进程已退出，最近日志：" >&2
-      tail -n 40 "$LOG_DIR/server.log" >&2 || true
-      die "主控端启动失败"
-    fi
-    sleep 1
+    die "主控端 60s 内未就绪，查看 $LOG_DIR/server.log"
   done
-  [ "$SERVER_READY" = "1" ] || die "主控端 60s 内未就绪，查看 $LOG_DIR/server.log"
+
+  if [ "$SERVER_READY" != "1" ]; then
+    die "主控端启动失败：已重试 $SERVER_ATTEMPTS 次仍无法绑定可用端口"
+  fi
+  printf '%s' "$SERVER_PORT" >"$E2E_PORT_FILE"
   say "主控端就绪：$SERVER_URL"
 fi
 
