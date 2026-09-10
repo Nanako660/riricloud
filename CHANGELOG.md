@@ -13,6 +13,9 @@
 ## [Unreleased]
 
 ### Added
+- **订阅模板 DNS 与客户端高级覆写解耦重构**：模板编辑弹窗（`TemplateFormDialog`）由 5-Tab 扩充为 6-Tab（「基本信息」、「策略组设计」、「分流规则」、「DNS 设置」、「客户端高级覆写」、「实时渲染预览」），职责绝对单一。
+- **结构化 DNS 列表与主流预设**：新增 `TemplateDnsEditor`，国内直连 DNS 与海外代理 DNS 支持徽章标签管理、增删、一键引入公共 DNS/DoH 预设（阿里、腾讯 DNSPod、Cloudflare、Google、Quad9 等）与一键重置。
+- **客户端高级覆写全宽工作台与智能片段**：新增 `TemplateOverrideEditor`，支持 Clash YAML 与 Sing-box JSON 二级切换并占满 100% 宽度与高度，集成实时语法校验状态指示与常用配置片段（TUN 模式、Clash API 控制器等）智能 deepMerge 注入。
 
 ### Changed
 - **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。
@@ -20,6 +23,7 @@
 - **开发联调默认端口调整**：`scripts/dev-e2e.sh` 的主控端联调端口由 `3000` 调整为 `30800`，避开 Windows 系统保留端口区间（本机 `2940-3039` 覆盖 `3000`）造成的端口漂移；应用自身默认端口不变（仍为 `3000`），该调整仅作用于联调脚本。
 
 ### Fixed
+- **Sing-box 订阅多 DNS 生成丢弃与旧格式截断修复**：修复 `buildSemanticSingboxDns` 在用户配置多个直连与代理 DNS 时仅截取首个地址并丢弃后续地址的缺陷，现完整生成 `dns_direct`、`dns_direct_N`、`dns_proxy`、`dns_proxy_N` 服务器列表；同时修复旧 Clash 格式回退时若存在 fallback 会截断 nameserver 的缺陷。
 - **镜像站弹窗输入被轮询清空（0.8.1 未根治的复发）**：`/admin/mirrors` 新增/编辑弹窗输入后约 5 秒被节点列表轮询重置；现迁移为 React Hook Form + Zod 并按业务身份初始化，出网节点选项保持实时刷新而不再回写用户输入。
 - **节点详情表单被 5 秒轮询回写**：节点名称、对外地址与覆盖配置 JSON 每 5 秒被详情轮询覆盖，现按 `node.id` 初始化一次，遥测、内核状态与错误回执继续实时刷新。
 - **同类隐患收敛**：系统设置页与证书编辑弹窗改为按 `dataUpdatedAt` + `isDirty` 回灌（后台 refetch 不再清空未保存修改），个人中心昵称草稿加 dirty 守卫；线路/套餐/模板/节点创建/节点升级弹窗统一改走 `useFormResetOnKey`；探针弹窗改用独立 queryKey（原与设置页共用 key 但响应形态不同，会污染设置缓存）；资源导入弹窗把「类型与平台联动」移入选择事件，删除派生数组入依赖的写法。

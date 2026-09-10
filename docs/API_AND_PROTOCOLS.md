@@ -135,6 +135,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 订阅模板管理
 - 主控 JSON 与 URL-encoded 请求体上限为 `2 MiB`；超出上限在进入 Controller 前返回 HTTP `413 Payload Too Large`。订阅模板的策略组、规则集、DNS 与 YAML/JSON 覆写会合并在同一请求中，编辑大文本时应控制在该上限内。
+- **DNS 配置契约与多服务器构建**：`dnsConfig` 采用语义化结构 `{ enable?, fakeIp?, ipv6?, directDns?: string[], proxyDns?: string[] }`。在 Clash Meta 构建中映射为 nameserver、fallback 与 fallback-filter；在 Sing-box 1.8+ 构建中完整保留用户配置的所有直连与代理 DNS 服务器，按 `dns_direct`、`dns_direct_N` 与 `dns_proxy`、`dns_proxy_N` 注册入 `dns.servers`，并联动 `dns.rules` 分流与 fakeip 策略，杜绝备用 DNS 静默丢弃。
+- **客户端顶层覆写**：`customInjectYaml` 与 `customInjectJson` 在服务端经 YAML/JSON 严格对象语法校验；在客户端订阅编译时分别与生成的 Clash YAML 及 Sing-box JSON 执行顶层深度合并 (deepMerge)。
 - `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐

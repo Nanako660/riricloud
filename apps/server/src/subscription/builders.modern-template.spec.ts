@@ -379,8 +379,10 @@ describe('builders with modernized template configuration', () => {
 
     // 2. DNS
     expect(config.dns.servers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ tag: 'dns_direct' }),
-      expect.objectContaining({ tag: 'dns_proxy' }),
+      expect.objectContaining({ tag: 'dns_direct', address: 'https://doh.pub/dns-query' }),
+      expect.objectContaining({ tag: 'dns_direct_2', address: 'https://dns.alidns.com/dns-query' }),
+      expect.objectContaining({ tag: 'dns_proxy', address: 'https://1.1.1.1/dns-query' }),
+      expect.objectContaining({ tag: 'dns_proxy_2', address: 'https://dns.google/dns-query' }),
       expect.objectContaining({ tag: 'dns_fakeip', address: 'fakeip' })
     ]));
     expect(config.dns.fakeip?.enabled).toBe(true);

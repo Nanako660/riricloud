@@ -138,7 +138,7 @@ export function normalizeSemanticDnsConfig(value: unknown): SemanticDnsConfig {
   return {
     enable: source.enable !== false,
     fakeIp: enhancedMode === 'fake-ip' || source['fake-ip-range'] !== undefined,
-    directDns: nameserver.length ? [nameserver[0]] : defaultNameserver,
+    directDns: nameserver.length ? (fallback.length ? nameserver : [nameserver[0]]) : defaultNameserver,
     proxyDns: fallback.length ? fallback : nameserver.slice(1),
     ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
   };
@@ -436,10 +436,21 @@ export function buildSemanticSingboxDns(value: unknown, primaryGroup: string, ru
   if (dns.enable === false) return {};
   const directDns = dns.directDns?.length ? dns.directDns : ['223.5.5.5'];
   const proxyDns = dns.proxyDns?.length ? dns.proxyDns : ['https://1.1.1.1/dns-query'];
-  const servers: Array<Record<string, unknown>> = [
-    { tag: 'dns_direct', address: directDns[0], detour: 'direct' },
-    { tag: 'dns_proxy', address: proxyDns[0], detour: primaryGroup }
-  ];
+  const servers: Array<Record<string, unknown>> = [];
+  directDns.forEach((addr, idx) => {
+    servers.push({
+      tag: idx === 0 ? 'dns_direct' : `dns_direct_${idx + 1}`,
+      address: addr,
+      detour: 'direct'
+    });
+  });
+  proxyDns.forEach((addr, idx) => {
+    servers.push({
+      tag: idx === 0 ? 'dns_proxy' : `dns_proxy_${idx + 1}`,
+      address: addr,
+      detour: primaryGroup
+    });
+  });
   const rules: Array<Record<string, unknown>> = [
     { outbound: 'any', server: 'dns_direct' }
   ];
@@ -453,7 +464,7 @@ export function buildSemanticSingboxDns(value: unknown, primaryGroup: string, ru
     servers,
     rules,
     ...(dns.fakeIp ? { fakeip: { enabled: true, inet4_range: '198.18.0.0/15' } } : {}),
-    strategy: dns.ipv6 === false ? 'prefer_ipv4' : 'prefer_ipv4',
+    strategy: dns.ipv6 === false ? 'ipv4_only' : 'prefer_ipv4',
     independent_cache: true
   };
 }
