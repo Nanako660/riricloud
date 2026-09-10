@@ -2,11 +2,14 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsObject } from 'class-validator';
 import type { CreateTemplateDto } from './create-template.dto';
 
-export interface SingboxCheckResult {
+export interface KernelCheckResult {
   executed: boolean;
   passed: boolean;
   message?: string;
 }
+
+export type SingboxCheckResult = KernelCheckResult;
+export type MihomoCheckResult = KernelCheckResult;
 
 export class PreviewTemplateDto {
   @ApiProperty({ enum: ['clash', 'singbox'] })

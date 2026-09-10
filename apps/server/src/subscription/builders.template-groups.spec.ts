@@ -219,14 +219,15 @@ describe('builders template proxy-groups resolution', () => {
       };
     };
     expect(singboxConfig.route.rule_set).toEqual(expect.arrayContaining([
-      expect.objectContaining({ tag: 'remoteads', url: 'https://rules.example/ads.srs' })
+      expect.objectContaining({ tag: 'remoteads', url: 'https://rules.example/ads.srs' }),
+      expect.objectContaining({ tag: 'geoip-cn' })
     ]));
     // 目标出站名必须被清洗为 direct，绝不能带上 ,no-resolve
     expect(singboxConfig.route.rules).toEqual(expect.arrayContaining([
       expect.objectContaining({ rule_set: ['remoteads'], outbound: '🛑 广告拦截' }),
       expect.objectContaining({ process_name: ['tv.danmaku.bili'], outbound: '🚀 节点选择' }),
       expect.objectContaining({ ip_cidr: ['182.254.116.0/24'], outbound: '🎯 全球直连' }),
-      expect.objectContaining({ geoip: ['cn'], outbound: '🎯 全球直连' }),
+      expect.objectContaining({ rule_set: ['geoip-cn'], outbound: '🎯 全球直连' }),
       expect.objectContaining({ action: 'route', outbound: '🚀 节点选择' })
     ]));
   });

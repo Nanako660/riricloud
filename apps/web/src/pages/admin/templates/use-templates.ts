@@ -26,16 +26,20 @@ export interface TemplatePayload {
   isDefault: boolean;
 }
 
+export interface KernelCheckResult {
+  executed: boolean;
+  passed: boolean;
+  message?: string;
+  kernelVersion?: string;
+}
+
 export interface TemplatePreviewResponse {
   format: 'clash' | 'singbox';
   content: string;
   stats: { totalNodes: number; matchedNodes: number; proxyGroupsCount: number; rulesCount: number };
   warnings: string[];
-  singboxCheck?: {
-    executed: boolean;
-    passed: boolean;
-    message?: string;
-  };
+  singboxCheck?: KernelCheckResult;
+  mihomoCheck?: KernelCheckResult;
 }
 
 export function useAdminTemplates() {

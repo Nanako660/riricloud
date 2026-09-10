@@ -15,7 +15,7 @@ RiriCloud 在设计之初便秉持 **“开发敏捷、架构清晰、零运维�
 | **认证与密码** | **JWT (Passport) + bcryptjs + HttpOnly Cookie** | JWT 由 Passport 校验并通过 HttpOnly/SameSite Cookie 传递；bcryptjs 为 bcrypt 算法的纯 JS 实现（成本因子 ≥ 10），哈希产物与原生 bcrypt 兼容，免去 Windows/交叉编译环境的原生依赖问题 |
 | **敏感配置保护** | **Node.js `crypto` AES-256-GCM** | AgentToken、SMTP/Turnstile Secret、证书私钥与 Reality 私钥按应用层加密保存；AgentToken 额外保存 SHA-256 校验值，运行时仅在必要的 Agent 配置/发信链路中解密 |
 | **边缘节点 Agent** | **Go (Golang 1.25+) + Cobra + Bubble Tea + Lip Gloss + kardianos/service** | 单一静态二进制，内置跨平台 CLI、全屏控制台 GUI/TUI、服务生命周期和前台运行模式 |
-| **代理协议内核** | **Sing-box** | 新一代全协议通用核心（VLESS-Reality / Hysteria2 / Shadowsocks / TUIC） |
+| **代理与诊断内核** | **Sing-box + Mihomo** | 核心代理协议驱动 (Sing-box) 与订阅模板双内核 (Sing-box / Mihomo) 真实验证诊断支持 |
 
 ### 1.1 Linux 本地开发环境
 

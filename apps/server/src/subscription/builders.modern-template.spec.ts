@@ -414,7 +414,8 @@ describe('builders with modernized template configuration', () => {
       expect.objectContaining({ tag: 'google-ai', format: 'binary' }),
       expect.objectContaining({ tag: 'youtube', format: 'binary' }),
       expect.objectContaining({ tag: 'steam', format: 'binary' }),
-      expect.objectContaining({ tag: 'chinamax', format: 'binary' })
+      expect.objectContaining({ tag: 'chinamax', format: 'binary' }),
+      expect.objectContaining({ tag: 'geoip-cn', format: 'binary' })
     ]));
 
     // 5. 路由匹配规则正确映射 outbound
@@ -423,7 +424,7 @@ describe('builders with modernized template configuration', () => {
       expect.objectContaining({ rule_set: ['google-ai'], outbound: '🧠 Google AI' }),
       expect.objectContaining({ rule_set: ['youtube'], outbound: '🎬 YouTube' }),
       expect.objectContaining({ rule_set: ['steam'], outbound: '🎮 Steam' }),
-      expect.objectContaining({ geoip: ['cn'], outbound: '🎯 全球直连' }),
+      expect.objectContaining({ rule_set: ['geoip-cn'], outbound: '🎯 全球直连' }),
       expect.objectContaining({ action: 'route', outbound: '🐟 漏网之鱼' })
     ]));
   });
