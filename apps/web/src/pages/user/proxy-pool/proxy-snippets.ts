@@ -6,6 +6,8 @@ export interface ProxySnippetInput {
   port: number;
   username: string;
   password: string;
+  tls?: boolean;
+  serverName?: string | null;
 }
 
 export interface ProxyCodeSnippet {
@@ -14,17 +16,18 @@ export interface ProxyCodeSnippet {
   code: string;
 }
 
-// 代理 URI：密码由服务端生成的 base64url，天然无需转义
+// 代理 URI：HTTP 协议下根据节点是否启用 TLS 自动生成 https:// 或 http:// 代理
 export function buildProxyUri(input: ProxySnippetInput): string {
-  const scheme = input.protocol === 'http' ? 'http' : 'socks5h';
+  const scheme = input.protocol === 'http' ? (input.tls ? 'https' : 'http') : 'socks5h';
   return `${scheme}://${encodeURIComponent(input.username)}:${encodeURIComponent(input.password)}@${input.host}:${input.port}`;
 }
 
 // 多语言代码片段：覆盖 requests / Playwright / Node axios / cURL 四种自动化入口
 export function buildProxyCodeSnippets(input: ProxySnippetInput): ProxyCodeSnippet[] {
-  const { host, port, username, password } = input;
+  const { host, port, username, password, tls } = input;
   const isSocks = input.protocol !== 'http';
   const hostPort = `${host}:${port}`;
+  const httpScheme = tls ? 'https' : 'http';
 
   const pythonRequests = isSocks
     ? `# 需先安装 SOCKS 依赖：pip install "requests[socks]"
@@ -36,11 +39,12 @@ proxies = {
 }
 resp = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=15)
 print(resp.json())`
-    : `import requests
+    : `# ${tls ? '节点启用 TLS 加密（标准 HTTPS 代理）' : '标准明文 HTTP 代理'}
+import requests
 
 proxies = {
-    "http": "http://${username}:${password}@${hostPort}",
-    "https": "http://${username}:${password}@${hostPort}",
+    "http": "${httpScheme}://${username}:${password}@${hostPort}",
+    "https": "${httpScheme}://${username}:${password}@${hostPort}",
 }
 resp = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=15)
 print(resp.json())`;
@@ -50,7 +54,7 @@ print(resp.json())`;
 with sync_playwright() as p:
     browser = p.chromium.launch(
         proxy={
-            "server": "${isSocks ? 'socks5' : 'http'}://${hostPort}",
+            "server": "${isSocks ? 'socks5' : httpScheme}://${hostPort}",
             "username": "${username}",
             "password": "${password}",
         }
@@ -74,14 +78,14 @@ const axios = require('axios');
 
 axios
   .get('https://httpbin.org/ip', {
-    proxy: { protocol: 'http', host: '${host}', port: ${port}, auth: { username: '${username}', password: '${password}' } },
+    proxy: { protocol: '${httpScheme}', host: '${host}', port: ${port}, auth: { username: '${username}', password: '${password}' } },
     timeout: 15000,
   })
   .then((res) => console.log(res.data));`;
 
   const curl = isSocks
     ? `curl -x "socks5h://${username}:${password}@${hostPort}" https://httpbin.org/ip`
-    : `curl -x "http://${username}:${password}@${hostPort}" https://httpbin.org/ip`;
+    : `curl -x "${httpScheme}://${username}:${password}@${hostPort}" https://httpbin.org/ip`;
 
   return [
     { id: 'python-requests', label: 'Python requests', code: pythonRequests },

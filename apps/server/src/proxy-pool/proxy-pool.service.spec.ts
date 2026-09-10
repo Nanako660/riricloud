@@ -230,6 +230,22 @@ describe('ProxyPoolService', () => {
       expect(http.body).toBe('http://pk_0123456789abcdef01234567:secret-password@203.0.113.7:10808');
     });
 
+    it('节点启用 TLS 时，HTTP 协议自动输出为 https:// 代理 URI', async () => {
+      const tlsLine = lineRecord({
+        id: 'line-tls',
+        name: '美国 HTTPS 直连',
+        entryPort: 10443,
+        paramsJson: JSON.stringify({ tls: { enabled: true, serverName: 'us-proxy.example.com' } })
+      });
+      prisma.line.findMany.mockResolvedValue([tlsLine]);
+
+      const http = await service.exportForUser('user-1', { format: 'uri', protocol: 'http', lineIds: 'line-tls' });
+      expect(http.body).toBe('https://pk_0123456789abcdef01234567:secret-password@203.0.113.7:10443');
+
+      const socks = await service.exportForUser('user-1', { format: 'uri', protocol: 'socks5', lineIds: 'line-tls' });
+      expect(socks.body).toBe('socks5://pk_0123456789abcdef01234567:secret-password@203.0.113.7:10443');
+    });
+
     it('JSON 格式包含节点名称、地区、延迟快照、协议与凭证', async () => {
       const result = await service.exportForUser('user-1', { format: 'json', lineIds: 'line-1' });
       expect(result.contentType).toBe('application/json; charset=utf-8');
