@@ -17,10 +17,14 @@
 ### Changed
 - **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。
 
+- **开发联调默认端口调整**：`scripts/dev-e2e.sh` 的主控端联调端口由 `3000` 调整为 `30800`，避开 Windows 系统保留端口区间（本机 `2940-3039` 覆盖 `3000`）造成的端口漂移；应用自身默认端口不变（仍为 `3000`），该调整仅作用于联调脚本。
+
 ### Fixed
 - **镜像站弹窗输入被轮询清空（0.8.1 未根治的复发）**：`/admin/mirrors` 新增/编辑弹窗输入后约 5 秒被节点列表轮询重置；现迁移为 React Hook Form + Zod 并按业务身份初始化，出网节点选项保持实时刷新而不再回写用户输入。
 - **节点详情表单被 5 秒轮询回写**：节点名称、对外地址与覆盖配置 JSON 每 5 秒被详情轮询覆盖，现按 `node.id` 初始化一次，遥测、内核状态与错误回执继续实时刷新。
 - **同类隐患收敛**：系统设置页与证书编辑弹窗改为按 `dataUpdatedAt` + `isDirty` 回灌（后台 refetch 不再清空未保存修改），个人中心昵称草稿加 dirty 守卫；线路/套餐/模板/节点创建/节点升级弹窗统一改走 `useFormResetOnKey`；探针弹窗改用独立 queryKey（原与设置页共用 key 但响应形态不同，会污染设置缓存）；资源导入弹窗把「类型与平台联动」移入选择事件，删除派生数组入依赖的写法。
+
+- **开发联调端口竞态与残留进程修复**：`scripts/dev-e2e.sh` 现将实际使用的主控端口记录到 `.cache/dev-e2e-server-port`，后续运行据此复用已在运行的主控端，避免端口漂移后重复拉起并抢占同一端口（原表现为 `listen EADDRINUSE` 后直接失败）；端口在探测与绑定之间被抢占时会顺延到下一个可用端口自动重试（可用 `SERVER_START_ATTEMPTS` 调整次数，显式固定 `SERVER_PORT`/`PORT` 时不顺延）；退出时按进程树回收（Windows 使用 `taskkill /T`），不再残留 `nest`/`sing-box` 子进程占用端口；并修正 StatsService 端口未变化时仍打印“默认端口不可用”的错误提示。
 
 ### Security
 - **`multer` 传递依赖强制升级**：新披露 3 条 High DoS advisory（`GHSA-wc9g-mqfw-jrwm`、`GHSA-qfvm-cv95-jqjf`、`GHSA-535w-7cp7-47q4`）影响经 `@nestjs/platform-express` 传递引入的 `multer@2.2.0`；因 NestJS 11.x 最新版仍精确依赖该版本，改由根 `package.json` 的 `pnpm.overrides` 强制 `multer@2.3.0`（临时安全锁定，待上游依赖 `>=2.3.0` 后移除，说明见 `docs/TECH_STACK.md` §3.2）。
