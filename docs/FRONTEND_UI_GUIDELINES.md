@@ -122,6 +122,7 @@ apps/web/src/
 | **B5** | 高危破坏性操作仅用简单 `window.confirm` 或直接执行 | 必须使用 `@/components/ui/alert-dialog` 提供二次拦截弹窗 | ❌ 立即打回 |
 | **B6** | 表单通过裸 `useState` 分散管理字段与手动判断报错 | 必须使用 `react-hook-form` + `zod` + shadcn `<Form>` | ❌ 立即打回 |
 | **B7** | 内部页面跳转手写原生 HTML `<a>` 标签 | 站内导航必须使用 `react-router-dom` 的 `<Link>` 或 `<NavLink>`，严禁原生 `<a>` 引发整页刷新与白屏闪烁 | ❌ 立即打回 |
+| **B8** | 在 `useEffect` 内直接初始化/重置表单草稿，或让初始化 effect 依赖 query 的 `.data` 对象、`useMemo` 派生数组等易变引用 | 必须使用 `useFormResetOnKey`（`apps/web/src/hooks/use-form-reset.ts`），依赖只允许 `open`、实体 id、`dataUpdatedAt` 等原始值（详见 §5.1） | ❌ 立即打回 |
 
 ---
 
@@ -186,6 +187,39 @@ export function NodeCreateForm({ onSubmit }: { onSubmit: (data: NodeFormValues) 
   );
 }
 ```
+
+### 5.1 表单初始化与实时数据解耦（强制）
+
+弹窗与编辑面板的表单草稿**只允许在「打开弹窗 / 切换编辑对象」时初始化一次**，严禁让「初始化」退化成「随实时数据同步」——轮询（`refetchInterval`）或 refetch 会让 query 数据换成新引用，进而周期性地清空用户正在输入的内容。
+
+- **R1**：草稿初始化/重置一律经 `useFormResetOnKey({ open, resetKey, reset, dataRevision?, isDirty? })`；禁止在 `useEffect` 内直接调用 `form.reset()`（已由 `eslint.config.js` 的 `no-restricted-syntax` 强制拦截）。
+- **R2**：初始化 effect 的依赖只能是**原始值**——`open`、实体 id（如 `plan?.id ?? 'create'`）、`dataUpdatedAt`；禁止 query 的 `.data` 对象、`useMemo` 派生数组或内联 `filter/map` 的结果。
+- **R3**：实时数据只驱动「展示」与「非破坏性校正」（例如所选出网节点已离线时给出字段提示、字段为空时补默认值），不得触发整表回写。
+
+```tsx
+// ✅ 正确：按业务身份初始化一次，轮询刷新只影响下拉选项与只读展示
+useFormResetOnKey({
+  open,
+  resetKey: editing?.id ?? 'create',
+  reset: () => form.reset(editing ? toFormValues(editing) : emptyFormValues())
+});
+
+// ✅ 需要回灌服务端值时：按 dataUpdatedAt 版本同步，并尊重未保存修改
+useFormResetOnKey({
+  resetKey: settingsQuery.data ? 'settings' : null,
+  dataRevision: settingsQuery.dataUpdatedAt,
+  isDirty: form.formState.isDirty,
+  reset: () => { if (settingsQuery.data) form.reset(toForm(settingsQuery.data)); }
+});
+
+// ❌ 禁止：依赖随轮询/refetch 变化的引用，用户输入会被周期性清空
+useEffect(() => {
+  if (!open) return;
+  form.reset({ name: editing?.name ?? '', nodeId: availableNodes[0]?.id ?? '' });
+}, [availableNodes, editing, open]);
+```
+
+非表单的服务端状态整体同步（会话守卫、站点品牌运行时、注册开关跳转等）允许依赖 query 数据，但必须使用 `// eslint-disable-next-line no-restricted-syntax -- 理由` 显式豁免，并在评审中确认「该 effect 不承载用户草稿」。当前全仓豁免点仅 3 处：`router/guards.tsx`、`pages/register/index.tsx`、`components/layout/site-runtime.tsx`。
 
 ---
 
@@ -461,3 +495,4 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 - `/admin/mirrors` 使用 `PageContainer`、表格、`ResponsiveDialog`、`Select`、`Switch`、`Badge` 和 `AlertDialog` 管理可复用实时镜像站；节点下拉只允许 WS/WSS 且宣告 `mirror_proxy` 的节点，离线节点明确显示不可用原因。
 - 表单展示名称、slug、上游基址、允许重定向域名、访问模式、分享有效期和启用状态；分享 Token 只能一次性展示，复制/轮换/删除结果通过 Sonner 或确认弹窗反馈。
 - 列表应可扫描展示上游域名、指定节点、能力、访问模式、启用状态、最近状态码和错误码；测试结果对话框只展示状态、延迟、最终 host 与脱敏错误，不展示响应体或凭据。移动端表格允许在自身容器滚动，表单和对话框不得造成页面级横向溢出。
+- 出网节点下拉必须保持实时可用性（在线状态与镜像能力随轮询刷新），但**不得**因节点列表刷新而回写表单草稿：初始化只在打开弹窗或切换编辑对象时发生一次，所选节点离线时改为字段级提示（见 §5.1）。

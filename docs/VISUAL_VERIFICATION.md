@@ -85,7 +85,7 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-32]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-34]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
     PathCheck -->|根路径与订阅控制台\nrouter/index.tsx\npages/user/subscription/*\ncomponents/shared/*| Dash[精准走查: UI-03, UI-04, UI-21]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
@@ -101,6 +101,8 @@ flowchart TD
     PathCheck -->|线路管理\npages/admin/lines/*| Lines[精准走查: UI-23 ~ UI-24]
     PathCheck -->|证书管理\npages/admin/certificates/*| Certificates[精准走查: UI-26]
     PathCheck -->|系统日志\npages/admin/logs/*| Logs[精准走查: UI-32]
+    PathCheck -->|镜像站\npages/admin/mirrors/*| Mirrors[精准走查: UI-34]
+    PathCheck -->|资源管理\npages/admin/binaries/*| Binaries[精准走查: UI-31]
 ```
 
 ### 映射规则表
