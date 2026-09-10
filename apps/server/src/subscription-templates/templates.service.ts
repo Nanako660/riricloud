@@ -327,6 +327,8 @@ export class TemplatesService {
       `/app/binaries/singbox-linux-${arch}`,
       path.resolve(process.cwd(), 'binaries', `singbox-linux-${arch}`),
       path.resolve(process.cwd(), 'binaries', `singbox-windows-${arch}.exe`),
+      path.resolve(process.cwd(), '.tools/sing-box/sing-box'),
+      path.resolve(process.cwd(), '.tools/sing-box/sing-box.exe'),
       path.resolve(process.cwd(), '../../.tools/sing-box/sing-box'),
       path.resolve(process.cwd(), '../../.tools/sing-box/sing-box.exe')
     ].filter((p): p is string => Boolean(p));
@@ -392,6 +394,8 @@ export class TemplatesService {
       `/app/binaries/mihomo-linux-${arch}`,
       path.resolve(process.cwd(), 'binaries', `mihomo-linux-${arch}`),
       path.resolve(process.cwd(), 'binaries', `mihomo-windows-${arch}.exe`),
+      path.resolve(process.cwd(), '.tools/mihomo/mihomo'),
+      path.resolve(process.cwd(), '.tools/mihomo/mihomo.exe'),
       path.resolve(process.cwd(), '../../.tools/mihomo/mihomo'),
       path.resolve(process.cwd(), '../../.tools/mihomo/mihomo.exe')
     ].filter((p): p is string => Boolean(p));
