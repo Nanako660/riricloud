@@ -57,6 +57,29 @@ RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 	-ldflags "-s -w" \
 	-o /sing-box ./cmd/sing-box
 
+FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS mihomo-fetch
+
+ARG TARGETARCH=amd64
+ARG MIHOMO_VERSION=1.19.30
+ARG MIHOMO_SHA256_AMD64=cf06ce2c7d1421bdbda14ee4a5b6046672dc35ebf8eecd8e77504ec3c0ed9a84
+ARG MIHOMO_SHA256_ARM64=58896873736d28628f66de3677c8654fa0f180662523148e136cff4f6e890069
+WORKDIR /tmp
+
+RUN --mount=type=cache,id=riricloud-mihomo-downloads,target=/tmp/mihomo-cache,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
+    && mihomo_archive="/tmp/mihomo-cache/mihomo-linux-${TARGETARCH}-v${MIHOMO_VERSION}.gz" \
+    && if [ ! -s "$mihomo_archive" ]; then curl --fail --silent --show-error --location \
+      "https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/mihomo-linux-${TARGETARCH}-v${MIHOMO_VERSION}.gz" \
+      --output "${mihomo_archive}.tmp" && mv "${mihomo_archive}.tmp" "$mihomo_archive"; fi \
+    && mihomo_sha="$MIHOMO_SHA256_AMD64" \
+    && if [ "$TARGETARCH" = "arm64" ]; then mihomo_sha="$MIHOMO_SHA256_ARM64"; fi \
+    && printf '%s  %s\n' "$mihomo_sha" "$mihomo_archive" | sha256sum -c - \
+    && gzip -dc "$mihomo_archive" > /mihomo \
+    && chmod 0755 /mihomo
+
 FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS build
 
 WORKDIR /workspace
@@ -121,6 +144,7 @@ RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked
 COPY --from=agent-build /out/riri-agent /tmp/riri-agent
 COPY --from=singbox-build /sing-box /tmp/sing-box
 COPY --from=singbox-build /libcronet.so /tmp/libcronet.so
+COPY --from=mihomo-fetch /mihomo /tmp/mihomo
 RUN mkdir -p \
       /out/binaries/agent-linux-${TARGETARCH} \
       /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH} \
@@ -131,7 +155,8 @@ RUN mkdir -p \
     && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH} \
     && cp /tmp/sing-box /out/binaries/singbox-linux-${TARGETARCH} \
     && cp /tmp/libcronet.so /out/binaries/libcronet.so \
-    && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/agent-linux-${TARGETARCH} /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box /out/binaries/singbox-linux-${TARGETARCH}
+    && cp /tmp/mihomo /out/binaries/mihomo-linux-${TARGETARCH} \
+    && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/agent-linux-${TARGETARCH} /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box /out/binaries/singbox-linux-${TARGETARCH} /out/binaries/mihomo-linux-${TARGETARCH}
 # 使用 Dockerfile heredoc 保持 manifest 生成脚本为单条 RUN 指令。
 RUN node - /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION" <<'NODE'
   const fs = require("fs");
@@ -168,6 +193,7 @@ ARG RIRICLOUD_IMAGE_TAGS=latest
 ARG SINGBOX_VERSION=1.14.0
 ARG SINGBOX_REVISION=1
 ARG CRONET_VERSION=v150.0.7871.63-2
+ARG MIHOMO_VERSION=1.19.30
 LABEL org.opencontainers.image.title="RiriCloud Master" \
       org.opencontainers.image.description="RiriCloud control plane and web dashboard" \
       org.opencontainers.image.version="$RIRICLOUD_VERSION" \
@@ -177,6 +203,7 @@ LABEL org.opencontainers.image.title="RiriCloud Master" \
       io.riricloud.singbox.version="$SINGBOX_VERSION" \
       io.riricloud.singbox.revision="$SINGBOX_REVISION" \
       io.riricloud.cronet.version="$CRONET_VERSION" \
+      io.riricloud.mihomo.version="$MIHOMO_VERSION" \
       io.riricloud.image.tags="$RIRICLOUD_IMAGE_TAGS"
 
 COPY --from=build /out/server/ ./
@@ -185,6 +212,7 @@ COPY --from=build /workspace/apps/web/dist/ ./web-dist/
 COPY --from=build /out/binaries/ ./binaries/
 COPY --from=singbox-build /sing-box /usr/local/bin/sing-box
 COPY --from=singbox-build /libcronet.so /usr/local/bin/libcronet.so
+COPY --from=mihomo-fetch /mihomo /usr/local/bin/mihomo
 COPY scripts/docker-entrypoint.js ./docker-entrypoint.js
 
 USER 65532:65532

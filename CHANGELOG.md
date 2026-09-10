@@ -16,10 +16,13 @@
 - **Sing-box 规则集现代解耦（GeoIP 升级为 rule_set）**：在 `apps/server/src/subscription/builders.ts` 中将 Sing-box 1.8+ 弃用并在 1.12+ 彻底移除的 `type: "geoip"` 路由规则全面重构为现代独立规则集 `rule_set`（自动指向官方 `sing-geoip` 发布的预编译 `.srs`），彻底根治 `parse rule: geoip database is deprecated in sing-box 1.8.0 and removed in sing-box 1.12.0` 致命报错。
 - **订阅模板双内核真实验证诊断（Sing-box + Mihomo）**：服务端模板预览端点（`POST /admin/subscription-templates/preview`）重构为双内核并发真实验证；新增 `checkMihomoConfig`，通过隔离临时目录调用 `mihomo -t` 执行配置真实验证，并剥离 ANSI 颜色乱码；支持多层级探测 `MIHOMO_BINARY_PATH`、本地 `.tools/mihomo/` 与系统 PATH；Docker 运行时环境声明 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo`。
 - **订阅模板源文件双模编辑与无损互转（JSON / YAML）**：`TemplateSourceEditor` 支持「JSON 源码」与「YAML 源码」无损双向切换编辑，CodeMirror 语法高亮与语法诊断实时同步，支持格式化美化、防污染脏数据隔离守卫与一键复制；前端预览抽屉（`TemplatePreviewDrawer`）同时展示 Sing-box 与 Mihomo 两枚内核状态徽章与多源诊断卡片。
+- **Docker 构建自动内置 Mihomo 内核**：在 `Dockerfile` 中新增 `mihomo-fetch` 多阶段构建，根据目标架构（`amd64` / `arm64`）自动下载并校验 Mihomo 官方 Release 二进制，安装至容器 `/usr/local/bin/mihomo` 与静态基线仓；`scripts/docker-build.sh` 补充对应构建参数；Master 镜像开箱即用支持双内核验证。
+- **源文件编辑优先展示 YAML 源码**：`TemplateSourceEditor` 默认语言调整为 `'yaml'`，分段器选项卡将 `[YAML 源码]` 移动至首位，大幅提升 Clash/Mihomo 模板配置体验。
 
 ### Changed
 
 ### Fixed
+- **Mihomo 配置诊断避免触发远程 GeoData 下载**：修复 `checkMihomoConfig` 在分析包含 `GEOSITE` / `GEOIP` 规则时因缺少本地 geodata 触发外部下载导致的 5 秒超时报错；测试前对相关规则类型进行纯分析模式语法占位，诊断耗时稳定在 10ms 以内。
 
 
 ## [0.8.2] - 2026-09-11
