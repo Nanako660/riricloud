@@ -422,11 +422,18 @@ export class TemplatesService {
       return { executed: false, passed: true, message: '主控未挂载 mihomo 内核，已通过结构语法校验' };
     }
 
+    // 纯分析诊断模式：在内核测试前将 GEOSITE/GEOIP 规则安全替换为等价的 DOMAIN-SUFFIX/IP-CIDR 规则，
+    // 既能让 Mihomo 完整验证 YAML 语法、代理协议配置、策略组引用及规则目标，
+    // 又彻底避免因缺少本地 geodata 而触发公网下载 GeoSite.dat/GeoIP.dat 及超时中断。
+    const sanitizedYaml = configYaml
+      .replace(/^([ \t]*-[ \t]*)(['"]?)(?:GEOSITE|geosite)[ \t]*,[ \t]*([^,'"\r\n]+)[ \t]*,[ \t]*([^'"\r\n]+)\2/gim, '$1DOMAIN-SUFFIX,dummy-$3.local,$4')
+      .replace(/^([ \t]*-[ \t]*)(['"]?)(?:GEOIP|geoip)[ \t]*,[ \t]*([^,'"\r\n]+)[ \t]*,[ \t]*([^'"\r\n]+)\2/gim, '$1IP-CIDR,198.18.0.1/32,$4');
+
     const tmpDir = path.join(os.tmpdir(), `riri-mihomo-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const tmpFile = path.join(tmpDir, 'config.yaml');
     try {
       await fs.mkdir(tmpDir, { recursive: true });
-      await fs.writeFile(tmpFile, configYaml, 'utf-8');
+      await fs.writeFile(tmpFile, sanitizedYaml, 'utf-8');
       return await new Promise((resolve) => {
         execFile(bin, ['-t', '-d', tmpDir, '-f', tmpFile], { timeout: 5000 }, (error, stdout, stderr) => {
           if (error) {
