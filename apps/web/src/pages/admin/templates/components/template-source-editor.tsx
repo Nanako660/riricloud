@@ -132,14 +132,14 @@ export function TemplateSourceEditor({
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card/60 p-2.5 shadow-sm">
         {/* 左侧标识 */}
         <div className="flex items-center gap-1.5 rounded-md bg-muted p-1">
-          <span className="flex items-center gap-1.5 rounded-sm bg-background px-3 py-1 text-xs font-medium text-foreground shadow-sm">
+          <span className="flex items-center gap-1.5 rounded-sm bg-background px-2.5 sm:px-3 py-1 text-xs font-medium text-foreground shadow-sm">
             <FileCode className="h-3.5 w-3.5 text-primary" />
-            模板完整 JSON 源码定义
+            模板 JSON 源码
           </span>
         </div>
 
         {/* 中间状态徽标与右侧操作 */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <Badge
             variant={status.valid ? 'outline' : 'destructive'}
             className="flex items-center gap-1 py-0.5 text-[11px]"
@@ -149,9 +149,7 @@ export function TemplateSourceEditor({
             ) : (
               <AlertCircle className="h-3 w-3" />
             )}
-            <span className="max-w-[240px] truncate" title={status.message}>
-              {status.message}
-            </span>
+            <span>{status.valid ? '格式正常' : '语法错误'}</span>
           </Badge>
 
           {/* 美化排版 */}
@@ -234,11 +232,25 @@ export function TemplateSourceEditor({
         />
       </div>
 
-      {/* 底部报错栏 */}
-      {internalError && (
-        <p className="shrink-0 text-xs text-destructive font-mono">
-          语法错误: {internalError}
-        </p>
+      {/* 底部语法诊断卡片 */}
+      {!status.valid && (
+        <div className="shrink-0 rounded-lg border border-destructive/30 bg-destructive/5 p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2 pb-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
+              <span>JSON 语法诊断错误</span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">
+              已启用安全隔离保护 · 不会同步脏数据
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">
+            <div className="flex items-start gap-2">
+              <span className="shrink-0 font-bold select-none text-red-500/80">&gt;</span>
+              <span className="break-all">{internalError || status.message}</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

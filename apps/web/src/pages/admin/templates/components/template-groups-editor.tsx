@@ -218,7 +218,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
         </div>
 
         {/* 右侧状态徽章与操作 */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {mode === 'visual' ? (
             <Badge variant="secondary" className="text-xs">
               共 {groups.length} 个策略组
@@ -233,9 +233,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
               ) : (
                 <AlertCircle className="h-3 w-3" />
               )}
-              <span className="max-w-[200px] truncate" title={sourceError || 'JSON 数组有效'}>
-                {!sourceError ? 'JSON 数组有效' : sourceError}
-              </span>
+              <span>{!sourceError ? '格式正常' : '语法错误'}</span>
             </Badge>
           )}
 
@@ -510,7 +508,25 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
               }}
             />
           </div>
-          {sourceError && <p className="shrink-0 text-xs text-destructive">{sourceError}</p>}
+          {sourceError && (
+            <div className="shrink-0 rounded-lg border border-destructive/30 bg-destructive/5 p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-2 pb-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
+                  <span>策略组 JSON 语法错误</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">
+                  必须为 JSON 数组且格式合法
+                </span>
+              </div>
+              <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">
+                <div className="flex items-start gap-2">
+                  <span className="shrink-0 font-bold select-none text-red-500/80">&gt;</span>
+                  <span className="break-all">{sourceError}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

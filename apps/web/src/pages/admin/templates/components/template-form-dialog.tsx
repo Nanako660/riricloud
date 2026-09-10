@@ -125,14 +125,16 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
           </DialogHeader>
           <form onSubmit={form.handleSubmit(submit)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
             <Tabs defaultValue="basic" className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-              <TabsList className="h-auto w-full shrink-0 justify-start gap-1 overflow-x-auto p-1">
-                <TabsTrigger className="shrink-0" value="basic">基本信息</TabsTrigger>
-                <TabsTrigger className="shrink-0" value="groups">策略组设计</TabsTrigger>
-                <TabsTrigger className="shrink-0" value="rules">分流规则</TabsTrigger>
-                <TabsTrigger className="shrink-0" value="dns">DNS 设置</TabsTrigger>
-                <TabsTrigger className="shrink-0" value="override">客户端高级覆写</TabsTrigger>
-                <TabsTrigger className="shrink-0" value="source">源文件编辑</TabsTrigger>
-              </TabsList>
+              <div className="w-full shrink-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <TabsList className="inline-flex h-9 w-auto min-w-full flex-nowrap items-center justify-start gap-1 p-1">
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="basic">基本信息</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="groups">策略组设计</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="rules">分流规则</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="dns">DNS 设置</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="override">客户端高级覆写</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="source">源文件编辑</TabsTrigger>
+                </TabsList>
+              </div>
               <TabsContent value="basic" className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2"><Label htmlFor="template-name">模板名称</Label><Input id="template-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>

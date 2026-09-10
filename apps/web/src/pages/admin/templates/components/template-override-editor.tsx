@@ -300,32 +300,32 @@ export function TemplateOverrideEditor({
             type="button"
             onClick={() => setActiveClient('clash')}
             className={cn(
-              'flex items-center gap-1.5 rounded-sm px-3 py-1 text-xs font-medium transition-colors',
+              'flex items-center gap-1.5 rounded-sm px-2.5 sm:px-3 py-1 text-xs font-medium transition-colors',
               activeClient === 'clash'
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-amber-500" />
-            Clash YAML 顶层覆写
+            Clash YAML<span className="hidden sm:inline"> 顶层覆写</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveClient('singbox')}
             className={cn(
-              'flex items-center gap-1.5 rounded-sm px-3 py-1 text-xs font-medium transition-colors',
+              'flex items-center gap-1.5 rounded-sm px-2.5 sm:px-3 py-1 text-xs font-medium transition-colors',
               activeClient === 'singbox'
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-blue-500" />
-            Sing-box JSON 顶层覆写
+            Sing-box JSON<span className="hidden sm:inline"> 顶层覆写</span>
           </button>
         </div>
 
         {/* 语法状态与右侧操作 */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* 实时语法状态徽章 */}
           <Badge
             variant={syntaxStatus.valid ? 'outline' : 'destructive'}
@@ -336,9 +336,7 @@ export function TemplateOverrideEditor({
             ) : (
               <AlertCircle className="h-3 w-3" />
             )}
-            <span className="max-w-[200px] truncate" title={syntaxStatus.message}>
-              {syntaxStatus.message}
-            </span>
+            <span>{syntaxStatus.valid ? '格式正常' : '语法错误'}</span>
           </Badge>
 
           {/* 常用配置片段注入 */}
@@ -443,11 +441,25 @@ export function TemplateOverrideEditor({
         )}
       </div>
 
-      {/* 错误提示 */}
-      {(activeClient === 'clash' ? yamlError : jsonError) && (
-        <p className="shrink-0 text-xs text-destructive">
-          {activeClient === 'clash' ? yamlError : jsonError}
-        </p>
+      {/* 底部语法诊断卡片 */}
+      {(!syntaxStatus.valid || (activeClient === 'clash' ? yamlError : jsonError)) && (
+        <div className="shrink-0 rounded-lg border border-destructive/30 bg-destructive/5 p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2 pb-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
+              <span>{activeClient === 'clash' ? 'YAML 覆写语法错误' : 'JSON 覆写语法错误'}</span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">
+              请检查语法缩进与键值规范
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">
+            <div className="flex items-start gap-2">
+              <span className="shrink-0 font-bold select-none text-red-500/80">&gt;</span>
+              <span className="break-all">{(activeClient === 'clash' ? yamlError : jsonError) || syntaxStatus.message}</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
