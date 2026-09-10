@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.2] - 2026-09-11
+
+### Added
 - **订阅模板工作台沉浸式重构**：模板编辑弹窗（`TemplateFormDialog`）全面升级为 6-Tab 统一沉浸式布局（「基本信息」、「策略组设计」、「分流规则」、「DNS 设置」、「客户端高级覆写」、「源文件编辑」）。
 - **策略组与分流规则沉浸式顶栏**：`TemplateGroupsEditor` 与 `TemplateRulesEditor` 顶栏重构，提供可视化/源码切换、状态徽标、6 种常用预设一键添加菜单（主流节点组、自动优选、流媒体、广告拦截等）与格式化美化。
 - **结构化 DNS 列表与主流预设**：新增 `TemplateDnsEditor`，国内直连 DNS 与海外代理 DNS 支持徽章标签管理、增删、一键引入公共 DNS/DoH 预设（阿里、腾讯 DNSPod、Cloudflare、Google、Quad9 等）与一键重置。
@@ -39,6 +48,7 @@
 ### Security
 - **生产环境 API 文档默认安全收敛**：主控端 Swagger / OpenAPI 接口文档（`/api/docs` 及 `/api/docs-json`）在生产部署环境（`NODE_ENV=production` 或 `RIRICLOUD_ENV=production`）下默认彻底禁用挂载并返回 404，防止系统指纹与接口全景暴露；开发与测试环境保持默认开启，并新增 `ENABLE_SWAGGER`（兼容 `RIRICLOUD_ENABLE_SWAGGER`）支持按需显式开启；Nginx 示例配置同步增加可选的反代层拦截注释规则。
 - **`multer` 传递依赖强制升级**：新披露 3 条 High DoS advisory（`GHSA-wc9g-mqfw-jrwm`、`GHSA-qfvm-cv95-jqjf`、`GHSA-535w-7cp7-47q4`）影响经 `@nestjs/platform-express` 传递引入的 `multer@2.2.0`；因 NestJS 11.x 最新版仍精确依赖该版本，改由根 `package.json` 的 `pnpm.overrides` 强制 `multer@2.3.0`（临时安全锁定，待上游依赖 `>=2.3.0` 后移除，说明见 `docs/TECH_STACK.md` §3.2）。
+
 
 
 ## [0.8.1] - 2026-09-09
