@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -47,9 +47,10 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
     const next = selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id];
     form.setValue('lineIds', next.join(', '), { shouldDirty: true });
   };
-  useEffect(() => {
-    if (!open) return;
-    form.reset(plan ? {
+  useFormResetOnKey({
+    open,
+    resetKey: plan?.id ?? 'create',
+    reset: () => form.reset(plan ? {
       name: plan.name,
       description: plan.description ?? '',
       price: plan.price,
@@ -62,8 +63,8 @@ export function PlanFormDialog({ open, onOpenChange, plan, lineOptions, template
       templateId: plan.templateId ?? '',
       isPublic: plan.isPublic,
       sortOrder: plan.sortOrder
-    } : undefined);
-  }, [open, plan, form]);
+    } : undefined)
+  });
   const submit = (values: FormValues) => {
     const payload: PlanPayload = {
       name: values.name,

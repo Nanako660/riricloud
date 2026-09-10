@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -57,9 +57,11 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing, node
   const resourceOptions = resources?.filter((item) => item.kind === target.toUpperCase() && item.status === 'ACTIVE' && item.assets.some((asset) => asset.target === `${target}-${platform}`)) ?? [];
   const selectedResource = resourceOptions.find((item) => item.id === resourceId);
 
-  React.useEffect(() => {
-    if (open) form.reset({ target: 'singbox', source: 'master', resourceId: '', version: '', url: '', sha256: '' });
-  }, [open, form]);
+  useFormResetOnKey({
+    open,
+    resetKey: 'upgrade',
+    reset: () => form.reset({ target: 'singbox', source: 'master', resourceId: '', version: '', url: '', sha256: '' })
+  });
 
   const submit = (values: Values) => onSubmit({
     target: values.target,

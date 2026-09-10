@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -73,9 +74,10 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
   const watchedValues = form.watch();
   const dnsDraft = parseObject(watchedDns);
 
-  useEffect(() => {
-    if (!open) return;
-    form.reset(template ? {
+  useFormResetOnKey({
+    open,
+    resetKey: template?.id ?? 'create',
+    reset: () => form.reset(template ? {
       name: template.name,
       description: template.description ?? '',
       proxyGroups: JSON.stringify(template.proxyGroups, null, 2),
@@ -84,8 +86,8 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
       customInjectYaml: template.customInjectYaml ?? '',
       customInjectJson: template.customInjectJson ?? '',
       isDefault: template.isDefault
-    } : undefined);
-  }, [open, template, form]);
+    } : undefined)
+  });
 
   const targets = useMemo(() => parseArray(watchedGroups).map((item) => item && typeof item === 'object' && !Array.isArray(item) && typeof (item as Record<string, unknown>).name === 'string' ? (item as Record<string, unknown>).name as string : '').filter(Boolean), [watchedGroups]);
   const previewTemplate = useMemo<TemplatePayload>(() => ({

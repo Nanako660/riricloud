@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -128,11 +129,13 @@ export default function ProfilePage() {
 
   const totalPages = Math.ceil((transactions.data?.total ?? 0) / 10);
 
-  useEffect(() => {
-    if (user.data?.nickname) {
-      nicknameForm.reset({ nickname: user.data.nickname });
-    }
-  }, [user.data?.nickname, nicknameForm]);
+  // 昵称草稿仅在首次拿到用户数据时初始化；profile 每 5 秒轮询，且存在未保存修改时不回写
+  useFormResetOnKey({
+    resetKey: user.data?.id ?? null,
+    dataRevision: user.dataUpdatedAt,
+    isDirty: nicknameForm.formState.isDirty,
+    reset: () => { if (user.data?.nickname) nicknameForm.reset({ nickname: user.data.nickname }); }
+  });
 
   useEffect(() => {
     if (!emailCooldown) return;

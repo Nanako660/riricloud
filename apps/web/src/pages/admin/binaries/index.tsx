@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { Archive, Eye, FileUp, PackageOpen, Power, Star, XCircle } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -59,11 +60,11 @@ function ResourceForm({ mode, open, onOpenChange, onSubmit, pending }: {
   const [sha256, setSha256] = React.useState('');
   const [file, setFile] = React.useState<File>();
 
-  React.useEffect(() => {
-    if (open) {
-      setKind('SINGBOX'); setVersion(''); setRevision('1'); setTarget('singbox-linux-amd64'); setFilename(''); setUrl(''); setSha256(''); setFile(undefined);
-    }
-  }, [open]);
+  useFormResetOnKey({
+    open,
+    resetKey: 'import',
+    reset: () => { setKind('SINGBOX'); setVersion(''); setRevision('1'); setTarget('singbox-linux-amd64'); setFilename(''); setUrl(''); setSha256(''); setFile(undefined); }
+  });
 
   const valid = version.trim() && /^\d+$/.test(revision) && target && /^[a-f0-9]{64}$/i.test(sha256) && (mode === 'upload' ? file : /^https?:\/\//i.test(url));
   const submit = (event: React.FormEvent) => {
@@ -72,10 +73,9 @@ function ResourceForm({ mode, open, onOpenChange, onSubmit, pending }: {
     onSubmit({ kind, upstreamVersion: version.trim(), revision: Number(revision), target, filename: filename.trim() || undefined, url: mode === 'import' ? url.trim() : undefined, file, sha256: sha256.trim().toLowerCase() });
   };
   const filteredTargets = targetOptions.filter(([value]) => value.startsWith(`${kind.toLowerCase()}-`));
-  React.useEffect(() => { if (!target.startsWith(`${kind.toLowerCase()}-`)) setTarget(filteredTargets[0]?.[0] ?? target); }, [kind, target, filteredTargets]);
 
   return <ResponsiveDialog open={open} onOpenChange={onOpenChange}><ResponsiveDialogContent size="compact"><DialogHeader><DialogTitle>{mode === 'upload' ? '上传资源' : '远程导入资源'}</DialogTitle><DialogDescription>资源先以草稿保存，校验文件后再启用。</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={submit}>
-    <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>资源类型</Label><Select value={kind} onValueChange={(value) => setKind(value as BinaryKind)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="AGENT">RiriCloud Agent</SelectItem><SelectItem value="SINGBOX">Sing-box 内核</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label htmlFor="binary-version">上游版本</Label><Input id="binary-version" value={version} onChange={(event) => setVersion(event.target.value)} placeholder={kind === 'SINGBOX' ? '1.14.0' : '0.5.0'} /></div></div>
+    <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>资源类型</Label><Select value={kind} onValueChange={(value) => { const nextKind = value as BinaryKind; setKind(nextKind); const nextTarget = targetOptions.filter(([candidate]) => candidate.startsWith(`${nextKind.toLowerCase()}-`))[0]?.[0]; if (nextTarget) setTarget(nextTarget); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="AGENT">RiriCloud Agent</SelectItem><SelectItem value="SINGBOX">Sing-box 内核</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label htmlFor="binary-version">上游版本</Label><Input id="binary-version" value={version} onChange={(event) => setVersion(event.target.value)} placeholder={kind === 'SINGBOX' ? '1.14.0' : '0.5.0'} /></div></div>
     <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>平台</Label><Select value={target} onValueChange={setTarget}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{filteredTargets.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="binary-revision">资源修订号</Label><Input id="binary-revision" inputMode="numeric" value={revision} onChange={(event) => setRevision(event.target.value)} /></div></div>
     {mode === 'upload' ? <div className="space-y-2"><Label htmlFor="binary-file">文件</Label><Input id="binary-file" type="file" onChange={(event) => setFile(event.target.files?.[0])} /></div> : <div className="space-y-2"><Label htmlFor="binary-url">下载 URL</Label><Input id="binary-url" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://downloads.example.com/sing-box" /></div>}
     <div className="space-y-2"><Label htmlFor="binary-sha">SHA-256</Label><Input id="binary-sha" className="font-mono text-xs" value={sha256} onChange={(event) => setSha256(event.target.value)} placeholder="64 位十六进制摘要" /></div>
