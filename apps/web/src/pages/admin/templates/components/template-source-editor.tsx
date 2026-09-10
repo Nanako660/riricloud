@@ -30,8 +30,8 @@ export function TemplateSourceEditor({
   onChange,
   onTestRender
 }: TemplateSourceEditorProps) {
-  const [lang, setLang] = useState<'json' | 'yaml'>('json');
-  const [source, setSource] = useState(() => JSON.stringify(template, null, 2));
+  const [lang, setLang] = useState<'json' | 'yaml'>('yaml');
+  const [source, setSource] = useState(() => YAML.stringify(template, { indent: 2 }));
   const [internalError, setInternalError] = useState('');
 
   // 外部 template 变化时，如果在无语法错误状态下则同步更新展示
@@ -172,13 +172,13 @@ export function TemplateSourceEditor({
         <div className="flex items-center gap-2">
           <Tabs value={lang} onValueChange={(v) => handleToggleLang(v as 'json' | 'yaml')}>
             <TabsList className="h-8">
-              <TabsTrigger value="json" className="h-7 gap-1.5 px-3 text-xs">
-                <FileCode className="h-3.5 w-3.5 text-primary" />
-                JSON 源码
-              </TabsTrigger>
               <TabsTrigger value="yaml" className="h-7 gap-1.5 px-3 text-xs">
                 <FileCode className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
                 YAML 源码
+              </TabsTrigger>
+              <TabsTrigger value="json" className="h-7 gap-1.5 px-3 text-xs">
+                <FileCode className="h-3.5 w-3.5 text-primary" />
+                JSON 源码
               </TabsTrigger>
             </TabsList>
           </Tabs>
