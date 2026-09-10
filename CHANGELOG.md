@@ -13,10 +13,16 @@
 ## [Unreleased]
 
 ### Added
+- **节点全生命周期系统事件日志**：在 `AgentGatewayService` 中为节点核心运维事件补齐结构化日志上报入库：包括 Agent 节点上线（`INFO`）、异常掉线/断开（`WARN`）、配置同步生效结果与错误详情（`INFO`/`ERROR`）、组件版本远程升级成败（`INFO`/`ERROR`）以及 Agent 重启任务结果（`INFO`/`WARN`），使按节点筛选真正具备端到端运维排查价值。
+- **系统日志排查体验与快捷过滤联动**：日志列表表格支持点击节点 Badge 直接过滤该节点、点击 `[module]` 标签直接过滤该模块；当存在搜索关键词时在消息摘要中实现关键词精准安全高亮；详情侧滑抽屉中新增“按此节点过滤”与“按此模块过滤”快捷联动按钮；过滤控制栏支持显示当前活跃模块徽标与一键重置筛选条件。
 
 ### Changed
+- **日志自查读取静默策略**：服务端 `HttpLoggingInterceptor` 对正常的日志自查读取请求（`/api/v1/logs*` 且状态码 `< 400`）静默放行不写入系统日志，仅在 4xx/5xx 出错时记录，避免管理员查看日志本身产生大量刷屏访问日志。
 
 ### Fixed
+- **系统日志管理端路由 404 与节点筛选失效**：修复 `apps/web/src/pages/admin/logs/index.tsx` 中请求节点列表接口使用错误的 `/nodes` 导致 `Cannot GET /api/v1/nodes` 404 报错的问题，修正为规范的 `/admin/nodes`；彻底解决因节点加载失败导致日志筛选工具栏中节点下拉项为空、无法按节点筛选日志的问题。
+- **SSE Live Tail 实时推流票据协议对齐与双兼容**：修正 `useLiveTailStream` 请求 `stream-ticket` 接口使用 GET 与服务端 POST 声明不匹配导致的推流失败；服务端同时提供 `@Get('stream-ticket')` 与 `@Post('stream-ticket')` 双通道支持，前端统一规范为 POST。
+- **前端日志异常上报隔离与防自循环污染**：在 `apps/web/src/lib/api.ts` 的 Axios 响应拦截器中将 404 错误上报级别调整为 `WARN`，避免客户端 404 探测或失误污染系统 24 小时 ERROR 大盘指标。
 
 
 ## [0.8.3] - 2026-09-11

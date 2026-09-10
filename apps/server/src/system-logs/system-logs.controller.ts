@@ -61,6 +61,14 @@ export class SystemLogsController {
     return this.ticketService.issue(user.id);
   }
 
+  @Get('stream-ticket')
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @ApiOperation({ summary: '获取一次性 SSE 实时日志票据（GET 兼容通道）' })
+  getStreamTicket(@CurrentUser() user: { id: string }) {
+    return this.issueStreamTicket(user);
+  }
+
   @Public()
   @Sse('stream')
   @ApiOperation({ summary: 'SSE 实时日志流推流通道（一次性短期票据）' })

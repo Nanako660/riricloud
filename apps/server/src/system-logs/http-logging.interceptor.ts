@@ -57,6 +57,11 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const userAgent = req.headers['user-agent'] || '';
 
     const logRecord = (statusCode: number, err?: unknown) => {
+      // 避免自查 GET /api/v1/logs* 请求在正常成功（< 400）时自我产生刷屏访问日志
+      if (req.method === 'GET' && path.startsWith('/api/v1/logs') && statusCode < 400) {
+        return;
+      }
+
       const durationMs = Date.now() - startTime;
       let level: 'INFO' | 'WARN' | 'ERROR' = 'INFO';
       if (statusCode >= 500) {

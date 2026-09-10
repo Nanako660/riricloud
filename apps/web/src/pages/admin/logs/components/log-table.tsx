@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, HardDrive, Laptop, Server, Terminal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,43 @@ interface LogTableProps {
   onPageChange: (newPage: number) => void;
   onSelectLog: (log: SystemLogItem) => void;
   onFilterByTraceId?: (traceId: string) => void;
+  onFilterByNodeId?: (nodeId: string) => void;
+  onFilterByModule?: (module: string) => void;
+  keyword?: string;
+}
+
+function highlightKeyword(text: string, keyword?: string): React.ReactNode {
+  if (!keyword || !keyword.trim()) return text;
+  const kw = keyword.trim();
+  const lowerText = text.toLowerCase();
+  const lowerKw = kw.toLowerCase();
+  if (!lowerText.includes(lowerKw)) return text;
+
+  const nodes: React.ReactNode[] = [];
+  let start = 0;
+  let idx = lowerText.indexOf(lowerKw, start);
+
+  while (idx !== -1) {
+    if (idx > start) {
+      nodes.push(text.slice(start, idx));
+    }
+    nodes.push(
+      <mark
+        key={idx}
+        className="rounded bg-amber-500/25 px-0.5 font-bold text-amber-900 dark:text-amber-200"
+      >
+        {text.slice(idx, idx + kw.length)}
+      </mark>
+    );
+    start = idx + kw.length;
+    idx = lowerText.indexOf(lowerKw, start);
+  }
+
+  if (start < text.length) {
+    nodes.push(text.slice(start));
+  }
+
+  return nodes;
 }
 
 const LEVEL_BADGE_VARIANTS: Record<
@@ -51,7 +89,10 @@ export function LogTable({
   totalPages,
   onPageChange,
   onSelectLog,
-  onFilterByTraceId
+  onFilterByTraceId,
+  onFilterByNodeId,
+  onFilterByModule,
+  keyword
 }: LogTableProps) {
   if (isLoading && logs.length === 0) {
     return (
@@ -126,19 +167,37 @@ export function LogTable({
 
                   {/* 模块 */}
                   <td className="py-2 px-2 whitespace-nowrap">
-                    <span className="text-foreground/80 font-semibold text-[11px] max-w-[100px] truncate block">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onFilterByModule?.(log.module);
+                      }}
+                      className="text-foreground/80 hover:text-primary hover:underline font-semibold text-[11px] max-w-[100px] truncate block text-left transition-colors cursor-pointer"
+                      title={`按模块 [${log.module}] 过滤`}
+                    >
                       [{log.module}]
-                    </span>
+                    </button>
                   </td>
 
                   {/* 消息正文 */}
                   <td className="py-2 px-2 text-foreground font-sans">
                     <div className="flex items-center gap-2 max-w-xl xl:max-w-2xl">
                       <span className="truncate text-xs font-mono select-text" title={log.message}>
-                        {log.message}
+                        {highlightKeyword(log.message, keyword)}
                       </span>
                       {log.node && (
-                        <Badge variant="outline" className="text-[10px] h-4.5 px-1 font-mono shrink-0">
+                        <Badge
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (log.node?.id) {
+                              onFilterByNodeId?.(log.node.id);
+                            }
+                          }}
+                          className="text-[10px] h-4.5 px-1 font-mono shrink-0 cursor-pointer hover:border-primary hover:text-primary transition-colors"
+                          title={`按节点 ${log.node.name} 过滤`}
+                        >
                           {log.node.name}
                         </Badge>
                       )}

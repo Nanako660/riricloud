@@ -1,4 +1,5 @@
-import { Download, Radio, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { Download, Radio, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +11,7 @@ interface LogFilterBarProps {
   filter: LogsFilter;
   onChange: (patch: Partial<LogsFilter>) => void;
   onRefresh: () => void;
+  onReset?: () => void;
   onOpenCleanup: () => void;
   onExport: (format: 'json' | 'csv') => void;
   isLiveTail: boolean;
@@ -30,6 +32,7 @@ export function LogFilterBar({
   filter,
   onChange,
   onRefresh,
+  onReset,
   onOpenCleanup,
   onExport,
   isLiveTail,
@@ -37,6 +40,15 @@ export function LogFilterBar({
   nodes,
   isRefreshing
 }: LogFilterBarProps) {
+  const isFiltered =
+    filter.level !== 'ALL' ||
+    filter.source !== 'ALL' ||
+    (Boolean(filter.nodeId) && filter.nodeId !== 'ALL') ||
+    Boolean(filter.module) ||
+    Boolean(filter.traceId) ||
+    Boolean(filter.keyword) ||
+    filter.timeRange !== '24h';
+
   return (
     <div className="flex flex-col gap-2.5 rounded-xl border bg-card/70 p-3 shadow-2xs backdrop-blur-xs">
       {/* 顶部一排：快速时间范围、级别 Pills、右侧控制动作 */}
@@ -77,6 +89,21 @@ export function LogFilterBar({
 
         {/* 右侧主操作区 */}
         <div className="flex items-center gap-1.5 ml-auto">
+          {/* 重置全部筛选条件 */}
+          {isFiltered && onReset && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onReset}
+              className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
+              title="重置全部筛选条件"
+            >
+              <RotateCcw className="size-3" />
+              <span>重置</span>
+            </Button>
+          )}
+
           {/* Live Tail 实时推流开关 */}
           <Button
             type="button"
@@ -204,6 +231,24 @@ export function LogFilterBar({
           )}
         </div>
       </div>
+
+      {/* 活跃的快速过滤徽标（模块等） */}
+      {filter.module && (
+        <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+          <span className="text-[11px] text-muted-foreground">模块过滤中:</span>
+          <Badge variant="secondary" className="h-5 gap-1 px-2 font-mono text-[11px]">
+            <span>[{filter.module}]</span>
+            <button
+              type="button"
+              onClick={() => onChange({ module: '', page: 1 })}
+              className="text-muted-foreground hover:text-foreground ml-0.5"
+              title="清除模块过滤"
+            >
+              <X className="size-3" />
+            </button>
+          </Badge>
+        </div>
+      )}
     </div>
   );
 }

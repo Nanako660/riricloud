@@ -30,7 +30,8 @@ api.interceptors.response.use(
 
     // 上报 API 请求异常到前端日志 SDK（避开日志上报接口本身以防递归）
     if (status !== 401 && config?.url && !config.url.includes('/logs/frontend')) {
-      frontendLogger.error(
+      const logMethod = status === 404 ? frontendLogger.warn.bind(frontendLogger) : frontendLogger.error.bind(frontendLogger);
+      logMethod(
         `API ${String(config.method || 'GET').toUpperCase()} ${config.url} -> ${status ?? 'Network Error'}`,
         'Axios',
         {
