@@ -4,6 +4,8 @@
 
 生产环境推荐由 Nginx 负责 HTTPS 终止、反向代理和边缘路由。后端唯一真实订阅接口仍为 `GET /api/v1/sub/:token`；伪静态订阅地址由 Nginx 将严格匹配的 UUID 单段路径内部 rewrite 到该接口，不新增 NestJS 路由或通用代理 middleware。
 
+> **API 文档与安全（Swagger / OpenAPI）**：主控端支持自动生成 OpenAPI 交互文档（路径 `/api/docs` 与 `/api/docs-json`）。出于公网部署安全基线考虑，生产环境（`NODE_ENV=production` 或 `RIRICLOUD_ENV=production`）**默认关闭** API 文档挂载（访问返回 404）；开发与测试环境默认开启。若需在生产环境中开启调试，可在环境变量中显式配置 `ENABLE_SWAGGER=true`（兼容 `RIRICLOUD_ENABLE_SWAGGER=true`）。
+>
 > **实现状态（v0.6.12）**：标注 ⭐ 的端点已实现；其余端点为完整版规划，随对应里程碑落地。浏览器面板登录通过 `HttpOnly`、`SameSite=Lax` Cookie 保存 JWT；兼容脚本仍可使用 `Authorization: Bearer`，但登录/注册 JSON 不再返回 JWT。除 `@Public()` 显式放行的端点（登录、注册、验证码发送、CAPTCHA、本地订阅、版本、站点公开信息、Agent 二进制下载和 SSE 连接）外一律需要鉴权；管理员端点要求 `role=ADMIN`。AgentToken 只允许通过 `X-Agent-Token` 请求头传递，禁止放入 URL query。
 >
 > **首管理员引导**：系统不提供「首个注册用户自动成为管理员」机制。生产启动由 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 显式创建首管理员；完整 Prisma seed 的演示账号只允许在非生产环境且显式 `AUTO_SEED=true` 时使用。

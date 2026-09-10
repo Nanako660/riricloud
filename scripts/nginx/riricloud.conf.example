@@ -38,6 +38,11 @@ server {
         proxy_read_timeout 600s;
     }
 
+    # 生产环境可选：若需在反向代理层强制屏蔽 Swagger 文档与 OpenAPI 规范，可取消下行注释：
+    # location ^~ /api/docs {
+    #     return 404;
+    # }
+
     # API、Web 面板和其他未命中短链规则的请求继续交给 Master。
     location / {
         proxy_pass http://127.0.0.1:3000;

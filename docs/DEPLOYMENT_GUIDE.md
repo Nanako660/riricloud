@@ -18,7 +18,7 @@ cp .env.example .env   # 编辑：JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD 必�
 ./start.sh             # 首启自动：生成 Prisma client → migrate deploy → admin/Master-Local bootstrap → 启动 Master
 ```
 
-- 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；API 文档 `/api/docs`。
+- 访问 `http://<host>:<port>` 即 Web 面板（生产模式下后端直接托管面板静态资源，非 `/api` 路径自动 SPA 回退）；生产环境出于安全考虑默认禁用 Swagger API 文档（返回 404），如需排查联调可在 `.env` 中设置 `ENABLE_SWAGGER=true` 后访问 `/api/docs`。
 - 首次启动空数据库时，bootstrap 按 `ADMIN_EMAIL`、`ADMIN_PASSWORD` 创建首个管理员；兼容旧配置 `SEED_ADMIN_EMAIL`、`SEED_ADMIN_PASSWORD`，不再提供生产默认管理员密码。
 - 生产环境 `AUTO_SEED=false` 时创建管理员、内嵌默认订阅模板和系统保留的 `Master-Local`，不会创建演示用户、套餐和线路；Docker 入口与发行包 `start.sh` 会在生产模式拒绝 `AUTO_SEED=true`。开发/演示环境明确设置 `AUTO_SEED=true` 才会额外执行完整演示 seed。内嵌模板允许管理员通过模板编辑器修改，但不能删除。
 - 重置已有管理员密码：`./admin-reset.sh --email admin@example.com`（默认隐藏交互输入，新密码需同时包含大小写字母、数字和特殊字符）；自动化场景可用 `printf '%s\n' 'New-admin-password1!' | ./admin-reset.sh --email admin@example.com --password-stdin`。该命令不会创建或提权账号。

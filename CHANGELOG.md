@@ -27,6 +27,7 @@
 - **开发联调端口竞态与残留进程修复**：`scripts/dev-e2e.sh` 现将实际使用的主控端口记录到 `.cache/dev-e2e-server-port`，后续运行据此复用已在运行的主控端，避免端口漂移后重复拉起并抢占同一端口（原表现为 `listen EADDRINUSE` 后直接失败）；端口在探测与绑定之间被抢占时会顺延到下一个可用端口自动重试（可用 `SERVER_START_ATTEMPTS` 调整次数，显式固定 `SERVER_PORT`/`PORT` 时不顺延）；退出时按进程树回收（Windows 使用 `taskkill /T`），不再残留 `nest`/`sing-box` 子进程占用端口；并修正 StatsService 端口未变化时仍打印“默认端口不可用”的错误提示。
 
 ### Security
+- **生产环境 API 文档默认安全收敛**：主控端 Swagger / OpenAPI 接口文档（`/api/docs` 及 `/api/docs-json`）在生产部署环境（`NODE_ENV=production` 或 `RIRICLOUD_ENV=production`）下默认彻底禁用挂载并返回 404，防止系统指纹与接口全景暴露；开发与测试环境保持默认开启，并新增 `ENABLE_SWAGGER`（兼容 `RIRICLOUD_ENABLE_SWAGGER`）支持按需显式开启；Nginx 示例配置同步增加可选的反代层拦截注释规则。
 - **`multer` 传递依赖强制升级**：新披露 3 条 High DoS advisory（`GHSA-wc9g-mqfw-jrwm`、`GHSA-qfvm-cv95-jqjf`、`GHSA-535w-7cp7-47q4`）影响经 `@nestjs/platform-express` 传递引入的 `multer@2.2.0`；因 NestJS 11.x 最新版仍精确依赖该版本，改由根 `package.json` 的 `pnpm.overrides` 强制 `multer@2.3.0`（临时安全锁定，待上游依赖 `>=2.3.0` 后移除，说明见 `docs/TECH_STACK.md` §3.2）。
 
 
