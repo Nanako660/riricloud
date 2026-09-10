@@ -32,6 +32,7 @@ services:
       RIRICLOUD_ENCRYPTION_KEY: ${RIRICLOUD_ENCRYPTION_KEY:?RIRICLOUD_ENCRYPTION_KEY must be set in .env.image}
       RIRICLOUD_TRUST_PROXY: ${RIRICLOUD_TRUST_PROXY:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
     volumes:
       - ${MASTER_DATA_PATH:-./data}:/app/data
     healthcheck:

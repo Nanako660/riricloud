@@ -16,7 +16,7 @@ cp .env.example .env
 ./start.sh
 ```
 
-启动后访问 `http://<host>:<port>` 即为 Web 面板；API 文档在 `/api/docs`，节点 Agent 可通过面板生成的原生 CLI 命令安装。
+启动后访问 `http://<host>:<port>` 即为 Web 面板；生产环境下 API 文档默认关闭，可在 `.env` 中设置 `ENABLE_SWAGGER=true` 后访问 `/api/docs`；节点 Agent 可通过面板生成的原生 CLI 命令安装。
 
 ## 首次登录
 

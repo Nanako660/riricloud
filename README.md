@@ -149,7 +149,7 @@ pnpm dev:web
 
 访问入口：
 - 🖥️ **Web 控制面板**：[http://localhost:5173](http://localhost:5173)
-- 📑 **Swagger API 交互文档**：[http://localhost:3000/api/docs](http://localhost:3000/api/docs)
+- 📑 **Swagger API 交互文档**：[http://localhost:3000/api/docs](http://localhost:3000/api/docs)（开发环境默认开启；生产部署默认安全关闭，可通过 `ENABLE_SWAGGER=true` 显式开启）
 
 ### 4. 本地联调边缘 Agent
 
@@ -294,7 +294,7 @@ sudo systemctl reload nginx
 - **Nginx 伪静态入口**：部署边缘配置后，`GET /<UUID>` 或 `GET /<prefix>/<UUID>` 由 Nginx rewrite 到上述标准接口，后端业务和响应语义保持不变。
 
 ### 2. OpenAPI / Swagger 接口契约
-主控端内置交互式 API 文档，启动后访问 `/api/docs` 即可查看并调试全部 RESTful 接口（认证、用户与订阅管理、节点与线路编排、套餐与模板管理、遥测与系统设置）。
+主控端内置交互式 API 文档，开发环境启动后访问 `/api/docs` 即可查看并调试全部 RESTful 接口（认证、用户与订阅管理、节点与线路编排、套餐与模板管理、遥测与系统设置）；生产部署时默认关闭以收敛公网攻击面，可由环境变量 `ENABLE_SWAGGER=true` 显式开启。
 
 ### 3. Agent 通信网关与任务调度
 - **双传输模式**：Agent 支持 WebSocket (WSS) 全双工长连接与 HTTP (`POST /api/v1/agent/poll`) 定时轮询两种模式。

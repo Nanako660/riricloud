@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 import { JwtAuthGuard } from './common/jwt-auth.guard';
 import { configureRequestBodyParser } from './common/request-body-parser';
 import { applySecurityHeaders } from './common/security-headers';
+import { shouldEnableSwagger } from './common/swagger-config';
 import { registerWebStatic } from './static/web-static';
 
 async function bootstrap() {
@@ -54,13 +55,15 @@ async function bootstrap() {
     next();
   });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('RiriCloud API')
-    .setDescription('RiriCloud 主控端 REST API（契约见 docs/API_AND_PROTOCOLS.md）')
-    .setVersion(process.env.npm_package_version || '0.0.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swaggerConfig));
+  if (shouldEnableSwagger(process.env, productionLike)) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('RiriCloud API')
+      .setDescription('RiriCloud 主控端 REST API（契约见 docs/API_AND_PROTOCOLS.md）')
+      .setVersion(process.env.npm_package_version || '0.0.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swaggerConfig));
+  }
 
   // Web 面板静态托管与 SPA 回退（存在 web dist 时启用，见 static/web-static.ts）
   registerWebStatic(app);
