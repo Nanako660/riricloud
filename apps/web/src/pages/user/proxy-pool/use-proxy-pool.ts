@@ -32,6 +32,8 @@ export interface ProxyPoolEndpoint {
   latencyMs: number | null;
   lastTestedAt: string | null;
   lastTestStatus: string | null;
+  tls?: boolean;
+  serverName?: string | null;
 }
 
 export interface ProxyKeyPayload {

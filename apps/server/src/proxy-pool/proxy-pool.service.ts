@@ -70,6 +70,8 @@ export interface ProxyPoolEndpointView {
   latencyMs: number | null;
   lastTestedAt: string | null;
   lastTestStatus: string | null;
+  tls: boolean;
+  serverName: string | null;
 }
 
 export interface ProxyPoolExportResult {
@@ -256,7 +258,9 @@ export class ProxyPoolService {
             username: key.username,
             password: key.password,
             latencyMs: endpoint.latencyMs,
-            lastTestStatus: endpoint.lastTestStatus
+            lastTestStatus: endpoint.lastTestStatus,
+            tls: endpoint.tls,
+            serverName: endpoint.serverName
           }))
         }),
         key: keySummary,
@@ -264,13 +268,14 @@ export class ProxyPoolService {
       };
     }
 
-    const protocol = query.protocol === 'http' ? 'http' : 'socks5';
+    const isHttp = query.protocol === 'http';
     const body = query.format === 'uri'
       ? endpoints
-          .map(
-            (endpoint) =>
-              `${protocol}://${encodeURIComponent(key.username)}:${encodeURIComponent(key.password)}@${endpoint.host}:${endpoint.port}`
-          )
+          .map((endpoint) => {
+            // HTTP 协议下自动识别节点是否开启 TLS，若是则自动生成标准 https:// 代理 URI
+            const scheme = isHttp ? (endpoint.tls ? 'https' : 'http') : 'socks5';
+            return `${scheme}://${encodeURIComponent(key.username)}:${encodeURIComponent(key.password)}@${endpoint.host}:${endpoint.port}`;
+          })
           .join('\n')
       : endpoints
           .map((endpoint) => `${endpoint.host}:${endpoint.port}:${key.username}:${key.password}`)
@@ -379,6 +384,30 @@ export class ProxyPoolService {
 
   private toEndpointView(line: ProxyPoolEndpointRecord): ProxyPoolEndpointView {
     const tags = this.parseTags(line.tagsJson);
+    let tls = false;
+    let serverName: string | null = null;
+    if (line.paramsJson) {
+      try {
+        const parsed = JSON.parse(line.paramsJson) as Record<string, unknown>;
+        if (parsed.tls && typeof parsed.tls === 'object') {
+          const tlsObj = parsed.tls as Record<string, unknown>;
+          tls = tlsObj.enabled === true || Boolean(line.certificateId);
+          if (typeof tlsObj.serverName === 'string' && tlsObj.serverName.trim()) {
+            serverName = tlsObj.serverName.trim();
+          }
+        } else if (line.certificateId) {
+          tls = true;
+        }
+      } catch {
+        tls = Boolean(line.certificateId);
+      }
+    } else if (line.certificateId) {
+      tls = true;
+    }
+    if (!serverName) {
+      serverName = line.serverName || (line.endpointOverrideEnabled && line.serverHost ? line.serverHost : line.entryNode.serverHost);
+    }
+
     return {
       lineId: line.id,
       name: line.name,
@@ -393,7 +422,9 @@ export class ProxyPoolService {
       online: line.entryNode.status === 'ONLINE',
       latencyMs: line.lastLatencyMs ?? null,
       lastTestedAt: line.lastTestedAt ? line.lastTestedAt.toISOString() : null,
-      lastTestStatus: line.lastTestStatus ?? null
+      lastTestStatus: line.lastTestStatus ?? null,
+      tls,
+      serverName
     };
   }
 
