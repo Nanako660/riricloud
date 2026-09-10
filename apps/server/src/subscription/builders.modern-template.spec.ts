@@ -359,10 +359,11 @@ describe('builders with modernized template configuration', () => {
       inbounds: Array<{ type: string; listen_port: number }>;
       outbounds: Array<{ tag: string; type: string }>;
       dns: {
-        servers: Array<{ tag: string; address: string }>;
+        servers: Array<{ tag: string; type?: string; server?: string; inet4_range?: string }>;
         fakeip?: { enabled: boolean };
       };
       route: {
+        default_domain_resolver?: string;
         rule_set: Array<{ tag: string; type: string; format: string; url: string }>;
         rules: Array<Record<string, unknown>>;
       };
@@ -379,13 +380,14 @@ describe('builders with modernized template configuration', () => {
 
     // 2. DNS
     expect(config.dns.servers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ tag: 'dns_direct', address: 'https://doh.pub/dns-query' }),
-      expect.objectContaining({ tag: 'dns_direct_2', address: 'https://dns.alidns.com/dns-query' }),
-      expect.objectContaining({ tag: 'dns_proxy', address: 'https://1.1.1.1/dns-query' }),
-      expect.objectContaining({ tag: 'dns_proxy_2', address: 'https://dns.google/dns-query' }),
-      expect.objectContaining({ tag: 'dns_fakeip', address: 'fakeip' })
+      expect.objectContaining({ tag: 'dns_direct', type: 'https', server: 'doh.pub' }),
+      expect.objectContaining({ tag: 'dns_direct_2', type: 'https', server: 'dns.alidns.com' }),
+      expect.objectContaining({ tag: 'dns_proxy', type: 'https', server: '1.1.1.1' }),
+      expect.objectContaining({ tag: 'dns_proxy_2', type: 'https', server: 'dns.google' }),
+      expect.objectContaining({ tag: 'dns_fakeip', type: 'fakeip', inet4_range: '198.18.0.0/15' })
     ]));
-    expect(config.dns.fakeip?.enabled).toBe(true);
+    expect(config.dns).not.toHaveProperty('fakeip');
+    expect(config.route.default_domain_resolver).toBe('dns_direct');
 
     // 3. 策略组标签与核心出站
     const outboundTags = config.outbounds.map((o) => o.tag);

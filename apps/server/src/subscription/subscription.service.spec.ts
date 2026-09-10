@@ -478,7 +478,10 @@ describe('SubscriptionService', () => {
           '东京节点 01·tuic-in'
         ]) }
       ]));
-      expect(config.route).toEqual({ rules: [{ action: 'route', outbound: '节点选择' }] });
+      expect(config.route).toEqual({
+        default_domain_resolver: 'dns_direct',
+        rules: [{ action: 'route', outbound: '节点选择' }]
+      });
     });
 
     it('User-Agent 含 sing-box 时自动切换 JSON', async () => {

@@ -19,6 +19,8 @@
 - **客户端高级覆写全宽工作台与智能片段**：新增 `TemplateOverrideEditor`，支持 Clash YAML 与 Sing-box JSON 二级切换并占满 100% 宽度与高度，集成实时语法校验状态指示与常用配置片段（TUN 模式、Clash API 控制器等）智能 deepMerge 注入。
 - **全模板 JSON 源文件双向编辑**：新增 `TemplateSourceEditor`，支持在源文件 Tab 中直接查看与编辑整套模板的结构化 JSON（策略组、分流规则、DNS 与客户端覆写），与各表单 Tab 毫秒级双向安全同步，具备语法错误防污染守卫、格式化美化、一键复制与快速渲染验证联动。
 - **Sing-box 内核真实验证与智能诊断**：服务端模板预览端点（`POST /admin/subscription-templates/preview`）支持在系统就绪时自动调用 `sing-box check -c` 进行真实内核配置校验，并在预览抽屉（`TemplatePreviewDrawer`）中展示内核校验状态徽章、错误调用日志与配置诊断；未探测到内核时无缝降级为语法诊断。
+- **Sing-box 1.12+ 现代 DNS 格式与 Fake-IP 规范迁移**：重构 `buildSemanticSingboxDns` 与 `parseSingboxDnsServer`，废弃顶层 `dns.fakeip` 与 `independent_cache`，所有 DNS 服务器解析为强类型服务器对象（支持 UDP、DoH、DoT、DoQ、H3、local）；Fake-IP 采用新型结构挂入 `dns.servers` 并将直连 DNS 作为默认首位解析器；`route` 配置中补充 `default_domain_resolver: "dns_direct"`，彻底解决 Sing-box 1.12+ 内核校验报错。
+- **内核诊断输出 ANSI 脱敏与分级高亮**：主控调用 `sing-box check` 时追加 `--disable-color` 参数并应用正则彻底剥离终端 ANSI 颜色转义序列，解决 `[31mERROR[0m` 乱码；前端预览抽屉实现 `FATAL`/`ERROR`/`WARN` 语义化标签与分级日志高亮展示。
 
 ### Changed
 - **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。

@@ -213,7 +213,7 @@ export class TemplatesService {
   private mockPreviewSources(): SubLine[] {
     const tls = (serverName: string) => ({ enabled: true, mode: 'tls', serverName, alpn: ['h2'], insecure: false });
     return [
-      { id: 'preview-hk-vless', name: '香港 · VLESS Reality', serverHost: 'hk.preview.invalid', serverPort: 443, protocolType: 'VLESS', tags: ['hk', 'premium'], params: { transport: { type: 'tcp' }, flow: 'xtls-rprx-vision', tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { publicKey: 'preview-public-key', shortIds: ['0123456789abcdef'] } } } },
+      { id: 'preview-hk-vless', name: '香港 · VLESS Reality', serverHost: 'hk.preview.invalid', serverPort: 443, protocolType: 'VLESS', tags: ['hk', 'premium'], params: { transport: { type: 'tcp' }, flow: 'xtls-rprx-vision', tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { publicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', shortIds: ['0123456789abcdef'] } } } },
       { id: 'preview-jp-hy2', name: '日本 · Hysteria2', serverHost: 'jp.preview.invalid', serverPort: 8443, protocolType: 'HYSTERIA2', tags: ['jp', 'udp'], params: { tls: tls('jp.preview.invalid'), upMbps: 100, downMbps: 300 } },
       { id: 'preview-us-trojan', name: '美国 · Trojan', serverHost: 'us.preview.invalid', serverPort: 443, protocolType: 'TROJAN', tags: ['us', 'premium'], params: { transport: { type: 'tcp' }, tls: tls('us.preview.invalid') } },
       { id: 'preview-sg-vmess', name: '新加坡 · VMess', serverHost: 'sg.preview.invalid', serverPort: 443, protocolType: 'VMESS', tags: ['sg'], params: { transport: { type: 'ws', path: '/preview', host: 'sg.preview.invalid' }, tls: tls('sg.preview.invalid') } },
@@ -352,10 +352,12 @@ export class TemplatesService {
     try {
       await fs.writeFile(tmpFile, configJson, 'utf-8');
       return await new Promise((resolve) => {
-        execFile(bin, ['check', '-c', tmpFile], { timeout: 5000 }, (error, stdout, stderr) => {
+        execFile(bin, ['check', '-c', tmpFile, '--disable-color'], { timeout: 5000 }, (error, stdout, stderr) => {
           if (error) {
-            const output = (stderr || stdout || error.message).trim();
-            resolve({ executed: true, passed: false, message: output });
+            const rawOutput = (stderr || stdout || error.message).trim();
+            // eslint-disable-next-line no-control-regex
+            const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            resolve({ executed: true, passed: false, message: cleanOutput });
           } else {
             resolve({ executed: true, passed: true, message: 'Sing-box 内核配置校验通过' });
           }

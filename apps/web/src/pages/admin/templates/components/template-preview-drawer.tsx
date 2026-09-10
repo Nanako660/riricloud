@@ -73,13 +73,31 @@ export function TemplatePreviewPanel({ template }: { template: TemplatePayload }
       {/* 若内核报错，展示详细日志卡片 */}
       {singboxCheck?.executed && !singboxCheck.passed && singboxCheck.message && (
         <div className="shrink-0 rounded-md border border-destructive/50 bg-destructive/10 p-2.5 text-xs text-destructive">
-          <div className="flex items-center gap-1.5 font-semibold">
+          <div className="flex items-center gap-1.5 font-semibold text-destructive">
             <AlertTriangle className="h-4 w-4" />
             <span>Sing-box 内核诊断报错：</span>
           </div>
-          <pre className="mt-1 max-h-28 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-tight">
-            {singboxCheck.message}
-          </pre>
+          <div className="mt-1.5 max-h-36 overflow-y-auto rounded bg-zinc-950/90 p-2 font-mono text-[11px] leading-relaxed text-zinc-200 dark:bg-black/60">
+            {singboxCheck.message.split('\n').map((line, idx) => {
+              const isFatal = line.includes('FATAL');
+              const isError = line.includes('ERROR');
+              const isWarn = line.includes('WARN');
+              return (
+                <div key={idx} className="flex items-start gap-1.5 py-0.5">
+                  {isFatal ? (
+                    <span className="shrink-0 rounded bg-red-600 px-1 py-0.2 text-[9px] font-bold text-white">FATAL</span>
+                  ) : isError ? (
+                    <span className="shrink-0 rounded bg-rose-500 px-1 py-0.2 text-[9px] font-bold text-white">ERROR</span>
+                  ) : isWarn ? (
+                    <span className="shrink-0 rounded bg-amber-500 px-1 py-0.2 text-[9px] font-bold text-black">WARN</span>
+                  ) : null}
+                  <span className={isFatal || isError ? 'text-red-300' : isWarn ? 'text-amber-200' : 'text-zinc-300'}>
+                    {line.replace(/^(FATAL|ERROR|WARN)(\[\d+\])?\s*/, '')}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
