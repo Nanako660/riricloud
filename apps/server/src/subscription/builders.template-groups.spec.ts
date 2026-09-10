@@ -113,7 +113,7 @@ describe('builders template proxy-groups resolution', () => {
     expect(strategyOutbounds.get('🛑 广告拦截')).toEqual(['block', 'direct']);
   });
 
-  it('将旧式 DNS 配置编译为 Sing-box 1.8+ servers/rules/fakeip 结构', () => {
+  it('将旧式 DNS 配置编译为 Sing-box 1.12+ servers/rules/fakeip 结构', () => {
     const config = JSON.parse(buildSingboxJson(user, mockNodes, {
       proxyGroupsJson: JSON.stringify([{ name: '节点选择', type: 'select', proxies: 'all' }]),
       ruleSetsJson: JSON.stringify([{ name: '中国站点', type: 'geosite', rules: ['cn'], target: 'DIRECT' }]),
@@ -122,14 +122,16 @@ describe('builders template proxy-groups resolution', () => {
 
     expect(config.dns).toEqual(expect.objectContaining({
       servers: expect.arrayContaining([
-        expect.objectContaining({ tag: 'dns_direct', address: '223.5.5.5', detour: 'direct' }),
-        expect.objectContaining({ tag: 'dns_proxy', address: 'https://8.8.8.8/dns-query', detour: '节点选择' }),
-        expect.objectContaining({ tag: 'dns_fakeip', address: 'fakeip' })
+        expect.objectContaining({ tag: 'dns_direct', type: 'udp', server: '223.5.5.5', detour: 'direct' }),
+        expect.objectContaining({ tag: 'dns_proxy', type: 'https', server: '8.8.8.8', detour: '节点选择' }),
+        expect.objectContaining({ tag: 'dns_fakeip', type: 'fakeip', inet4_range: '198.18.0.0/15' })
       ]),
-      fakeip: { enabled: true, inet4_range: '198.18.0.0/15' },
-      independent_cache: true
+      strategy: 'ipv4_only'
     }));
+    expect(config.dns).not.toHaveProperty('fakeip');
+    expect(config.dns).not.toHaveProperty('independent_cache');
     expect(config.dns).not.toHaveProperty('enhanced-mode');
+    expect(config.route.default_domain_resolver).toBe('dns_direct');
     expect(config.route.rule_set).toEqual(expect.arrayContaining([expect.objectContaining({ tag: 'geosite-cn', type: 'remote', format: 'binary' })]));
     expect(config.route.rules).toEqual(expect.arrayContaining([expect.objectContaining({ rule_set: ['geosite-cn'], outbound: 'direct' })]));
   });

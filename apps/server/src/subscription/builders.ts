@@ -138,7 +138,7 @@ export function normalizeSemanticDnsConfig(value: unknown): SemanticDnsConfig {
   return {
     enable: source.enable !== false,
     fakeIp: enhancedMode === 'fake-ip' || source['fake-ip-range'] !== undefined,
-    directDns: nameserver.length ? [nameserver[0]] : defaultNameserver,
+    directDns: nameserver.length ? (fallback.length ? nameserver : [nameserver[0]]) : defaultNameserver,
     proxyDns: fallback.length ? fallback : nameserver.slice(1),
     ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
   };
@@ -431,30 +431,117 @@ export function buildSemanticClashDns(value: unknown): Record<string, unknown> {
   };
 }
 
+export function parseSingboxDnsServer(addr: string, tag: string, detour?: string): Record<string, unknown> {
+  const trimmed = addr.trim();
+  if (trimmed.toLowerCase() === 'local') {
+    return { type: 'local', tag, ...(detour ? { detour } : {}) };
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const protocol = url.protocol.replace(':', '').toLowerCase();
+      if (protocol === 'https') {
+        return {
+          type: 'https',
+          tag,
+          server: url.hostname,
+          ...(url.port ? { server_port: parseInt(url.port, 10) } : {}),
+          ...(url.pathname && url.pathname !== '/' ? { path: url.pathname + (url.search || '') } : {}),
+          ...(detour ? { detour } : {})
+        };
+      }
+      if (protocol === 'tls' || protocol === 'quic') {
+        return {
+          type: protocol,
+          tag,
+          server: url.hostname,
+          ...(url.port ? { server_port: parseInt(url.port, 10) } : {}),
+          ...(detour ? { detour } : {})
+        };
+      }
+      if (protocol === 'h3') {
+        return {
+          type: 'h3',
+          tag,
+          server: url.hostname,
+          ...(url.port ? { server_port: parseInt(url.port, 10) } : {}),
+          ...(url.pathname && url.pathname !== '/' ? { path: url.pathname + (url.search || '') } : {}),
+          ...(detour ? { detour } : {})
+        };
+      }
+      if (protocol === 'udp' || protocol === 'tcp') {
+        return {
+          type: protocol,
+          tag,
+          server: url.hostname,
+          ...(url.port ? { server_port: parseInt(url.port, 10) } : {}),
+          ...(detour ? { detour } : {})
+        };
+      }
+    } catch {
+      // fallback to plain host/port
+    }
+  }
+  let host = trimmed;
+  let port: number | undefined;
+  if (trimmed.includes(':') && !trimmed.includes('[')) {
+    const parts = trimmed.split(':');
+    host = parts[0];
+    const parsedPort = parseInt(parts[1], 10);
+    if (!isNaN(parsedPort)) {
+      port = parsedPort;
+    }
+  } else if (trimmed.startsWith('[') && trimmed.includes(']:')) {
+    const closeBracketIdx = trimmed.indexOf(']:');
+    host = trimmed.slice(1, closeBracketIdx);
+    const parsedPort = parseInt(trimmed.slice(closeBracketIdx + 2), 10);
+    if (!isNaN(parsedPort)) {
+      port = parsedPort;
+    }
+  }
+  return {
+    type: 'udp',
+    tag,
+    server: host,
+    ...(port ? { server_port: port } : {}),
+    ...(detour ? { detour } : {})
+  };
+}
+
 export function buildSemanticSingboxDns(value: unknown, primaryGroup: string, ruleSetTags: string[] = []): Record<string, unknown> {
   const dns = normalizeSemanticDnsConfig(value);
   if (dns.enable === false) return {};
   const directDns = dns.directDns?.length ? dns.directDns : ['223.5.5.5'];
   const proxyDns = dns.proxyDns?.length ? dns.proxyDns : ['https://1.1.1.1/dns-query'];
-  const servers: Array<Record<string, unknown>> = [
-    { tag: 'dns_direct', address: directDns[0], detour: 'direct' },
-    { tag: 'dns_proxy', address: proxyDns[0], detour: primaryGroup }
-  ];
-  const rules: Array<Record<string, unknown>> = [
-    { outbound: 'any', server: 'dns_direct' }
-  ];
+  const servers: Array<Record<string, unknown>> = [];
+  directDns.forEach((addr, idx) => {
+    servers.push(
+      parseSingboxDnsServer(addr, idx === 0 ? 'dns_direct' : `dns_direct_${idx + 1}`, 'direct')
+    );
+  });
+  if (dns.fakeIp) {
+    servers.push({
+      type: 'fakeip',
+      tag: 'dns_fakeip',
+      inet4_range: '198.18.0.0/15',
+      ...(dns.ipv6 !== false ? { inet6_range: 'fc00::/18' } : {})
+    });
+  }
+  proxyDns.forEach((addr, idx) => {
+    servers.push(
+      parseSingboxDnsServer(addr, idx === 0 ? 'dns_proxy' : `dns_proxy_${idx + 1}`, primaryGroup)
+    );
+  });
+  const rules: Array<Record<string, unknown>> = [];
   if (ruleSetTags.length) rules.push({ rule_set: ruleSetTags, server: 'dns_direct' });
   if (dns.fakeIp) {
-    servers.push({ tag: 'dns_fakeip', address: 'fakeip' });
     rules.push({ query_type: ['A', 'AAAA'], server: 'dns_fakeip' });
   }
   rules.push({ server: 'dns_proxy' });
   return {
     servers,
     rules,
-    ...(dns.fakeIp ? { fakeip: { enabled: true, inet4_range: '198.18.0.0/15' } } : {}),
-    strategy: dns.ipv6 === false ? 'prefer_ipv4' : 'prefer_ipv4',
-    independent_cache: true
+    strategy: dns.ipv6 === false ? 'ipv4_only' : 'prefer_ipv4'
   };
 }
 
@@ -1363,11 +1450,14 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
     }
     routeRules.push({ domain_suffix: values, outbound: routeOutbound });
   }
+  const dnsConfig = buildSemanticSingboxDns(templateDns(template), primaryGroup, singboxRuleSets.map((rule) => String(rule.tag)));
+  const hasDnsServers = Array.isArray(dnsConfig.servers) && dnsConfig.servers.length > 0;
   const config: Record<string, unknown> = {
     log: { level: 'info' },
-    dns: buildSemanticSingboxDns(templateDns(template), primaryGroup, singboxRuleSets.map((rule) => String(rule.tag))),
+    dns: dnsConfig,
     outbounds,
     route: {
+      ...(hasDnsServers ? { default_domain_resolver: 'dns_direct' } : {}),
       ...(singboxRuleSets.length ? { rule_set: singboxRuleSets } : {}),
       rules: routeRules.length ? routeRules : [{ action: 'route', outbound: primaryGroup }]
     }

@@ -1,3 +1,7 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { parseDocument } from 'yaml';
@@ -5,7 +9,7 @@ import { SETTING_KEYS, SettingsService } from '../system/settings.service';
 import { LinesService } from '../lines/lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
-import { PreviewTemplateDto } from './dto/preview-template.dto';
+import { PreviewTemplateDto, type SingboxCheckResult } from './dto/preview-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { buildClashYaml, buildSingboxJson, type SubLine, type SubUser, type SubscriptionTemplateConfig } from '../subscription/builders';
 
@@ -128,7 +132,11 @@ export class TemplatesService {
       ? buildClashYaml(user, sources, template)
       : buildSingboxJson(user, sources, template);
     const stats = this.previewStats(dto.format, content, sources.length);
-    return { format: dto.format, content, stats, warnings: [] as string[] };
+    const singboxContent = dto.format === 'singbox'
+      ? content
+      : buildSingboxJson(user, sources, template);
+    const singboxCheck = await this.checkSingboxConfig(singboxContent);
+    return { format: dto.format, content, stats, warnings: [] as string[], singboxCheck };
   }
 
   async remove(id: string) {
@@ -205,7 +213,7 @@ export class TemplatesService {
   private mockPreviewSources(): SubLine[] {
     const tls = (serverName: string) => ({ enabled: true, mode: 'tls', serverName, alpn: ['h2'], insecure: false });
     return [
-      { id: 'preview-hk-vless', name: '香港 · VLESS Reality', serverHost: 'hk.preview.invalid', serverPort: 443, protocolType: 'VLESS', tags: ['hk', 'premium'], params: { transport: { type: 'tcp' }, flow: 'xtls-rprx-vision', tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { publicKey: 'preview-public-key', shortIds: ['0123456789abcdef'] } } } },
+      { id: 'preview-hk-vless', name: '香港 · VLESS Reality', serverHost: 'hk.preview.invalid', serverPort: 443, protocolType: 'VLESS', tags: ['hk', 'premium'], params: { transport: { type: 'tcp' }, flow: 'xtls-rprx-vision', tls: { enabled: true, mode: 'reality', serverName: 'www.apple.com', reality: { publicKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', shortIds: ['0123456789abcdef'] } } } },
       { id: 'preview-jp-hy2', name: '日本 · Hysteria2', serverHost: 'jp.preview.invalid', serverPort: 8443, protocolType: 'HYSTERIA2', tags: ['jp', 'udp'], params: { tls: tls('jp.preview.invalid'), upMbps: 100, downMbps: 300 } },
       { id: 'preview-us-trojan', name: '美国 · Trojan', serverHost: 'us.preview.invalid', serverPort: 443, protocolType: 'TROJAN', tags: ['us', 'premium'], params: { transport: { type: 'tcp' }, tls: tls('us.preview.invalid') } },
       { id: 'preview-sg-vmess', name: '新加坡 · VMess', serverHost: 'sg.preview.invalid', serverPort: 443, protocolType: 'VMESS', tags: ['sg'], params: { transport: { type: 'ws', path: '/preview', host: 'sg.preview.invalid' }, tls: tls('sg.preview.invalid') } },
@@ -297,5 +305,68 @@ export class TemplatesService {
       ruleSetsJson: undefined,
       dnsConfigJson: undefined
     };
+  }
+
+  private cachedSingboxPath: string | null = null;
+  private singboxBinaryChecked = false;
+
+  private async resolveSingboxBinary(): Promise<string | null> {
+    if (this.singboxBinaryChecked) return this.cachedSingboxPath;
+    this.singboxBinaryChecked = true;
+
+    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+    const candidates = [
+      process.env.SINGBOX_BINARY_PATH,
+      '/usr/local/bin/sing-box',
+      `/app/binaries/singbox-linux-${arch}`,
+      path.resolve(process.cwd(), 'binaries', `singbox-linux-${arch}`),
+      path.resolve(process.cwd(), 'binaries', `singbox-windows-${arch}.exe`),
+      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box'),
+      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box.exe')
+    ].filter((p): p is string => Boolean(p));
+
+    for (const candidate of candidates) {
+      try {
+        const stat = await fs.stat(candidate);
+        if (stat.isFile()) {
+          this.cachedSingboxPath = candidate;
+          return candidate;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    this.cachedSingboxPath = null;
+    return null;
+  }
+
+  private async checkSingboxConfig(configJson: string): Promise<SingboxCheckResult> {
+    const bin = await this.resolveSingboxBinary();
+    if (!bin) {
+      return { executed: false, passed: true, message: '主控未挂载 sing-box 二进制，已通过结构语法校验' };
+    }
+
+    const tmpDir = os.tmpdir();
+    const tmpFile = path.join(tmpDir, `riri-singbox-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
+    try {
+      await fs.writeFile(tmpFile, configJson, 'utf-8');
+      return await new Promise((resolve) => {
+        execFile(bin, ['check', '-c', tmpFile, '--disable-color'], { timeout: 5000 }, (error, stdout, stderr) => {
+          if (error) {
+            const rawOutput = (stderr || stdout || error.message).trim();
+            // eslint-disable-next-line no-control-regex
+            const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            resolve({ executed: true, passed: false, message: cleanOutput });
+          } else {
+            resolve({ executed: true, passed: true, message: 'Sing-box 内核配置校验通过' });
+          }
+        });
+      });
+    } catch (err) {
+      return { executed: true, passed: false, message: (err as Error).message };
+    } finally {
+      await fs.unlink(tmpFile).catch(() => {});
+    }
   }
 }

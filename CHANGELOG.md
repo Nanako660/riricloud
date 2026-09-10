@@ -13,6 +13,14 @@
 ## [Unreleased]
 
 ### Added
+- **订阅模板工作台沉浸式重构**：模板编辑弹窗（`TemplateFormDialog`）全面升级为 6-Tab 统一沉浸式布局（「基本信息」、「策略组设计」、「分流规则」、「DNS 设置」、「客户端高级覆写」、「源文件编辑」）。
+- **策略组与分流规则沉浸式顶栏**：`TemplateGroupsEditor` 与 `TemplateRulesEditor` 顶栏重构，提供可视化/源码切换、状态徽标、6 种常用预设一键添加菜单（主流节点组、自动优选、流媒体、广告拦截等）与格式化美化。
+- **结构化 DNS 列表与主流预设**：新增 `TemplateDnsEditor`，国内直连 DNS 与海外代理 DNS 支持徽章标签管理、增删、一键引入公共 DNS/DoH 预设（阿里、腾讯 DNSPod、Cloudflare、Google、Quad9 等）与一键重置。
+- **客户端高级覆写全宽工作台与智能片段**：新增 `TemplateOverrideEditor`，支持 Clash YAML 与 Sing-box JSON 二级切换并占满 100% 宽度与高度，集成实时语法校验状态指示与常用配置片段（TUN 模式、Clash API 控制器等）智能 deepMerge 注入。
+- **全模板 JSON 源文件双向编辑**：新增 `TemplateSourceEditor`，支持在源文件 Tab 中直接查看与编辑整套模板的结构化 JSON（策略组、分流规则、DNS 与客户端覆写），与各表单 Tab 毫秒级双向安全同步，具备语法错误防污染守卫、格式化美化、一键复制与快速渲染验证联动。
+- **Sing-box 内核真实验证与智能诊断**：服务端模板预览端点（`POST /admin/subscription-templates/preview`）支持在系统就绪时自动调用 `sing-box check -c` 进行真实内核配置校验，并在预览抽屉（`TemplatePreviewDrawer`）中展示内核校验状态徽章、错误调用日志与配置诊断；未探测到内核时无缝降级为语法诊断。
+- **Sing-box 1.12+ 现代 DNS 格式与 Fake-IP 规范迁移**：重构 `buildSemanticSingboxDns` 与 `parseSingboxDnsServer`，废弃顶层 `dns.fakeip` 与 `independent_cache`，所有 DNS 服务器解析为强类型服务器对象（支持 UDP、DoH、DoT、DoQ、H3、local）；Fake-IP 采用新型结构挂入 `dns.servers` 并将直连 DNS 作为默认首位解析器；`route` 配置中补充 `default_domain_resolver: "dns_direct"`，彻底解决 Sing-box 1.12+ 内核校验报错。
+- **内核诊断输出 ANSI 脱敏与分级高亮**：主控调用 `sing-box check` 时追加 `--disable-color` 参数并应用正则彻底剥离终端 ANSI 颜色转义序列，解决 `[31mERROR[0m` 乱码；前端预览抽屉实现 `FATAL`/`ERROR`/`WARN` 语义化标签与分级日志高亮展示。
 
 ### Changed
 - **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。
@@ -20,6 +28,8 @@
 - **开发联调默认端口调整**：`scripts/dev-e2e.sh` 的主控端联调端口由 `3000` 调整为 `30800`，避开 Windows 系统保留端口区间（本机 `2940-3039` 覆盖 `3000`）造成的端口漂移；应用自身默认端口不变（仍为 `3000`），该调整仅作用于联调脚本。
 
 ### Fixed
+- **Sing-box 订阅多 DNS 生成丢弃与旧格式截断修复**：修复 `buildSemanticSingboxDns` 在用户配置多个直连与代理 DNS 时仅截取首个地址并丢弃后续地址的缺陷，现完整生成 `dns_direct`、`dns_direct_N`、`dns_proxy`、`dns_proxy_N` 服务器列表；同时修复旧 Clash 格式回退时若存在 fallback 会截断 nameserver 的缺陷。
+- **模板编辑移动端单行横滑与语法报错排版优化**：模板弹窗 Tabs 选项卡在小屏幕视口下保持单行排布并支持横向平滑滚动；全套编辑器（源文件、高级覆写、策略组、分流规则）状态徽章精简为紧凑型状态指示（`格式正常` / `语法错误`），长报错信息统一移至底部并升级为深色终端语法诊断卡片，彻底避免挤占右侧操作按钮。
 - **镜像站弹窗输入被轮询清空（0.8.1 未根治的复发）**：`/admin/mirrors` 新增/编辑弹窗输入后约 5 秒被节点列表轮询重置；现迁移为 React Hook Form + Zod 并按业务身份初始化，出网节点选项保持实时刷新而不再回写用户输入。
 - **节点详情表单被 5 秒轮询回写**：节点名称、对外地址与覆盖配置 JSON 每 5 秒被详情轮询覆盖，现按 `node.id` 初始化一次，遥测、内核状态与错误回执继续实时刷新。
 - **同类隐患收敛**：系统设置页与证书编辑弹窗改为按 `dataUpdatedAt` + `isDirty` 回灌（后台 refetch 不再清空未保存修改），个人中心昵称草稿加 dirty 守卫；线路/套餐/模板/节点创建/节点升级弹窗统一改走 `useFormResetOnKey`；探针弹窗改用独立 queryKey（原与设置页共用 key 但响应形态不同，会污染设置缓存）；资源导入弹窗把「类型与平台联动」移入选择事件，删除派生数组入依赖的写法。

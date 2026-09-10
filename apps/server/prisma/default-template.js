@@ -316,7 +316,7 @@ function normalizeDnsConfig(value) {
   return {
     enable: source.enable !== false,
     fakeIp: source['enhanced-mode'] === 'fake-ip' || source['fake-ip-range'] !== undefined,
-    directDns: nameserver.length ? [nameserver[0]] : defaultNameserver,
+    directDns: nameserver.length ? (fallback.length ? nameserver : [nameserver[0]]) : defaultNameserver,
     proxyDns: fallback.length ? fallback : nameserver.slice(1),
     ...(typeof source.ipv6 === 'boolean' ? { ipv6: source.ipv6 } : {})
   };

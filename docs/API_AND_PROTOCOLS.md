@@ -135,12 +135,14 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 订阅模板管理
 - 主控 JSON 与 URL-encoded 请求体上限为 `2 MiB`；超出上限在进入 Controller 前返回 HTTP `413 Payload Too Large`。订阅模板的策略组、规则集、DNS 与 YAML/JSON 覆写会合并在同一请求中，编辑大文本时应控制在该上限内。
+- **DNS 配置契约与多服务器构建**：`dnsConfig` 采用语义化结构 `{ enable?, fakeIp?, ipv6?, directDns?: string[], proxyDns?: string[] }`。在 Clash Meta 构建中映射为 nameserver、fallback 与 fallback-filter；在 Sing-box 1.12+ 构建中对齐官方最新规范，通过智能协议识别将所有地址解析为强类型服务器（支持 UDP、DoH、DoT、DoQ、H3、local 并提取端口与 path），首位默认解析器为 `dns_direct`，Fake-IP 采用新型 `{ type: "fakeip", tag: "dns_fakeip", inet4_range, inet6_range }` 结构，并在 `route` 顶层配置中注入 `default_domain_resolver: "dns_direct"`，彻底杜绝备用 DNS 丢弃与内核兼容报错。
+- **客户端顶层覆写**：`customInjectYaml` 与 `customInjectJson` 在服务端经 YAML/JSON 严格对象语法校验；在客户端订阅编译时分别与生成的 Clash YAML 及 Sing-box JSON 执行顶层深度合并 (deepMerge)。
 - `GET /admin/subscription-templates`：查询模板列表及被套餐引用数量，包含 `isDefault` / `isBuiltin` 标记。⭐
 - `GET /admin/subscription-templates/default`：查询全局默认模板。⭐
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐
 - `POST /admin/subscription-templates`：创建模板。⭐ 请求含 `proxyGroups?`（支持 `all` 动态节点展开、`DIRECT`/`REJECT` 与策略组引用）、`ruleSets?`、`dnsConfig?`、`customInjectYaml?`、`customInjectJson?`、`isDefault?`。
 - `PATCH /admin/subscription-templates/:id`：部分更新模板；YAML/JSON 覆写在服务端校验语法。⭐
-- `POST /admin/subscription-templates/preview`：渲染模板草稿。⭐ 请求 `{ format: "clash"|"singbox", template: { proxyGroups?, ruleSets?, dnsConfig?, customInjectYaml?, customInjectJson? } }`；优先使用当前可用线路，无可用线路时回退内置多协议 Mock 节点池，响应包含 `content`、`stats{totalNodes,matchedNodes,proxyGroupsCount,rulesCount}` 与 `warnings[]`。
+- `POST /admin/subscription-templates/preview`：渲染模板草稿。⭐ 请求 `{ format: "clash"|"singbox", template: { proxyGroups?, ruleSets?, dnsConfig?, customInjectYaml?, customInjectJson? } }`；优先使用当前可用线路，无可用线路时回退内置多协议 Mock 节点池，响应包含 `content`、`stats{totalNodes,matchedNodes,proxyGroupsCount,rulesCount}`、`warnings[]` 以及 Sing-box 内核校验结果 `singboxCheck{ executed, passed, message? }`。⭐
 - `POST /admin/subscription-templates/:id/duplicate`：复制模板并命名为 `${name} (副本)`；副本重置 `isDefault=false` 与 `isBuiltin=false`。⭐
 - `DELETE /admin/subscription-templates/:id`：删除非默认、非内嵌且未被套餐使用的模板；内嵌默认模板只能通过 `PATCH` 修改，删除返回 `409`。⭐
 

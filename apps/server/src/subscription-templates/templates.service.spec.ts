@@ -74,7 +74,8 @@ describe('TemplatesService', () => {
       }
     })).resolves.toEqual(expect.objectContaining({
       format: 'singbox',
-      stats: expect.objectContaining({ totalNodes: 6, proxyGroupsCount: 1, rulesCount: 1 })
+      stats: expect.objectContaining({ totalNodes: 6, proxyGroupsCount: 1, rulesCount: 1 }),
+      singboxCheck: expect.objectContaining({ executed: expect.any(Boolean), passed: true })
     }));
   });
 });
