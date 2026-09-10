@@ -253,6 +253,14 @@ export class AgentService implements OnModuleDestroy {
     const node = await this.prisma.node.findUnique({ where: { id: nodeId } });
     await this.dispatchQueuedUpgradeTasks(nodeId);
     this.logger.log(`agent online: node=${node?.name ?? nodeId}`);
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'AGENT',
+      level: 'INFO',
+      module: 'NodeGateway',
+      message: `节点上线: ${node?.name ?? nodeId} (${node?.serverHost || 'unknown'})`,
+      metadata: { osArch: node?.osArch, communicationMode: 'WS' }
+    });
     return { success: true, message: '鉴权成功', nodeId, protocolVersion: AGENT_PROTOCOL_VERSION };
   }
 
@@ -858,6 +866,14 @@ export class AgentService implements OnModuleDestroy {
     } else {
       this.logger.warn(`config apply failed: node=${nodeId} version=${data.version} error=${data.message}`);
     }
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'AGENT',
+      level: data.success ? 'INFO' : 'ERROR',
+      module: 'ConfigSync',
+      message: `节点配置应用${data.success ? '成功' : '失败'}${data.message ? `: ${data.message}` : ''}`,
+      metadata: { version: data.version, success: data.success, error: data.message }
+    });
   }
 
   async handleUpgradeResult(nodeId: string, data: UpgradeResultData): Promise<void> {
@@ -894,6 +910,14 @@ export class AgentService implements OnModuleDestroy {
     this.logger[data.success ? 'log' : 'warn'](
       `agent upgrade ${outcome}: node=${nodeId} target=${data.target} version=${data.version} task=${data.taskId} message=${data.message}`
     );
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'AGENT',
+      level: data.success ? 'INFO' : 'ERROR',
+      module: 'UpgradeTask',
+      message: `节点组件升级${data.success ? '成功' : '失败'} (${data.target}@${data.version})${data.message ? `: ${data.message}` : ''}`,
+      metadata: { target: data.target, version: data.version, taskId: data.taskId, success: data.success, message: data.message }
+    });
   }
 
   async handleProbeResult(nodeId: string, data: ProbeResultData): Promise<void> {
@@ -932,6 +956,14 @@ export class AgentService implements OnModuleDestroy {
     this.logger[data.success ? 'log' : 'warn'](
       `agent restart ${data.success ? 'succeeded' : 'failed'}: node=${nodeId} task=${data.taskId} message=${data.message}`
     );
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'AGENT',
+      level: data.success ? 'INFO' : 'WARN',
+      module: 'AgentGateway',
+      message: `节点 Agent 重启${data.success ? '成功' : '失败'}${data.message ? `: ${data.message}` : ''}`,
+      metadata: { taskId: data.taskId, success: data.success, message: data.message }
+    });
   }
 
   handleLogReport(nodeId: string, data: LogReportData): void {
@@ -1720,6 +1752,26 @@ export class AgentService implements OnModuleDestroy {
       }
     }
     this.logger.log(`agent offline: nodeId=${nodeId}`);
+    void this.prisma.node
+      .findUnique({ where: { id: nodeId }, select: { name: true, serverHost: true } })
+      .then((node) => {
+        this.systemLogsService?.enqueue({
+          nodeId,
+          source: 'AGENT',
+          level: 'WARN',
+          module: 'NodeGateway',
+          message: `节点断开离线: ${node?.name ?? nodeId} (${node?.serverHost || 'unknown'})`
+        });
+      })
+      .catch(() => {
+        this.systemLogsService?.enqueue({
+          nodeId,
+          source: 'AGENT',
+          level: 'WARN',
+          module: 'NodeGateway',
+          message: `节点断开离线: ${nodeId}`
+        });
+      });
   }
 
   isCurrentSocket(nodeId: string, socket: AgentSocket): boolean {

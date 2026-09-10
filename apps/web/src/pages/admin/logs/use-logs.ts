@@ -138,7 +138,7 @@ export function useLiveTailStream(
 
     let eventSource: EventSource | undefined;
     let cancelled = false;
-    void api.get<{ ticket: string }>('/logs/stream-ticket').then(({ data }) => {
+    void api.post<{ ticket: string }>('/logs/stream-ticket').then(({ data }) => {
       if (cancelled) return;
       const query = new URLSearchParams({ ticket: data.ticket });
       if (filter.level !== 'ALL') query.set('level', filter.level);

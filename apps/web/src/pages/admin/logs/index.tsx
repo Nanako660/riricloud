@@ -42,7 +42,7 @@ export default function AdminLogsPage() {
   const nodesQuery = useQuery({
     queryKey: ['admin-logs-nodes'],
     queryFn: async () => {
-      const res = await api.get<Array<{ id: string; name: string }>>('/nodes');
+      const res = await api.get<Array<{ id: string; name: string }>>('/admin/nodes');
       return res.data;
     }
   });
@@ -69,6 +69,18 @@ export default function AdminLogsPage() {
 
   const handleFilterByTraceId = (traceId: string) => {
     handleFilterChange({ traceId, page: 1 });
+  };
+
+  const handleFilterByNodeId = (nodeId: string) => {
+    handleFilterChange({ nodeId, page: 1 });
+  };
+
+  const handleFilterByModule = (module: string) => {
+    handleFilterChange({ module, page: 1 });
+  };
+
+  const handleResetFilter = () => {
+    setFilter(DEFAULT_FILTER);
   };
 
   // 显示数据：推流模式下展示推流缓冲区，否则展示分页数据
@@ -100,6 +112,7 @@ export default function AdminLogsPage() {
         filter={filter}
         onChange={handleFilterChange}
         onRefresh={() => void logsQuery.refetch()}
+        onReset={handleResetFilter}
         onOpenCleanup={() => setIsCleanupOpen(true)}
         onExport={exportLogs}
         isLiveTail={isLiveTail}
@@ -137,6 +150,9 @@ export default function AdminLogsPage() {
         onPageChange={(page) => handleFilterChange({ page })}
         onSelectLog={handleSelectLog}
         onFilterByTraceId={handleFilterByTraceId}
+        onFilterByNodeId={handleFilterByNodeId}
+        onFilterByModule={handleFilterByModule}
+        keyword={filter.keyword}
       />
 
       {/* 日志详情侧滑抽屉 */}
@@ -145,6 +161,8 @@ export default function AdminLogsPage() {
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
         onFilterByTraceId={handleFilterByTraceId}
+        onFilterByNodeId={handleFilterByNodeId}
+        onFilterByModule={handleFilterByModule}
       />
 
       {/* 日志清理确认模态框 */}

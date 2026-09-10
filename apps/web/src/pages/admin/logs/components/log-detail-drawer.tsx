@@ -18,13 +18,17 @@ interface LogDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onFilterByTraceId: (traceId: string) => void;
+  onFilterByNodeId?: (nodeId: string) => void;
+  onFilterByModule?: (module: string) => void;
 }
 
 export function LogDetailDrawer({
   log,
   open,
   onOpenChange,
-  onFilterByTraceId
+  onFilterByTraceId,
+  onFilterByNodeId,
+  onFilterByModule
 }: LogDetailDrawerProps) {
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
 
@@ -119,12 +123,46 @@ export function LogDetailDrawer({
               <div className="mt-1 font-mono font-medium">{log.source}</div>
             </div>
             <div className="rounded-lg border p-2.5 bg-muted/10">
-              <div className="text-muted-foreground text-[10px] uppercase font-semibold">所属模块</div>
+              <div className="flex items-center justify-between text-muted-foreground text-[10px] uppercase font-semibold">
+                <span>所属模块</span>
+                {onFilterByModule && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      onFilterByModule(log.module);
+                      onOpenChange(false);
+                    }}
+                    className="h-4 px-1 text-[10px] text-primary hover:text-primary gap-0.5"
+                  >
+                    <ExternalLink className="size-2.5" />
+                    过滤此模块
+                  </Button>
+                )}
+              </div>
               <div className="mt-1 font-mono font-medium">{log.module}</div>
             </div>
             {log.node && (
               <div className="rounded-lg border p-2.5 bg-muted/10">
-                <div className="text-muted-foreground text-[10px] uppercase font-semibold">关联 VPS 节点</div>
+                <div className="flex items-center justify-between text-muted-foreground text-[10px] uppercase font-semibold">
+                  <span>关联 VPS 节点</span>
+                  {onFilterByNodeId && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onFilterByNodeId(log.node!.id);
+                        onOpenChange(false);
+                      }}
+                      className="h-4 px-1 text-[10px] text-primary hover:text-primary gap-0.5"
+                    >
+                      <ExternalLink className="size-2.5" />
+                      过滤此节点
+                    </Button>
+                  )}
+                </div>
                 <div className="mt-1 font-mono font-medium">{log.node.name} ({log.node.serverHost})</div>
               </div>
             )}

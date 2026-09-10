@@ -8,6 +8,9 @@ if [ -f "$RIRI_ROOT/scripts/dev-env.sh" ]; then
   # shellcheck source=scripts/dev-env.sh
   . "$RIRI_ROOT/scripts/dev-env.sh"
 fi
+if ! command -v go >/dev/null 2>&1 && ! command -v go.exe >/dev/null 2>&1 && [ -d "$RIRI_ROOT/.tools/go/bin" ]; then
+  export PATH="$RIRI_ROOT/.tools/go/bin:$PATH"
+fi
 GO_BIN="go"
 GOFMT_BIN="gofmt"
 if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then

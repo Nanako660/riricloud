@@ -60,6 +60,7 @@ describe('SystemLogsController', () => {
 
   it('为管理员创建一次性 SSE 票据，并在推流入口消费票据', () => {
     expect(controller.issueStreamTicket({ id: 'admin-1' })).toEqual(expect.objectContaining({ ticket: 'ticket-1' }));
+    expect(controller.getStreamTicket({ id: 'admin-1' })).toEqual(expect.objectContaining({ ticket: 'ticket-1' }));
     expect(ticketService.issue).toHaveBeenCalledWith('admin-1');
 
     const stream = { subscribe: true };
