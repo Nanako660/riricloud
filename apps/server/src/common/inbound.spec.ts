@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   buildClientTls,
   buildClientTransport,
+  buildProxyPoolWhitelistRules,
   buildShadowsocksClientPassword,
   buildServerInbound,
   buildServerInbounds,
@@ -522,5 +523,130 @@ describe('buildServerInbound', () => {
     ]);
     expect(Buffer.from((inbound.password as string), 'base64').length).toBe(16);
     expect(inbound.password).toBe(normalizeShadowsocksPassword('2022-blake3-aes-128-gcm', 'server-password'));
+  });
+});
+
+describe('直连代理池（ProxyKey）入站组装', () => {
+  const base = { tag: 'mixed-in', listen: '0.0.0.0', port: 10808 };
+  const proxyPoolUsers = [
+    { username: 'pk_0123456789abcdef01234567', password: 'pwd-a' },
+    { username: 'pk_fedcba9876543210fedcba98', password: 'pwd-b' }
+  ];
+
+  it('MIXED 入站并列注入订阅用户与 ProxyKey 凭据，用户名保持冒号安全', () => {
+    const params = normalizeInboundParams('MIXED', { usersEnabled: true });
+    const inbound = buildServerInbound({
+      type: 'MIXED',
+      ...base,
+      params,
+      users,
+      lineId: 'line-1',
+      proxyPoolUsers
+    });
+
+    expect(inbound.type).toBe('mixed');
+    const entries = inbound.users as Array<{ username: string; password: string }>;
+    expect(entries).toEqual([
+      { username: 'a@x.com::line-1', password: 'pwd-1' },
+      { username: 'b@x.com::line-1', password: 'pwd-2' },
+      { username: 'pk_0123456789abcdef01234567', password: 'pwd-a' },
+      { username: 'pk_fedcba9876543210fedcba98', password: 'pwd-b' }
+    ]);
+    // HTTP CONNECT 走 net/http.parseBasicAuth（按首个冒号切分），用户名必须无冒号
+    expect(entries.filter((entry) => entry.username.startsWith('pk_')).every((entry) => !entry.username.includes(':'))).toBe(true);
+  });
+
+  it('未启用用户认证的 MIXED 入站在注入 ProxyKey 时仍只输出代理池凭据', () => {
+    const params = normalizeInboundParams('MIXED', {});
+    const inbound = buildServerInbound({ type: 'MIXED', ...base, params, users, proxyPoolUsers });
+
+    expect(inbound.users).toEqual([
+      { username: 'pk_0123456789abcdef01234567', password: 'pwd-a' },
+      { username: 'pk_fedcba9876543210fedcba98', password: 'pwd-b' }
+    ]);
+  });
+
+  it('无任何凭据时不生成 users 字段（等价于免认证入站，由上层负责拦截）', () => {
+    const params = normalizeInboundParams('MIXED', {});
+    const inbound = buildServerInbound({ type: 'MIXED', ...base, params, users: [] });
+    expect(inbound.users).toBeUndefined();
+  });
+
+  it('SOCKS/HTTP 入站同样支持 ProxyKey 凭据注入', () => {
+    for (const type of ['SOCKS', 'HTTP'] as const) {
+      const params = normalizeInboundParams(type, { usersEnabled: true });
+      const inbound = buildServerInbound({ type, ...base, params, users: [], proxyPoolUsers });
+      expect(inbound.type).toBe(type.toLowerCase());
+      expect(inbound.users).toEqual(proxyPoolUsers.map((user) => ({ username: user.username, password: user.password })));
+    }
+  });
+
+  it('默认不携带 tls 字段（标准 TCP 明文监听保证原生工具兼容）', () => {
+    const params = normalizeInboundParams('MIXED', { allowLan: false });
+    expect(params.tls).toBeUndefined();
+    const inbound = buildServerInbound({ type: 'MIXED', ...base, params, users: [], proxyPoolUsers });
+    expect(inbound.tls).toBeUndefined();
+  });
+
+  it('按需挂载标准 TLS：内嵌 PEM 数组透传为 Sing-box tls 配置块', () => {
+    const params = normalizeInboundParams('MIXED', {
+      allowLan: false,
+      tls: {
+        enabled: true,
+        mode: 'tls',
+        serverName: 'proxy.example.com',
+        certificate: ['-----BEGIN CERTIFICATE-----'],
+        key: ['-----BEGIN PRIVATE KEY-----']
+      }
+    });
+    expect(params.tls).toEqual(expect.objectContaining({ enabled: true, mode: 'tls', serverName: 'proxy.example.com' }));
+
+    const inbound = buildServerInbound({ type: 'MIXED', ...base, params, users: [], proxyPoolUsers });
+    expect(inbound.tls).toEqual({
+      enabled: true,
+      server_name: 'proxy.example.com',
+      certificate: ['-----BEGIN CERTIFICATE-----'],
+      key: ['-----BEGIN PRIVATE KEY-----'],
+      alpn: ['h2', 'http/1.1']
+    });
+  });
+});
+
+describe('buildProxyPoolWhitelistRules', () => {
+  it('按白名单分组生成 logical/and 拒绝规则，内层 invert 只作用于来源网段', () => {
+    const rules = buildProxyPoolWhitelistRules({
+      tag: 'mixed-in',
+      credentials: [
+        { username: 'pk_a', whitelistIps: ['203.0.113.10', '198.51.100.0/24'] },
+        { username: 'pk_b', whitelistIps: ['203.0.113.10', '198.51.100.0/24'] },
+        { username: 'pk_c', whitelistIps: [] }
+      ]
+    });
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toEqual({
+      type: 'logical',
+      mode: 'and',
+      rules: [
+        { inbound: ['mixed-in'] },
+        { auth_user: ['pk_a', 'pk_b'] },
+        { source_ip_cidr: ['203.0.113.10', '198.51.100.0/24'], invert: true }
+      ],
+      action: 'reject'
+    });
+    // 顶层规则不能带 invert：否则会把其他凭据与订阅用户的流量一并拒绝
+    expect(rules[0]).not.toHaveProperty('invert');
+  });
+
+  it('未配置白名单的凭据不产生任何路由规则', () => {
+    expect(
+      buildProxyPoolWhitelistRules({
+        tag: 'mixed-in',
+        credentials: [
+          { username: 'pk_a', whitelistIps: [] },
+          { username: '  ', whitelistIps: ['10.0.0.1'] }
+        ]
+      })
+    ).toEqual([]);
   });
 });

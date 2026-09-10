@@ -6,13 +6,16 @@ import { deepMerge, isUserEntitled } from '../common/utils';
 import {
   buildClientTls,
   buildClientTransport,
+  buildProxyPoolWhitelistRules,
   buildShadowsocksClientPassword,
   buildServerInbounds,
   normalizeShadowsocksPassword,
   parseTrafficCredential,
   revealInboundSecrets,
-  type InboundUserCredential
+  type InboundUserCredential,
+  type ProxyPoolCredential
 } from '../common/inbound';
+import { parseWhitelistIps } from '../proxy-pool/proxy-key.util';
 import { resolveLineTags } from '../common/line-tags';
 import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
 import {
@@ -77,6 +80,8 @@ type TrafficSubscriptionDelegate = {
   findMany: (args: Record<string, unknown>) => Promise<Array<{
     id: string;
     userId: string;
+    trafficLimitBytes?: bigint | null;
+    trafficUsedBytes?: bigint | null;
     trafficPeriodStartAt?: Date | null;
     startedAt?: Date;
     plan?: { durationDays: number; trafficResetMode: string } | null;
@@ -96,6 +101,31 @@ type TrafficCursorDelegate = {
 type ResolvedTrafficLine = {
   id: string;
   trafficRate: number;
+};
+
+// 直连代理池凭据快照（含归属用户，用于资格二次过滤）
+type ProxyPoolKeySnapshot = {
+  id: string;
+  userId: string;
+  username: string;
+  password: string;
+  whitelistIps: string;
+  user?: { uuid: string; isActive: boolean } | null;
+};
+
+type ProxyKeyDelegate = {
+  findMany: (args: Record<string, unknown>) => Promise<ProxyPoolKeySnapshot[]>;
+};
+
+type TrafficProxyKeySnapshot = {
+  id: string;
+  userId: string;
+  username: string;
+};
+
+type TrafficProxyKeyDelegate = {
+  findMany: (args: Record<string, unknown>) => Promise<TrafficProxyKeySnapshot[]>;
+  update: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
 type PendingTask = AgentTaskMessage & { deliveredAt: number };
@@ -169,6 +199,15 @@ const RATE_METRIC_CLEANUP_RETRY_MS = 5 * 60 * 1000;
 const RATE_METRIC_FLUSH_INTERVAL_MS = 5_000;
 const AGENT_WRITE_RETRY_DELAY_MS = 250;
 const AGENT_WRITE_MAX_ATTEMPTS = 3;
+
+// 单节点注入的直连代理池凭据上限：约束入站用户列表与白名单路由规则的配置体量
+const PROXY_POOL_KEYS_PER_NODE_LIMIT = 512;
+
+// 直连代理池凭据用户名前缀，用于在流量快照中快速识别并跳过无关查询
+const PROXY_KEY_USERNAME_PREFIX = 'pk_';
+
+// 需要用户认证的本地代理协议：空 users 的 mixed/socks/http 在 Sing-box 中等价于开放代理
+const AUTHENTICATED_PROXY_PROTOCOLS: readonly ProtocolType[] = ['MIXED', 'SOCKS', 'HTTP'];
 
 type PendingHeartbeat = {
   data: HeartbeatData;
@@ -366,8 +405,9 @@ export class AgentService implements OnModuleDestroy {
     const trafficSnapshots = data.trafficSnapshots ?? [];
     if (trafficSnapshots.length) {
       const resolvedLine = await this.resolveActiveLineForNode(nodeId);
-      const reset = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, resolvedLine, heartbeatAt);
-      if (reset) void this.pushConfigToAll();
+      const outcome = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, resolvedLine, heartbeatAt);
+      // 流量周期重置（重新发凭据）与超额熔断（吊销凭据）都需要立即重下发节点配置
+      if (outcome.reset || outcome.exhausted) void this.pushConfigToAll();
     }
   }
 
@@ -376,8 +416,9 @@ export class AgentService implements OnModuleDestroy {
     records: HeartbeatData['trafficSnapshots'],
     line?: ResolvedTrafficLine | null,
     observedAt = new Date()
-  ): Promise<boolean> {
+  ): Promise<{ reset: boolean; exhausted: boolean }> {
     let resetCount = 0;
+    let exhaustedCount = 0;
     await this.prisma.$transaction(async (tx) => {
       const snapshotsByCredential = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const record of records) {
@@ -405,13 +446,29 @@ export class AgentService implements OnModuleDestroy {
 
       const users = await tx.user.findMany({
         where: { OR: [{ uuid: { in: [...rawCredentials] } }, { email: { in: [...rawCredentials] } }] },
-        select: { id: true, uuid: true, email: true }
+        select: { id: true, uuid: true, email: true, trafficLimitBytes: true, trafficUsedBytes: true }
       });
       const usersByCredential = new Map<string, { id: string; uuid: string; email: string }>();
       users.forEach((user) => {
         usersByCredential.set(user.uuid, user);
         usersByCredential.set(user.email, user);
       });
+      const userLimitById = new Map(
+        users
+          .filter((user) => typeof user.trafficLimitBytes === 'bigint' && typeof user.trafficUsedBytes === 'bigint')
+          .map((user) => [user.id, { limit: user.trafficLimitBytes as bigint, used: user.trafficUsedBytes as bigint }])
+      );
+
+      // 直连代理池凭据（pk_ 前缀）映射回归属用户；仅在存在此类凭据时才查询，避免无谓开销
+      const proxyKeyDelegate = (tx as unknown as { proxyKey?: TrafficProxyKeyDelegate }).proxyKey;
+      const proxyKeyCredentials = [...rawCredentials].filter((credential) => credential.startsWith(PROXY_KEY_USERNAME_PREFIX));
+      const proxyKeys = proxyKeyDelegate && proxyKeyCredentials.length
+        ? await proxyKeyDelegate.findMany({
+            where: { username: { in: proxyKeyCredentials } },
+            select: { id: true, userId: true, username: true }
+          })
+        : [];
+      const proxyKeysByUsername = new Map(proxyKeys.map((key) => [key.username, key]));
 
       const lineDelegate = (tx as unknown as {
         line?: { findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; trafficRate?: number | null }>> };
@@ -436,11 +493,13 @@ export class AgentService implements OnModuleDestroy {
         nodeId: string;
         userId: string;
         lineId?: string;
+        proxyKeyId?: string;
         upload: bigint;
         download: bigint;
         recordedAt: Date;
       }> = [];
       const totalsByUser = new Map<string, bigint>();
+      const totalsByProxyKey = new Map<string, bigint>();
       const cursorUpdates = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const [credential, current] of snapshotsByCredential) {
         cursorUpdates.set(credential, current);
@@ -458,8 +517,11 @@ export class AgentService implements OnModuleDestroy {
         }
         const upload = uploadReset ? current.uploadTotal : current.uploadTotal - previousUpload;
         const download = downloadReset ? current.downloadTotal : current.downloadTotal - previousDownload;
+        // 先按订阅用户凭据（uuid/email）匹配，再回退到直连代理池凭据（pk_xxxx）
         const user = usersByCredential.get(parsed.rawCredential);
-        if (!user) {
+        const proxyKey = user ? undefined : proxyKeysByUsername.get(parsed.rawCredential);
+        const targetUserId = user?.id ?? proxyKey?.userId;
+        if (!targetUserId) {
           this.logger.warn('heartbeat: unknown user credential');
           continue;
         }
@@ -474,17 +536,23 @@ export class AgentService implements OnModuleDestroy {
 
         logs.push({
           nodeId,
-          userId: user.id,
+          userId: targetUserId,
           ...(targetLineId ? { lineId: targetLineId } : {}),
+          ...(proxyKey ? { proxyKeyId: proxyKey.id } : {}),
           upload,
           download,
           recordedAt: observedAt
         });
         const billedBytes = this.calculateBilledBytes(total, targetTrafficRate);
-        totalsByUser.set(user.id, (totalsByUser.get(user.id) ?? 0n) + billedBytes);
+        totalsByUser.set(targetUserId, (totalsByUser.get(targetUserId) ?? 0n) + billedBytes);
+        if (proxyKey) {
+          totalsByProxyKey.set(proxyKey.id, (totalsByProxyKey.get(proxyKey.id) ?? 0n) + billedBytes);
+        }
       }
       const subscription = (tx as unknown as { subscription?: TrafficSubscriptionDelegate }).subscription;
       const subscriptionByUser = new Map<string, string>();
+      // 订阅口径配额优先于用户主账户口径，用于判断本批次是否触发超额熔断
+      const quotaByUser = new Map<string, { limit: bigint; used: bigint }>();
       if (subscription && totalsByUser.size) {
         const subscriptions = await subscription.findMany({
           where: { userId: { in: [...totalsByUser.keys()] } },
@@ -493,12 +561,17 @@ export class AgentService implements OnModuleDestroy {
             userId: true,
             startedAt: true,
             trafficPeriodStartAt: true,
+            trafficLimitBytes: true,
+            trafficUsedBytes: true,
             plan: { select: { durationDays: true, trafficResetMode: true } }
           }
         });
         const timezone = (await this.settingsService?.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
         for (const item of subscriptions) {
           subscriptionByUser.set(item.userId, item.id);
+          if (typeof item.trafficLimitBytes === 'bigint' && typeof item.trafficUsedBytes === 'bigint') {
+            quotaByUser.set(item.userId, { limit: item.trafficLimitBytes, used: item.trafficUsedBytes });
+          }
           if (!item.plan || !item.startedAt) continue;
           const period = getTrafficPeriod(item.plan.trafficResetMode, observedAt, item.startedAt, item.plan.durationDays, timezone);
           if (!period) continue;
@@ -533,9 +606,17 @@ export class AgentService implements OnModuleDestroy {
       }
       await this.batchIncrement(tx, 'User', totalsByUser);
       await this.batchIncrement(tx, 'Subscription', subscriptionTotals);
+      await this.batchIncrementProxyKeys(tx, totalsByProxyKey, observedAt);
       await this.batchUpsertTrafficCursors(tx, nodeId, cursorUpdates);
+
+      // 超额熔断：本批次入账后触及配额的账号，其凭据将在随后重下发的节点配置中被吊销
+      for (const [userId, billed] of totalsByUser) {
+        const quota = quotaByUser.get(userId) ?? userLimitById.get(userId);
+        if (!quota || typeof quota.limit !== 'bigint' || typeof quota.used !== 'bigint') continue;
+        if (quota.used + billed >= quota.limit) exhaustedCount += 1;
+      }
     });
-    return resetCount > 0;
+    return { reset: resetCount > 0, exhausted: exhaustedCount > 0 };
   }
 
   private isInternalSystemCredential(credential: string): boolean {
@@ -705,8 +786,36 @@ export class AgentService implements OnModuleDestroy {
     }
   }
 
-  private async batchUpsertTrafficCursors(
+  // 直连代理池凭据流量累计：与主账户同一事务写入，同步刷新最近使用时间
+  private async batchIncrementProxyKeys(
     tx: unknown,
+    increments: Map<string, bigint>,
+    observedAt: Date
+  ): Promise<void> {
+    if (!increments.size) return;
+    const rawClient = tx as { $executeRaw?: (query: Prisma.Sql) => Promise<number> };
+    if (rawClient.$executeRaw) {
+      const ids = [...increments.keys()];
+      const cases = [...increments.entries()].map(([id, total]) => Prisma.sql`WHEN ${id} THEN ${total}`);
+      await rawClient.$executeRaw(Prisma.sql`
+        UPDATE "ProxyKey"
+        SET "trafficUsedBytes" = "trafficUsedBytes" + CASE "id" ${Prisma.join(cases, ' ')} ELSE 0 END,
+            "lastUsedAt" = ${observedAt}
+        WHERE "id" IN (${Prisma.join(ids)})
+      `);
+      return;
+    }
+    const delegate = (tx as unknown as { proxyKey?: TrafficProxyKeyDelegate }).proxyKey;
+    if (!delegate) throw new Error('ProxyKey delegate is unavailable');
+    for (const [id, total] of increments) {
+      await delegate.update({
+        where: { id },
+        data: { trafficUsedBytes: { increment: total }, lastUsedAt: observedAt }
+      });
+    }
+  }
+
+  private async batchUpsertTrafficCursors(    tx: unknown,
     nodeId: string,
     updates: Map<string, { uploadTotal: bigint; downloadTotal: bigint }>
   ): Promise<void> {
@@ -1109,6 +1218,18 @@ export class AgentService implements OnModuleDestroy {
     const inbounds: Array<Record<string, unknown>> = [];
     const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
     const relayRules: Array<Record<string, unknown>> = [];
+    // 直连代理池：仅注入当前仍具备订阅资格的用户的 Proxy Key（超额/停用即时吊销）
+    const entitledUserUuids = new Set(entitledSubscriptions.map((subscription) => subscription.user.uuid));
+    const proxyPoolKeys = await this.loadProxyPoolKeys(entitledUserUuids);
+    const proxyPoolUsers: ProxyPoolCredential[] = proxyPoolKeys.map((key) => ({
+      username: key.username,
+      password: key.password
+    }));
+    const proxyPoolWhitelistCredentials = proxyPoolKeys.map((key) => ({
+      username: key.username,
+      whitelistIps: parseWhitelistIps(key.whitelistIps)
+    }));
+    const proxyPoolTags = new Set<string>();
     const authorizedUsers = new Map<string, InboundUserCredential>();
     const usersForLine = (line: Pick<ConfigLine, 'id' | 'tagsJson' | 'isPublic' | 'status'>): InboundUserCredential[] => {
       const lineUsers = entitledSubscriptions
@@ -1131,7 +1252,12 @@ export class AgentService implements OnModuleDestroy {
     for (const line of lines.values()) {
       if (!publicLinesEnabled) continue;
       const protocolType = line.protocolType as ProtocolType;
-      const params = this.buildLineParams(line);
+      const isProxyPoolProtocol = AUTHENTICATED_PROXY_PROTOCOLS.includes(protocolType);
+      const lineParams = this.buildLineParams(line);
+      // mixed/socks/http 是面向自动化的直连入口：无用户的入站在 Sing-box 中等价于开放代理，
+      // 因此强制启用鉴权，并注入当前有效的 Proxy Key 凭据数组。
+      const params = isProxyPoolProtocol ? { ...lineParams, usersEnabled: true } : lineParams;
+      const lineUsers = isProxyPoolProtocol ? proxyPoolUsers : [];
       const lineTags = resolveLineTags(line);
       const isEntry = line.entryNodeId === nodeId;
       const isLanding = line.landingNodeId === nodeId;
@@ -1146,15 +1272,22 @@ export class AgentService implements OnModuleDestroy {
       const targetInboundUsers = line.type === 'DIRECT' && line.relaySources?.length
         ? [...inboundUsers, this.internalRelayTransitUser()]
         : inboundUsers;
+      const proxyPoolUsersForTag = (tag: string): ProxyPoolCredential[] => {
+        if (!isProxyPoolProtocol || !lineUsers.length) return [];
+        proxyPoolTags.add(tag);
+        return lineUsers;
+      };
       if (line.type === 'DIRECT' && isEntry) {
+        const tag = lineTags.direct ?? `line-${line.id}`;
         inbounds.push(...buildServerInbounds({
           type: protocolType,
-          tag: lineTags.direct ?? `line-${line.id}`,
+          tag,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.entryPort,
           params,
           users: targetInboundUsers,
-          lineId: line.id
+          lineId: line.id,
+          proxyPoolUsers: proxyPoolUsersForTag(tag)
         }));
         continue;
       }
@@ -1179,7 +1312,8 @@ export class AgentService implements OnModuleDestroy {
           port: line.entryPort,
           params,
           users,
-          lineId: line.id
+          lineId: line.id,
+          proxyPoolUsers: proxyPoolUsersForTag(relayTag)
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound(line);
@@ -1202,7 +1336,8 @@ export class AgentService implements OnModuleDestroy {
           port: line.entryPort,
           params,
           users,
-          lineId: line.id
+          lineId: line.id,
+          proxyPoolUsers: proxyPoolUsersForTag(relayTag)
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound({
@@ -1224,16 +1359,25 @@ export class AgentService implements OnModuleDestroy {
         const exitUsers = line.type === 'RELAY' && line.relayMode === 'PROTOCOL_PROXY'
           ? [this.internalRelayTransitUser()]
           : users;
+        const landingTag = lineTags.landing ?? `line-${line.id}-landing`;
         inbounds.push(...buildServerInbounds({
           type: protocolType,
-          tag: lineTags.landing ?? `line-${line.id}-landing`,
+          tag: landingTag,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           port: line.landingPort,
           params,
           users: exitUsers,
-          lineId: line.id
+          lineId: line.id,
+          proxyPoolUsers: proxyPoolUsersForTag(landingTag)
         }));
       }
+    }
+
+    // 直连代理池来源 IP 白名单：以逻辑规则拒绝「命中凭据但来源不在白名单」的连接
+    for (const tag of proxyPoolTags) {
+      relayRules.push(
+        ...buildProxyPoolWhitelistRules({ tag, credentials: proxyPoolWhitelistCredentials })
+      );
     }
 
     const statsUsers = new Set<string>();
@@ -1286,8 +1430,29 @@ export class AgentService implements OnModuleDestroy {
     };
   }
 
-  private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {
-    const cached = this.configCache.get(nodeId);
+  // 载入可下发的直连代理池凭据：仅保留启用且归属用户仍具备订阅资格的 Proxy Key。
+  // 超额、过期、被禁用的用户在此被自然剔除，从而实现凭据快速熔断。
+  private async loadProxyPoolKeys(entitledUserUuids: Set<string>): Promise<ProxyPoolKeySnapshot[]> {
+    const delegate = (this.prisma as unknown as { proxyKey?: ProxyKeyDelegate }).proxyKey;
+    if (!delegate || !entitledUserUuids.size) return [];
+    const keys = await delegate.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        userId: true,
+        username: true,
+        password: true,
+        whitelistIps: true,
+        user: { select: { uuid: true, isActive: true } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    return keys
+      .filter((key) => Boolean(key.username) && Boolean(key.password) && key.user?.isActive && entitledUserUuids.has(key.user.uuid))
+      .slice(0, PROXY_POOL_KEYS_PER_NODE_LIMIT);
+  }
+
+  private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {    const cached = this.configCache.get(nodeId);
     if (cached) return cached;
     const payload = await this.buildConfigSync(nodeId);
     this.configCache.set(nodeId, payload);

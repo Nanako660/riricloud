@@ -19,7 +19,7 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
 }) {
   const protocol = form.watch('protocolType');
   const supportsTransport = ['VLESS', 'VMESS', 'TROJAN'].includes(protocol);
-  const supportsTls = ['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE'].includes(protocol);
+  const supportsTls = ['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE', 'MIXED', 'SOCKS', 'HTTP'].includes(protocol);
   const supportsProtocolFields = hasProtocolSpecificFields(protocol);
   const nodeOptions = nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.serverHost}` }));
 

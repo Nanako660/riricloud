@@ -13,10 +13,21 @@
 ## [Unreleased]
 
 ### Added
+- **独立 Mixed (SOCKS5/HTTP) 直连代理池**：新增 `ProxyKey` 独立凭据模型与 `proxy-pool` 服务端模块（`ProxyPoolService`、用户端与管理端控制器），面向爬虫、指纹浏览器多开与脚本工具提供标准的 `socks5://` / `http://` 直连代理能力，与面向客户端翻墙的订阅体系完全解耦；不暴露账号密码、UUID 与订阅 Token，用户可创建多条凭据（单账号上限 20 条），每条拥有独立的高熵 `pk_` 用户名与密码、独立 `exportToken` 免登录拉取令牌与独立启停开关。
+- **来源 IP/CIDR 白名单防盗刷**：凭据可绑定最多 64 条 IPv4/IPv6 地址或 CIDR 网段白名单，服务端严格校验格式并在节点 `route.rules` 中生成 `logical/and` 反选拒绝规则，命中凭据但来源不在白名单的连接被直接拒绝。
+- **直连代理池多格式导出与免登录拉取**：新增 `GET /api/v1/user/proxy-pool/export`，支持 `IP:Port:User:Pass` 纯文本（指纹浏览器一键导入）、`socks5://` / `http://` URI 逐行列表与含节点名称/地区/延迟快照/协议/凭证的 JSON 对象数组；该端点同时声明 `@Public()` 与 `@OptionalAuth()`，可凭 Cookie 登录态或 `?token=<exportToken>` 免登录定时同步。
+- **用户中心直连代理页面**：新增 `/proxy-pool` 页面与侧边栏「直连代理」导航，提供凭据管理列表（密码掩码切换与复制、白名单徽章、已用流量、启停 Switch、轮换密码/令牌、删除二次确认）与提取导出中心（节点多选、SOCKS5/HTTP 协议切换、三格式导出预览、Python `requests` / Playwright / Node.js `axios` / Shell `cURL` 多语言代码片段、自动化定时拉取 URL 一键复制）。
+- **管理端直连代理池审计接口**：新增 `GET /admin/proxy-pool/overview`、`GET /admin/proxy-pool/keys` 与启停/删除接口，支持按名称、用户名、用户邮箱检索与累计流量聚合。
+- **直连代理池凭据级流量账务**：`TrafficLog` 新增可空 `proxyKeyId` 归属字段，凭据累计计费流量与主账户、订阅在同一 SQLite 事务内更新，并同步刷新 `ProxyKey.lastUsedAt`。
+- **直连代理池按需 TLS**：`mixed`/`socks`/`http` 入站支持 `params.tls`（标准 TLS 可关联证书中心证书或节点本地路径，亦支持 ACME），线路表单同步开放「关闭 / 标准 TLS / ACME」三态安全模式（不提供不适用于本地代理协议的 Reality）。
 
 ### Changed
+- **Mixed/SOCKS/HTTP 入站强制鉴权**：生成节点配置时对这三类协议一律启用用户认证。Sing-box 中 `users` 为空的 `mixed`/`socks`/`http` 入站等价于开放代理，属于安全红线，因此不再接受 `params.usersEnabled = false`。
+- **超额熔断即时生效**：流量账务批次入账后触及配额的账号会立即触发全局 `config_sync`，其订阅凭证与直连代理凭据在数秒内同步吊销。
 
 ### Fixed
+- **直连代理池凭据必须冒号安全**：Sing-box 的 HTTP CONNECT 认证走 Go `net/http.parseBasicAuth`，按首个 `:` 切分用户名与密码，`socks5://user:pass@host` 与 `http://user:pass@host` 的 userinfo 解析行为一致；因此入站认证用户名固定使用裸 `pk_xxxx`，不追加 `::lineId` 复合后缀，避免两种 URI 形态认证必然失败（线路归属改由节点级活动线路解析确定，`parseTrafficCredential` 仍保留复合解析能力）。
+- **白名单规则不得使用顶层 `invert`**：来源 IP 白名单以 `logical/and` 内层 `invert` 表达「命中凭据但来源不在白名单」。若在顶层规则反转，会把同入站的其他凭据与订阅用户流量一并拒绝，误伤整条入站。
 
 
 ## [0.8.4] - 2026-09-11

@@ -10,12 +10,22 @@ import type { ApiCertificate } from '@/lib/api';
 import { FieldGrid, SelectField, SwitchField, TextField } from './line-form-controls';
 import { ALPN_PRESET_VALUES, getAlpnOptions, MANUAL_CERTIFICATE_ID, type LineFormValues } from './line-form-schema';
 
-const tlsOptions = [
-  { value: 'none', label: '关闭 TLS' },
-  { value: 'tls', label: '标准 TLS' },
-  { value: 'reality', label: 'Reality' },
-  { value: 'acme', label: 'ACME 自动证书' }
-];
+const LOCAL_PROXY_PROTOCOLS = ['MIXED', 'SOCKS', 'HTTP'];
+
+const tlsModeLabels: Record<'none' | 'tls' | 'reality' | 'acme', string> = {
+  none: '关闭 TLS',
+  tls: '标准 TLS',
+  reality: 'Reality',
+  acme: 'ACME 自动证书'
+};
+
+// local 代理协议只支持「明文 / 标准 TLS / ACME」：Reality 依赖 VLESS 类握手，不适用于 SOCKS/HTTP
+function buildTlsOptions(protocolType: string) {
+  const modes: Array<'none' | 'tls' | 'reality' | 'acme'> = LOCAL_PROXY_PROTOCOLS.includes(protocolType)
+    ? ['none', 'tls', 'acme']
+    : ['none', 'tls', 'reality', 'acme'];
+  return modes.map((value) => ({ value, label: tlsModeLabels[value] }));
+}
 
 const alpnLabels: Record<typeof ALPN_PRESET_VALUES[number], string> = {
   h3: 'HTTP/3（h3）',
@@ -36,6 +46,7 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
   const certificateId = form.watch('certificateId');
   const selectedCertificate = certificates.find((certificate) => certificate.id === certificateId);
   const alpnOptions = getAlpnOptions(protocolType, transportType, tlsAlpn);
+  const tlsOptions = buildTlsOptions(protocolType);
 
   useEffect(() => {
     if (mode !== 'tls' && certificateId !== MANUAL_CERTIFICATE_ID) {
@@ -49,7 +60,7 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
     if (suggestedName) form.setValue('tlsServerName', suggestedName, { shouldDirty: true });
   }, [form, mode, selectedCertificate]);
 
-  if (!['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE'].includes(protocolType)) return null;
+  if (!['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE', ...LOCAL_PROXY_PROTOCOLS].includes(protocolType)) return null;
 
   return (
     <div className="space-y-3">

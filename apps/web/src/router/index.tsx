@@ -129,6 +129,12 @@ export const router = createBrowserRouter([
             })
           },
           {
+            path: '/proxy-pool',
+            lazy: async () => ({
+              Component: (await import('@/pages/user/proxy-pool')).default
+            })
+          },
+          {
             path: '/profile',
             lazy: async () => ({
               Component: (await import('@/pages/user/profile')).default

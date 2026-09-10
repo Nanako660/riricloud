@@ -93,6 +93,7 @@ model User {
   extraLineGrants   UserLineGrant[]
   balanceTransactions BalanceTransaction[]
   redeemedCodes     RedeemCode[] @relation("RedeemedCodes")
+  proxyKeys         ProxyKey[]
 
   @@index([role])
   @@index([isActive])
@@ -453,6 +454,32 @@ model RedeemCode {
 }
 
 // ==============================
+// 2.8 直连代理池凭据 (ProxyKey，v0.9.0)
+// 面向爬虫/指纹浏览器/脚本工具的独立 SOCKS5/HTTP 凭证，与订阅体系完全解耦。
+// ==============================
+model ProxyKey {
+  id               String    @id @default(uuid())
+  userId           String
+  name             String    // 凭据备注名称（≤60 字符）
+  username         String    @unique // pk_<24 位十六进制>，注入 Sing-box mixed 入站
+  password         String    // 该凭据独立密码（明文，Sing-box 入站校验必需）
+  whitelistIps     String    @default("") // 逗号分隔的 IP/CIDR 白名单，空串表示不限制来源
+  exportToken      String    @unique @default(uuid()) // 免登录动态拉取令牌
+  isActive         Boolean   @default(true)
+  trafficUsedBytes BigInt    @default(0) // 该凭据累计计费流量（与主账户口径一致）
+  lastUsedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trafficLogs TrafficLog[] @relation("ProxyKeyTrafficLogs")
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([userId, isActive])
+}
+
+// ==============================
 // 3. 流量流水记录 (TrafficLog)
 // ==============================
 model TrafficLog {
@@ -460,17 +487,20 @@ model TrafficLog {
   nodeId     String
   userId     String
   lineId     String?  // 入口线路归属；历史流水或裸节点可为空
+  proxyKeyId String?  // 直连代理池凭据归属；订阅流量为 null
   upload     BigInt   @default(0) // 增量上传字节数
   download   BigInt   @default(0) // 增量下载字节数
   recordedAt DateTime @default(now())
 
-  node       Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  line       Line?    @relation(fields: [lineId], references: [id], onDelete: SetNull)
+  node       Node      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  line       Line?     @relation(fields: [lineId], references: [id], onDelete: SetNull)
+  proxyKey   ProxyKey? @relation("ProxyKeyTrafficLogs", fields: [proxyKeyId], references: [id], onDelete: SetNull)
 
   @@index([nodeId])
   @@index([userId])
   @@index([lineId])
+  @@index([proxyKeyId])
   @@index([recordedAt])
   @@index([recordedAt, lineId])
   @@index([recordedAt, userId])
@@ -737,3 +767,39 @@ model SystemLog {
 | `lastRequestAt` / `lastStatusCode` / `lastErrorCode` | DateTime?/Int/String? | 最近一次请求的低敏运行摘要 |
 
 `slug` 具有唯一约束，`nodeId`、`enabled`、`createdAt` 及其组合建立查询索引。迁移、备份和回滚只涉及 SQLite 结构与配置元数据；禁止写入响应 BLOB，也不引入外部数据库、缓存或对象存储。生产备份必须同时考虑 SQLite 主文件及 WAL/SHM 文件，分享 Token 轮换后旧哈希立即失效。
+
+## 7. 直连代理池凭据模型（ProxyKey，v0.9.0）
+
+面向自动化环境（爬虫、指纹浏览器多开、海外社媒运营、脚本工具）的**独立直连代理凭据**，与面向客户端翻墙的订阅体系完全解耦：不向自动化环境暴露用户主登录密码、UUID 或订阅 Token。
+
+### 7.1 字段字典
+
+| 字段 | 类型 | 说明与约束 |
+| :--- | :--- | :--- |
+| `id` | String (UUID) | 凭据主键 |
+| `userId` | String | 归属用户；`User` 删除时 `onDelete: Cascade` 级联删除 |
+| `name` | String | 凭据备注名称，服务端清洗首尾空白并限制 ≤60 字符（如“爬虫项目 A”“AdsPower 环境 3”） |
+| `username` | String @unique | 高熵用户名，固定形态 `pk_<24 位小写十六进制>`（96 bit 熵）。**必须冒号安全**：Sing-box `mixed`/`socks`/`http` 入站的认证用户名会同时出现在 SOCKS5 用户名长度前缀与 HTTP `Proxy-Authorization` Basic 头中，而后者按首个 `:` 切分，因此不得追加 `::lineId` 后缀 |
+| `password` | String | 该凭据独立密码，24 字节 base64url（192 bit 熵）。因 Sing-box 入站校验需要，落库为明文（与 `User.password` 同口径）；可随时轮换 |
+| `whitelistIps` | String | 逗号分隔的 IP/CIDR 白名单，空串表示不限制来源；单条须为合法 IPv4/IPv6 地址或 CIDR（IPv4 前缀 0~32、IPv6 前缀 0~128），最多 64 条 |
+| `exportToken` | String @unique | 免登录动态拉取令牌，默认 `uuid()`；用于 `GET /api/v1/user/proxy-pool/export?token=`，可独立轮换且不影响代理密码 |
+| `isActive` | Boolean | 单键启停；置为 `false` 后该凭据立即从节点配置中吊销 |
+| `trafficUsedBytes` | BigInt | 该凭据累计**计费**流量（已按线路倍率折算），与主账户 `User.trafficUsedBytes` 同口径 |
+| `lastUsedAt` | DateTime? | 最近一次产生流量的时间，由心跳账务事务同步刷新 |
+| `createdAt` / `updatedAt` | DateTime | 创建与更新时间 |
+
+索引：`userId`、`isActive`、`(userId, isActive)`；`username` 与 `exportToken` 为唯一约束。
+
+### 7.2 与既有模型的 ER 关系
+
+- `User 1 ── n ProxyKey`（`onDelete: Cascade`）：账号删除时凭据一并清除。
+- `ProxyKey 1 ── n TrafficLog`（关系名 `ProxyKeyTrafficLogs`，`onDelete: SetNull`）：凭据删除后历史流水保留并置空 `proxyKeyId`，不影响主账户与线路维度的历史统计。
+- `TrafficLog.proxyKeyId` 为可空外键：订阅体系产生的流水为 `null`，直连代理池流量在 `pk_` 凭据经 `ProxyKey.username` 映射回 `userId` 后写入归属凭据。
+- 线路维度归属不变：直连代理流水的 `lineId` 由节点级活动线路解析（`resolveActiveLineForNode`）填充，因此同样参与线路倍率折算与线路排行统计。
+
+### 7.3 生命周期与一致性
+
+1. **创建**：用户名在 `pk_` 命名空间内以 5 次重试规避唯一约束冲突（Prisma `P2002`）；单账号凭据上限 20 条。
+2. **注入**：`buildConfigSync` 只注入 `isActive = true` 且归属用户仍具备订阅资格（账号启用、邮箱核验通过、未超额、未过期）的凭据，单节点上限 512 条。
+3. **账务**：心跳累计快照的增量在同一 SQLite 事务内写入 `TrafficLog`、累加 `User` / `Subscription` / `ProxyKey` 用量并刷新 `lastUsedAt`；任一环节失败整批回滚。
+4. **熔断**：本批次入账后触及配额的账号触发全局 `config_sync`，凭据与订阅凭证在数秒内同步吊销；管理端启停/删除凭据同样即时重下发。

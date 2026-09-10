@@ -169,16 +169,33 @@ export interface ShadowtlsParams {
 export interface MixedParams {
   allowLan?: boolean;
   usersEnabled?: boolean;
+  tls?: InboundTlsConfig;
 }
 
 export interface SocksParams {
   allowLan?: boolean;
   usersEnabled?: boolean;
+  tls?: InboundTlsConfig;
 }
 
 export interface HttpParams {
   allowLan?: boolean;
   usersEnabled?: boolean;
+  tls?: InboundTlsConfig;
+}
+
+// ==============================
+// 直连代理池凭据（ProxyKey，v0.9.0）
+//
+// 认证用户名必须是「冒号安全」的：Sing-box 的 HTTP CONNECT 走
+// net/http.parseBasicAuth，按首个 ":" 切分 user/password，
+// 因此用户名一旦包含 ":" 则 HTTP 代理认证必然失败（SOCKS5 无此限制）。
+// 由于同一份凭据同时导出 socks5:// 与 http:// 两种形态，这里统一使用裸
+// pk_xxxx 作为入站用户名；线路归属由节点级回退解析（resolveActiveLineForNode）完成。
+// ==============================
+export interface ProxyPoolCredential {
+  username: string;
+  password: string;
 }
 
 export interface DirectParams {
@@ -602,9 +619,13 @@ export function normalizeInboundParams(
     case 'MIXED':
     case 'SOCKS':
     case 'HTTP': {
+      // 直连代理池默认标准 TCP 明文监听以保证原生工具 100% 兼容；
+      // 可按需挂载系统证书中心的一键 TLS（证书 PEM 由线路关联在构建期注入）。
+      const tls = normalizeTlsConfig(raw.tls, 'none');
       return {
         allowLan: raw.allowLan === true,
-        usersEnabled: raw.usersEnabled === true
+        usersEnabled: raw.usersEnabled === true,
+        ...(tls.enabled ? { tls } : {})
       };
     }
 
@@ -838,6 +859,7 @@ export function buildServerInbound(input: {
   params: Record<string, unknown>;
   users: InboundUserCredential[];
   lineId?: string;
+  proxyPoolUsers?: ProxyPoolCredential[];
 }): Record<string, unknown> {
   const { type, tag, listen, port, params, users, lineId } = input;
   // VLESS 需要在运行时修复旧版明文 + Vision 数据；其余协议已在入站 CRUD 边界完成归一化，
@@ -1005,15 +1027,31 @@ export function buildServerInbound(input: {
     case 'SOCKS':
     case 'HTTP': {
       const p = normalizedParams as unknown as MixedParams;
+      const tls = buildServerTls(p.tls);
       const inboundObj: Record<string, unknown> = {
         type: type.toLowerCase(),
         tag,
         listen,
         listen_port: port
       };
+      const inboundUsers: Array<Record<string, unknown>> = [];
       if (p.usersEnabled && users.length) {
-        inboundObj.users = users.map((u) => ({ username: formatInboundUserName(u, lineId), password: u.credential }));
+        inboundUsers.push(
+          ...users.map((u) => ({ username: formatInboundUserName(u, lineId), password: u.credential }))
+        );
       }
+      // 直连代理池凭据：独立凭据空间，与订阅用户在同一个 mixed 单端口内并列承接 SOCKS5/HTTP
+      for (const proxyUser of input.proxyPoolUsers ?? []) {
+        const username = proxyUser?.username?.trim();
+        const password = proxyUser?.password;
+        if (!username || !password) continue;
+        if (inboundUsers.some((item) => item.username === username)) continue;
+        inboundUsers.push({ username, password });
+      }
+      if (inboundUsers.length) {
+        inboundObj.users = inboundUsers;
+      }
+      if (tls) inboundObj.tls = tls;
       return inboundObj;
     }
 
@@ -1051,4 +1089,37 @@ export function buildServerInbounds(input: Parameters<typeof buildServerInbound>
       password: normalizeShadowsocksPassword(params.inner.method, params.inner.password)
     }
   ];
+}
+
+// ==============================
+// 直连代理池来源 IP 白名单路由规则
+//
+// 语义：命中 inbound 且命中该凭据、但来源 IP 不在白名单内 → 直接拒绝。
+// 必须使用 logical/and 内层 invert：若在顶层规则上 invert，会连同其他凭据
+// 与订阅用户的流量一起被反转命中而误伤整条入站。相同白名单的凭据会合并为一条规则。
+// ==============================
+export function buildProxyPoolWhitelistRules(input: {
+  tag: string;
+  credentials: Array<{ username: string; whitelistIps: string[] }>;
+}): Array<Record<string, unknown>> {
+  const groups = new Map<string, string[]>();
+  for (const credential of input.credentials) {
+    const username = credential.username?.trim();
+    const whitelist = (credential.whitelistIps ?? []).map((item) => item.trim()).filter(Boolean);
+    if (!username || !whitelist.length) continue;
+    const key = [...new Set(whitelist)].join(',');
+    const existing = groups.get(key);
+    if (existing) existing.push(username);
+    else groups.set(key, [username]);
+  }
+  return [...groups.entries()].map(([key, usernames]) => ({
+    type: 'logical',
+    mode: 'and',
+    rules: [
+      { inbound: [input.tag] },
+      { auth_user: usernames },
+      { source_ip_cidr: key.split(','), invert: true }
+    ],
+    action: 'reject'
+  }));
 }

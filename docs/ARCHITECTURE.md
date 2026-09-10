@@ -269,3 +269,55 @@ Sing-box Agent 侧将资源文件作为一个事务处理：所有文件先下�
 实时镜像保持控制面与数据面分离：浏览器请求先到 Master 的 `/mirror/...` 路由，Master 根据 `MirrorSite` 完成访问策略、路径拼接、请求头白名单、限速和节点能力检查，再通过当前节点的 WSS/WS 长连接发送 `mirror_request`。Agent 在节点本地重新解析并校验目标地址后访问上游，将安全响应头、二进制分片和结束/错误事件回传；Master 只把事件映射为 Express 响应，不保存响应体。
 
 `taskId -> MirrorSession` 只存在 Master 内存中。客户端关闭、请求超时、Agent 断开或 Master 重启都会取消并清理会话；进行中的流不跨重启恢复。旧 Agent 不宣告 `mirror_proxy` 时不会收到镜像任务，HTTP 轮询节点也不参与实时镜像。所有 Agent 写帧继续经过既有写锁，二进制帧按任务 ID 路由到对应会话。
+
+## 10. 直连代理池双轨架构（v0.9.0）
+
+RiriCloud 在同一套节点、线路与账务底座上并行承载**两条互不耦合的代理交付轨道**：
+
+| 维度 | 订阅轨道（客户端翻墙） | 直连代理池轨道（自动化环境） |
+| :--- | :--- | :--- |
+| 目标客户端 | Clash Meta / Sing-box / Shadowrocket | 爬虫框架、指纹浏览器、脚本与 CLI 工具 |
+| 协议 | VLESS+Reality、Hysteria2、TUIC、Trojan 等 | Sing-box `mixed` 单端口（SOCKS5 + HTTP CONNECT） |
+| 凭据 | 用户 `uuid` / `password` / 订阅 Token | 独立 `ProxyKey`：`pk_xxxx` 用户名 + 独立密码 |
+| 交付 | 多格式订阅链接与模板编译 | `IP:Port:User:Pass`、URI、JSON、免登录 RESTful 拉取 |
+| 准入控制 | 套餐线路匹配 + 邮箱核验 + 配额 | 同左，外加可选的来源 IP/CIDR 白名单 |
+| 计费 | `TrafficLog` → `User` / `Subscription` | 同一事务内额外累加 `ProxyKey.trafficUsedBytes` |
+
+两条轨道共用 `Line` 实体作为端点定义：管理员创建一条 `protocolType = MIXED` 的 `DIRECT` 线路，该线路的入口节点与端口即成为直连代理池端点，无需新增任何节点侧配置或第二个监听端口。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 用户 / 自动化脚本
+    participant Web as Web 面板 (/proxy-pool)
+    participant Master as Master 后端
+    participant DB as SQLite
+    participant Agent as VPS Node Agent
+    participant Singbox as Sing-box mixed 入站
+
+    User->>Web: 创建 Proxy Key（名称 + 可选来源 IP 白名单）
+    Web->>Master: POST /api/v1/user/proxy-pool/keys
+    Master->>DB: 写入 ProxyKey（pk_xxxx / 高熵密码 / exportToken）
+    Master-->>Agent: config_sync（重建节点配置）
+    Agent->>Singbox: 重启内核，inbounds[].users 注入 pk_xxxx 与白名单 route.rules
+
+    User->>Web: 选择节点与协议，导出多格式列表
+    Web->>Master: GET /api/v1/user/proxy-pool/export?format=text|uri|json
+    Master-->>Web: 纯文本 / URI / JSON（另附多语言代码片段）
+
+    loop 每 5~10 秒
+        Agent->>Singbox: 查询 v2ray 累计用户流量
+        Agent->>Master: heartbeat（含 pk_xxxx 累计快照）
+        Master->>DB: 同事务写 TrafficLog(proxyKeyId) + 累加 User/Subscription/ProxyKey
+        alt 本批次触及配额或账号被停用
+            Master-->>Agent: config_sync（剔除该账号全部凭据，快速熔断）
+        end
+    end
+```
+
+**关键架构约束**：
+
+1. **强制鉴权**：`mixed`/`socks`/`http` 入站在生成配置时一律启用用户认证。Sing-box 中 `users` 为空的这三类入站等价于开放代理，属于安全红线。
+2. **冒号安全的入站用户名**：HTTP CONNECT 的 Basic 认证按首个 `:` 切分用户名，因此代理池凭据使用裸 `pk_xxxx` 而非 `pk_xxxx::lineId` 复合形态；线路归属由节点级活动线路解析确定（详见 docs/API_AND_PROTOCOLS.md §5.1）。
+3. **白名单以逻辑路由规则表达**：`invert` 必须内嵌在 `logical/and` 子规则中，避免顶层反转误伤同入站的其他凭据与订阅用户。
+4. **零新增基础设施**：不引入额外数据库、缓存或守护进程；代理池与订阅共享同一 Agent 通道、同一 `config_sync` 热更新链路与同一 WAL 单写者事务模型。

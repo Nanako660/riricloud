@@ -48,6 +48,16 @@
 - `POST /user/subscription/cancel`：取消当前订阅。⭐ 状态变为 `CANCELED`，到期前保留使用权。
 - `POST /user/subscription/reset-token`：重置当前订阅 Token。⭐ 旧订阅链接立即失效，并同步兼容的 User 镜像字段；无订阅返回 400。
 
+**直连代理池（v0.9.0，完整规约见 §5）**
+- `GET /user/proxy-pool/keys`：列出当前账号的全部直连代理凭据。⭐ 响应 `{ keys[], limit }`。
+- `POST /user/proxy-pool/keys`：创建直连代理凭据。⭐ 请求 `{ name, whitelistIps? }`；服务端生成 `pk_<24 位十六进制>` 用户名与 24 字节 base64url 密码。
+- `PATCH /user/proxy-pool/keys/:id`：更新凭据名称、来源 IP 白名单或启停状态。⭐
+- `DELETE /user/proxy-pool/keys/:id`：删除凭据并即时从节点配置中吊销。⭐
+- `POST /user/proxy-pool/keys/:id/rotate-password`：轮换凭据密码（旧密码立即失效）。⭐
+- `POST /user/proxy-pool/keys/:id/rotate-token`：轮换免登录拉取令牌。⭐
+- `GET /user/proxy-pool/nodes?lineIds?`：列出可用的 Mixed 直连代理端点。⭐
+- `GET /user/proxy-pool/export?format&protocol&keyId&lineIds&token`：多格式导出与免登录拉取。⭐ 支持 Cookie 登录态或 `?token=<exportToken>` 二选一。
+
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
@@ -123,6 +133,12 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选。⭐
 - `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。
 - `POST /admin/redeem-codes/:id/revoke`：作废未使用卡密。⭐ 已兑换或已作废卡密返回 409。
+
+#### 直连代理池管理（v0.9.0，完整规约见 §5）
+- `GET /admin/proxy-pool/overview`：直连代理池总览。⭐ 响应 `{ totalKeys, activeKeys, disabledKeys, trafficUsedBytes, endpointCount, endpoints[] }`。
+- `GET /admin/proxy-pool/keys?page&pageSize&search&userId&isActive&sortBy`：分页检索全部用户的直连代理凭据。⭐ 列表项附带 `user{ id, email, uid, isActive }`。
+- `POST /admin/proxy-pool/keys/:id/active`：管理员启用/停用指定凭据。⭐ 请求 `{ isActive }`；变更后立即重下发在线节点配置。
+- `DELETE /admin/proxy-pool/keys/:id`：强制删除指定凭据。⭐
 
 #### 套餐管理
 - `GET /admin/plans?page&pageSize&search&isPublic`：分页查询套餐。⭐
@@ -602,3 +618,85 @@ Agent 心跳可携带 `capabilities: string[]`；仅能力包含 `mirror_proxy` 
 ### 4.3 限额与错误码
 
 Agent 默认单请求超时 10 分钟、响应上限 256 MiB、单节点镜像并发上限 4、最多跟随 5 次重定向。目标 URL 和每次重定向都必须通过 HTTP/HTTPS、允许域名、公网 DNS/IP 与无凭据校验；拒绝 loopback、私网、链路本地、保留地址、IPv4-mapped 私网和云 metadata 地址。稳定错误码包括 `INVALID_URL`、`PRIVATE_ADDRESS`、`DNS_ERROR`、`REDIRECT_BLOCKED`、`REDIRECT_LIMIT`、`RESPONSE_TOO_LARGE`、`TIMEOUT`、`CANCELED`、`NODE_DISCONNECTED` 和 `UPSTREAM_ERROR`。
+
+---
+
+## 5. 直连代理池协议 (Proxy Pool, v0.9.0)
+
+面向爬虫、指纹浏览器与脚本工具的**标准直连代理**能力，与面向客户端翻墙的订阅体系完全解耦：不暴露账号密码、UUID 与订阅 Token，使用独立 `ProxyKey` 凭据，流量统一计入主账户配额。
+
+### 5.1 端点模型与凭据注入
+
+- **端点来源**：`Line` 中 `protocolType = "MIXED"`、`type = "DIRECT"`、`status = "ACTIVE"`、`isPublic = true` 且入口节点未禁用的线路即为一个直连代理端点。同一 `mixed` 入站在**单端口**上同时承接 SOCKS5 与 HTTP CONNECT。
+- **对外地址解析**：`endpointOverrideEnabled` 为真且配置了 `serverHost`/`serverPort` 时使用覆盖值，否则回退为入口节点 `serverHost` 与线路 `entryPort`。
+- **强制鉴权**：`mixed`/`socks`/`http` 入站在生成节点配置时**一律强制启用用户认证**。Sing-box 中 `users` 为空的这三类入站等价于开放代理，属于安全红线，因此不接受 `params.usersEnabled = false`。
+- **明文优先、TLS 按需**：默认标准 TCP 明文监听以保证原生工具 100% 兼容；`params.tls` 支持按需挂载系统证书中心的一键 TLS（`mode = tls` 关联 `certificateId`，或 `mode = acme`），也支持节点本地证书路径。这三类协议的 TLS 选项仅提供「关闭 / 标准 TLS / ACME」，不提供 Reality。
+- **凭据注入**：`buildConfigSync` 将当前**仍具备订阅资格**的用户的有效 `ProxyKey` 注入 `inbounds[].users`，形态为 `{ "username": "pk_<24 位十六进制>", "password": "<独立密码>" }`，单节点上限 512 条。
+- **用户名必须冒号安全（重要实现约定）**：Sing-box 的 HTTP CONNECT 认证走 Go `net/http.parseBasicAuth`，按**首个 `:`** 切分用户名与密码；同时用户在 `socks5://user:pass@host` 与 `http://user:pass@host` 中也是按首个 `:` 解析 userinfo（curl 等通用客户端行为一致）。因此代理池凭据用户名统一使用**裸 `pk_xxxx`**，不追加 `::lineId` 复合后缀 —— 否则 `http://` 与 `socks5://` 两种形态都会认证失败。线路归属改由节点级回退解析（取该节点上 `status = ACTIVE` 的首条线路）确定，符合“单节点单 Mixed 端点”的产品设计。
+  - `parseTrafficCredential` 仍保留 `::lineId` 复合解析能力，一旦出现复合凭证也能正确映射回归属用户，便于后续扩展。
+- **来源 IP 白名单**：配置了 `whitelistIps` 的凭据会在 `route.rules` 中生成一条逻辑规则，语义为「命中该入站 + 命中该凭据 + 来源不在白名单」→ `reject`：
+
+```json
+{
+  "route": {
+    "rules": [
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          { "inbound": ["line-<lineId>"] },
+          { "auth_user": ["pk_0123456789abcdef01234567"] },
+          { "source_ip_cidr": ["203.0.113.10", "198.51.100.0/24"], "invert": true }
+        ],
+        "action": "reject"
+      }
+    ]
+  }
+}
+```
+
+> ⚠️ `invert` **必须**放在内层子规则上。若放在顶层规则，`NOT(inbound && auth_user && source_ok)` 会把其他凭据与订阅用户的流量一并反转命中，导致整条入站被误拒绝。相同白名单的多个凭据会合并进同一条规则的 `auth_user` 数组。
+
+### 5.2 流量账务与熔断
+
+- Agent 心跳上报的 v2ray stats 累计快照中，`pk_` 前缀凭据会经 `ProxyKey.username` 映射回 `userId`，在**同一事务**内：
+  1. 写入 `TrafficLog`（同时落 `lineId` 与 `proxyKeyId`）；
+  2. 按线路倍率折算后累加 `User.trafficUsedBytes` 与 `Subscription.trafficUsedBytes`；
+  3. 累加 `ProxyKey.trafficUsedBytes` 并刷新 `lastUsedAt`。
+- **超额熔断**：本批次入账后触及配额的账号会触发一次全局 `config_sync` 重下发，`buildConfigSync` 的资格过滤会把该账号的 `ProxyKey` 与订阅凭证同时剔除，凭据在数秒内失效。账号停用、订阅过期等场景复用同一过滤链路。
+
+### 5.3 管理与导出接口
+
+| 方法 | 路径 | 说明 |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/user/proxy-pool/keys` | 列出凭据，返回 `{ keys[], limit }`（`limit` 为单账号上限 20） |
+| `POST` | `/api/v1/user/proxy-pool/keys` | 创建凭据，请求 `{ name, whitelistIps? }` |
+| `PATCH` | `/api/v1/user/proxy-pool/keys/:id` | 更新 `{ name?, whitelistIps?, isActive? }` |
+| `DELETE` | `/api/v1/user/proxy-pool/keys/:id` | 删除凭据（节点配置即时吊销） |
+| `POST` | `/api/v1/user/proxy-pool/keys/:id/rotate-password` | 轮换密码 |
+| `POST` | `/api/v1/user/proxy-pool/keys/:id/rotate-token` | 轮换免登录拉取令牌 |
+| `GET` | `/api/v1/user/proxy-pool/nodes?lineIds?` | 可用 Mixed 端点列表（含在线状态与延迟快照） |
+| `GET` | `/api/v1/user/proxy-pool/export` | 多格式导出（见下） |
+| `GET` | `/api/v1/admin/proxy-pool/overview` | 管理端总览 |
+| `GET` | `/api/v1/admin/proxy-pool/keys` | 管理端分页检索全部凭据 |
+| `POST` | `/api/v1/admin/proxy-pool/keys/:id/active` | 管理端启停凭据 |
+| `DELETE` | `/api/v1/admin/proxy-pool/keys/:id` | 管理端删除凭据 |
+
+**导出接口 `GET /api/v1/user/proxy-pool/export`**
+
+| 参数 | 取值 | 说明 |
+| :--- | :--- | :--- |
+| `format` | `text`（默认）/ `uri` / `json` | 导出格式 |
+| `protocol` | `socks5`（默认）/ `http` | 仅影响 `uri` 前缀 |
+| `keyId` | UUID | 指定凭据；省略时使用账号下最近创建的有效凭据 |
+| `lineIds` | 逗号分隔 UUID | 按端点过滤；省略时导出全部可用端点 |
+| `token` | 字符串 | 免登录拉取令牌（`ProxyKey.exportToken`） |
+
+鉴权：该路由同时声明 `@Public()` 与 `@OptionalAuth()`，因此 **Cookie/Authorization 登录态与 `?token=` 二选一** 即可；两者都缺失返回 401。响应体：
+
+- `format=text`（`Content-Type: text/plain; charset=utf-8`）：每行 `IP:Port:User:Pass`，可直接粘贴进 AdsPower / Hubstudio 等指纹浏览器批量导入框。
+- `format=uri`（`text/plain`）：每行 `socks5://user:pass@host:port` 或 `http://user:pass@host:port`。
+- `format=json`（`application/json`）：`{ version, generatedAt, key, proxies[] }`，`proxies[]` 含 `name`、`region`、`tags`、`node`、`nodeId`、`lineId`、`protocol`、`host`、`port`、`username`、`password`、`latencyMs`、`lastTestStatus`。
+
+所有导出响应均带 `Cache-Control: no-store`。免登录拉取令牌可通过 `rotate-token` 随时轮换，旧令牌立即失效；凭据停用或归属账号停用时令牌同样失效（401）。
+

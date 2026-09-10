@@ -61,6 +61,7 @@
 | **`UI-32`** | 监控与系统 | 系统日志可视化大盘 | `/admin/logs` | `apps/web/src/pages/admin/logs/**` | 4 大 KPI 指标卡、分级趋势堆叠柱状图、多维过滤器工具栏（支持一键重置与活跃模块徽标）、高密度等宽日志流表格（支持节点与模块标签点击即滤、搜索关键词精准高亮）、Live Tail 实时推流条（悬浮控制、清屏、暂停、自动滚动）、详情抽屉（TraceId/节点/模块一键穿透过滤、调用堆栈、格式化元数据）、日志导出与安全清理确认弹窗；明暗主题自适应与移动端防溢出 |
 | **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
 | **`UI-34`** | 网络与节点 | 镜像站列表、编辑与测试结果 | `/admin/mirrors` | `apps/web/src/pages/admin/mirrors/**` | 上游域名、指定节点与 `mirror_proxy` 能力、访问模式、启用状态和最近请求结果的表格扫描；创建/编辑表单、分享 Token 一次性展示与轮换、删除确认、测试结果对话框；明暗主题、移动端表格局部滚动和弹窗内滚动 |
+| **`UI-35`** | 用户中心 | 直连代理池凭据管理与提取导出中心 | `/proxy-pool` | `apps/web/src/pages/user/proxy-pool/**` | 解耦说明卡片、凭据数量/上限与「新建凭据」按钮；凭据卡片展开 pk_ 用户名与密码（掩码切换、复制）、来源 IP 白名单徽章列表、已用流量与最近使用时间（统一时区）、启用 Switch 与更多操作下拉（编辑/轮换密码/轮换令牌/删除二次确认）；导出中心节点多选（全选/清空、在线状态与延迟、窄屏折行）、凭据与协议 Select、`IP:Port:User:Pass`/URI/JSON 三格式 Tabs 与只读预览复制、Python requests / Playwright / Node axios / cURL 四语言代码片段 Tabs、免登录拉取 URL 一键复制与令牌轮换、指纹浏览器导入提示；明暗主题与移动端防溢出 |
 
 认证页面的会话验证以 Cookie 为浏览器实现细节：视觉走查只需确认登录/注册成功后正确进入已认证路由、刷新页面仍保持登录态、注销后返回登录页；不得在页面 DOM、localStorage 或 sessionStorage 中出现 JWT 文本。
 
@@ -85,7 +86,7 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-34]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-35]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
     PathCheck -->|根路径与订阅控制台\nrouter/index.tsx\npages/user/subscription/*\ncomponents/shared/*| Dash[精准走查: UI-03, UI-04, UI-21]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
@@ -95,6 +96,7 @@ flowchart TD
     PathCheck -->|套餐模块\npages/admin/plans/*| Plans[精准走查: UI-16, UI-17]
     PathCheck -->|模板模块\npages/admin/templates/*| Templates[精准走查: UI-18, UI-19]
     PathCheck -->|用户订阅\npages/user/*| UserSubs[精准走查: UI-20, UI-21, UI-29]
+    PathCheck -->|直连代理池\npages/user/proxy-pool/*| ProxyPool[精准走查: UI-35]
     PathCheck -->|个人中心\npages/user/profile/*| Profile[精准走查: UI-29]
     PathCheck -->|卡密管理\npages/admin/redeem-codes/*| Redeem[精准走查: UI-30]
     PathCheck -->|节点升级\npages/admin/nodes/components/upgrade-node-dialog.tsx| Upgrade[精准走查: UI-22]
@@ -109,8 +111,8 @@ flowchart TD
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-32`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-32`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-35`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-35`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
 | `apps/web/src/router/index.tsx` | `UI-03`, `UI-21` | **增量** |
@@ -132,6 +134,7 @@ flowchart TD
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 | `apps/web/src/pages/admin/logs/**` | `UI-32` | **增量** |
 | `apps/web/src/pages/admin/mirrors/**` | `UI-34` | **增量** |
+| `apps/web/src/pages/user/proxy-pool/**` | `UI-35` | **增量** |
 
 ---
 
