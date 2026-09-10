@@ -25,24 +25,29 @@ describe('AgentGatewayService', () => {
   const txRateCreate = jest.fn(async () => undefined);
   const txRateUpdate = jest.fn(async () => undefined);
   const txLineFindMany = jest.fn();
+  const txProxyKeyFindMany = jest.fn();
+  const txProxyKeyUpdate = jest.fn(async () => undefined);
   const tx = {
     user: { findMany: txUserFindMany, update: txUserUpdate },
     line: { findMany: txLineFindMany },
     trafficLog: { createMany: txTrafficCreateMany },
     subscription: { findMany: txSubscriptionFindMany, update: txSubscriptionUpdate, updateMany: txSubscriptionUpdateMany },
     trafficCursor: { findMany: txTrafficCursorFindMany, upsert: txTrafficCursorUpsert },
-    nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate }
+    nodeRateMetric: { findUnique: txRateFindUnique, create: txRateCreate, update: txRateUpdate },
+    proxyKey: { findMany: txProxyKeyFindMany, update: txProxyKeyUpdate }
   };
   const deploymentFindUnique = jest.fn();
   const deploymentFindFirst = jest.fn();
   const deploymentFindMany = jest.fn();
   const deploymentCreate = jest.fn();
   const deploymentUpdate = jest.fn();
+  const proxyKeyFindMany = jest.fn();
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
     node: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     user: { findMany: jest.fn() },
     line: { findFirst: jest.fn() },
+    proxyKey: { findMany: proxyKeyFindMany },
     nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     binaryDeploymentTask: {
       findUnique: deploymentFindUnique,
@@ -75,6 +80,9 @@ describe('AgentGatewayService', () => {
     txTrafficCursorFindMany.mockResolvedValue([]);
     txRateFindUnique.mockResolvedValue(null);
     txLineFindMany.mockResolvedValue([]);
+    txProxyKeyFindMany.mockResolvedValue([]);
+    txProxyKeyUpdate.mockResolvedValue(undefined);
+    proxyKeyFindMany.mockResolvedValue([]);
     prisma.line.findFirst.mockResolvedValue(null);
     deploymentFindUnique.mockResolvedValue(null);
     deploymentFindFirst.mockResolvedValue(null);
@@ -874,5 +882,148 @@ describe('AgentGatewayService', () => {
         data: { trafficUsedBytes: { increment: 300n } }
       })
     );
+  });
+
+  describe('直连代理池（Mixed + ProxyKey）', () => {
+    const mixedLine = () => line({
+      id: 'line-mixed',
+      name: '直连代理池',
+      protocolType: 'MIXED',
+      entryPort: 10808,
+      paramsJson: JSON.stringify({ allowLan: false, usersEnabled: false })
+    });
+    const proxyKey = (overrides: Record<string, unknown> = {}) => ({
+      id: 'key-1',
+      userId: 'user-1',
+      username: 'pk_0123456789abcdef01234567',
+      password: 'pwd-a',
+      whitelistIps: '203.0.113.10',
+      user: { uuid: 'uuid-1', isActive: true },
+      ...overrides
+    });
+
+    it('Mixed 直连线路强制鉴权并注入 ProxyKey 凭据与来源 IP 白名单路由规则', async () => {
+      prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [mixedLine()], landingLines: [] });
+      prisma.user.findMany.mockResolvedValue([user]);
+      proxyKeyFindMany.mockResolvedValue([
+        proxyKey(),
+        proxyKey({
+          id: 'key-2',
+          userId: 'user-2',
+          username: 'pk_fedcba9876543210fedcba98',
+          password: 'pwd-b',
+          whitelistIps: '',
+          user: { uuid: 'uuid-2', isActive: true }
+        })
+      ]);
+
+      const { singboxConfig } = await service.buildConfigSync('node-1');
+      const inbounds = singboxConfig.inbounds as Array<Record<string, unknown>>;
+      const mixed = inbounds.find((inbound) => inbound.type === 'mixed');
+
+      expect(mixed).toBeDefined();
+      // usersEnabled=false 也必须强制鉴权：空 users 的 mixed 入站等价于开放代理
+      expect(mixed?.users).toEqual(expect.arrayContaining([
+        { username: 'user@example.com::line-mixed', password: 'secret' },
+        { username: 'pk_0123456789abcdef01234567', password: 'pwd-a' }
+      ]));
+      // 未具备订阅资格的用户（uuid-2）凭据必须被剔除
+      expect(mixed?.users).not.toEqual(expect.arrayContaining([expect.objectContaining({ username: 'pk_fedcba9876543210fedcba98' })]));
+
+      expect((singboxConfig.experimental as { v2ray_api: { stats: { users: string[] } } }).v2ray_api.stats.users).toEqual(
+        expect.arrayContaining(['pk_0123456789abcdef01234567'])
+      );
+      expect(singboxConfig.route).toEqual({
+        rules: [
+          {
+            type: 'logical',
+            mode: 'and',
+            rules: [
+              { inbound: ['line-line-mixed'] },
+              { auth_user: ['pk_0123456789abcdef01234567'] },
+              { source_ip_cidr: ['203.0.113.10'], invert: true }
+            ],
+            action: 'reject'
+          }
+        ]
+      });
+    });
+
+    it('无可用 ProxyKey 时不生成白名单路由规则，仍保留订阅用户鉴权', async () => {
+      prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', status: 'ONLINE', configOverride: null, entryLines: [mixedLine()], landingLines: [] });
+      prisma.user.findMany.mockResolvedValue([user]);
+      proxyKeyFindMany.mockResolvedValue([]);
+
+      const { singboxConfig } = await service.buildConfigSync('node-1');
+      const mixed = (singboxConfig.inbounds as Array<Record<string, unknown>>).find((inbound) => inbound.type === 'mixed');
+
+      expect(mixed?.users).toEqual(expect.arrayContaining([{ username: 'user@example.com::line-mixed', password: 'secret' }]));
+      expect(singboxConfig.route).toBeUndefined();
+    });
+
+    it('ProxyKey 凭据流量映射回归属用户并累计到凭据用量', async () => {
+      const pushSpy = jest.spyOn(service, 'pushConfigToAll').mockResolvedValue(0);
+      txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: 'uuid-1', email: 'pool@example.com', trafficLimitBytes: 100_000n, trafficUsedBytes: 0n }]);
+      txProxyKeyFindMany.mockResolvedValue([{ id: 'key-1', userId: 'user-1', username: 'pk_0123456789abcdef01234567' }]);
+      txTrafficCursorFindMany.mockResolvedValue([{ credential: 'pk_0123456789abcdef01234567', uploadTotal: 0n, downloadTotal: 0n }]);
+
+      await service.handleHeartbeat('node-1', {
+        protocolVersion: 2,
+        cpuUsage: 1,
+        memoryUsage: 2,
+        bandwidthRate: 3,
+        trafficSnapshots: [{ userUuid: 'pk_0123456789abcdef01234567', uploadTotal: '500', downloadTotal: '1500' }]
+      });
+
+      expect(txProxyKeyFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { username: { in: ['pk_0123456789abcdef01234567'] } }
+      }));
+      expect(txTrafficCreateMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ userId: 'user-1', proxyKeyId: 'key-1', upload: 500n, download: 1500n })]
+      });
+      expect(txUserUpdate).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { trafficUsedBytes: { increment: 2000n } }
+      });
+      expect(txProxyKeyUpdate).toHaveBeenCalledWith({
+        where: { id: 'key-1' },
+        data: { trafficUsedBytes: { increment: 2000n }, lastUsedAt: expect.any(Date) }
+      });
+      pushSpy.mockRestore();
+    });
+
+    it('流量耗尽用户凭据时触发全局配置重下发以快速吊销凭据', async () => {
+      const pushSpy = jest.spyOn(service, 'pushConfigToAll').mockResolvedValue(0);
+      txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: 'uuid-1', email: 'pool@example.com', trafficLimitBytes: 1000n, trafficUsedBytes: 0n }]);
+      txProxyKeyFindMany.mockResolvedValue([{ id: 'key-1', userId: 'user-1', username: 'pk_0123456789abcdef01234567' }]);
+      txTrafficCursorFindMany.mockResolvedValue([{ credential: 'pk_0123456789abcdef01234567', uploadTotal: 0n, downloadTotal: 0n }]);
+
+      await service.handleHeartbeat('node-1', {
+        protocolVersion: 2,
+        cpuUsage: 1,
+        memoryUsage: 2,
+        bandwidthRate: 3,
+        trafficSnapshots: [{ userUuid: 'pk_0123456789abcdef01234567', uploadTotal: '600', downloadTotal: '600' }]
+      });
+
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      pushSpy.mockRestore();
+    });
+
+    it('普通订阅凭据流量不触发 ProxyKey 查询与累计', async () => {
+      txUserFindMany.mockResolvedValue([{ id: 'user-1', uuid: 'uuid-1', email: 'pool@example.com', trafficLimitBytes: 100_000n, trafficUsedBytes: 0n }]);
+      txTrafficCursorFindMany.mockResolvedValue([{ credential: 'pool@example.com', uploadTotal: 0n, downloadTotal: 0n }]);
+
+      await service.handleHeartbeat('node-1', {
+        protocolVersion: 2,
+        cpuUsage: 1,
+        memoryUsage: 2,
+        bandwidthRate: 3,
+        trafficSnapshots: [{ userUuid: 'pool@example.com', uploadTotal: '10', downloadTotal: '20' }]
+      });
+
+      expect(txProxyKeyFindMany).not.toHaveBeenCalled();
+      expect(txProxyKeyUpdate).not.toHaveBeenCalled();
+    });
   });
 });

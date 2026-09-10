@@ -141,6 +141,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "nodeId" TEXT NOT NULL,
         "userId" TEXT NOT NULL,
         "lineId" TEXT,
+        "proxyKeyId" TEXT,
         "upload" BIGINT NOT NULL DEFAULT 0,
         "download" BIGINT NOT NULL DEFAULT 0,
         "recordedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
