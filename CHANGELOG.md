@@ -13,9 +13,12 @@
 ## [Unreleased]
 
 ### Added
-- **订阅模板 DNS 与客户端高级覆写解耦重构**：模板编辑弹窗（`TemplateFormDialog`）由 5-Tab 扩充为 6-Tab（「基本信息」、「策略组设计」、「分流规则」、「DNS 设置」、「客户端高级覆写」、「实时渲染预览」），职责绝对单一。
+- **订阅模板工作台沉浸式重构**：模板编辑弹窗（`TemplateFormDialog`）全面升级为 6-Tab 统一沉浸式布局（「基本信息」、「策略组设计」、「分流规则」、「DNS 设置」、「客户端高级覆写」、「源文件编辑」）。
+- **策略组与分流规则沉浸式顶栏**：`TemplateGroupsEditor` 与 `TemplateRulesEditor` 顶栏重构，提供可视化/源码切换、状态徽标、6 种常用预设一键添加菜单（主流节点组、自动优选、流媒体、广告拦截等）与格式化美化。
 - **结构化 DNS 列表与主流预设**：新增 `TemplateDnsEditor`，国内直连 DNS 与海外代理 DNS 支持徽章标签管理、增删、一键引入公共 DNS/DoH 预设（阿里、腾讯 DNSPod、Cloudflare、Google、Quad9 等）与一键重置。
 - **客户端高级覆写全宽工作台与智能片段**：新增 `TemplateOverrideEditor`，支持 Clash YAML 与 Sing-box JSON 二级切换并占满 100% 宽度与高度，集成实时语法校验状态指示与常用配置片段（TUN 模式、Clash API 控制器等）智能 deepMerge 注入。
+- **全模板 JSON 源文件双向编辑**：新增 `TemplateSourceEditor`，支持在源文件 Tab 中直接查看与编辑整套模板的结构化 JSON（策略组、分流规则、DNS 与客户端覆写），与各表单 Tab 毫秒级双向安全同步，具备语法错误防污染守卫、格式化美化、一键复制与快速渲染验证联动。
+- **Sing-box 内核真实验证与智能诊断**：服务端模板预览端点（`POST /admin/subscription-templates/preview`）支持在系统就绪时自动调用 `sing-box check -c` 进行真实内核配置校验，并在预览抽屉（`TemplatePreviewDrawer`）中展示内核校验状态徽章、错误调用日志与配置诊断；未探测到内核时无缝降级为语法诊断。
 
 ### Changed
 - **前端表单初始化契约与机械守卫**：新增 `apps/web/src/hooks/use-form-reset.ts`（`useFormResetOnKey`），弹窗与编辑面板统一按「打开弹窗 / 切换编辑对象」初始化草稿一次；`eslint.config.js` 新增 `no-restricted-syntax`，禁止在 `useEffect` 内初始化表单、禁止把 query 的 `.data` 对象放进 effect 依赖（规范见 `docs/FRONTEND_UI_GUIDELINES.md` §4.2 B8 与 §5.1）。

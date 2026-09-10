@@ -142,7 +142,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/subscription-templates/:id`：查询模板详情。⭐
 - `POST /admin/subscription-templates`：创建模板。⭐ 请求含 `proxyGroups?`（支持 `all` 动态节点展开、`DIRECT`/`REJECT` 与策略组引用）、`ruleSets?`、`dnsConfig?`、`customInjectYaml?`、`customInjectJson?`、`isDefault?`。
 - `PATCH /admin/subscription-templates/:id`：部分更新模板；YAML/JSON 覆写在服务端校验语法。⭐
-- `POST /admin/subscription-templates/preview`：渲染模板草稿。⭐ 请求 `{ format: "clash"|"singbox", template: { proxyGroups?, ruleSets?, dnsConfig?, customInjectYaml?, customInjectJson? } }`；优先使用当前可用线路，无可用线路时回退内置多协议 Mock 节点池，响应包含 `content`、`stats{totalNodes,matchedNodes,proxyGroupsCount,rulesCount}` 与 `warnings[]`。
+- `POST /admin/subscription-templates/preview`：渲染模板草稿。⭐ 请求 `{ format: "clash"|"singbox", template: { proxyGroups?, ruleSets?, dnsConfig?, customInjectYaml?, customInjectJson? } }`；优先使用当前可用线路，无可用线路时回退内置多协议 Mock 节点池，响应包含 `content`、`stats{totalNodes,matchedNodes,proxyGroupsCount,rulesCount}`、`warnings[]` 以及 Sing-box 内核校验结果 `singboxCheck{ executed, passed, message? }`。⭐
 - `POST /admin/subscription-templates/:id/duplicate`：复制模板并命名为 `${name} (副本)`；副本重置 `isDefault=false` 与 `isBuiltin=false`。⭐
 - `DELETE /admin/subscription-templates/:id`：删除非默认、非内嵌且未被套餐使用的模板；内嵌默认模板只能通过 `PATCH` 修改，删除返回 `409`。⭐
 

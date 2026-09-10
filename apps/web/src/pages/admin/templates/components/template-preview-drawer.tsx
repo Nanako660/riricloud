@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
-import { Copy, Eye, LoaderCircle } from 'lucide-react';
+import { Copy, Eye, LoaderCircle, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,12 +22,87 @@ export function TemplatePreviewPanel({ template }: { template: TemplatePayload }
   }, [format, serializedTemplate]);
 
   const result = preview.data;
+  const singboxCheck = result?.singboxCheck;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2"><Tabs value={format} onValueChange={(value) => setFormat(value as 'clash' | 'singbox')}><TabsList><TabsTrigger value="clash">Clash YAML</TabsTrigger><TabsTrigger value="singbox">Sing-box JSON</TabsTrigger></TabsList></Tabs>{result && <PreviewActions result={result} />}</div>
-      {result && <div className="flex shrink-0 flex-wrap gap-2 text-xs"><Badge variant="secondary">节点 {result.stats.totalNodes}</Badge><Badge variant="secondary">命中 {result.stats.matchedNodes}</Badge><Badge variant="secondary">策略组 {result.stats.proxyGroupsCount}</Badge><Badge variant="secondary">规则 {result.stats.rulesCount}</Badge></div>}
-      <div className="min-h-[360px] min-w-0 flex-1 overflow-hidden rounded-md border bg-background shadow-sm">
-        {preview.isPending ? <div className="flex h-full min-h-[360px] items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />渲染中…</div> : result ? <TemplateCodeEditor value={result.content} height="100%" className="h-full" extensions={format === 'singbox' ? [json()] : [yaml()]} readOnly basicSetup={{ lineNumbers: true, foldGutter: true }} /> : <div className="flex h-full min-h-[360px] items-center justify-center text-sm text-muted-foreground">调整模板配置后将在这里显示渲染结果。</div>}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <Tabs value={format} onValueChange={(value) => setFormat(value as 'clash' | 'singbox')}>
+          <TabsList>
+            <TabsTrigger value="clash">Clash YAML</TabsTrigger>
+            <TabsTrigger value="singbox">Sing-box JSON</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {result && <PreviewActions result={result} />}
+      </div>
+
+      {result && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
+          <Badge variant="secondary">节点 {result.stats.totalNodes}</Badge>
+          <Badge variant="secondary">命中 {result.stats.matchedNodes}</Badge>
+          <Badge variant="secondary">策略组 {result.stats.proxyGroupsCount}</Badge>
+          <Badge variant="secondary">规则 {result.stats.rulesCount}</Badge>
+          {singboxCheck && (
+            <Badge
+              variant={singboxCheck.passed ? 'outline' : 'destructive'}
+              className="ml-auto flex items-center gap-1 font-mono text-[11px]"
+            >
+              {singboxCheck.executed ? (
+                singboxCheck.passed ? (
+                  <>
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                    Sing-box 内核校验通过
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-3 w-3" />
+                    Sing-box 内核报错
+                  </>
+                )
+              ) : (
+                <>
+                  <Info className="h-3 w-3 text-muted-foreground" />
+                  未挂载内核二进制 (纯语法校验)
+                </>
+              )}
+            </Badge>
+          )}
+        </div>
+      )}
+
+      {/* 若内核报错，展示详细日志卡片 */}
+      {singboxCheck?.executed && !singboxCheck.passed && singboxCheck.message && (
+        <div className="shrink-0 rounded-md border border-destructive/50 bg-destructive/10 p-2.5 text-xs text-destructive">
+          <div className="flex items-center gap-1.5 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Sing-box 内核诊断报错：</span>
+          </div>
+          <pre className="mt-1 max-h-28 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-tight">
+            {singboxCheck.message}
+          </pre>
+        </div>
+      )}
+
+      <div className="min-h-[340px] min-w-0 flex-1 overflow-hidden rounded-md border bg-background shadow-sm">
+        {preview.isPending ? (
+          <div className="flex h-full min-h-[340px] items-center justify-center text-sm text-muted-foreground">
+            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            渲染与校验中…
+          </div>
+        ) : result ? (
+          <TemplateCodeEditor
+            value={result.content}
+            height="100%"
+            className="h-full"
+            extensions={format === 'singbox' ? [json()] : [yaml()]}
+            readOnly
+            basicSetup={{ lineNumbers: true, foldGutter: true }}
+          />
+        ) : (
+          <div className="flex h-full min-h-[340px] items-center justify-center text-sm text-muted-foreground">
+            调整模板配置后将在这里显示渲染结果与内核校验。
+          </div>
+        )}
       </div>
     </div>
   );

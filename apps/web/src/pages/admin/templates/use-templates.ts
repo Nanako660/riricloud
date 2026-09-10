@@ -31,6 +31,11 @@ export interface TemplatePreviewResponse {
   content: string;
   stats: { totalNodes: number; matchedNodes: number; proxyGroupsCount: number; rulesCount: number };
   warnings: string[];
+  singboxCheck?: {
+    executed: boolean;
+    passed: boolean;
+    message?: string;
+  };
 }
 
 export function useAdminTemplates() {
