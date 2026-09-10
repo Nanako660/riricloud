@@ -379,6 +379,14 @@ export function buildSingboxRouteRuleSets(rules: TemplateRuleItem[]): Array<Reco
         const normalized = slug(value, `geosite-${index + 1}`);
         addDefinition(`geosite-${normalized}`, `https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite-${normalized}.srs`, 'binary');
       }
+      continue;
+    }
+    if (type === 'geoip') {
+      for (const value of values) {
+        const normalized = slug(value, `geoip-${index + 1}`);
+        addDefinition(`geoip-${normalized}`, `https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip-${normalized}.srs`, 'binary');
+      }
+      continue;
     }
   }
   return definitions;
@@ -399,10 +407,11 @@ function buildSingboxRuleSetTags(rules: TemplateRuleItem[]): Map<number, string[
       while (used.has(tag)) tag = `${base}-${suffix++}`;
       used.add(tag);
       tags.set(index, [tag]);
-    } else if (type === 'geosite') {
+    } else if (type === 'geosite' || type === 'geoip') {
+      const prefix = type;
       const result: string[] = [];
       for (const value of values) {
-        const base = `geosite-${slug(value, `rule-${index + 1}`)}`;
+        const base = `${prefix}-${slug(value, `rule-${index + 1}`)}`;
         let tag = base;
         let suffix = 2;
         while (used.has(tag)) tag = `${base}-${suffix++}`;
@@ -1421,15 +1430,11 @@ export function buildSingboxJson(user: SubUser, nodes: SubscriptionSource[], tem
       }
       continue;
     }
-    if (type === 'geosite') {
+    if (type === 'geosite' || type === 'geoip') {
       const ruleSet = singboxRuleSetTags.get(index);
       if (ruleSet?.length) {
         routeRules.push({ rule_set: ruleSet, outbound: routeOutbound });
       }
-      continue;
-    }
-    if (type === 'geoip') {
-      routeRules.push({ geoip: values.map((v) => v.toLowerCase()), outbound: routeOutbound });
       continue;
     }
     if (type === 'process-name') {

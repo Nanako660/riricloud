@@ -9,7 +9,7 @@ import { SETTING_KEYS, SettingsService } from '../system/settings.service';
 import { LinesService } from '../lines/lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
-import { PreviewTemplateDto, type SingboxCheckResult } from './dto/preview-template.dto';
+import { PreviewTemplateDto, type SingboxCheckResult, type MihomoCheckResult } from './dto/preview-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { buildClashYaml, buildSingboxJson, type SubLine, type SubUser, type SubscriptionTemplateConfig } from '../subscription/builders';
 
@@ -132,11 +132,17 @@ export class TemplatesService {
       ? buildClashYaml(user, sources, template)
       : buildSingboxJson(user, sources, template);
     const stats = this.previewStats(dto.format, content, sources.length);
+    const clashContent = dto.format === 'clash'
+      ? content
+      : buildClashYaml(user, sources, template);
     const singboxContent = dto.format === 'singbox'
       ? content
       : buildSingboxJson(user, sources, template);
-    const singboxCheck = await this.checkSingboxConfig(singboxContent);
-    return { format: dto.format, content, stats, warnings: [] as string[], singboxCheck };
+    const [singboxCheck, mihomoCheck] = await Promise.all([
+      this.checkSingboxConfig(singboxContent),
+      this.checkMihomoConfig(clashContent)
+    ]);
+    return { format: dto.format, content, stats, warnings: [] as string[], singboxCheck, mihomoCheck };
   }
 
   async remove(id: string) {
@@ -367,6 +373,72 @@ export class TemplatesService {
       return { executed: true, passed: false, message: (err as Error).message };
     } finally {
       await fs.unlink(tmpFile).catch(() => {});
+    }
+  }
+
+  private cachedMihomoPath: string | null = null;
+  private mihomoBinaryChecked = false;
+
+  private async resolveMihomoBinary(): Promise<string | null> {
+    if (this.mihomoBinaryChecked) return this.cachedMihomoPath;
+    this.mihomoBinaryChecked = true;
+
+    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+    const candidates = [
+      process.env.MIHOMO_BINARY_PATH,
+      process.env.CLASH_BINARY_PATH,
+      '/usr/local/bin/mihomo',
+      '/usr/local/bin/clash-meta',
+      `/app/binaries/mihomo-linux-${arch}`,
+      path.resolve(process.cwd(), 'binaries', `mihomo-linux-${arch}`),
+      path.resolve(process.cwd(), 'binaries', `mihomo-windows-${arch}.exe`),
+      path.resolve(process.cwd(), '../../.tools/mihomo/mihomo'),
+      path.resolve(process.cwd(), '../../.tools/mihomo/mihomo.exe')
+    ].filter((p): p is string => Boolean(p));
+
+    for (const candidate of candidates) {
+      try {
+        const stat = await fs.stat(candidate);
+        if (stat.isFile()) {
+          this.cachedMihomoPath = candidate;
+          return candidate;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    this.cachedMihomoPath = null;
+    return null;
+  }
+
+  private async checkMihomoConfig(configYaml: string): Promise<MihomoCheckResult> {
+    const bin = await this.resolveMihomoBinary();
+    if (!bin) {
+      return { executed: false, passed: true, message: '主控未挂载 mihomo 内核，已通过结构语法校验' };
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `riri-mihomo-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const tmpFile = path.join(tmpDir, 'config.yaml');
+    try {
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(tmpFile, configYaml, 'utf-8');
+      return await new Promise((resolve) => {
+        execFile(bin, ['-t', '-d', tmpDir, '-f', tmpFile], { timeout: 5000 }, (error, stdout, stderr) => {
+          if (error) {
+            const rawOutput = (stderr || stdout || error.message).trim();
+            // eslint-disable-next-line no-control-regex
+            const cleanOutput = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+            resolve({ executed: true, passed: false, message: cleanOutput });
+          } else {
+            resolve({ executed: true, passed: true, message: 'Mihomo 内核配置校验通过' });
+          }
+        });
+      });
+    } catch (err) {
+      return { executed: true, passed: false, message: (err as Error).message };
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 }

@@ -13,6 +13,9 @@
 ## [Unreleased]
 
 ### Added
+- **Sing-box 规则集现代解耦（GeoIP 升级为 rule_set）**：在 `apps/server/src/subscription/builders.ts` 中将 Sing-box 1.8+ 弃用并在 1.12+ 彻底移除的 `type: "geoip"` 路由规则全面重构为现代独立规则集 `rule_set`（自动指向官方 `sing-geoip` 发布的预编译 `.srs`），彻底根治 `parse rule: geoip database is deprecated in sing-box 1.8.0 and removed in sing-box 1.12.0` 致命报错。
+- **订阅模板双内核真实验证诊断（Sing-box + Mihomo）**：服务端模板预览端点（`POST /admin/subscription-templates/preview`）重构为双内核并发真实验证；新增 `checkMihomoConfig`，通过隔离临时目录调用 `mihomo -t` 执行配置真实验证，并剥离 ANSI 颜色乱码；支持多层级探测 `MIHOMO_BINARY_PATH`、本地 `.tools/mihomo/` 与系统 PATH；Docker 运行时环境声明 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo`。
+- **订阅模板源文件双模编辑与无损互转（JSON / YAML）**：`TemplateSourceEditor` 支持「JSON 源码」与「YAML 源码」无损双向切换编辑，CodeMirror 语法高亮与语法诊断实时同步，支持格式化美化、防污染脏数据隔离守卫与一键复制；前端预览抽屉（`TemplatePreviewDrawer`）同时展示 Sing-box 与 Mihomo 两枚内核状态徽章与多源诊断卡片。
 
 ### Changed
 

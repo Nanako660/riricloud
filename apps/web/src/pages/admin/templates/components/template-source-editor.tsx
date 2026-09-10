@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { json } from '@codemirror/lang-json';
+import { yaml } from '@codemirror/lang-yaml';
+import YAML from 'yaml';
 import {
   FileCode,
   Copy,
@@ -12,6 +14,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { TemplateCodeEditor } from './template-code-editor';
 import { type TemplatePayload } from '../use-templates';
@@ -27,22 +30,27 @@ export function TemplateSourceEditor({
   onChange,
   onTestRender
 }: TemplateSourceEditorProps) {
+  const [lang, setLang] = useState<'json' | 'yaml'>('json');
   const [source, setSource] = useState(() => JSON.stringify(template, null, 2));
   const [internalError, setInternalError] = useState('');
 
   // 外部 template 变化时，如果在无语法错误状态下则同步更新展示
   useEffect(() => {
     try {
-      const currentParsed = JSON.parse(source);
+      const currentParsed = lang === 'json' ? JSON.parse(source) : YAML.parse(source);
       // 如果当前编辑器内的内容和传入的 template 深度等价，则不触发二次覆盖
       if (JSON.stringify(currentParsed) === JSON.stringify(template)) return;
     } catch {
       // 当前处于编辑错误状态，保护用户正在编辑的内容不被外部重置
       return;
     }
-    setSource(JSON.stringify(template, null, 2));
+    if (lang === 'json') {
+      setSource(JSON.stringify(template, null, 2));
+    } else {
+      setSource(YAML.stringify(template, { indent: 2 }));
+    }
     setInternalError('');
-  }, [template]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [template, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 本地语法与结构实时状态
   const status = useMemo(() => {
@@ -50,9 +58,9 @@ export function TemplateSourceEditor({
       return { valid: false, message: '源文件内容不能为空' };
     }
     try {
-      const parsed = JSON.parse(source);
+      const parsed = lang === 'json' ? JSON.parse(source) : YAML.parse(source);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { valid: false, message: '根节点必须是 JSON 对象' };
+        return { valid: false, message: '根节点必须是对象' };
       }
       if (parsed.proxyGroups && !Array.isArray(parsed.proxyGroups)) {
         return { valid: false, message: 'proxyGroups 必须是数组格式' };
@@ -63,18 +71,38 @@ export function TemplateSourceEditor({
       if (parsed.dnsConfig && (typeof parsed.dnsConfig !== 'object' || Array.isArray(parsed.dnsConfig))) {
         return { valid: false, message: 'dnsConfig 必须是对象格式' };
       }
-      return { valid: true, message: 'JSON 格式合法且结构完整' };
+      return { valid: true, message: `${lang.toUpperCase()} 格式合法且结构完整` };
     } catch (err) {
-      return { valid: false, message: (err as Error).message || 'JSON 语法错误' };
+      return { valid: false, message: (err as Error).message || `${lang.toUpperCase()} 语法错误` };
     }
-  }, [source]);
+  }, [source, lang]);
+
+  const handleToggleLang = (targetLang: 'json' | 'yaml') => {
+    if (targetLang === lang) return;
+    try {
+      const parsed = lang === 'json' ? JSON.parse(source) : YAML.parse(source);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        toast.error('根节点必须是对象，无法转换');
+        return;
+      }
+      const converted = targetLang === 'json'
+        ? JSON.stringify(parsed, null, 2)
+        : YAML.stringify(parsed, { indent: 2 });
+      setLang(targetLang);
+      setSource(converted);
+      setInternalError('');
+      toast.success(`已切换至 ${targetLang.toUpperCase()} 源码编辑模式`);
+    } catch {
+      toast.error(`当前 ${lang.toUpperCase()} 存在语法错误，请修复后再切换格式`);
+    }
+  };
 
   const handleSourceChange = (nextSource: string) => {
     setSource(nextSource);
     try {
-      const parsed = JSON.parse(nextSource);
+      const parsed = lang === 'json' ? JSON.parse(nextSource) : YAML.parse(nextSource);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('根节点必须是 JSON 对象');
+        throw new Error('根节点必须是对象');
       }
       setInternalError('');
 
@@ -101,27 +129,37 @@ export function TemplateSourceEditor({
 
   const handleFormat = () => {
     try {
-      const parsed = JSON.parse(source);
-      const pretty = JSON.stringify(parsed, null, 2);
-      setSource(pretty);
+      if (lang === 'json') {
+        const parsed = JSON.parse(source);
+        const pretty = JSON.stringify(parsed, null, 2);
+        setSource(pretty);
+      } else {
+        const parsed = YAML.parse(source);
+        const pretty = YAML.stringify(parsed, { indent: 2 });
+        setSource(pretty);
+      }
       setInternalError('');
-      toast.success('源文件已美化排版');
+      toast.success(`源文件已美化排版 (${lang.toUpperCase()})`);
     } catch {
-      toast.error('当前 JSON 存在语法错误，无法自动格式化');
+      toast.error(`当前 ${lang.toUpperCase()} 存在语法错误，无法自动格式化`);
     }
   };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(source);
-      toast.success('完整模板源码已复制至剪贴板');
+      toast.success(`完整模板 ${lang.toUpperCase()} 源码已复制至剪贴板`);
     } catch {
       toast.error('复制失败');
     }
   };
 
   const handleReset = () => {
-    setSource(JSON.stringify(template, null, 2));
+    if (lang === 'json') {
+      setSource(JSON.stringify(template, null, 2));
+    } else {
+      setSource(YAML.stringify(template, { indent: 2 }));
+    }
     setInternalError('');
     toast.info('已还原为当前表单草稿状态');
   };
@@ -130,12 +168,20 @@ export function TemplateSourceEditor({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
       {/* 统一沉浸式顶栏 */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card/60 p-2.5 shadow-sm">
-        {/* 左侧标识 */}
-        <div className="flex items-center gap-1.5 rounded-md bg-muted p-1">
-          <span className="flex items-center gap-1.5 rounded-sm bg-background px-2.5 sm:px-3 py-1 text-xs font-medium text-foreground shadow-sm">
-            <FileCode className="h-3.5 w-3.5 text-primary" />
-            模板 JSON 源码
-          </span>
+        {/* 左侧语言切换 Tabs */}
+        <div className="flex items-center gap-2">
+          <Tabs value={lang} onValueChange={(v) => handleToggleLang(v as 'json' | 'yaml')}>
+            <TabsList className="h-8">
+              <TabsTrigger value="json" className="h-7 gap-1.5 px-3 text-xs">
+                <FileCode className="h-3.5 w-3.5 text-primary" />
+                JSON 源码
+              </TabsTrigger>
+              <TabsTrigger value="yaml" className="h-7 gap-1.5 px-3 text-xs">
+                <FileCode className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
+                YAML 源码
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* 中间状态徽标与右侧操作 */}
@@ -160,7 +206,7 @@ export function TemplateSourceEditor({
             className="h-7 gap-1 px-2 text-xs"
             onClick={handleFormat}
             disabled={!status.valid}
-            title="美化排版 JSON"
+            title={`美化排版 ${lang.toUpperCase()}`}
           >
             <Wand2 className="h-3.5 w-3.5 text-primary" />
             美化
@@ -200,7 +246,7 @@ export function TemplateSourceEditor({
               size="sm"
               className="h-7 gap-1.5 text-xs text-primary hover:text-primary"
               onClick={onTestRender}
-              title="使用当前源文件拉起客户端配置渲染与 Sing-box 内核校验"
+              title="使用当前源文件拉起客户端配置渲染与双内核校验"
             >
               <Eye className="h-3.5 w-3.5" />
               快速渲染与校验
@@ -211,8 +257,8 @@ export function TemplateSourceEditor({
 
       {/* 说明文案条 */}
       <div className="text-[11px] text-muted-foreground">
-        此处为订阅模板的完整单一源文档（包含策略组、分流规则、DNS 与注入配置）。合法的修改将
-        <strong>即时双向同步</strong> 至前序各分步 Tab；语法错误时将自动隔离保护，防止脏数据污染。
+        此处为订阅模板的单一源文档（支持 JSON / YAML 无损切换）。合法的修改将
+        <strong>即时双向同步</strong> 至策略组、分流规则、DNS 与覆写 Tab；语法错误时自动启用隔离保护，防止脏数据污染。
       </div>
 
       {/* 全高全宽 CodeMirror 编辑器 */}
@@ -223,10 +269,11 @@ export function TemplateSourceEditor({
         )}
       >
         <TemplateCodeEditor
+          key={lang}
           value={source}
           height="100%"
           className="h-full"
-          extensions={[json()]}
+          extensions={lang === 'json' ? [json()] : [yaml()]}
           basicSetup={{ lineNumbers: true, foldGutter: true }}
           onChange={handleSourceChange}
         />
@@ -238,7 +285,7 @@ export function TemplateSourceEditor({
           <div className="flex items-center justify-between gap-2 pb-1.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
-              <span>JSON 语法诊断错误</span>
+              <span>{lang.toUpperCase()} 语法诊断错误</span>
             </div>
             <span className="text-[10px] text-muted-foreground">
               已启用安全隔离保护 · 不会同步脏数据

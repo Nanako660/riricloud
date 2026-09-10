@@ -158,7 +158,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
     DATABASE_URL=file:/app/data/riri.db \
-    SINGBOX_BINARY_PATH=/usr/local/bin/sing-box
+    SINGBOX_BINARY_PATH=/usr/local/bin/sing-box \
+    MIHOMO_BINARY_PATH=/usr/local/bin/mihomo
 
 ARG RIRICLOUD_VERSION=dev
 ARG RIRICLOUD_VCS_REF=unknown
