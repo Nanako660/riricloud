@@ -22,7 +22,6 @@
 | [实时节点镜像站与 Agent 流式代理](./node-mirror-site-proxy.md) | `v0.7.2+` | 2026-09-09 | 93/123 (76%) |
 | [公开线路与中继落地凭据安全整改 TODO（2026-09-08）](./security-audit-public-relay-credentials.md) | `v0.7.2+` | 2026-09-08 | 0/58 (0%) |
 | [流量账务与 SQLite 写入链路优化](./traffic-accounting-sqlite-optimization.md) | `0.5.0` | 2026-09-03 | 19/20 (95%) |
-| [web-form-init-clobber](./web-form-init-clobber.md) | `v0.4.0` | 2026-09-10 | 0/8 (0%) |
 
 ---
 
@@ -30,6 +29,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [web-form-init-clobber](./archive/2026-09-10-web-form-init-clobber.md) | `v0.8.2` | 2026-09-10 | — |
 | [用户登录注册系统全量安全审计整改 TODO（2026-09-07）](./archive/2026-09-07-auth-registration-security-audit.md) | `v0.6.13+` | 2026-09-07 | — |
 | [arch-decouple-master-agent](./archive/2026-09-07-arch-decouple-master-agent.md) | `v0.6.15` | 2026-09-07 | — |
 | [全栈可视化日志管理系统 (System Log Management)](./archive/2026-09-06-system-log-management.md) | `v0.6.11` | 2026-09-06 | — |

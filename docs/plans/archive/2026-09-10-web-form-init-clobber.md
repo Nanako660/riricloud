@@ -1,12 +1,12 @@
 ---
 title: "web-form-init-clobber"
 type: plan
-status: active
-target_version: "v0.8.2"
+status: completed
+target_version: v0.8.2
 created_at: "2026-09-10"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-10"
 ---
-
 # web-form-init-clobber
 
 ## 🎯 目标与背景
@@ -49,9 +49,16 @@ author: "Antigravity & Maintainers"
 - [x] 镜像站/节点详情：输入后静置 ≥30 秒不丢，遥测与节点下拉仍实时刷新（代码层：初始化仅由 `open` + 实体 id 触发）
 - [x] 系统设置/证书编辑：后台 refetch 不清空草稿；保存成功后仍正确回灌服务端值
 - [x] ESLint 守卫在旧形态下报错（探针命中 2 条规则）、修复后全绿
-- [x] `pnpm gate:version` / `gate:docs` / `gate:web`（eslint + tsc --noEmit + vite build）全绿
-- [x] 手工冒烟：受影响索引 UI-09/UI-10、UI-11~13、UI-14、UI-16~19、UI-22~24、UI-26、UI-29、UI-31、UI-34 的弹窗打开/编辑/保存路径未回归
-- [ ] 视觉走查按需（仅 Antigravity 环境，不接入 CI）——未执行，按 §11 由维护者按需发起
+- [x] `pnpm gate` 五门禁（version / docs / server / web / agent）一次全跑通过
+- [x] 静态回归证据：全仓 `useEffect` 内 `.reset(` 站点数 = 0；新增 ESLint 守卫在旧形态探针上报错（探针随后删除）；`tsc --noEmit` + `vite build` 通过
+
+**未执行的手工验证（如实记录）**：本次**未**做浏览器交互冒烟（打开弹窗输入后静置 ≥30 秒的实测），也**未**做视觉走查。按 `docs/VISUAL_VERIFICATION.md` §1 与 `AGENTS.md` §11，视觉验证按需触发且仅限 Antigravity 环境、不接入 CI；交互冒烟建议由维护者按下列清单执行一次：
+
+1. `/admin/mirrors` 新增/编辑：输入名称、slug、上游基址、域名后静置 ≥30 秒内容不丢，出网节点/访问策略/启用开关不被回写；
+2. `/admin/nodes/:id`「基础与遥测」「高级与运维」：名称、对外地址、覆盖配置输入后静置 ≥30 秒不丢，遥测与内核错误仍每 5 秒刷新；
+3. `/admin/settings`：输入后触发一次后台 refetch（保存别处或切换页面再回来）不清空；保存成功后值正确回灌；
+4. `/admin/certificates` 编辑：粘贴 PEM/私钥后静置不清空；
+5. 受影响索引弹窗（UI-11~13、UI-16~19、UI-22~24、UI-29、UI-31、UI-34）打开/编辑/保存路径无回归。
 
 ### 范围内未做（留待独立任务）
 
