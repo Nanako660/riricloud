@@ -14,6 +14,7 @@ export function AuthGuard() {
   useEffect(() => {
     if (sessionQuery.data) setUser(sessionQuery.data);
     if (sessionQuery.isError) logout();
+    // eslint-disable-next-line no-restricted-syntax -- 会话状态整体同步进内存 store，必须在会话数据变化时重跑；不承载用户草稿
   }, [logout, sessionQuery.data, sessionQuery.isError, setUser]);
 
   if (sessionQuery.isPending) return <div className="min-h-screen bg-muted/40" />;
