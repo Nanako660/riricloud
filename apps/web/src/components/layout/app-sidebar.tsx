@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useCurrentUser } from '@/lib/current-user';
-import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
+import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Network, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import { SupportDialog } from '@/components/shared/support-dialog';
@@ -33,6 +33,7 @@ export function AppSidebar() {
       label: '控制台',
       items: [
         { to: '/subscription', label: '我的订阅', icon: WalletCards, end: false },
+        { to: '/proxy-pool', label: '直连代理', icon: Network, end: false },
         { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false },
         { to: '/profile', label: '个人中心', icon: Wallet, end: false }
       ]

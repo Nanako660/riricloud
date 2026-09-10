@@ -351,7 +351,7 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
     };
   }
 
-  if (['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE'].includes(values.protocolType)) {
+  if (['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE', 'MIXED', 'SOCKS', 'HTTP'].includes(values.protocolType)) {
     const tls: Record<string, unknown> = {
       enabled: values.tlsMode !== 'none',
       mode: values.tlsMode,
