@@ -450,8 +450,9 @@ export function ProxyExportSection({
       {/* 终端风格一体化结果工作台 */}
       <div className="overflow-hidden rounded-xl border border-border/80 bg-zinc-950 text-zinc-100 shadow-md">
         {/* macOS 终端控制条 */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 bg-zinc-900/90 px-4 py-2.5">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/90 px-3 sm:px-4 py-2">
+          {/* 左侧：经典三色圆点 + 模式切换 Tab */}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {/* 经典三色红黄绿圆点 */}
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="size-2.5 rounded-full bg-rose-500/80" />
@@ -460,39 +461,108 @@ export function ProxyExportSection({
             </div>
 
             {/* 终端子功能切换 Tab */}
-            <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+            <div className="flex items-center gap-0.5 rounded-md bg-zinc-800/80 p-0.5 text-xs">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
                   viewMode === 'export' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
                 )}
                 onClick={() => setViewMode('export')}
               >
-                <ClipboardList className="size-3 mr-1.5" />
-                提取结果 ({FORMAT_LABELS[format]})
+                <ClipboardList className="size-3 mr-1" />
+                <span>提取结果</span>
+                <span className="hidden sm:inline text-zinc-300 ml-0.5">
+                  ({format === 'text' ? 'TXT' : format === 'uri' ? 'URI' : 'JSON'})
+                </span>
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
                   viewMode === 'code' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
                 )}
                 onClick={() => setViewMode('code')}
               >
-                <Terminal className="size-3 mr-1.5" />
-                自动化代码
+                <Terminal className="size-3 mr-1" />
+                <span>自动化代码</span>
               </Button>
             </div>
+          </div>
 
-            {/* 代码模式且有效节点 > 1 时展示节点视图切换器 */}
-            {viewMode === 'code' && effectiveEndpoints.length > 1 && (
-              <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-800">
-                <span className="text-[11px] text-zinc-500 hidden md:inline">节点视图:</span>
+          {/* 右侧操作按钮组 */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {viewMode === 'export' ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 sm:h-7 gap-1 px-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                  onClick={downloadTxt}
+                  disabled={!exportQuery.data}
+                >
+                  <Download className="size-3.5" />
+                  <span className="hidden sm:inline">下载 .txt</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-6 sm:h-7 gap-1 px-2 sm:px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                  onClick={copyExportContent}
+                  disabled={!exportQuery.data}
+                >
+                  {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                  <span>{copied ? '已复制' : '复制结果'}</span>
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-6 sm:h-7 gap-1 px-2 sm:px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                onClick={copyExportContent}
+                disabled={!currentSnippet}
+              >
+                {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                <span>{copied ? '已复制' : '复制代码'}</span>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* 自动化代码模式下的二级控制条 (语言切换 + 出网节点视图选择) */}
+        {viewMode === 'code' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 sm:px-4 py-1.5 text-xs">
+            {/* 多语言切换药丸 */}
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+              {snippets.map((snippet) => (
+                <Button
+                  key={snippet.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 shrink-0',
+                    snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium shadow-xs'
+                  )}
+                  onClick={() => setSnippetTab(snippet.id)}
+                >
+                  {snippet.label.split(' ')[0]}
+                </Button>
+              ))}
+            </div>
+
+            {/* 出网节点切换器 (仅多于 1 个有效节点时展示) */}
+            {effectiveEndpoints.length > 1 && (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <span className="text-[11px] text-zinc-500 hidden sm:inline">出网节点:</span>
                 {effectiveEndpoints.length <= 2 ? (
                   <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
                     <Button
@@ -505,7 +575,7 @@ export function ProxyExportSection({
                       )}
                       onClick={() => setSelectedNodeView('all')}
                     >
-                      🎲 全部轮换 ({effectiveEndpoints.length})
+                      🎲 轮换 ({effectiveEndpoints.length})
                     </Button>
                     {effectiveEndpoints.map((ep) => (
                       <Button
@@ -527,7 +597,7 @@ export function ProxyExportSection({
                 ) : (
                   <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
                     <SelectTrigger
-                      className="h-6 min-w-[130px] max-w-[180px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                      className="h-6 min-w-[120px] max-w-[170px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
                       aria-label="选择代码出网节点视图"
                     >
                       <SelectValue />
@@ -547,69 +617,7 @@ export function ProxyExportSection({
               </div>
             )}
           </div>
-
-          {/* 右侧操作按钮组 */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {viewMode === 'export' ? (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-                  onClick={downloadTxt}
-                  disabled={!exportQuery.data}
-                >
-                  <Download className="size-3.5" />
-                  下载 .txt
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                  onClick={copyExportContent}
-                  disabled={!exportQuery.data}
-                >
-                  {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  {copied ? '已复制' : '复制结果'}
-                </Button>
-              </>
-            ) : (
-              <>
-                {/* 多语言代码切换 */}
-                <div className="flex items-center gap-1 pr-1">
-                  {snippets.map((snippet) => (
-                    <Button
-                      key={snippet.id}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200',
-                        snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium'
-                      )}
-                      onClick={() => setSnippetTab(snippet.id)}
-                    >
-                      {snippet.label.split(' ')[0]}
-                    </Button>
-                  ))}
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                  onClick={copyExportContent}
-                  disabled={!currentSnippet}
-                >
-                  {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  {copied ? '已复制' : '复制代码'}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* 终端内容视窗 */}
         {viewMode === 'code' && protocol === 'socks5' && selectedEndpoints.some((e) => e.tls) && (
