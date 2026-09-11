@@ -75,4 +75,20 @@ export class CreatePlanDto {
   @Min(0)
   @IsOptional()
   sortOrder?: number;
+
+  @ApiPropertyOptional({ example: '热卖推荐' })
+  @IsString()
+  @IsOptional()
+  badgeText?: string;
+
+  @ApiPropertyOptional({ default: false, description: '是否作为主推套餐高亮展示' })
+  @IsBoolean()
+  @IsOptional()
+  isFeatured?: boolean;
+
+  @ApiPropertyOptional({ type: [String], example: ['解锁 4K 流媒体', '晚高峰专线保障'] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  features?: string[];
 }

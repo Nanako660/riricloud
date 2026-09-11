@@ -15,6 +15,9 @@ export interface Plan {
   lineIds: string[];
   templateId: string | null;
   template?: { id: string; name: string; isDefault: boolean } | null;
+  badgeText?: string | null;
+  isFeatured?: boolean;
+  features?: string[];
   isPublic: boolean;
   sortOrder: number;
 }
@@ -30,6 +33,9 @@ export interface PlanPayload {
   lineTags: string[];
   lineIds: string[];
   templateId?: string | null;
+  badgeText?: string | null;
+  isFeatured?: boolean;
+  features?: string[];
   isPublic: boolean;
   sortOrder: number;
 }

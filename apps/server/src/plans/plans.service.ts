@@ -17,6 +17,9 @@ type PlanViewInput = {
   lineTagsJson: string;
   lineIdsJson: string;
   templateId: string | null;
+  badgeText?: string | null;
+  isFeatured?: boolean;
+  featuresJson?: string;
   isPublic: boolean;
   sortOrder: number;
   [key: string]: unknown;
@@ -128,6 +131,9 @@ export class PlansService {
       lineTagsJson: JSON.stringify(dto.lineTags ?? []),
       lineIdsJson: JSON.stringify(dto.lineIds ?? []),
       templateId: dto.templateId ?? null,
+      badgeText: dto.badgeText?.trim() || null,
+      isFeatured: dto.isFeatured ?? false,
+      featuresJson: JSON.stringify(dto.features ?? []),
       isPublic: dto.isPublic ?? true,
       sortOrder: dto.sortOrder ?? 0
     };
@@ -145,6 +151,9 @@ export class PlansService {
       ...(dto.lineTags !== undefined ? { lineTagsJson: JSON.stringify(dto.lineTags) } : {}),
       ...(dto.lineIds !== undefined ? { lineIdsJson: JSON.stringify(dto.lineIds) } : {}),
       ...(dto.templateId !== undefined ? { templateId: dto.templateId } : {}),
+      ...(dto.badgeText !== undefined ? { badgeText: dto.badgeText?.trim() || null } : {}),
+      ...(dto.isFeatured !== undefined ? { isFeatured: dto.isFeatured } : {}),
+      ...(dto.features !== undefined ? { featuresJson: JSON.stringify(dto.features) } : {}),
       ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
       ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {})
     };
@@ -157,8 +166,12 @@ export class PlansService {
       trafficLimitBytes: Number(plan.trafficLimitBytes),
       lineTags: parseStringArray(plan.lineTagsJson),
       lineIds: parseStringArray(plan.lineIdsJson),
+      features: typeof plan.featuresJson === 'string' ? parseStringArray(plan.featuresJson) : [],
+      badgeText: plan.badgeText ?? null,
+      isFeatured: Boolean(plan.isFeatured),
       lineTagsJson: undefined,
-      lineIdsJson: undefined
+      lineIdsJson: undefined,
+      featuresJson: undefined
     };
   }
 }

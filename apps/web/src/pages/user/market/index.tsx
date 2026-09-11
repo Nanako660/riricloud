@@ -50,44 +50,88 @@ export default function MarketPage() {
         {plans.data?.map((plan) => (
           (() => {
             const isCurrent = current?.subscription?.plan.id === plan.id;
-            const isLowerPriced = Boolean(active && current?.subscription?.plan.price !== undefined && plan.price < current.subscription.plan.price);
+            const isLowerPriced = Boolean(
+              active &&
+                current?.subscription?.plan.price !== undefined &&
+                plan.price < current.subscription.plan.price
+            );
+            const isFeatured = Boolean(plan.isFeatured);
+
+            let cardBorderClass = '';
+            if (isCurrent) {
+              cardBorderClass = 'border-primary ring-2 ring-primary/30 shadow-md';
+            } else if (isFeatured) {
+              cardBorderClass =
+                'border-primary/70 ring-1 ring-primary/30 shadow-md bg-gradient-to-b from-primary/[0.04] to-card';
+            }
+
             return (
-          <Card
-            key={plan.id}
-            className={isCurrent ? 'border-primary ring-1 ring-primary/20' : ''}
-          >
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <CardTitle className="text-lg">{plan.name}</CardTitle>
-                {isCurrent && <Badge>当前套餐</Badge>}
-              </div>
-              <p className="text-sm text-muted-foreground">{plan.description || '灵活的代理订阅方案'}</p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="text-3xl font-semibold">
-                {plan.price === 0 ? '免费' : formatCurrency(Math.round(plan.price * 100))}
-                <span className="ml-1 text-sm font-normal text-muted-foreground">/ {plan.durationDays} 天</span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span>{formatBytes(plan.trafficLimitBytes)} 流量配额</span>
+              <Card
+                key={plan.id}
+                className={`relative flex flex-col justify-between transition-all duration-200 ${cardBorderClass}`}
+              >
+                <div>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <CardTitle className="text-lg font-semibold">{plan.name}</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        {isCurrent && <Badge>当前套餐</Badge>}
+                        {plan.badgeText && (
+                          <Badge
+                            variant={isFeatured && !isCurrent ? 'default' : 'secondary'}
+                            className="text-xs font-semibold"
+                          >
+                            {plan.badgeText}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-2">
+                      {plan.description || '灵活的代理订阅方案'}
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="text-3xl font-bold tracking-tight text-foreground">
+                      {plan.price === 0 ? '免费' : formatCurrency(Math.round(plan.price * 100))}
+                      <span className="ml-1 text-sm font-normal text-muted-foreground">
+                        / {plan.durationDays} 天
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5 text-sm">
+                      {plan.features && plan.features.length > 0 ? (
+                        plan.features.map((feature, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <span className="text-foreground/90">{feature}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <span>{formatBytes(plan.trafficLimitBytes)} 流量配额</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <span>流量：{resetLabels[plan.trafficResetMode]}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <span>按套餐规则自动匹配授权节点</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                            <span>支持 Clash Meta / Sing-box 等多格式订阅</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span>流量：{resetLabels[plan.trafficResetMode]}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span>按套餐规则自动匹配授权节点</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span>支持 Clash Meta / Sing-box 等多格式订阅</span>
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter>
+                <CardFooter>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button

@@ -211,6 +211,9 @@ model Plan {
   lineTagsJson      String   @default("[]")
   lineIdsJson       String   @default("[]")
   templateId        String?
+  badgeText         String?
+  isFeatured        Boolean  @default(false)
+  featuresJson      String   @default("[]")
   isPublic          Boolean  @default(true)
   sortOrder         Int      @default(0)
   createdAt         DateTime @default(now())

@@ -76,4 +76,20 @@ export class UpdatePlanDto {
   @Min(0)
   @IsOptional()
   sortOrder?: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsString()
+  @IsOptional()
+  badgeText?: string | null;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  isFeatured?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  features?: string[];
 }

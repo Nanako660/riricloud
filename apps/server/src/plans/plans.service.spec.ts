@@ -58,4 +58,36 @@ describe('PlansService', () => {
     await service.create({ name: '付费', price: 12.34, durationDays: 30, trafficLimitBytes: 1024 });
     expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ price: 1234 }) }));
   });
+
+  it('创建套餐时支持保存并序列化 badgeText, isFeatured 与 features', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'p3', name: '尊享套餐', description: '旗舰', price: 9900, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0,
+      badgeText: 'HOT', isFeatured: true, featuresJson: '["专线接入","流媒体解锁"]'
+    });
+    const result = await service.create({
+      name: '尊享套餐',
+      description: '旗舰',
+      price: 99,
+      durationDays: 30,
+      trafficLimitBytes: 1024,
+      badgeText: 'HOT',
+      isFeatured: true,
+      features: ['专线接入', '流媒体解锁']
+    });
+    expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        badgeText: 'HOT',
+        isFeatured: true,
+        featuresJson: '["专线接入","流媒体解锁"]'
+      })
+    }));
+    expect(result).toMatchObject({
+      badgeText: 'HOT',
+      isFeatured: true,
+      features: ['专线接入', '流媒体解锁']
+    });
+  });
 });
