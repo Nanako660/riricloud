@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.6] - 2026-09-12
+
+### Added
 - **「我的订阅」卡片特效同步全局与套餐双层开关控制**：新增全局系统设置 `subscriptionEffectsSyncEnabled`（系统设置 -> 订阅与客户端分发 Tab），允许管理员一键决定全站用户「我的订阅」主卡片是否同步当前套餐的流体极光与晶体漫射微边框特效；同时在套餐管理视觉配置（`PlanCardConfig`）中增设套餐级细粒度开关 `syncToSubscription`（默认开启），支持针对主推旗舰款开启特效同步、基础款保持低调；用户端在开关关闭时平滑无缝降级为经典极简原生卡片，彻底满足不同管理员与用户对界面沉浸感与极简实用性的个性化偏好。
 - **套餐卡片全维度视觉定制与炫酷动效系统**：在 `Plan` 数据模型中新增 `cardConfigJson` 字段（对应 `PlanCardConfig`），全面支持 7 款质感主题色（极简暗黑、尊享金、极速蓝、星云紫、碧翠绿、炽热红、星空靛）、12 款专属 Lucide 矢量图标（Zap、Rocket、Crown、Shield、Sparkles、Flame、Globe、Gauge、Gem、Server、Cpu、Plane 等，彻底杜绝 emoji）、纯 CSS GPU 加速环绕流光边框（Border Beam，支持主题单色与炫彩霓虹 Rainbow 双模）、鼠标光斑追踪（Spotlight）、呼吸弥散光晕（Ambient Pulse）、行动按钮金属微光扫光（Shimmer）、划线原价对比与折扣优惠徽章（立省百分比/折扣文本）、自定义行动按钮文案以及微标记特性清单语法解析（`[zap]`, `[rocket]`, `[crown]`, `[shield]`, `[sparkles]`, `[star]`, `!加粗`）。
 - **管理端套餐编辑「所见即所得」实机即时预览 (Live Preview)**：在套餐管理创建/编辑弹窗（`PlanFormDialog`）中增设视觉与营销配置独立分区，并于右侧（桌面端）内置所见即所得卡片即时预览区，管理员切换主题色标、图标、动效模式、原价、文案与开关时，实机卡片与动效即时动态联动刷新，并附带微标记语法指南小贴士。
