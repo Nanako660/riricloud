@@ -448,7 +448,7 @@ export function ProxyExportSection({
       </Card>
 
       {/* 终端风格一体化结果工作台 */}
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-zinc-950 text-zinc-100 shadow-md">
+      <div className="dark overflow-hidden rounded-xl border border-border/80 bg-zinc-950 text-zinc-100 shadow-md">
         {/* macOS 终端控制条 */}
         <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/90 px-3 sm:px-4 py-2">
           {/* 左侧：经典三色圆点 + 模式切换 Tab */}
@@ -467,8 +467,8 @@ export function ProxyExportSection({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
-                  viewMode === 'export' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors',
+                  viewMode === 'export' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs hover:bg-zinc-700 hover:text-zinc-100'
                 )}
                 onClick={() => setViewMode('export')}
               >
@@ -483,8 +483,8 @@ export function ProxyExportSection({
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
-                  viewMode === 'code' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors',
+                  viewMode === 'code' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs hover:bg-zinc-700 hover:text-zinc-100'
                 )}
                 onClick={() => setViewMode('code')}
               >
@@ -585,8 +585,8 @@ export function ProxyExportSection({
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 shrink-0',
-                      snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium shadow-xs'
+                      'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                      snippetTab === snippet.id && 'bg-zinc-700 text-zinc-100 font-medium shadow-xs hover:bg-zinc-700 hover:text-zinc-100'
                     )}
                     onClick={() => setSnippetTab(snippet.id)}
                   >
@@ -621,8 +621,8 @@ export function ProxyExportSection({
                         variant="ghost"
                         size="sm"
                         className={cn(
-                          'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
-                          selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium'
+                          'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors',
+                          selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
                         )}
                         onClick={() => setSelectedNodeView('all')}
                       >
@@ -635,8 +635,8 @@ export function ProxyExportSection({
                           variant="ghost"
                           size="sm"
                           className={cn(
-                            'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
-                            selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
+                            'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors',
+                            selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
                           )}
                           onClick={() => setSelectedNodeView(ep.lineId)}
                           title={`${ep.name} (${ep.host}:${ep.port})`}
@@ -680,8 +680,8 @@ export function ProxyExportSection({
                       variant="ghost"
                       size="sm"
                       className={cn(
-                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 shrink-0',
-                        selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium'
+                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                        selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
                       )}
                       onClick={() => setSelectedNodeView('all')}
                     >
@@ -694,8 +694,8 @@ export function ProxyExportSection({
                         variant="ghost"
                         size="sm"
                         className={cn(
-                          'h-6 max-w-[110px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 shrink-0',
-                          selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
+                          'h-6 max-w-[110px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                          selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
                         )}
                         onClick={() => setSelectedNodeView(ep.lineId)}
                         title={`${ep.name} (${ep.host}:${ep.port})`}
