@@ -17,6 +17,7 @@
 ### Changed
 
 ### Fixed
+- **套餐卡片视觉配置 DTO 补齐 syncToSubscription 字段校验**：在 `PlanCardConfigDto` 中补齐 `@IsBoolean() @IsOptional() syncToSubscription` 属性定义，修复管理员编辑或保存套餐时因 NestJS `ValidationPipe` 严格白名单校验抛出 `400 (cardConfig.property syncToSubscription should not exist)` 导致无法保存的缺陷。
 
 
 ## [0.8.6] - 2026-09-12

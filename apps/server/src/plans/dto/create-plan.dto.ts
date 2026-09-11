@@ -53,6 +53,11 @@ export class PlanCardConfigDto {
   @IsBoolean()
   @IsOptional()
   shimmerButton?: boolean;
+
+  @ApiPropertyOptional({ description: '是否同步特效至「我的订阅」卡片' })
+  @IsBoolean()
+  @IsOptional()
+  syncToSubscription?: boolean;
 }
 
 export class CreatePlanDto {
