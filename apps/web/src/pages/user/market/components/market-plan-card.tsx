@@ -164,7 +164,8 @@ export function MarketPlanCard({
       <Card
         className={cn(
           'relative flex flex-col justify-between h-full w-full overflow-hidden transition-all duration-300',
-          'bg-card/95 dark:bg-card/75 backdrop-blur-xl',
+          'backdrop-blur-xl',
+          theme.cardBgClass,
           theme.cardShadowClass,
           hasSheen
             ? 'rounded-[calc(1rem-1.5px)] border border-border/80 dark:border-white/10'
