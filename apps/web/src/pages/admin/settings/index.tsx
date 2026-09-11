@@ -86,6 +86,7 @@ interface SystemSettings {
   passwordMinLength: number;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
+  subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
@@ -137,6 +138,7 @@ const settingsSchema = z.object({
   passwordMinLength: z.coerce.number().int().min(8).max(64),
   subscriptionBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的订阅基准 URL'),
   subscriptionShortLinksEnabled: z.boolean(),
+  subscriptionEffectsSyncEnabled: z.boolean(),
   subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
   defaultTemplateId: z.string(),
   publicLinesEnabled: z.boolean(),
@@ -188,7 +190,7 @@ export default function AdminSettingsPage() {
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       systemTimezone: 'Asia/Shanghai',
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
-      emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionUpdateIntervalHours: 24,
+      emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
@@ -304,6 +306,7 @@ export default function AdminSettingsPage() {
             <TabsContent value="subscription"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
                <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL（覆盖项，可选）" placeholder="https://sub.example.com" description="客户端获取订阅的独立基准域名或反代路径。留空时自动继承「全站访问 URL」，若全站 URL 亦留空则使用当前访问地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
               <SettingsSwitch name="subscriptionShortLinksEnabled" label="使用 Nginx 伪静态短链接" description="开启后展示 https://domain.com/<UUID>；请先在 Nginx 中配置对应 rewrite 规则。" />
+              <SettingsSwitch name="subscriptionEffectsSyncEnabled" label="启用「我的订阅」卡片特效同步" description="开启后，用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框；关闭后使用经典极简原生卡片。" />
               <SettingsInput name="subscriptionUpdateIntervalHours" label="客户端更新周期（小时）" type="number" min={1} max={168} />
               <div className="rounded-lg border bg-muted/20 p-4 space-y-2 md:col-span-2 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
@@ -507,6 +510,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     passwordMinLength: settings.passwordMinLength,
     subscriptionBaseUrl: settings.subscriptionBaseUrl,
     subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
+    subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled ?? true,
     subscriptionUpdateIntervalHours: settings.subscriptionUpdateIntervalHours,
     defaultTemplateId: settings.defaultTemplateId ?? 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
@@ -560,6 +564,7 @@ function toPayload(values: SettingsForm) {
     passwordMinLength: values.passwordMinLength,
     subscriptionBaseUrl: values.subscriptionBaseUrl,
     subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
+    subscriptionEffectsSyncEnabled: values.subscriptionEffectsSyncEnabled,
     subscriptionUpdateIntervalHours: values.subscriptionUpdateIntervalHours,
     defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,

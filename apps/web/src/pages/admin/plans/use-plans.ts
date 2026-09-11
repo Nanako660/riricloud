@@ -17,6 +17,7 @@ export interface PlanCardConfig {
   animationEffect?: PlanAnimationEffect;
   beamColor?: PlanBeamColor;
   shimmerButton?: boolean;
+  syncToSubscription?: boolean;
 }
 
 export interface Plan {

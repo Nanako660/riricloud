@@ -76,7 +76,8 @@ const schema = z.object({
   badgeVariant: z.enum(['default', 'outline', 'secondary', 'glow', 'gradient']),
   animationEffect: z.enum(['none', 'beam', 'pulse', 'beam_pulse']),
   beamColor: z.enum(['theme', 'rainbow']),
-  shimmerButton: z.boolean()
+  shimmerButton: z.boolean(),
+  syncToSubscription: z.boolean()
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -124,7 +125,8 @@ export function PlanFormDialog({
       badgeVariant: 'gradient',
       animationEffect: 'none',
       beamColor: 'theme',
-      shimmerButton: true
+      shimmerButton: true,
+      syncToSubscription: true
     }
   });
 
@@ -187,7 +189,8 @@ export function PlanFormDialog({
               badgeVariant: plan.cardConfig?.badgeVariant ?? 'gradient',
               animationEffect: plan.cardConfig?.animationEffect ?? 'none',
               beamColor: plan.cardConfig?.beamColor ?? 'theme',
-              shimmerButton: plan.cardConfig?.shimmerButton ?? true
+              shimmerButton: plan.cardConfig?.shimmerButton ?? true,
+              syncToSubscription: plan.cardConfig?.syncToSubscription ?? true
             }
           : undefined
       )
@@ -226,7 +229,8 @@ export function PlanFormDialog({
         badgeVariant: values.badgeVariant,
         animationEffect: values.animationEffect,
         beamColor: values.beamColor,
-        shimmerButton: values.shimmerButton
+        shimmerButton: values.shimmerButton,
+        syncToSubscription: values.syncToSubscription
       }
     };
 
@@ -264,7 +268,8 @@ export function PlanFormDialog({
       badgeVariant: watchedValues.badgeVariant as PlanBadgeVariant,
       animationEffect: watchedValues.animationEffect as PlanAnimationEffect,
       beamColor: watchedValues.beamColor as PlanBeamColor,
-      shimmerButton: watchedValues.shimmerButton
+      shimmerButton: watchedValues.shimmerButton,
+      syncToSubscription: watchedValues.syncToSubscription
     }
   };
 
@@ -501,7 +506,7 @@ export function PlanFormDialog({
               </div>
 
               {/* 角标风格与开关 */}
-              <div className="grid gap-3 sm:grid-cols-2 pt-2">
+              <div className="grid gap-3 sm:grid-cols-3 pt-2">
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">角标视觉样式</Label>
                   <Controller
@@ -524,14 +529,27 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 self-end h-9">
-                  <Label htmlFor="plan-shimmer" className="text-xs font-medium cursor-pointer">
-                    按钮金属微光扫光 (Shimmer)
+                  <Label htmlFor="plan-shimmer" className="text-xs font-medium cursor-pointer truncate mr-1">
+                    按钮微光扫光 (Shimmer)
                   </Label>
                   <Controller
                     control={form.control}
                     name="shimmerButton"
                     render={({ field }) => (
                       <Switch id="plan-shimmer" checked={field.value} onCheckedChange={field.onChange} />
+                    )}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 self-end h-9">
+                  <Label htmlFor="plan-sync-sub" className="text-xs font-medium cursor-pointer truncate mr-1">
+                    同步特效至「我的订阅」
+                  </Label>
+                  <Controller
+                    control={form.control}
+                    name="syncToSubscription"
+                    render={({ field }) => (
+                      <Switch id="plan-sync-sub" checked={field.value} onCheckedChange={field.onChange} />
                     )}
                   />
                 </div>

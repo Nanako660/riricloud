@@ -307,6 +307,9 @@ function ActiveSubscriptionContent({
   const themeColor: PlanThemeColor = cardConfig?.themeColor || (sub.plan.isFeatured ? 'amber' : 'purple');
   const theme = THEME_COLOR_CONFIGS[themeColor] || THEME_COLOR_CONFIGS.purple;
   const isRainbow = cardConfig?.beamColor === 'rainbow';
+  const isEffectsEnabled =
+    (publicSettings.data?.subscriptionEffectsSyncEnabled ?? true) &&
+    (cardConfig?.syncToSubscription ?? true);
 
   let daysText = '永久有效';
   let expireFormatted = '永久有效';
@@ -320,58 +323,67 @@ function ActiveSubscriptionContent({
 
   return (
     <>
-      {/* 订阅卡片（北欧流体极光与晶体漫射特效） */}
+      {/* 订阅卡片（支持根据设置动态开启/关闭特效同步） */}
       <div
-        className="group relative flex flex-col justify-between transition-all duration-300 rounded-2xl p-[1.5px] overflow-hidden"
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
+        className={cn(
+          'group relative flex flex-col justify-between transition-all duration-300',
+          isEffectsEnabled && 'rounded-2xl p-[1.5px] overflow-hidden'
+        )}
+        onMouseMove={isEffectsEnabled ? handleMouseMove : undefined}
+        onMouseLeave={isEffectsEnabled ? handleMouseLeave : undefined}
       >
         {/* 晶体边缘漫射折射微光 (Crystal Sheen) */}
-        <div
-          className="absolute -inset-[140%] animate-crystal-sheen pointer-events-none opacity-85 blur-[0.8px]"
-          style={{
-            background: isRainbow
-              ? 'conic-gradient(from 0deg, transparent 0 220deg, rgba(99,102,241,0.25) 260deg, rgba(168,85,247,0.6) 295deg, rgba(6,182,212,0.7) 330deg, rgba(16,185,129,0.4) 355deg, transparent 360deg)'
-              : `conic-gradient(from 0deg, transparent 0 250deg, ${theme.beamColor}25 290deg, ${theme.beamColor}75 335deg, transparent 360deg)`
-          }}
-        />
+        {isEffectsEnabled && (
+          <div
+            className="absolute -inset-[140%] animate-crystal-sheen pointer-events-none opacity-85 blur-[0.8px]"
+            style={{
+              background: isRainbow
+                ? 'conic-gradient(from 0deg, transparent 0 220deg, rgba(99,102,241,0.25) 260deg, rgba(168,85,247,0.6) 295deg, rgba(6,182,212,0.7) 330deg, rgba(16,185,129,0.4) 355deg, transparent 360deg)'
+                : `conic-gradient(from 0deg, transparent 0 250deg, ${theme.beamColor}25 290deg, ${theme.beamColor}75 335deg, transparent 360deg)`
+            }}
+          />
+        )}
 
         <Card
           className={cn(
             'relative flex flex-col overflow-hidden transition-all duration-300',
-            'backdrop-blur-xl',
-            theme.cardBgClass,
-            theme.cardShadowClass,
-            'rounded-[calc(1rem-1.5px)] border',
-            theme.borderClass
+            isEffectsEnabled
+              ? cn('backdrop-blur-xl rounded-[calc(1rem-1.5px)] border', theme.cardBgClass, theme.cardShadowClass, theme.borderClass)
+              : ''
           )}
         >
           {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-80 dark:opacity-100 transition-opacity duration-300">
-            <div
-              className={cn(
-                'absolute -top-24 -left-24 h-96 w-96 rounded-full bg-gradient-to-br blur-3xl animate-aurora-1',
-                isRainbow ? 'from-indigo-400/50 via-purple-500/40 to-transparent' : theme.auroraOrb1
-              )}
-            />
-            <div
-              className={cn(
-                'absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-gradient-to-tl blur-3xl animate-aurora-2',
-                isRainbow ? 'from-cyan-400/45 via-emerald-500/35 to-transparent' : theme.auroraOrb2
-              )}
-            />
-          </div>
+          {isEffectsEnabled && (
+            <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-80 dark:opacity-100 transition-opacity duration-300">
+              <div
+                className={cn(
+                  'absolute -top-24 -left-24 h-96 w-96 rounded-full bg-gradient-to-br blur-3xl animate-aurora-1',
+                  isRainbow ? 'from-indigo-400/50 via-purple-500/40 to-transparent' : theme.auroraOrb1
+                )}
+              />
+              <div
+                className={cn(
+                  'absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-gradient-to-tl blur-3xl animate-aurora-2',
+                  isRainbow ? 'from-cyan-400/45 via-emerald-500/35 to-transparent' : theme.auroraOrb2
+                )}
+              />
+            </div>
+          )}
 
           {/* 顶部 1px 倒角微光折射微线 (Chamfered Edge Light) */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent z-20" />
+          {isEffectsEnabled && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent z-20" />
+          )}
 
           {/* 鼠标悬停光斑追踪 (Spotlight) */}
-          <div
-            className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10"
-            style={{
-              background: `radial-gradient(420px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
-            }}
-          />
+          {isEffectsEnabled && (
+            <div
+              className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10"
+              style={{
+                background: `radial-gradient(420px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
+              }}
+            />
+          )}
 
           <div className="relative z-10 flex flex-col flex-1">
             <CardHeader className="flex flex-col items-start justify-between gap-4 pb-4 sm:flex-row sm:items-center">
