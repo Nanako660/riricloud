@@ -19,6 +19,7 @@ export interface PublicSystemSettings {
   systemTimezone: string;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
+  subscriptionEffectsSyncEnabled?: boolean;
   customCss: string;
   customHeadHtml: string;
   emailVerificationEnabled: boolean;

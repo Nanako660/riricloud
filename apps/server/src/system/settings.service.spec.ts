@@ -34,6 +34,7 @@ describe('SettingsService', () => {
       { key: SETTING_KEYS.SITE_NAME, value: ' 我的面板 ' },
       { key: SETTING_KEYS.REGISTRATION_ENABLED, value: 'true' },
       { key: SETTING_KEYS.SUBSCRIPTION_SHORT_LINKS_ENABLED, value: '1' },
+      { key: SETTING_KEYS.SUBSCRIPTION_EFFECTS_SYNC_ENABLED, value: 'false' },
       { key: SETTING_KEYS.DEFAULT_BALANCE, value: '2500' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_MODE, value: 'whitelist' },
       { key: SETTING_KEYS.EMAIL_DOMAIN_LIST, value: JSON.stringify(['@Example.COM', 'company.org']) },
@@ -45,6 +46,7 @@ describe('SettingsService', () => {
     expect(settings.siteName).toBe('我的面板');
     expect(settings.registrationEnabled).toBe(true);
     expect(settings.subscriptionShortLinksEnabled).toBe(true);
+    expect(settings.subscriptionEffectsSyncEnabled).toBe(false);
     expect(settings.defaultBalance).toBe(2500);
     expect(settings.emailDomainList).toEqual(['example.com', 'company.org']);
     expect(settings.probePresetTargets).toEqual([{ type: 'tcp', target: 'example.com', port: 443 }]);

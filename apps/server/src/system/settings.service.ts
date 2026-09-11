@@ -34,6 +34,7 @@ export const SETTING_KEYS = {
   PASSWORD_MIN_LENGTH: 'passwordMinLength',
   SUBSCRIPTION_BASE_URL: 'subscriptionBaseUrl',
   SUBSCRIPTION_SHORT_LINKS_ENABLED: 'subscriptionShortLinksEnabled',
+  SUBSCRIPTION_EFFECTS_SYNC_ENABLED: 'subscriptionEffectsSyncEnabled',
   SUBSCRIPTION_UPDATE_INTERVAL_HOURS: 'subscriptionUpdateIntervalHours',
   DEFAULT_TEMPLATE_ID: 'defaultTemplateId',
   PUBLIC_LINES_ENABLED: 'publicLinesEnabled',
@@ -87,6 +88,7 @@ export interface SystemSettings {
   passwordMinLength: number;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
+  subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
@@ -142,6 +144,7 @@ export type PublicSystemSettings = Pick<
   | 'passwordMinLength'
   | 'subscriptionBaseUrl'
   | 'subscriptionShortLinksEnabled'
+  | 'subscriptionEffectsSyncEnabled'
   | 'customCss'
   | 'customHeadHtml'
   | 'emailVerificationEnabled'
@@ -170,6 +173,7 @@ export const DEFAULTS: SystemSettings = {
   passwordMinLength: 8,
   subscriptionBaseUrl: '',
   subscriptionShortLinksEnabled: false,
+  subscriptionEffectsSyncEnabled: true,
   subscriptionUpdateIntervalHours: 24,
   defaultTemplateId: null,
   publicLinesEnabled: true,
@@ -226,6 +230,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   passwordMinLength: '密码最小长度',
   subscriptionBaseUrl: '对外订阅基准地址',
   subscriptionShortLinksEnabled: '是否使用 Nginx 伪静态短订阅链接',
+  subscriptionEffectsSyncEnabled: '是否开启「我的订阅」卡片套餐特效同步',
   subscriptionUpdateIntervalHours: '客户端订阅更新周期（小时）',
   defaultTemplateId: '全局默认订阅模板',
   publicLinesEnabled: '是否公开线路列表',
@@ -308,6 +313,7 @@ export class SettingsService {
       passwordMinLength: this.readInteger(map, 'passwordMinLength', 8, 64),
       subscriptionBaseUrl: this.readString(map, 'subscriptionBaseUrl'),
       subscriptionShortLinksEnabled: this.readBoolean(map, 'subscriptionShortLinksEnabled'),
+      subscriptionEffectsSyncEnabled: this.readBoolean(map, 'subscriptionEffectsSyncEnabled'),
       subscriptionUpdateIntervalHours: this.readInteger(map, 'subscriptionUpdateIntervalHours', 1, 168),
       defaultTemplateId: this.readNullableString(map, 'defaultTemplateId'),
       publicLinesEnabled: this.readBoolean(map, 'publicLinesEnabled'),
@@ -370,6 +376,7 @@ export class SettingsService {
       passwordMinLength: settings.passwordMinLength,
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
+      subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled,
       customCss: settings.customCss,
       customHeadHtml: settings.customHeadHtml,
       emailVerificationEnabled: settings.emailVerificationEnabled,

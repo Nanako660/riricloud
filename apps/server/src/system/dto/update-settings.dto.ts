@@ -167,6 +167,11 @@ export class UpdateSettingsDto {
   @IsOptional()
   subscriptionShortLinksEnabled?: boolean;
 
+  @ApiPropertyOptional({ example: true, description: '是否启用「我的订阅」卡片套餐特效同步' })
+  @IsBoolean()
+  @IsOptional()
+  subscriptionEffectsSyncEnabled?: boolean;
+
   @ApiPropertyOptional({ example: 24, minimum: 1, maximum: 168 })
   @Type(() => Number)
   @IsInt()

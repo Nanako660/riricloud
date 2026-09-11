@@ -113,3 +113,91 @@
     appearance: textfield;
   }
 }
+
+/* 套餐卡片现代流体极光与微透晶体动效 */
+@keyframes aurora-roam-1 {
+  0% {
+    transform: translate(-15%, -15%) rotate(0deg) scale(1);
+    opacity: 0.25;
+  }
+  33% {
+    transform: translate(20%, -5%) rotate(120deg) scale(1.15);
+    opacity: 0.38;
+  }
+  66% {
+    transform: translate(-5%, 25%) rotate(240deg) scale(0.9);
+    opacity: 0.22;
+  }
+  100% {
+    transform: translate(-15%, -15%) rotate(360deg) scale(1);
+    opacity: 0.25;
+  }
+}
+
+@keyframes aurora-roam-2 {
+  0% {
+    transform: translate(20%, 20%) rotate(0deg) scale(0.95);
+    opacity: 0.2;
+  }
+  33% {
+    transform: translate(-10%, 15%) rotate(-120deg) scale(1.12);
+    opacity: 0.32;
+  }
+  66% {
+    transform: translate(15%, -20%) rotate(-240deg) scale(1.05);
+    opacity: 0.24;
+  }
+  100% {
+    transform: translate(20%, 20%) rotate(-360deg) scale(0.95);
+    opacity: 0.2;
+  }
+}
+
+@keyframes crystal-edge-drift {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-150%);
+  }
+  100% {
+    transform: translateX(150%);
+  }
+}
+
+@keyframes ambient-glow-pulse {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.02);
+  }
+}
+
+.animate-aurora-1 {
+  animation: aurora-roam-1 12s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-aurora-2 {
+  animation: aurora-roam-2 16s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-crystal-sheen {
+  animation: crystal-edge-drift 8s linear infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer-sweep 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-ambient-pulse {
+  animation: ambient-glow-pulse 4s ease-in-out infinite;
+}

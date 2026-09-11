@@ -1,19 +1,27 @@
 import * as React from 'react';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
-import { Archive, Eye, FileUp, PackageOpen, Power, Star, XCircle } from 'lucide-react';
+import { Archive, Eye, FileUp, MoreHorizontal, PackageOpen, Power, Search, Star, XCircle } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useAdminBinaryResource, useAdminBinaryResources, useBinaryResourceMutations, type BinaryKind, type BinaryResource } from './use-binaries';
 
 const targetOptions = [
@@ -42,6 +50,15 @@ function statusLabel(status: BinaryResource['status']) {
 
 function sourceLabel(source: string) {
   return { BUILTIN: '内置', UPLOAD: '上传', REMOTE: '远程导入' }[source] ?? source;
+}
+
+function formatTargetBadge(target: string) {
+  return target.replace(/^(agent|singbox)-/, '').replace('-', '/');
+}
+
+function totalAssetSize(assets: BinaryResource['assets']) {
+  const sum = assets.reduce((acc, curr) => acc + (curr.size || 0), 0);
+  return bytes(sum);
 }
 
 function ResourceForm({ mode, open, onOpenChange, onSubmit, pending }: {
@@ -92,18 +109,320 @@ function ResourceDetail({ id, open, onOpenChange }: { id: string | null; open: b
 export default function BinariesPage() {
   const { data, isPending, isError } = useAdminBinaryResources();
   const mutations = useBinaryResourceMutations();
+  const [search, setSearch] = React.useState('');
   const [kind, setKind] = React.useState<'ALL' | BinaryKind>('ALL');
   const [platform, setPlatform] = React.useState('ALL');
   const [status, setStatus] = React.useState<'ALL' | BinaryResource['status']>('ALL');
   const [formMode, setFormMode] = React.useState<'upload' | 'import' | null>(null);
   const [detailId, setDetailId] = React.useState<string | null>(null);
-  const visible = (data ?? []).filter((item) => (kind === 'ALL' || item.kind === kind) && (status === 'ALL' || item.status === status) && (platform === 'ALL' || item.assets.some((asset) => asset.target.endsWith(`-${platform}`))));
+  const [retiring, setRetiring] = React.useState<BinaryResource | null>(null);
+
+  const visible = (data ?? []).filter((item) => {
+    if (kind !== 'ALL' && item.kind !== kind) return false;
+    if (status !== 'ALL' && item.status !== status) return false;
+    if (platform !== 'ALL' && !item.assets.some((asset) => asset.target.endsWith(`-${platform}`))) return false;
+    if (search.trim()) {
+      const keyword = search.trim().toLowerCase();
+      const matchesVersion = item.version.toLowerCase().includes(keyword);
+      const matchesTarget = item.assets.some((a) => a.target.toLowerCase().includes(keyword));
+      if (!matchesVersion && !matchesTarget) return false;
+    }
+    return true;
+  });
+
   const submit = (value: { file?: File; kind: BinaryKind; upstreamVersion: string; revision?: number; target: string; filename?: string; url?: string; sha256: string }) => {
     if (formMode === 'upload' && value.file) mutations.uploadResource.mutate({ ...value, file: value.file });
     if (formMode === 'import' && value.url) mutations.importResource.mutate({ ...value, url: value.url });
     setFormMode(null);
   };
-  if (isPending) return <PageContainer><PageHeader title="资源管理" /><Skeleton className="h-12 w-full" /><Skeleton className="h-72 w-full" /></PageContainer>;
-  if (isError) return <PageContainer><PageHeader title="资源管理" /><EmptyState title="无法加载资源" description="请稍后刷新重试。" /></PageContainer>;
-  return <PageContainer><PageHeader title="资源管理" description="独立管理 Agent 与 Sing-box 的可分发版本。" /><div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"><div className="grid min-w-0 w-full gap-2 sm:grid-cols-3"><Select value={kind} onValueChange={(value) => setKind(value as typeof kind)}><SelectTrigger><SelectValue placeholder="资源类型" /></SelectTrigger><SelectContent><SelectItem value="ALL">全部类型</SelectItem><SelectItem value="AGENT">Agent</SelectItem><SelectItem value="SINGBOX">Sing-box</SelectItem></SelectContent></Select><Select value={platform} onValueChange={setPlatform}><SelectTrigger><SelectValue placeholder="平台" /></SelectTrigger><SelectContent><SelectItem value="ALL">全部平台</SelectItem><SelectItem value="linux-amd64">Linux amd64</SelectItem><SelectItem value="linux-arm64">Linux arm64</SelectItem><SelectItem value="macos-amd64">macOS amd64</SelectItem><SelectItem value="macos-arm64">macOS arm64</SelectItem><SelectItem value="windows-amd64">Windows amd64</SelectItem></SelectContent></Select><Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger><SelectValue placeholder="状态" /></SelectTrigger><SelectContent><SelectItem value="ALL">全部状态</SelectItem><SelectItem value="DRAFT">草稿</SelectItem><SelectItem value="ACTIVE">启用</SelectItem><SelectItem value="DISABLED">停用</SelectItem><SelectItem value="RETIRED">归档</SelectItem></SelectContent></Select></div><div className="flex w-full shrink-0 flex-wrap gap-2 sm:w-auto"><Button variant="outline" className="flex-1 sm:flex-none" onClick={() => setFormMode('import')}><PackageOpen />远程导入</Button><Button className="flex-1 sm:flex-none" onClick={() => setFormMode('upload')}><FileUp />上传文件</Button></div></div><div className="grid min-w-0 gap-4 xl:grid-cols-2">{visible.map((item) => <Card key={item.id} className="min-w-0 overflow-hidden"><CardHeader className="min-w-0 flex-col items-start justify-between gap-3 space-y-0 sm:flex-row"><div className="min-w-0"><div className="flex min-w-0 flex-wrap items-center gap-2"><CardTitle className="text-base">{item.kind === 'SINGBOX' ? 'Sing-box' : 'RiriCloud Agent'} · {item.version}</CardTitle>{item.isDefault && <Badge variant="outline"><Star className="mr-1 size-3" />默认</Badge>}</div><p className="mt-1 break-words text-sm text-muted-foreground">{sourceLabel(item.source)} · {item.assets.length} 个平台资产</p></div><Badge className="shrink-0" variant={item.status === 'ACTIVE' ? 'default' : item.status === 'RETIRED' ? 'destructive' : 'secondary'}>{statusLabel(item.status)}</Badge></CardHeader><CardContent className="min-w-0 space-y-4"><div className="grid min-w-0 gap-2 sm:grid-cols-2">{item.assets.map((asset) => <div key={asset.id} className="min-w-0 overflow-hidden rounded-md border p-3 text-xs"><div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1"><span className="min-w-0 break-words font-medium">{asset.target}</span><span className="shrink-0 whitespace-nowrap text-muted-foreground">{bytes(asset.size)}</span></div><p className="mt-1 break-all font-mono text-[11px] leading-4 text-muted-foreground" title={asset.sha256}>{asset.sha256}</p><p className="mt-1 text-muted-foreground">{asset.files.length || 1} 个文件</p></div>)}</div><div className="flex min-w-0 flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between"><span className="min-w-0 break-words text-xs text-muted-foreground">引用分发：{item.deploymentCount ?? item.deploymentTasks?.length ?? 0} 次</span><div className="flex flex-wrap justify-end gap-2"><Button variant="ghost" size="icon" aria-label="查看资源详情" title="查看资源详情" onClick={() => setDetailId(item.id)}><Eye /></Button>{item.status === 'DRAFT' || item.status === 'DISABLED' ? <Button variant="outline" size="sm" onClick={() => mutations.activate.mutate(item.id)} disabled={mutations.activate.isPending}><Power />启用</Button> : null}{item.status === 'ACTIVE' ? <Button variant="outline" size="sm" onClick={() => mutations.disable.mutate(item.id)} disabled={mutations.disable.isPending}><XCircle />停用</Button> : null}{item.status === 'ACTIVE' && !item.isDefault ? <Button variant="outline" size="sm" onClick={() => mutations.setDefault.mutate(item.id)} disabled={mutations.setDefault.isPending}><Star />设为默认</Button> : null}{item.status !== 'RETIRED' ? <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" aria-label="归档资源" title="归档资源"><Archive /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>归档 {item.version}？</AlertDialogTitle><AlertDialogDescription>归档后不会再被选择用于新的升级任务，历史分发记录会保留。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => mutations.retire.mutate(item.id)}>确认归档</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}</div></div></CardContent></Card>)}</div>{!visible.length && <EmptyState title="没有匹配资源" description="上传或导入一个资源开始管理。" />}<ResourceForm mode={formMode ?? 'upload'} open={formMode !== null} onOpenChange={(open) => !open && setFormMode(null)} onSubmit={submit} pending={mutations.uploadResource.isPending || mutations.importResource.isPending} /><ResourceDetail id={detailId} open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)} /></PageContainer>;
+
+  if (isPending) {
+    return (
+      <PageContainer>
+        <PageHeader title="资源管理" description="独立管理 Agent 与 Sing-box 的可分发版本。" />
+        <Skeleton className="h-12 w-full" />
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </CardContent>
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  if (isError) {
+    return (
+      <PageContainer>
+        <PageHeader title="资源管理" description="独立管理 Agent 与 Sing-box 的可分发版本。" />
+        <EmptyState title="无法加载资源" description="请稍后刷新重试。" />
+      </PageContainer>
+    );
+  }
+
+  return (
+    <PageContainer>
+      <PageHeader title="资源管理" description="独立管理 Agent 与 Sing-box 的可分发版本。" />
+
+      <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <div className="relative w-full min-w-0 flex-1 sm:min-w-52 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="搜索版本号或架构…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={kind} onValueChange={(value) => setKind(value as typeof kind)}>
+            <SelectTrigger className="w-full sm:w-32">
+              <SelectValue placeholder="资源类型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部类型</SelectItem>
+              <SelectItem value="AGENT">Agent</SelectItem>
+              <SelectItem value="SINGBOX">Sing-box</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={platform} onValueChange={setPlatform}>
+            <SelectTrigger className="w-full sm:w-36">
+              <SelectValue placeholder="平台" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部平台</SelectItem>
+              <SelectItem value="linux-amd64">Linux amd64</SelectItem>
+              <SelectItem value="linux-arm64">Linux arm64</SelectItem>
+              <SelectItem value="macos-amd64">macOS amd64</SelectItem>
+              <SelectItem value="macos-arm64">macOS arm64</SelectItem>
+              <SelectItem value="windows-amd64">Windows amd64</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
+            <SelectTrigger className="w-full sm:w-32">
+              <SelectValue placeholder="状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部状态</SelectItem>
+              <SelectItem value="DRAFT">草稿</SelectItem>
+              <SelectItem value="ACTIVE">启用</SelectItem>
+              <SelectItem value="DISABLED">停用</SelectItem>
+              <SelectItem value="RETIRED">归档</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex w-full flex-wrap gap-2 sm:flex-nowrap lg:w-auto">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => setFormMode('import')}>
+            <PackageOpen className="mr-1.5 h-4 w-4" />远程导入
+          </Button>
+          <Button className="w-full sm:w-auto" onClick={() => setFormMode('upload')}>
+            <FileUp className="mr-1.5 h-4 w-4" />上传文件
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="min-w-0 p-0">
+          {visible.length ? (
+            <Table className="min-w-[960px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[28%]">资源与版本</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead className="w-[26%]">平台资产覆盖</TableHead>
+                  <TableHead>总体积</TableHead>
+                  <TableHead>引用分发</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground">
+                            {item.kind === 'SINGBOX' ? 'Sing-box' : 'RiriCloud Agent'} · {item.version}
+                          </span>
+                          {item.isDefault && (
+                            <Badge variant="outline" className="text-xs">
+                              <Star className="mr-1 size-3" />默认
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {sourceLabel(item.source)} · {item.assets.length} 个架构资产
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          item.status === 'ACTIVE'
+                            ? 'default'
+                            : item.status === 'RETIRED'
+                            ? 'destructive'
+                            : 'secondary'
+                        }
+                      >
+                        {statusLabel(item.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {item.assets.slice(0, 3).map((asset) => (
+                          <Badge key={asset.id} variant="outline" className="text-[11px] font-mono">
+                            {formatTargetBadge(asset.target)}
+                          </Badge>
+                        ))}
+                        {item.assets.length > 3 ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="secondary" className="cursor-default text-[11px]">
+                                +{item.assets.length - 3}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs space-y-1 text-xs">
+                              <div className="font-medium text-foreground">支持平台及体积：</div>
+                              {item.assets.map((asset) => (
+                                <div key={asset.id} className="flex justify-between gap-3 text-muted-foreground">
+                                  <span>{asset.target}</span>
+                                  <span className="font-mono">{bytes(asset.size)}</span>
+                                </div>
+                              ))}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums text-muted-foreground">
+                      {totalAssetSize(item.assets)}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums text-muted-foreground">
+                      {item.deploymentCount ?? item.deploymentTasks?.length ?? 0} 次
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="查看资源详情"
+                              onClick={() => setDetailId(item.id)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>查看详情与 SHA-256</TooltipContent>
+                        </Tooltip>
+
+                        {item.status === 'DRAFT' || item.status === 'DISABLED' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs"
+                            onClick={() => mutations.activate.mutate(item.id)}
+                            disabled={mutations.activate.isPending}
+                          >
+                            <Power className="h-3.5 w-3.5 text-emerald-600" />
+                            启用
+                          </Button>
+                        ) : null}
+
+                        {item.status === 'ACTIVE' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1 text-xs"
+                            onClick={() => mutations.disable.mutate(item.id)}
+                            disabled={mutations.disable.isPending}
+                          >
+                            <XCircle className="h-3.5 w-3.5 text-amber-600" />
+                            停用
+                          </Button>
+                        ) : null}
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" aria-label="更多操作">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {item.status === 'ACTIVE' && !item.isDefault ? (
+                              <DropdownMenuItem
+                                onClick={() => mutations.setDefault.mutate(item.id)}
+                                disabled={mutations.setDefault.isPending}
+                              >
+                                <Star className="mr-2 h-4 w-4" />
+                                设为默认版本
+                              </DropdownMenuItem>
+                            ) : null}
+                            {item.status !== 'RETIRED' ? (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setRetiring(item)}
+                              >
+                                <Archive className="mr-2 h-4 w-4" />
+                                归档资源
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState
+              title={search ? '没有匹配资源' : '暂无资源'}
+              description={search ? '请尝试调整搜索关键词或筛选条件。' : '上传或导入一个资源开始管理。'}
+              className="border-0"
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <ResourceForm
+        mode={formMode ?? 'upload'}
+        open={formMode !== null}
+        onOpenChange={(open) => !open && setFormMode(null)}
+        onSubmit={submit}
+        pending={mutations.uploadResource.isPending || mutations.importResource.isPending}
+      />
+
+      <ResourceDetail id={detailId} open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)} />
+
+      <AlertDialog open={!!retiring} onOpenChange={(open) => !open && setRetiring(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>归档 {retiring?.version}？</AlertDialogTitle>
+            <AlertDialogDescription>
+              归档后不会再被选择用于新的升级任务，历史分发记录会保留。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (retiring) {
+                  mutations.retire.mutate(retiring.id, {
+                    onSuccess: () => setRetiring(null)
+                  });
+                }
+              }}
+            >
+              确认归档
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageContainer>
+  );
 }
