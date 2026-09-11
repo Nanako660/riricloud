@@ -1,6 +1,8 @@
+import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlansService } from './plans.service';
+import { UpdatePlanDto } from './dto/update-plan.dto';
 
 describe('PlansService', () => {
   let service: PlansService;
@@ -105,7 +107,8 @@ describe('PlansService', () => {
         beamColor: 'rainbow',
         shimmerButton: true,
         originalPrice: 88,
-        discountText: '立省 20 元'
+        discountText: '立省 20 元',
+        syncToSubscription: true
       })
     });
     const result = await service.create({
@@ -120,12 +123,13 @@ describe('PlansService', () => {
         beamColor: 'rainbow',
         shimmerButton: true,
         originalPrice: 88,
-        discountText: '立省 20 元'
+        discountText: '立省 20 元',
+        syncToSubscription: true
       }
     });
     expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        cardConfigJson: expect.stringContaining('"themeColor":"amber"')
+        cardConfigJson: expect.stringContaining('"syncToSubscription":true')
       })
     }));
     expect(result).toMatchObject({
@@ -136,8 +140,25 @@ describe('PlansService', () => {
         beamColor: 'rainbow',
         shimmerButton: true,
         originalPrice: 88,
-        discountText: '立省 20 元'
+        discountText: '立省 20 元',
+        syncToSubscription: true
       }
     });
+  });
+
+  it('UpdatePlanDto 配合 ValidationPipe 正常接受 cardConfig.syncToSubscription', async () => {
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const payload = {
+      cardConfig: {
+        themeColor: 'emerald',
+        syncToSubscription: true
+      }
+    };
+    const transformed = await pipe.transform(payload, {
+      type: 'body',
+      metatype: UpdatePlanDto
+    });
+    expect(transformed.cardConfig?.syncToSubscription).toBe(true);
+    expect(transformed.cardConfig?.themeColor).toBe('emerald');
   });
 });
