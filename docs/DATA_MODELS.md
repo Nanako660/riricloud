@@ -330,6 +330,7 @@ model Plan {
   badgeText         String?  // 市场角标文本（如 HOT、推荐、特惠；为空不展示）
   isFeatured        Boolean  @default(false) // 是否主推推荐套餐（市场卡片高亮与微光边框）
   featuresJson      String   @default("[]")  // 自定义权益特性清单 JSON 数组；空数组降级展示系统默认特性
+  cardConfigJson    String   @default("{}")  // 套餐市场卡片视觉动效与定制配置 JSON（结构见 §3.8）
   isPublic          Boolean  @default(true)
   sortOrder         Int      @default(0)
   createdAt         DateTime @default(now())
@@ -660,6 +661,7 @@ model SystemSetting {
 | `badgeText` | 市场推荐角标文本（如 HOT、推荐、特惠），为空不展示 |
 | `isFeatured` | 是否主推推荐套餐；为 true 时市场卡片展示微光边框与景深阴影 |
 | `featuresJson` | 自定义权益特性清单 JSON 数组；留空时自动降级展示系统默认 4 项基础特性 |
+| `cardConfigJson` | 套餐市场卡片视觉动效定制 JSON，包含主题色、Lucide 矢量图标、流光边框动效模式、流光色彩、原价划线、折扣文案、自定义行动按钮文案、微光扫光与角标视觉风格 |
 
 节点只提供底层健康状态；线路只有 `status=ACTIVE`、`isPublic=true` 且入口节点与出口节点均在线时，才会作为套餐市场的可用线路返回；`TARGET_LINE` 还要求目标直连线路自身为 `ACTIVE`。订阅详情直接返回线路协议、倍率、等级、标签、端点覆盖和中继机制。
 

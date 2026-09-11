@@ -214,6 +214,7 @@ model Plan {
   badgeText         String?
   isFeatured        Boolean  @default(false)
   featuresJson      String   @default("[]")
+  cardConfigJson    String   @default("{}")
   isPublic          Boolean  @default(true)
   sortOrder         Int      @default(0)
   createdAt         DateTime @default(now())

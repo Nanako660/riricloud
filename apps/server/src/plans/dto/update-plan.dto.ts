@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { PLAN_MATCH_MODES, PlanMatchMode } from './create-plan.dto';
+import { PLAN_MATCH_MODES, PlanMatchMode, PlanCardConfigDto } from './create-plan.dto';
 import { TRAFFIC_RESET_MODES, TrafficResetMode } from '../../common/traffic-reset';
 
 export class UpdatePlanDto {
@@ -92,4 +92,10 @@ export class UpdatePlanDto {
   @IsString({ each: true })
   @IsOptional()
   features?: string[];
+
+  @ApiPropertyOptional({ type: () => PlanCardConfigDto, description: '卡片视觉与营销包装配置' })
+  @ValidateNested()
+  @Type(() => PlanCardConfigDto)
+  @IsOptional()
+  cardConfig?: PlanCardConfigDto;
 }

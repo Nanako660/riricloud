@@ -90,4 +90,54 @@ describe('PlansService', () => {
       features: ['专线接入', '流媒体解锁']
     });
   });
+
+  it('创建套餐时支持保存并反序列化 cardConfig 动态配置', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'p4', name: '流光旗舰版', description: '炫彩流光', price: 6800, durationDays: 90,
+      trafficLimitBytes: BigInt(2048), lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0,
+      badgeText: 'HOT', isFeatured: true, featuresJson: '[]',
+      cardConfigJson: JSON.stringify({
+        themeColor: 'amber',
+        icon: 'Crown',
+        animationEffect: 'beam_pulse',
+        beamColor: 'rainbow',
+        shimmerButton: true,
+        originalPrice: 88,
+        discountText: '立省 20 元'
+      })
+    });
+    const result = await service.create({
+      name: '流光旗舰版',
+      price: 68,
+      durationDays: 90,
+      trafficLimitBytes: 2048,
+      cardConfig: {
+        themeColor: 'amber',
+        icon: 'Crown',
+        animationEffect: 'beam_pulse',
+        beamColor: 'rainbow',
+        shimmerButton: true,
+        originalPrice: 88,
+        discountText: '立省 20 元'
+      }
+    });
+    expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        cardConfigJson: expect.stringContaining('"themeColor":"amber"')
+      })
+    }));
+    expect(result).toMatchObject({
+      cardConfig: {
+        themeColor: 'amber',
+        icon: 'Crown',
+        animationEffect: 'beam_pulse',
+        beamColor: 'rainbow',
+        shimmerButton: true,
+        originalPrice: 88,
+        discountText: '立省 20 元'
+      }
+    });
+  });
 });

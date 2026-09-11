@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import type { PlanCardConfig } from '@/pages/admin/plans/use-plans';
 
 export type TrafficResetMode = 'NONE' | 'CALENDAR_MONTH' | 'SUBSCRIPTION_CYCLE';
 export interface UserPlan {
@@ -15,6 +16,7 @@ export interface UserPlan {
   badgeText?: string | null;
   isFeatured?: boolean;
   features?: string[];
+  cardConfig?: PlanCardConfig;
 }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; trafficResetMode: TrafficResetMode; nextTrafficResetAt: string | null; extraLineIds: string[]; plan: UserPlan; }
 export interface UserLine {

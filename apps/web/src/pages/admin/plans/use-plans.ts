@@ -2,6 +2,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
+export type PlanThemeColor = 'default' | 'amber' | 'blue' | 'purple' | 'emerald' | 'rose' | 'indigo';
+export type PlanAnimationEffect = 'none' | 'beam' | 'pulse' | 'beam_pulse';
+export type PlanBeamColor = 'theme' | 'rainbow';
+export type PlanBadgeVariant = 'default' | 'outline' | 'secondary' | 'glow' | 'gradient';
+
+export interface PlanCardConfig {
+  themeColor?: PlanThemeColor;
+  icon?: string;
+  buttonText?: string | null;
+  originalPrice?: number | null;
+  discountText?: string | null;
+  badgeVariant?: PlanBadgeVariant;
+  animationEffect?: PlanAnimationEffect;
+  beamColor?: PlanBeamColor;
+  shimmerButton?: boolean;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -18,6 +35,7 @@ export interface Plan {
   badgeText?: string | null;
   isFeatured?: boolean;
   features?: string[];
+  cardConfig?: PlanCardConfig;
   isPublic: boolean;
   sortOrder: number;
 }
@@ -36,6 +54,7 @@ export interface PlanPayload {
   badgeText?: string | null;
   isFeatured?: boolean;
   features?: string[];
+  cardConfig?: PlanCardConfig;
   isPublic: boolean;
   sortOrder: number;
 }

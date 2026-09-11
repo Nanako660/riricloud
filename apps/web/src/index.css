@@ -113,3 +113,45 @@
     appearance: textfield;
   }
 }
+
+/* 套餐卡片现代动效与光效 */
+@keyframes border-beam-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-150%);
+  }
+  100% {
+    transform: translateX(150%);
+  }
+}
+
+@keyframes ambient-glow-pulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.03);
+  }
+}
+
+.animate-border-beam {
+  animation: border-beam-spin 4s linear infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer-sweep 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-ambient-pulse {
+  animation: ambient-glow-pulse 3.5s ease-in-out infinite;
+}
