@@ -74,7 +74,10 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
           <SheetContent
             side="left"
             aria-label={props['aria-label']}
-            className={cn('w-[18rem] max-w-[calc(100vw-3rem)] gap-0 p-0', className)}
+            className={cn(
+              'flex h-full max-h-svh w-[18rem] max-w-[calc(100vw-3rem)] flex-col gap-0 p-0 overflow-hidden bg-sidebar text-sidebar-foreground',
+              className
+            )}
           >
             {children}
           </SheetContent>
@@ -134,7 +137,7 @@ SidebarHeader.displayName = 'SidebarHeader';
 
 const SidebarContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} data-sidebar="content" className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-auto px-3 py-2', className)} {...props} />
+    <div ref={ref} data-sidebar="content" className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-3 py-2', className)} {...props} />
   )
 );
 SidebarContent.displayName = 'SidebarContent';

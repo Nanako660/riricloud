@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { EmptyState } from '@/components/shared/empty-state';
 import { usePublicSettings } from '@/lib/public-settings';
 import { cn } from '@/lib/utils';
-import { buildProxyCodeSnippets } from '../proxy-snippets';
+import { buildMultiProxyCodeSnippets, buildProxyCodeSnippets } from '../proxy-snippets';
 import {
   type ProxyKey,
   type ProxyPoolEndpoint,
@@ -56,6 +56,7 @@ export function ProxyExportSection({
   const [format, setFormat] = useState<ProxyPoolExportFormat>('text');
   const [viewMode, setViewMode] = useState<'export' | 'code'>('export');
   const [snippetTab, setSnippetTab] = useState('python-requests');
+  const [selectedNodeView, setSelectedNodeView] = useState<string>('all');
   const [copied, setCopied] = useState(false);
 
   const activeKeys = useMemo(() => keys.filter((item) => item.isActive), [keys]);
@@ -78,6 +79,43 @@ export function ProxyExportSection({
     setSelectedLineIds(endpointKey.split(','));
   }, [endpointKey]);
 
+  const selectedEndpoints = useMemo(() => {
+    return endpoints.filter((endpoint) => selectedLineIds.includes(endpoint.lineId));
+  }, [endpoints, selectedLineIds]);
+
+  const allSelectedAreTls = useMemo(() => {
+    return selectedEndpoints.length > 0 && selectedEndpoints.every((endpoint) => endpoint.tls);
+  }, [selectedEndpoints]);
+
+  const hasTlsInSelected = useMemo(() => {
+    return selectedEndpoints.some((endpoint) => endpoint.tls);
+  }, [selectedEndpoints]);
+
+  // 当勾选的节点全部启用 TLS 时，自动切为 http 协议（即 https:// 代理），并锁定 SOCKS5
+  useEffect(() => {
+    if (allSelectedAreTls && protocol === 'socks5') {
+      setProtocol('http');
+    }
+  }, [allSelectedAreTls, protocol]);
+
+  // 智能过滤：若为 SOCKS5 协议，过滤出支持明文 SOCKS5 的节点（排除开启 TLS 的节点）
+  const effectiveEndpoints = useMemo(() => {
+    if (protocol === 'socks5') {
+      return selectedEndpoints.filter((e) => !e.tls);
+    }
+    return selectedEndpoints;
+  }, [selectedEndpoints, protocol]);
+
+  // 若当前单节点视图被取消选择，或在 SOCKS5 模式下被过滤，自动重置为 'all'
+  useEffect(() => {
+    if (selectedNodeView !== 'all') {
+      const isValid = effectiveEndpoints.some((e) => e.lineId === selectedNodeView);
+      if (!isValid) {
+        setSelectedNodeView('all');
+      }
+    }
+  }, [effectiveEndpoints, selectedNodeView]);
+
   const currentKey = activeKeys.find((item) => item.id === keyId) ?? null;
   const exportQuery = useProxyPoolExport({
     keyId,
@@ -87,19 +125,54 @@ export function ProxyExportSection({
     enabled: Boolean(keyId) && selectedLineIds.length > 0
   });
 
-  const previewEndpoint = endpoints.find((endpoint) => selectedLineIds.includes(endpoint.lineId)) ?? null;
   const snippets = useMemo(() => {
-    if (!currentKey || !previewEndpoint) return [];
-    return buildProxyCodeSnippets({
+    if (!currentKey || effectiveEndpoints.length === 0) return [];
+
+    // 单节点视图
+    if (selectedNodeView !== 'all') {
+      const targetEndpoint = effectiveEndpoints.find((e) => e.lineId === selectedNodeView);
+      if (targetEndpoint) {
+        return buildProxyCodeSnippets({
+          protocol,
+          host: targetEndpoint.host,
+          port: targetEndpoint.port,
+          username: currentKey.username,
+          password: currentKey.password,
+          tls: targetEndpoint.tls,
+          serverName: targetEndpoint.serverName
+        });
+      }
+    }
+
+    // 仅单个有效节点
+    if (effectiveEndpoints.length === 1) {
+      const single = effectiveEndpoints[0];
+      return buildProxyCodeSnippets({
+        protocol,
+        host: single.host,
+        port: single.port,
+        username: currentKey.username,
+        password: currentKey.password,
+        tls: single.tls,
+        serverName: single.serverName
+      });
+    }
+
+    // 多节点轮换池模式
+    return buildMultiProxyCodeSnippets({
       protocol,
-      host: previewEndpoint.host,
-      port: previewEndpoint.port,
       username: currentKey.username,
       password: currentKey.password,
-      tls: previewEndpoint.tls,
-      serverName: previewEndpoint.serverName
+      endpoints: effectiveEndpoints.map((e) => ({
+        lineId: e.lineId,
+        name: e.name,
+        host: e.host,
+        port: e.port,
+        tls: e.tls,
+        serverName: e.serverName
+      }))
     });
-  }, [currentKey, previewEndpoint, protocol]);
+  }, [currentKey, effectiveEndpoints, protocol, selectedNodeView]);
 
   const currentSnippet = snippets.find((s) => s.id === snippetTab) ?? snippets[0];
 
@@ -220,13 +293,23 @@ export function ProxyExportSection({
 
             {/* 2. 导出协议 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">导出协议</label>
+              <label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                <span>导出协议</span>
+                {allSelectedAreTls && (
+                  <span className="text-[10px] text-sky-400/90 font-normal">已选节点均已启用 TLS</span>
+                )}
+              </label>
               <div className="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-0.5">
                 <Button
                   type="button"
                   variant={protocol === 'socks5' ? 'default' : 'ghost'}
                   size="sm"
-                  className="h-7 text-xs font-medium"
+                  disabled={allSelectedAreTls}
+                  title={allSelectedAreTls ? '已选节点均已启用 TLS 加密，仅支持 HTTPS 代理' : undefined}
+                  className={cn(
+                    'h-7 text-xs font-medium',
+                    allSelectedAreTls && 'cursor-not-allowed opacity-40'
+                  )}
                   onClick={() => setProtocol('socks5')}
                 >
                   SOCKS5
@@ -238,7 +321,7 @@ export function ProxyExportSection({
                   className="h-7 text-xs font-medium"
                   onClick={() => setProtocol('http')}
                 >
-                  {previewEndpoint?.tls ? 'HTTP (HTTPS)' : 'HTTP'}
+                  {hasTlsInSelected ? 'HTTP (HTTPS)' : 'HTTP'}
                 </Button>
               </div>
             </div>
@@ -305,39 +388,52 @@ export function ProxyExportSection({
                       variant={isSelected ? 'secondary' : 'outline'}
                       size="sm"
                       className={cn(
-                        'h-auto py-1.5 px-2.5 justify-start gap-2 text-left font-normal transition-all rounded-md',
+                        'h-auto py-1.5 px-2.5 w-full sm:w-auto max-w-full justify-between sm:justify-start gap-2 text-left font-normal transition-all rounded-md overflow-hidden',
                         isSelected
                           ? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/20 shadow-2xs'
                           : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
                       )}
                       onClick={() => toggleLine(endpoint.lineId, !isSelected)}
                     >
-                      <span
-                        className={cn(
-                          'size-2 rounded-full shrink-0',
-                          endpoint.online ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-                        )}
-                      />
-                      <span className="font-semibold text-xs text-foreground">{endpoint.name}</span>
-                      {endpoint.region ? (
-                        <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">
-                          {endpoint.region}
+                      <div className="flex min-w-0 items-center gap-1.5 shrink">
+                        <span
+                          className={cn(
+                            'size-2 rounded-full shrink-0',
+                            endpoint.online ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+                          )}
+                        />
+                        <span
+                          className="font-semibold text-xs text-foreground truncate max-w-[90px] sm:max-w-[130px]"
+                          title={endpoint.name}
+                        >
+                          {endpoint.name}
                         </span>
-                      ) : null}
-                      {endpoint.tls ? (
-                        <span className="text-[10px] px-1 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium">
-                          HTTPS
+                        {endpoint.region ? (
+                          <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground shrink-0">
+                            {endpoint.region}
+                          </span>
+                        ) : null}
+                        {endpoint.tls ? (
+                          <span className="text-[10px] px-1 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium shrink-0">
+                            HTTPS
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="flex min-w-0 items-center gap-1.5 shrink-0 text-muted-foreground/80 ml-auto sm:ml-0">
+                        <span
+                          className="font-mono text-[11px] truncate max-w-[110px] sm:max-w-[160px] md:max-w-none text-muted-foreground/80"
+                          title={`${endpoint.host}:${endpoint.port}`}
+                        >
+                          {endpoint.host}:{endpoint.port}
                         </span>
-                      ) : null}
-                      <span className="font-mono text-[11px] text-muted-foreground/80">
-                        {endpoint.host}:{endpoint.port}
-                      </span>
-                      {endpoint.latencyMs != null ? (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                          {endpoint.latencyMs}ms
-                        </span>
-                      ) : null}
-                      {isSelected && <Check className="size-3 text-primary shrink-0 ml-0.5" />}
+                        {endpoint.latencyMs != null ? (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono shrink-0">
+                            {endpoint.latencyMs}ms
+                          </span>
+                        ) : null}
+                        {isSelected && <Check className="size-3 text-primary shrink-0 ml-0.5" />}
+                      </div>
                     </Button>
                   );
                 })}
@@ -352,10 +448,11 @@ export function ProxyExportSection({
       </Card>
 
       {/* 终端风格一体化结果工作台 */}
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-zinc-950 text-zinc-100 shadow-md">
+      <div className="dark overflow-hidden rounded-xl border border-border/80 bg-zinc-950 text-zinc-100 shadow-md">
         {/* macOS 终端控制条 */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 bg-zinc-900/90 px-4 py-2.5">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/90 px-3 sm:px-4 py-2">
+          {/* 左侧：经典三色圆点 + 模式切换 Tab */}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {/* 经典三色红黄绿圆点 */}
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="size-2.5 rounded-full bg-rose-500/80" />
@@ -364,50 +461,53 @@ export function ProxyExportSection({
             </div>
 
             {/* 终端子功能切换 Tab */}
-            <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+            <div className="flex items-center gap-0.5 rounded-md bg-zinc-800/80 p-0.5 text-xs">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
-                  viewMode === 'export' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors',
+                  viewMode === 'export' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs hover:bg-zinc-700 hover:text-zinc-100'
                 )}
                 onClick={() => setViewMode('export')}
               >
-                <ClipboardList className="size-3 mr-1.5" />
-                提取结果 ({FORMAT_LABELS[format]})
+                <ClipboardList className="size-3 mr-1" />
+                <span>提取结果</span>
+                <span className="hidden sm:inline text-zinc-300 ml-0.5">
+                  ({format === 'text' ? 'TXT' : format === 'uri' ? 'URI' : 'JSON'})
+                </span>
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className={cn(
-                  'h-6 px-2.5 text-xs text-zinc-400 hover:text-zinc-100',
-                  viewMode === 'code' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs'
+                  'h-6 px-2 sm:px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors',
+                  viewMode === 'code' && 'bg-zinc-700 text-zinc-100 font-medium shadow-2xs hover:bg-zinc-700 hover:text-zinc-100'
                 )}
                 onClick={() => setViewMode('code')}
               >
-                <Terminal className="size-3 mr-1.5" />
-                自动化代码
+                <Terminal className="size-3 mr-1" />
+                <span>自动化代码</span>
               </Button>
             </div>
           </div>
 
-          {/* 右侧操作按钮组 */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* 桌面端右侧操作按钮组 (移动端隐藏，转移至下方次级栏以避免狭窄屏幕遮挡碰撞) */}
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
             {viewMode === 'export' ? (
               <>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 gap-1 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                  className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                   onClick={downloadTxt}
                   disabled={!exportQuery.data}
                 >
                   <Download className="size-3.5" />
-                  下载 .txt
+                  <span className="hidden sm:inline">下载 .txt</span>
                 </Button>
                 <Button
                   type="button"
@@ -418,46 +518,223 @@ export function ProxyExportSection({
                   disabled={!exportQuery.data}
                 >
                   {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  {copied ? '已复制' : '复制结果'}
+                  <span>{copied ? '已复制' : '复制结果'}</span>
                 </Button>
               </>
             ) : (
-              <>
-                {/* 多语言代码切换 */}
-                <div className="flex items-center gap-1 pr-1">
-                  {snippets.map((snippet) => (
-                    <Button
-                      key={snippet.id}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200',
-                        snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium'
-                      )}
-                      onClick={() => setSnippetTab(snippet.id)}
-                    >
-                      {snippet.label.split(' ')[0]}
-                    </Button>
-                  ))}
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                  onClick={copyExportContent}
-                  disabled={!currentSnippet}
-                >
-                  {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  {copied ? '已复制' : '复制代码'}
-                </Button>
-              </>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                onClick={copyExportContent}
+                disabled={!currentSnippet}
+              >
+                {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                <span>{copied ? '已复制' : '复制代码'}</span>
+              </Button>
             )}
           </div>
         </div>
 
+        {/* 提取结果模式下的移动端二级控制条 (格式状态徽标 + 下载/复制操作按钮) */}
+        {viewMode === 'export' && (
+          <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="rounded border border-zinc-700/60 bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                {format === 'text' ? 'TXT 文本' : format === 'uri' ? 'URI 链接' : 'JSON 格式'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                onClick={downloadTxt}
+                disabled={!exportQuery.data}
+              >
+                <Download className="size-3" />
+                <span>下载 .txt</span>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px] bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                onClick={copyExportContent}
+                disabled={!exportQuery.data}
+              >
+                {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                <span>{copied ? '已复制' : '复制结果'}</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 自动化代码模式下的二级控制条 (语言切换 + 移动端复制 / 桌面端出网节点视图选择) */}
+        {viewMode === 'code' && (
+          <>
+            <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 sm:px-4 py-1.5 text-xs">
+              {/* 多语言切换药丸 (横向平滑滚动) */}
+              <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+                {snippets.map((snippet) => (
+                  <Button
+                    key={snippet.id}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                      snippetTab === snippet.id && 'bg-zinc-700 text-zinc-100 font-medium shadow-xs hover:bg-zinc-700 hover:text-zinc-100'
+                    )}
+                    onClick={() => setSnippetTab(snippet.id)}
+                  >
+                    {snippet.label.split(' ')[0]}
+                  </Button>
+                ))}
+              </div>
+
+              {/* 移动端专属复制代码按钮 (紧凑常驻在多语言右侧) */}
+              <div className="flex sm:hidden items-center shrink-0">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-6 gap-1 px-2 text-[11px] bg-zinc-800 text-zinc-100 hover:bg-zinc-700 shrink-0"
+                  onClick={copyExportContent}
+                  disabled={!currentSnippet}
+                >
+                  {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                  <span>{copied ? '已复制' : '复制代码'}</span>
+                </Button>
+              </div>
+
+              {/* 桌面端出网节点切换器 (仅在桌面端且多于 1 个有效节点时在此行展示) */}
+              {effectiveEndpoints.length > 1 && (
+                <div className="hidden sm:flex items-center gap-1.5 ml-auto shrink-0">
+                  <span className="text-[11px] text-zinc-500">出网节点:</span>
+                  {effectiveEndpoints.length <= 2 ? (
+                    <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors',
+                          selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
+                        )}
+                        onClick={() => setSelectedNodeView('all')}
+                      >
+                        🎲 轮换 ({effectiveEndpoints.length})
+                      </Button>
+                      {effectiveEndpoints.map((ep) => (
+                        <Button
+                          key={ep.lineId}
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className={cn(
+                            'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition-colors',
+                            selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
+                          )}
+                          onClick={() => setSelectedNodeView(ep.lineId)}
+                          title={`${ep.name} (${ep.host}:${ep.port})`}
+                        >
+                          {ep.name}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
+                      <SelectTrigger
+                        className="h-6 min-w-[120px] max-w-[170px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                        aria-label="选择代码出网节点视图"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
+                        <SelectItem value="all" className="text-xs">
+                          🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                        </SelectItem>
+                        {effectiveEndpoints.map((ep) => (
+                          <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
+                            {ep.name} ({ep.host}:{ep.port})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 移动端专属三级控制条 (仅在移动端且多于 1 个有效节点时展示出网节点选择) */}
+            {effectiveEndpoints.length > 1 && (
+              <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-3 py-1.5 text-xs">
+                <span className="text-[11px] text-zinc-400 shrink-0">出网节点:</span>
+                {effectiveEndpoints.length <= 2 ? (
+                  <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs overflow-x-auto no-scrollbar">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                        selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
+                      )}
+                      onClick={() => setSelectedNodeView('all')}
+                    >
+                      🎲 轮换 ({effectiveEndpoints.length})
+                    </Button>
+                    {effectiveEndpoints.map((ep) => (
+                      <Button
+                        key={ep.lineId}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'h-6 max-w-[110px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 shrink-0 transition-colors',
+                          selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium hover:bg-zinc-700 hover:text-zinc-100'
+                        )}
+                        onClick={() => setSelectedNodeView(ep.lineId)}
+                        title={`${ep.name} (${ep.host}:${ep.port})`}
+                      >
+                        {ep.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
+                    <SelectTrigger
+                      className="h-6 w-full max-w-[200px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                      aria-label="选择代码出网节点视图"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
+                      <SelectItem value="all" className="text-xs">
+                        🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                      </SelectItem>
+                      {effectiveEndpoints.map((ep) => (
+                        <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
+                          {ep.name} ({ep.host}:{ep.port})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
         {/* 终端内容视窗 */}
+        {viewMode === 'code' && protocol === 'socks5' && selectedEndpoints.some((e) => e.tls) && (
+          <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300">
+            <span>⚠️ 已选出网节点中有 {selectedEndpoints.filter((e) => e.tls).length} 个启用了 TLS 加密，原生 SOCKS5 无法直连，已自动从轮换池与代码中过滤。若需使用这些节点，请在上方将协议切换为 HTTP (HTTPS)。</span>
+          </div>
+        )}
         <div className="max-h-80 min-h-36 overflow-auto p-4 font-mono text-xs leading-relaxed select-all">
           {viewMode === 'export' ? (
             <pre className="whitespace-pre-wrap break-all text-zinc-200">{exportContent}</pre>
