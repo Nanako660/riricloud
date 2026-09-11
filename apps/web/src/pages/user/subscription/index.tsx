@@ -16,7 +16,8 @@ import {
   RotateCcw,
   ShieldAlert,
   ShoppingBag,
-  XCircle
+  XCircle,
+  Zap
 } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { AnnouncementCard } from '@/components/shared/announcement-card';
@@ -49,10 +50,12 @@ import {
   useUserSubscriptionMutations
 } from './use-user-subscription';
 import { usePublicSettings } from '@/lib/public-settings';
-import { formatBytes, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
+import { cn, formatBytes, formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
 import { buildSubscriptionUrl } from '@/lib/subscription-url';
 import { QuickRedeemForm } from '@/components/shared/quick-redeem-form';
 import { useProfileMutations, useProfileUser, useWallet } from '@/pages/user/profile/use-profile';
+import { THEME_COLOR_CONFIGS, PLAN_ICONS } from '@/pages/user/market/components/market-plan-constants';
+import type { PlanCardConfig, PlanThemeColor } from '@/pages/admin/plans/use-plans';
 
 const verifyEmailSchema = z.object({
   code: z.string().regex(/^\d{6}$/, '请输入 6 位验证码')
@@ -280,6 +283,34 @@ function ActiveSubscriptionContent({
     token: sub.subscriptionToken
   });
 
+  const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 });
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+  const handleMouseLeave = () => {
+    setMousePos({ x: -1000, y: -1000 });
+  };
+
+  const cardConfig: PlanCardConfig | undefined =
+    sub.plan.cardConfig ||
+    (() => {
+      if ((sub.plan as { cardConfigJson?: string | null }).cardConfigJson) {
+        try {
+          return JSON.parse((sub.plan as { cardConfigJson?: string | null }).cardConfigJson!);
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
+    })();
+
+  const themeColor: PlanThemeColor = cardConfig?.themeColor || (sub.plan.isFeatured ? 'amber' : 'purple');
+  const theme = THEME_COLOR_CONFIGS[themeColor] || THEME_COLOR_CONFIGS.purple;
+  const iconKey = cardConfig?.icon || (sub.plan.isFeatured ? 'Crown' : 'Zap');
+  const IconComponent = PLAN_ICONS[iconKey]?.icon || Zap;
+  const isRainbow = cardConfig?.beamColor === 'rainbow';
+
   let daysText = '永久有效';
   let expireFormatted = '永久有效';
   if (sub.expireAt) {
@@ -292,127 +323,235 @@ function ActiveSubscriptionContent({
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-col items-start justify-between gap-3 pb-4 sm:flex-row sm:items-center">
-          <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="break-words text-lg sm:text-xl">{sub.plan.name}</CardTitle>
-              <Badge variant={sub.status === 'ACTIVE' ? 'default' : 'secondary'} className="shrink-0">
-                {sub.status}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formatBytes(sub.trafficLimitBytes)} 流量配额 · {sub.plan.durationDays} 天周期 ·{' '}
-              {sub.plan.price === 0 ? '免费套餐' : formatCurrency(Math.round(sub.plan.price * 100))}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            {['ACTIVE', 'CANCELED'].includes(sub.status) && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="w-full gap-1.5 sm:w-auto" disabled={renew.isPending}>
-                    <RefreshCw className="h-4 w-4" />续费此套餐
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>续费当前套餐？</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      将扣除 {formatCurrency(Math.round(sub.plan.price * 100))}，周期顺延 {sub.plan.durationDays} 天并重置当期流量。
-                    </AlertDialogDescription>
-                    {wallet.data && wallet.data.balance < Math.round(sub.plan.price * 100) && <QuickRedeemForm />}
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction
-                      disabled={!wallet.data || wallet.data.balance < Math.round(sub.plan.price * 100) || renew.isPending}
-                      onClick={() => renew.mutate()}
-                    >
-                      确认续费
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-            <Button asChild size="sm" variant="outline" className="w-full shrink-0 gap-1.5 sm:w-auto">
-              <Link to="/market"><ShoppingBag className="h-4 w-4" />升配或变更套餐</Link>
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{formatBytes(sub.trafficUsedBytes)} / {formatBytes(sub.trafficLimitBytes)}</span>
-              <span>{percent.toFixed(1)}%</span>
-            </div>
-            <Progress value={percent} />
-          </div>
+      {/* 订阅卡片（北欧流体极光与晶体漫射特效） */}
+      <div
+        className="group relative flex flex-col justify-between transition-all duration-300 rounded-2xl p-[1.5px] overflow-hidden"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        {/* 晶体边缘漫射折射微光 (Crystal Sheen) */}
+        <div
+          className="absolute -inset-[140%] animate-crystal-sheen pointer-events-none opacity-85 blur-[0.8px]"
+          style={{
+            background: isRainbow
+              ? 'conic-gradient(from 0deg, transparent 0 220deg, rgba(99,102,241,0.25) 260deg, rgba(168,85,247,0.6) 295deg, rgba(6,182,212,0.7) 330deg, rgba(16,185,129,0.4) 355deg, transparent 360deg)'
+              : `conic-gradient(from 0deg, transparent 0 250deg, ${theme.beamColor}25 290deg, ${theme.beamColor}75 335deg, transparent 360deg)`
+          }}
+        />
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <HardDrive className="h-3.5 w-3.5 shrink-0" />
-                <span>剩余流量</span>
-              </div>
-              <p className="text-xl font-bold tracking-tight">{formatBytes(remainingBytes)}</p>
-              <p className="truncate text-xs text-muted-foreground">已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}</p>
-            </div>
-
-            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Gauge className="h-3.5 w-3.5 shrink-0" />
-                <span>流量使用率</span>
-              </div>
-              <p className="text-xl font-bold tracking-tight">{percent.toFixed(1)}%</p>
-              <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
-            </div>
-
-            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                <span>流量重置</span>
-              </div>
-              <p className="text-base font-bold tracking-tight">
-                {sub.trafficResetMode === 'CALENDAR_MONTH' ? '自然月重置' : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE' ? '订阅周期重置' : '不自动重置'}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {sub.nextTrafficResetAt ? `下次：${formatDateTime(sub.nextTrafficResetAt)}` : '流量累计不会自动清零'}
-              </p>
-            </div>
-
-            <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                <span>账户到期</span>
-              </div>
-              <p className="text-xl font-bold tracking-tight">{daysText}</p>
-              <p className="truncate text-xs text-muted-foreground">{sub.expireAt ? `到期时间：${expireFormatted}` : '无到期限制'}</p>
-            </div>
-          </div>
-
-          {sub.status === 'ACTIVE' && (
-            <div className="flex justify-end pt-1">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive">
-                    <XCircle className="h-3.5 w-3.5" />取消当前订阅
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>取消当前订阅？</AlertDialogTitle>
-                    <AlertDialogDescription>取消后状态变为 CANCELED，但在到期时间前仍可正常使用代理服务。</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>返回</AlertDialogCancel>
-                    <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>确认取消</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+        <Card
+          className={cn(
+            'relative flex flex-col overflow-hidden transition-all duration-300',
+            'bg-card/95 dark:bg-card/75 backdrop-blur-xl',
+            theme.cardShadowClass,
+            'rounded-[calc(1rem-1.5px)] border',
+            theme.borderClass
           )}
-        </CardContent>
-      </Card>
+        >
+          {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-80 dark:opacity-100 transition-opacity duration-300">
+            <div
+              className={cn(
+                'absolute -top-24 -left-24 h-96 w-96 rounded-full bg-gradient-to-br blur-3xl animate-aurora-1',
+                isRainbow ? 'from-indigo-400/50 via-purple-500/40 to-transparent' : theme.auroraOrb1
+              )}
+            />
+            <div
+              className={cn(
+                'absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-gradient-to-tl blur-3xl animate-aurora-2',
+                isRainbow ? 'from-cyan-400/45 via-emerald-500/35 to-transparent' : theme.auroraOrb2
+              )}
+            />
+          </div>
+
+          {/* 顶部 1px 倒角微光折射微线 (Chamfered Edge Light) */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent z-20" />
+
+          {/* 鼠标悬停光斑追踪 (Spotlight) */}
+          <div
+            className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10"
+            style={{
+              background: `radial-gradient(420px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
+            }}
+          />
+
+          <div className="relative z-10 flex flex-col flex-1">
+            <CardHeader className="flex flex-col items-start justify-between gap-4 pb-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={cn(
+                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 group-hover:scale-105',
+                    theme.iconBgClass
+                  )}
+                >
+                  <IconComponent className="h-6 w-6" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="break-words text-lg sm:text-xl font-bold tracking-tight text-foreground">
+                      {sub.plan.name}
+                    </CardTitle>
+                    <Badge
+                      variant={sub.status === 'ACTIVE' ? 'default' : 'secondary'}
+                      className={cn(
+                        'shrink-0 text-xs px-2.5 py-0.5 font-semibold',
+                        sub.status === 'ACTIVE'
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 shadow-xs'
+                          : ''
+                      )}
+                    >
+                      {sub.status}
+                    </Badge>
+                    {sub.plan.badgeText && (
+                      <Badge className={cn('text-xs px-2.5 py-0.5 font-semibold', theme.badgeGradient)}>
+                        {sub.plan.badgeText}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatBytes(sub.trafficLimitBytes)} 流量配额 · {sub.plan.durationDays} 天周期 ·{' '}
+                    {sub.plan.price === 0 ? '免费套餐' : formatCurrency(Math.round(sub.plan.price * 100))}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                {['ACTIVE', 'CANCELED'].includes(sub.status) && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        className={cn(
+                          'w-full gap-1.5 sm:w-auto font-semibold transition-all duration-300 shadow-sm',
+                          theme.buttonGlassClass
+                        )}
+                        disabled={renew.isPending}
+                      >
+                        <RefreshCw className="h-4 w-4" />续费此套餐
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>续费当前套餐？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          将扣除 {formatCurrency(Math.round(sub.plan.price * 100))}，周期顺延 {sub.plan.durationDays} 天并重置当期流量。
+                        </AlertDialogDescription>
+                        {wallet.data && wallet.data.balance < Math.round(sub.plan.price * 100) && <QuickRedeemForm />}
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={!wallet.data || wallet.data.balance < Math.round(sub.plan.price * 100) || renew.isPending}
+                          onClick={() => renew.mutate()}
+                        >
+                          确认续费
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                <Button asChild size="sm" variant="outline" className="w-full shrink-0 gap-1.5 sm:w-auto backdrop-blur-md bg-background/60 border-border/80 hover:bg-background/90">
+                  <Link to="/market"><ShoppingBag className="h-4 w-4" />升配或变更套餐</Link>
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                  <span>{formatBytes(sub.trafficUsedBytes)} / {formatBytes(sub.trafficLimitBytes)}</span>
+                  <span>{percent.toFixed(1)}%</span>
+                </div>
+                <Progress value={percent} className="h-2 bg-muted/60" />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div
+                  className={cn(
+                    'space-y-1 rounded-xl p-3.5 border backdrop-blur-md transition-all duration-300 shadow-xs dark:shadow-inner',
+                    theme.priceBoxClass
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <HardDrive className="h-3.5 w-3.5 shrink-0" />
+                    <span>剩余流量</span>
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">{formatBytes(remainingBytes)}</p>
+                  <p className="truncate text-xs text-muted-foreground">已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}</p>
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-1 rounded-xl p-3.5 border backdrop-blur-md transition-all duration-300 shadow-xs dark:shadow-inner',
+                    theme.priceBoxClass
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Gauge className="h-3.5 w-3.5 shrink-0" />
+                    <span>流量使用率</span>
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">{percent.toFixed(1)}%</p>
+                  <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-1 rounded-xl p-3.5 border backdrop-blur-md transition-all duration-300 shadow-xs dark:shadow-inner',
+                    theme.priceBoxClass
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                    <span>流量重置</span>
+                  </div>
+                  <p className="text-base font-bold tracking-tight text-foreground">
+                    {sub.trafficResetMode === 'CALENDAR_MONTH' ? '自然月重置' : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE' ? '订阅周期重置' : '不自动重置'}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {sub.nextTrafficResetAt ? `下次：${formatDateTime(sub.nextTrafficResetAt)}` : '流量累计不会自动清零'}
+                  </p>
+                </div>
+
+                <div
+                  className={cn(
+                    'space-y-1 rounded-xl p-3.5 border backdrop-blur-md transition-all duration-300 shadow-xs dark:shadow-inner',
+                    theme.priceBoxClass
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                    <span>账户到期</span>
+                  </div>
+                  <p className="text-xl font-bold tracking-tight text-foreground">{daysText}</p>
+                  <p className="truncate text-xs text-muted-foreground">{sub.expireAt ? `到期时间：${expireFormatted}` : '无到期限制'}</p>
+                </div>
+              </div>
+
+              {sub.status === 'ACTIVE' && (
+                <div className="flex justify-end pt-1">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive">
+                        <XCircle className="h-3.5 w-3.5" />取消当前订阅
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>取消当前订阅？</AlertDialogTitle>
+                        <AlertDialogDescription>取消后状态变为 CANCELED，但在到期时间前仍可正常使用代理服务。</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>返回</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>确认取消</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              )}
+            </CardContent>
+          </div>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row sm:items-center">

@@ -347,12 +347,6 @@ export function MarketPlanCard({
             </Button>
           )}
         </CardFooter>
-
-        {isLowerPriced && (
-          <p className="px-6 pb-4 text-center text-xs text-muted-foreground">
-            目标套餐价格低于当前套餐，暂不支持直接降级
-          </p>
-        )}
       </Card>
     </div>
   );
