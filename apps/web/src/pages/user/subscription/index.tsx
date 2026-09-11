@@ -456,7 +456,14 @@ function ActiveSubscriptionContent({
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+                <div
+                  className={cn(
+                    'space-y-1 rounded-lg border p-3.5 transition-colors',
+                    isEffectsEnabled
+                      ? 'backdrop-blur-sm bg-white/40 dark:bg-black/25 border-border/40 dark:border-white/10'
+                      : 'bg-muted/20 border-border'
+                  )}
+                >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <HardDrive className="h-3.5 w-3.5" />
                     <span>剩余流量</span>
@@ -465,7 +472,14 @@ function ActiveSubscriptionContent({
                   <p className="truncate text-xs text-muted-foreground">已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}</p>
                 </div>
 
-                <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+                <div
+                  className={cn(
+                    'space-y-1 rounded-lg border p-3.5 transition-colors',
+                    isEffectsEnabled
+                      ? 'backdrop-blur-sm bg-white/40 dark:bg-black/25 border-border/40 dark:border-white/10'
+                      : 'bg-muted/20 border-border'
+                  )}
+                >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Gauge className="h-3.5 w-3.5" />
                     <span>流量使用率</span>
@@ -474,7 +488,14 @@ function ActiveSubscriptionContent({
                   <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
                 </div>
 
-                <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+                <div
+                  className={cn(
+                    'space-y-1 rounded-lg border p-3.5 transition-colors',
+                    isEffectsEnabled
+                      ? 'backdrop-blur-sm bg-white/40 dark:bg-black/25 border-border/40 dark:border-white/10'
+                      : 'bg-muted/20 border-border'
+                  )}
+                >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <RotateCcw className="h-3.5 w-3.5" />
                     <span>流量重置</span>
@@ -487,7 +508,14 @@ function ActiveSubscriptionContent({
                   </p>
                 </div>
 
-                <div className="space-y-1 rounded-lg border bg-muted/20 p-3.5">
+                <div
+                  className={cn(
+                    'space-y-1 rounded-lg border p-3.5 transition-colors',
+                    isEffectsEnabled
+                      ? 'backdrop-blur-sm bg-white/40 dark:bg-black/25 border-border/40 dark:border-white/10'
+                      : 'bg-muted/20 border-border'
+                  )}
+                >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <CalendarClock className="h-3.5 w-3.5" />
                     <span>账户到期</span>
