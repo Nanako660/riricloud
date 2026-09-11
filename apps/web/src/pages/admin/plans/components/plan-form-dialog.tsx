@@ -40,12 +40,12 @@ const PRESET_FEATURES = [
 
 const THEME_OPTIONS: Array<{ key: PlanThemeColor; name: string; bgClass: string }> = [
   { key: 'default', name: '极简暗黑', bgClass: 'bg-zinc-600' },
-  { key: 'amber', name: '尊享金', bgClass: 'bg-amber-500' },
-  { key: 'blue', name: '极速蓝', bgClass: 'bg-blue-500' },
-  { key: 'purple', name: '星云紫', bgClass: 'bg-purple-500' },
-  { key: 'emerald', name: '碧翠绿', bgClass: 'bg-emerald-500' },
-  { key: 'rose', name: '炽热红', bgClass: 'bg-rose-500' },
-  { key: 'indigo', name: '星空靛', bgClass: 'bg-indigo-500' }
+  { key: 'amber', name: '金珀香槟', bgClass: 'bg-amber-500' },
+  { key: 'blue', name: '极速冰蓝', bgClass: 'bg-sky-500' },
+  { key: 'purple', name: '星云薄暮', bgClass: 'bg-purple-500' },
+  { key: 'emerald', name: '碧翠翡冷', bgClass: 'bg-emerald-500' },
+  { key: 'rose', name: '炽焰宝石', bgClass: 'bg-rose-500' },
+  { key: 'indigo', name: '深邃星空', bgClass: 'bg-indigo-500' }
 ];
 
 const schema = z.object({
@@ -438,9 +438,9 @@ export function PlanFormDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">无动效（常规极简）</SelectItem>
-                          <SelectItem value="beam">环绕流光 (Border Beam)</SelectItem>
-                          <SelectItem value="pulse">呼吸弥散 (Ambient Pulse)</SelectItem>
-                          <SelectItem value="beam_pulse">极光流光 + 呼吸弥散 (双特效)</SelectItem>
+                          <SelectItem value="pulse">流体极光 (Fluid Aurora)</SelectItem>
+                          <SelectItem value="beam">晶体微光漫射 (Crystal Sheen)</SelectItem>
+                          <SelectItem value="beam_pulse">北欧极光 + 晶体漫射 (Aurora & Sheen)</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -458,8 +458,8 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="theme">主题色彩单色流光</SelectItem>
-                          <SelectItem value="rainbow">炫彩幻彩霓虹 (Rainbow)</SelectItem>
+                          <SelectItem value="theme">主题宝石单色光晕</SelectItem>
+                          <SelectItem value="rainbow">北欧极光幻彩 (Nordic Aurora)</SelectItem>
                         </SelectContent>
                       </Select>
                     )}

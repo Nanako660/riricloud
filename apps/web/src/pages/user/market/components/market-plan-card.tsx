@@ -42,32 +42,32 @@ export interface MarketPlanCardProps {
 function parseFeatureItem(raw: string) {
   let text = raw.trim();
   let IconComponent: LucideIcon = Check;
-  let iconColor = 'text-emerald-500';
+  let iconColor = 'text-emerald-400';
   let isHighlighted = false;
 
   if (text.startsWith('[zap]')) {
     IconComponent = Zap;
-    iconColor = 'text-amber-500';
+    iconColor = 'text-amber-400';
     text = text.replace('[zap]', '').trim();
   } else if (text.startsWith('[rocket]')) {
     IconComponent = Rocket;
-    iconColor = 'text-blue-500';
+    iconColor = 'text-sky-400';
     text = text.replace('[rocket]', '').trim();
   } else if (text.startsWith('[crown]')) {
     IconComponent = Crown;
-    iconColor = 'text-yellow-500';
+    iconColor = 'text-amber-300';
     text = text.replace('[crown]', '').trim();
   } else if (text.startsWith('[shield]')) {
     IconComponent = Shield;
-    iconColor = 'text-emerald-500';
+    iconColor = 'text-emerald-400';
     text = text.replace('[shield]', '').trim();
   } else if (text.startsWith('[sparkles]')) {
     IconComponent = Sparkles;
-    iconColor = 'text-purple-500';
+    iconColor = 'text-purple-400';
     text = text.replace('[sparkles]', '').trim();
   } else if (text.startsWith('[star]')) {
     IconComponent = Star;
-    iconColor = 'text-amber-400';
+    iconColor = 'text-yellow-300';
     text = text.replace('[star]', '').trim();
   }
 
@@ -95,10 +95,10 @@ export function MarketPlanCard({
   const theme = THEME_COLOR_CONFIGS[themeKey] || THEME_COLOR_CONFIGS.default;
 
   const effect = cardConfig.animationEffect || 'none';
-  const hasBeam = effect === 'beam' || effect === 'beam_pulse';
-  const hasPulse = effect === 'pulse' || effect === 'beam_pulse';
+  const hasSheen = effect === 'beam' || effect === 'beam_pulse';
+  const hasAurora = effect === 'pulse' || effect === 'beam_pulse' || plan.isFeatured;
   const isRainbow = cardConfig.beamColor === 'rainbow';
-  const hasShimmer = cardConfig.shimmerButton ?? (plan.isFeatured || hasBeam);
+  const hasShimmer = cardConfig.shimmerButton ?? (plan.isFeatured || hasSheen);
 
   // Icon Resolution
   const selectedIconKey = cardConfig.icon || (plan.isFeatured ? 'Crown' : 'Zap');
@@ -142,49 +142,68 @@ export function MarketPlanCard({
       className={cn(
         'group relative flex flex-col justify-between transition-all duration-300',
         'rounded-2xl',
-        hasBeam ? 'p-[1.5px] overflow-hidden' : 'p-0',
-        hasPulse && 'hover:scale-[1.01]'
+        hasSheen ? 'p-[1.5px] overflow-hidden' : 'p-0',
+        'hover:scale-[1.012]'
       )}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* 呼吸弥散光晕 (Ambient Pulse) */}
-      {hasPulse && (
+      {/* 晶体边缘漫射折射微光 (Crystal Sheen) */}
+      {hasSheen && (
         <div
-          className={cn(
-            'absolute -inset-1.5 rounded-3xl blur-xl pointer-events-none -z-10 animate-ambient-pulse',
-            theme.pulseBgClass
-          )}
-        />
-      )}
-
-      {/* 环绕流光边框 (Border Beam) */}
-      {hasBeam && (
-        <div
-          className="absolute -inset-[160%] animate-border-beam pointer-events-none opacity-90"
+          className="absolute -inset-[140%] animate-crystal-sheen pointer-events-none opacity-85 blur-[0.8px]"
           style={{
             background: isRainbow
-              ? 'conic-gradient(from 0deg, transparent 0 240deg, #ec4899 280deg, #8b5cf6 315deg, #06b6d4 345deg, #3b82f6 360deg)'
-              : `conic-gradient(from 0deg, transparent 0 270deg, ${theme.beamColor}55 315deg, ${theme.beamColor} 360deg)`
+              ? 'conic-gradient(from 0deg, transparent 0 220deg, rgba(99,102,241,0.25) 260deg, rgba(168,85,247,0.6) 295deg, rgba(6,182,212,0.7) 330deg, rgba(16,185,129,0.4) 355deg, transparent 360deg)'
+              : `conic-gradient(from 0deg, transparent 0 250deg, ${theme.beamColor}25 290deg, ${theme.beamColor}75 335deg, transparent 360deg)`
           }}
         />
       )}
 
-      {/* 卡片主体 */}
+      {/* 微透磨砂卡片主体 (Smoked Glassmorphism) */}
       <Card
         className={cn(
           'relative flex flex-col justify-between h-full w-full overflow-hidden transition-all duration-300',
-          'bg-card/95 backdrop-blur-sm',
-          hasBeam ? 'rounded-[calc(1rem-1.5px)] border-0' : cn('rounded-2xl border', theme.borderClass),
-          isCurrent && 'ring-2 ring-primary shadow-lg',
-          plan.isFeatured && !isCurrent && !hasBeam && 'ring-1 ring-primary/40 shadow-md'
+          'bg-card/75 backdrop-blur-xl',
+          hasSheen
+            ? 'rounded-[calc(1rem-1.5px)] border border-white/10'
+            : cn('rounded-2xl border', theme.borderClass),
+          isCurrent && 'ring-2 ring-primary/80 shadow-lg shadow-primary/10',
+          plan.isFeatured && !isCurrent && 'shadow-lg shadow-black/20'
         )}
       >
+        {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
+        {hasAurora && (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+            {/* 主流体极光光池 1 */}
+            <div
+              className={cn(
+                'absolute -top-12 -left-12 h-64 w-64 rounded-full bg-gradient-to-br blur-3xl animate-aurora-1',
+                isRainbow
+                  ? 'from-indigo-400/50 via-purple-500/40 to-transparent'
+                  : theme.auroraOrb1
+              )}
+            />
+            {/* 辅助逆向流体极光光池 2 */}
+            <div
+              className={cn(
+                'absolute -bottom-12 -right-12 h-60 w-60 rounded-full bg-gradient-to-tl blur-3xl animate-aurora-2',
+                isRainbow
+                  ? 'from-cyan-400/45 via-emerald-500/35 to-transparent'
+                  : theme.auroraOrb2
+              )}
+            />
+          </div>
+        )}
+
+        {/* 顶部 1px 倒角微光折射微线 (Chamfered Edge Light) */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent z-20" />
+
         {/* 鼠标悬停光斑追踪 (Spotlight) */}
         <div
-          className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-0"
+          className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10"
           style={{
-            background: `radial-gradient(280px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
+            background: `radial-gradient(240px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
           }}
         />
 
@@ -192,17 +211,17 @@ export function MarketPlanCard({
           <CardHeader className="pb-4">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-3">
-                {/* 专业 Lucide 图标底座 */}
+                {/* 专业 Lucide 矢量图标微光底座 */}
                 <div
                   className={cn(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm transition-transform duration-300 group-hover:scale-110',
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 group-hover:scale-105',
                     theme.iconBgClass
                   )}
                 >
                   <IconComponent className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg font-bold tracking-tight text-foreground">
+                  <CardTitle className="text-base font-bold tracking-tight text-foreground">
                     {plan.name}
                   </CardTitle>
                   <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
@@ -226,7 +245,7 @@ export function MarketPlanCard({
                       cardConfig.badgeVariant === 'gradient' || !cardConfig.badgeVariant
                         ? theme.badgeGradient
                         : cardConfig.badgeVariant === 'glow'
-                          ? 'bg-primary/10 text-primary border border-primary/30 shadow-sm'
+                          ? 'bg-primary/10 text-primary border border-primary/25 shadow-sm'
                           : ''
                     )}
                   >
@@ -234,8 +253,8 @@ export function MarketPlanCard({
                   </Badge>
                 )}
                 {isPreview && (
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed">
-                    预览效果
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed bg-muted/20">
+                    实机预览
                   </Badge>
                 )}
               </div>
@@ -243,11 +262,11 @@ export function MarketPlanCard({
           </CardHeader>
 
           <CardContent className="space-y-4 flex-1">
-            {/* 价格与折扣对比 */}
-            <div className="flex items-baseline justify-between rounded-xl bg-muted/40 p-3 border border-border/50">
+            {/* 价格与折扣对比（微透晶体面板） */}
+            <div className="flex items-baseline justify-between rounded-xl bg-background/50 backdrop-blur-md p-3 border border-white/10 shadow-inner">
               <div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-3xl font-extrabold tracking-tight text-foreground">
+                  <span className="text-2xl font-extrabold tracking-tight text-foreground">
                     {currentPrice === 0 ? '免费' : formatCurrency(Math.round(currentPrice * 100))}
                   </span>
                   <span className="text-xs font-normal text-muted-foreground">
@@ -264,7 +283,7 @@ export function MarketPlanCard({
 
               {discountText && (
                 <div className="shrink-0 text-right">
-                  <span className="inline-block rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-bold text-rose-500 border border-rose-500/20">
+                  <span className="inline-block rounded-full bg-rose-500/15 px-2.5 py-0.5 text-xs font-semibold text-rose-400 border border-rose-500/25 shadow-sm">
                     {discountText}
                   </span>
                 </div>
@@ -272,7 +291,7 @@ export function MarketPlanCard({
             </div>
 
             {/* 特性清单 */}
-            <div className="space-y-2.5 text-sm pt-1">
+            <div className="space-y-2 text-sm pt-1">
               {features.map((featureRaw, idx) => {
                 const { IconComponent: FeatureIcon, iconColor, text, isHighlighted } = parseFeatureItem(featureRaw);
                 return (
@@ -283,7 +302,7 @@ export function MarketPlanCard({
                     <span
                       className={cn(
                         'text-xs leading-relaxed',
-                        isHighlighted ? 'font-semibold text-foreground' : 'text-foreground/80'
+                        isHighlighted ? 'font-semibold text-foreground' : 'text-foreground/85'
                       )}
                     >
                       {text}
@@ -302,18 +321,18 @@ export function MarketPlanCard({
           ) : (
             <Button
               className={cn(
-                'relative w-full overflow-hidden transition-all duration-300 font-medium group/btn',
-                isCurrent || isLowerPriced ? 'variant-outline' : theme.buttonGradient
+                'relative w-full overflow-hidden transition-all duration-300 font-medium group/btn h-10',
+                isCurrent || isLowerPriced ? 'variant-outline' : theme.buttonGlassClass
               )}
-              variant={isCurrent || isLowerPriced ? 'outline' : 'default'}
+              variant={isCurrent || isLowerPriced ? 'outline' : 'ghost'}
               onClick={() => onSelect?.(plan)}
               disabled={isCurrent || isLowerPriced}
             >
-              {/* 按钮金属扫光动效 (Shimmer) */}
+              {/* 按钮金属微光扫光动效 (Shimmer) */}
               {hasShimmer && !isCurrent && !isLowerPriced && (
-                <div className="absolute inset-0 -translate-x-full animate-shimmer pointer-events-none bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+                <div className="absolute inset-0 -translate-x-full animate-shimmer pointer-events-none bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               )}
-              <span className="relative z-10 flex items-center justify-center gap-1.5">
+              <span className="relative z-10 flex items-center justify-center gap-1.5 text-sm tracking-wide">
                 {buttonLabel}
                 {!isCurrent && !isLowerPriced && (
                   <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover/btn:translate-x-0.5" />
