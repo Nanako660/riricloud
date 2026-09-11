@@ -15,10 +15,18 @@
 ### Added
 
 ### Changed
+
+### Fixed
+
+
+## [0.8.7] - 2026-09-12
+
+### Changed
 - **套餐卡片与订阅卡片背景重构为对角全色彩深度渐变**：全面重塑套餐市场卡片与「我的订阅」主卡片背景渐变方案，将原有的垂直渐隐底色重构为从左上到右下（135° 对角线 `bg-gradient-to-br`）的完整主题色彩深度填充渐变，深色模式赋予沉浸式暗夜宝石多色相覆盖，浅色模式赋予温润明澈水彩流转；同时将卡片内部次级容器（价格面板与 4 块指标小卡片）升级为微透磨砂玻璃容器（`backdrop-blur-sm bg-white/40 dark:bg-black/25`），让底层对角流光与极光光池自然隐隐透出，彻底告别局部渐隐与中性惨白底色。
 
 ### Fixed
 - **套餐卡片视觉配置 DTO 补齐 syncToSubscription 字段校验**：在 `PlanCardConfigDto` 中补齐 `@IsBoolean() @IsOptional() syncToSubscription` 属性定义，修复管理员编辑或保存套餐时因 NestJS `ValidationPipe` 严格白名单校验抛出 `400 (cardConfig.property syncToSubscription should not exist)` 导致无法保存的缺陷。
+
 
 
 ## [0.8.6] - 2026-09-12
