@@ -103,7 +103,7 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
       </SidebarContent>
-      <SidebarFooter className="p-3 space-y-2">
+      <SidebarFooter className="p-3 space-y-2 border-t border-sidebar-border/50 shrink-0">
         {hasSupportContacts(publicSettings.data) && (
           <SidebarMenu>
             <SidebarMenuItem>

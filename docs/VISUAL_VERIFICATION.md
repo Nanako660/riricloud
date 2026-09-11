@@ -42,7 +42,7 @@
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select，纯套餐驱动（彻底移除手动流量配额与到期项输入，无套餐创建 0 配额无订阅用户，绑定套餐自动继承套餐配额与时长） |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色选择器、启用账号与邮箱已验证状态卡片对齐无挤压（rounded-lg border p-3 shadow-xs）、密码重置；订阅管理中无订阅用户隐藏重置订阅链接按钮，无订阅或选择无套餐时自适应隐藏配额/已用流量/到期日/额外线路输入项，展示状态说明或取消警告卡片；无订阅用户提示请选择套餐绑定且未选套餐前保存按钮禁用；已有订阅选择无套餐切换为红色「彻底取消订阅」按钮并触发二次确认弹窗；绑定具体套餐后流畅展开微调输入项与流量重置信息；Token 重置确认 |
 | **`UI-14`** | 系统设置 | 系统设置五分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 五个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、强制邮箱验证开关（限制订阅与节点连接）、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与二进制下载 URL 明确为覆盖项、默认模板只读展示与跳转管理、CodeMirror、自定义 Head 可信边界与 JWT 风险提示、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
-| **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、服务端会话角色变化后管理员导航及时同步、侧边栏定位、版本号展示、主题三态切换、Sonner Toast 浮层 |
+| **`UI-15`** | 全局框架 | 动态品牌外壳与主题切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/components/ui/sidebar.tsx`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、服务端会话角色变化后管理员导航及时同步、侧边栏定位、移动端抽屉高度自适应与垂直顺畅滚动、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐卡片信息密度、公开/下架 Badge、节点匹配与模板标签、删除确认 |
 | **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 配额/期限数值输入、流量重置策略 Select、匹配模式 Select、模板选择、公开 Switch、移动端滚动 |
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 默认/内嵌 Badge、策略组/规则集/DNS 摘要、复制模板、快速预览抽屉、删除确认 |
@@ -72,7 +72,7 @@
 所有受影响索引在 `375x812` 与 `768x1024` 下追加检查：
 
 - 页面主体、卡片和 Header 不产生非预期横向滚动。
-- 移动端 Sidebar 能打开、关闭，并在导航后自动收起。
+- 移动端 Sidebar 能打开、关闭，并在导航后自动收起；长菜单在抽屉内平滑垂直滚动且底栏完整可见。
 - 普通弹窗保留两侧留白并可在内部滚动，复杂编辑弹窗切换为全高 Sheet。
 - 表格完整保留字段，横向滚动限制在表格容器内。
 - Tabs、筛选器、批量操作和危险操作按钮不重叠、不被裁切。
