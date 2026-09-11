@@ -735,7 +735,7 @@ export function ProxyExportSection({
             <span>⚠️ 已选出网节点中有 {selectedEndpoints.filter((e) => e.tls).length} 个启用了 TLS 加密，原生 SOCKS5 无法直连，已自动从轮换池与代码中过滤。若需使用这些节点，请在上方将协议切换为 HTTP (HTTPS)。</span>
           </div>
         )}
-        <div className="max-h-80 min-h-36 overflow-auto p-4 font-mono text-xs leading-relaxed select-all">
+        <div className="max-h-80 min-h-36 overflow-auto p-4 font-mono text-xs leading-relaxed select-text">
           {viewMode === 'export' ? (
             <pre className="whitespace-pre-wrap break-all text-zinc-200">{exportContent}</pre>
           ) : (
