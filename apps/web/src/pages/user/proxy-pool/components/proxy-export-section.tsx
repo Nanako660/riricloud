@@ -494,15 +494,15 @@ export function ProxyExportSection({
             </div>
           </div>
 
-          {/* 右侧操作按钮组 */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* 桌面端右侧操作按钮组 (移动端隐藏，转移至下方次级栏以避免狭窄屏幕遮挡碰撞) */}
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
             {viewMode === 'export' ? (
               <>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-6 sm:h-7 gap-1 px-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                  className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                   onClick={downloadTxt}
                   disabled={!exportQuery.data}
                 >
@@ -513,7 +513,7 @@ export function ProxyExportSection({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  className="h-6 sm:h-7 gap-1 px-2 sm:px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                  className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
                   onClick={copyExportContent}
                   disabled={!exportQuery.data}
                 >
@@ -526,7 +526,7 @@ export function ProxyExportSection({
                 type="button"
                 variant="secondary"
                 size="sm"
-                className="h-6 sm:h-7 gap-1 px-2 sm:px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                className="h-7 gap-1 px-2.5 text-xs bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
                 onClick={copyExportContent}
                 disabled={!currentSnippet}
               >
@@ -537,40 +537,150 @@ export function ProxyExportSection({
           </div>
         </div>
 
-        {/* 自动化代码模式下的二级控制条 (语言切换 + 出网节点视图选择) */}
+        {/* 提取结果模式下的移动端二级控制条 (格式状态徽标 + 下载/复制操作按钮) */}
+        {viewMode === 'export' && (
+          <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="rounded border border-zinc-700/60 bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                {format === 'text' ? 'TXT 文本' : format === 'uri' ? 'URI 链接' : 'JSON 格式'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                onClick={downloadTxt}
+                disabled={!exportQuery.data}
+              >
+                <Download className="size-3" />
+                <span>下载 .txt</span>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px] bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+                onClick={copyExportContent}
+                disabled={!exportQuery.data}
+              >
+                {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                <span>{copied ? '已复制' : '复制结果'}</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 自动化代码模式下的二级控制条 (语言切换 + 移动端复制 / 桌面端出网节点视图选择) */}
         {viewMode === 'code' && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 sm:px-4 py-1.5 text-xs">
-            {/* 多语言切换药丸 */}
-            <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
-              {snippets.map((snippet) => (
+          <>
+            <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 sm:px-4 py-1.5 text-xs">
+              {/* 多语言切换药丸 (横向平滑滚动) */}
+              <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+                {snippets.map((snippet) => (
+                  <Button
+                    key={snippet.id}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 shrink-0',
+                      snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium shadow-xs'
+                    )}
+                    onClick={() => setSnippetTab(snippet.id)}
+                  >
+                    {snippet.label.split(' ')[0]}
+                  </Button>
+                ))}
+              </div>
+
+              {/* 移动端专属复制代码按钮 (紧凑常驻在多语言右侧) */}
+              <div className="flex sm:hidden items-center shrink-0">
                 <Button
-                  key={snippet.id}
                   type="button"
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
-                  className={cn(
-                    'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200 shrink-0',
-                    snippetTab === snippet.id && 'bg-zinc-800 text-zinc-100 font-medium shadow-xs'
-                  )}
-                  onClick={() => setSnippetTab(snippet.id)}
+                  className="h-6 gap-1 px-2 text-[11px] bg-zinc-800 text-zinc-100 hover:bg-zinc-700 shrink-0"
+                  onClick={copyExportContent}
+                  disabled={!currentSnippet}
                 >
-                  {snippet.label.split(' ')[0]}
+                  {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                  <span>{copied ? '已复制' : '复制代码'}</span>
                 </Button>
-              ))}
+              </div>
+
+              {/* 桌面端出网节点切换器 (仅在桌面端且多于 1 个有效节点时在此行展示) */}
+              {effectiveEndpoints.length > 1 && (
+                <div className="hidden sm:flex items-center gap-1.5 ml-auto shrink-0">
+                  <span className="text-[11px] text-zinc-500">出网节点:</span>
+                  {effectiveEndpoints.length <= 2 ? (
+                    <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                          selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium'
+                        )}
+                        onClick={() => setSelectedNodeView('all')}
+                      >
+                        🎲 轮换 ({effectiveEndpoints.length})
+                      </Button>
+                      {effectiveEndpoints.map((ep) => (
+                        <Button
+                          key={ep.lineId}
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className={cn(
+                            'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                            selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
+                          )}
+                          onClick={() => setSelectedNodeView(ep.lineId)}
+                          title={`${ep.name} (${ep.host}:${ep.port})`}
+                        >
+                          {ep.name}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
+                      <SelectTrigger
+                        className="h-6 min-w-[120px] max-w-[170px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                        aria-label="选择代码出网节点视图"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
+                        <SelectItem value="all" className="text-xs">
+                          🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                        </SelectItem>
+                        {effectiveEndpoints.map((ep) => (
+                          <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
+                            {ep.name} ({ep.host}:{ep.port})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* 出网节点切换器 (仅多于 1 个有效节点时展示) */}
+            {/* 移动端专属三级控制条 (仅在移动端且多于 1 个有效节点时展示出网节点选择) */}
             {effectiveEndpoints.length > 1 && (
-              <div className="flex items-center gap-1.5 ml-auto">
-                <span className="text-[11px] text-zinc-500 hidden sm:inline">出网节点:</span>
+              <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-3 py-1.5 text-xs">
+                <span className="text-[11px] text-zinc-400 shrink-0">出网节点:</span>
                 {effectiveEndpoints.length <= 2 ? (
-                  <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+                  <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs overflow-x-auto no-scrollbar">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className={cn(
-                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 shrink-0',
                         selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium'
                       )}
                       onClick={() => setSelectedNodeView('all')}
@@ -584,7 +694,7 @@ export function ProxyExportSection({
                         variant="ghost"
                         size="sm"
                         className={cn(
-                          'h-6 max-w-[80px] sm:max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                          'h-6 max-w-[110px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100 shrink-0',
                           selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
                         )}
                         onClick={() => setSelectedNodeView(ep.lineId)}
@@ -597,7 +707,7 @@ export function ProxyExportSection({
                 ) : (
                   <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
                     <SelectTrigger
-                      className="h-6 min-w-[120px] max-w-[170px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                      className="h-6 w-full max-w-[200px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
                       aria-label="选择代码出网节点视图"
                     >
                       <SelectValue />
@@ -616,7 +726,7 @@ export function ProxyExportSection({
                 )}
               </div>
             )}
-          </div>
+          </>
         )}
 
         {/* 终端内容视窗 */}
