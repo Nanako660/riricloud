@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { EmptyState } from '@/components/shared/empty-state';
 import { usePublicSettings } from '@/lib/public-settings';
 import { cn } from '@/lib/utils';
-import { buildProxyCodeSnippets } from '../proxy-snippets';
+import { buildMultiProxyCodeSnippets, buildProxyCodeSnippets } from '../proxy-snippets';
 import {
   type ProxyKey,
   type ProxyPoolEndpoint,
@@ -56,6 +56,7 @@ export function ProxyExportSection({
   const [format, setFormat] = useState<ProxyPoolExportFormat>('text');
   const [viewMode, setViewMode] = useState<'export' | 'code'>('export');
   const [snippetTab, setSnippetTab] = useState('python-requests');
+  const [selectedNodeView, setSelectedNodeView] = useState<string>('all');
   const [copied, setCopied] = useState(false);
 
   const activeKeys = useMemo(() => keys.filter((item) => item.isActive), [keys]);
@@ -78,6 +79,43 @@ export function ProxyExportSection({
     setSelectedLineIds(endpointKey.split(','));
   }, [endpointKey]);
 
+  const selectedEndpoints = useMemo(() => {
+    return endpoints.filter((endpoint) => selectedLineIds.includes(endpoint.lineId));
+  }, [endpoints, selectedLineIds]);
+
+  const allSelectedAreTls = useMemo(() => {
+    return selectedEndpoints.length > 0 && selectedEndpoints.every((endpoint) => endpoint.tls);
+  }, [selectedEndpoints]);
+
+  const hasTlsInSelected = useMemo(() => {
+    return selectedEndpoints.some((endpoint) => endpoint.tls);
+  }, [selectedEndpoints]);
+
+  // 当勾选的节点全部启用 TLS 时，自动切为 http 协议（即 https:// 代理），并锁定 SOCKS5
+  useEffect(() => {
+    if (allSelectedAreTls && protocol === 'socks5') {
+      setProtocol('http');
+    }
+  }, [allSelectedAreTls, protocol]);
+
+  // 智能过滤：若为 SOCKS5 协议，过滤出支持明文 SOCKS5 的节点（排除开启 TLS 的节点）
+  const effectiveEndpoints = useMemo(() => {
+    if (protocol === 'socks5') {
+      return selectedEndpoints.filter((e) => !e.tls);
+    }
+    return selectedEndpoints;
+  }, [selectedEndpoints, protocol]);
+
+  // 若当前单节点视图被取消选择，或在 SOCKS5 模式下被过滤，自动重置为 'all'
+  useEffect(() => {
+    if (selectedNodeView !== 'all') {
+      const isValid = effectiveEndpoints.some((e) => e.lineId === selectedNodeView);
+      if (!isValid) {
+        setSelectedNodeView('all');
+      }
+    }
+  }, [effectiveEndpoints, selectedNodeView]);
+
   const currentKey = activeKeys.find((item) => item.id === keyId) ?? null;
   const exportQuery = useProxyPoolExport({
     keyId,
@@ -87,19 +125,54 @@ export function ProxyExportSection({
     enabled: Boolean(keyId) && selectedLineIds.length > 0
   });
 
-  const previewEndpoint = endpoints.find((endpoint) => selectedLineIds.includes(endpoint.lineId)) ?? null;
   const snippets = useMemo(() => {
-    if (!currentKey || !previewEndpoint) return [];
-    return buildProxyCodeSnippets({
+    if (!currentKey || effectiveEndpoints.length === 0) return [];
+
+    // 单节点视图
+    if (selectedNodeView !== 'all') {
+      const targetEndpoint = effectiveEndpoints.find((e) => e.lineId === selectedNodeView);
+      if (targetEndpoint) {
+        return buildProxyCodeSnippets({
+          protocol,
+          host: targetEndpoint.host,
+          port: targetEndpoint.port,
+          username: currentKey.username,
+          password: currentKey.password,
+          tls: targetEndpoint.tls,
+          serverName: targetEndpoint.serverName
+        });
+      }
+    }
+
+    // 仅单个有效节点
+    if (effectiveEndpoints.length === 1) {
+      const single = effectiveEndpoints[0];
+      return buildProxyCodeSnippets({
+        protocol,
+        host: single.host,
+        port: single.port,
+        username: currentKey.username,
+        password: currentKey.password,
+        tls: single.tls,
+        serverName: single.serverName
+      });
+    }
+
+    // 多节点轮换池模式
+    return buildMultiProxyCodeSnippets({
       protocol,
-      host: previewEndpoint.host,
-      port: previewEndpoint.port,
       username: currentKey.username,
       password: currentKey.password,
-      tls: previewEndpoint.tls,
-      serverName: previewEndpoint.serverName
+      endpoints: effectiveEndpoints.map((e) => ({
+        lineId: e.lineId,
+        name: e.name,
+        host: e.host,
+        port: e.port,
+        tls: e.tls,
+        serverName: e.serverName
+      }))
     });
-  }, [currentKey, previewEndpoint, protocol]);
+  }, [currentKey, effectiveEndpoints, protocol, selectedNodeView]);
 
   const currentSnippet = snippets.find((s) => s.id === snippetTab) ?? snippets[0];
 
@@ -220,13 +293,23 @@ export function ProxyExportSection({
 
             {/* 2. 导出协议 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">导出协议</label>
+              <label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                <span>导出协议</span>
+                {allSelectedAreTls && (
+                  <span className="text-[10px] text-sky-400/90 font-normal">已选节点均已启用 TLS</span>
+                )}
+              </label>
               <div className="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-0.5">
                 <Button
                   type="button"
                   variant={protocol === 'socks5' ? 'default' : 'ghost'}
                   size="sm"
-                  className="h-7 text-xs font-medium"
+                  disabled={allSelectedAreTls}
+                  title={allSelectedAreTls ? '已选节点均已启用 TLS 加密，仅支持 HTTPS 代理' : undefined}
+                  className={cn(
+                    'h-7 text-xs font-medium',
+                    allSelectedAreTls && 'cursor-not-allowed opacity-40'
+                  )}
                   onClick={() => setProtocol('socks5')}
                 >
                   SOCKS5
@@ -238,7 +321,7 @@ export function ProxyExportSection({
                   className="h-7 text-xs font-medium"
                   onClick={() => setProtocol('http')}
                 >
-                  {previewEndpoint?.tls ? 'HTTP (HTTPS)' : 'HTTP'}
+                  {hasTlsInSelected ? 'HTTP (HTTPS)' : 'HTTP'}
                 </Button>
               </div>
             </div>
@@ -392,6 +475,64 @@ export function ProxyExportSection({
                 自动化代码
               </Button>
             </div>
+
+            {/* 代码模式且有效节点 > 1 时展示节点视图切换器 */}
+            {viewMode === 'code' && effectiveEndpoints.length > 1 && (
+              <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-800">
+                <span className="text-[11px] text-zinc-500 hidden md:inline">节点视图:</span>
+                {effectiveEndpoints.length <= 2 ? (
+                  <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                        selectedNodeView === 'all' && 'bg-zinc-700 text-zinc-100 font-medium'
+                      )}
+                      onClick={() => setSelectedNodeView('all')}
+                    >
+                      🎲 全部轮换 ({effectiveEndpoints.length})
+                    </Button>
+                    {effectiveEndpoints.map((ep) => (
+                      <Button
+                        key={ep.lineId}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                          selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
+                        )}
+                        onClick={() => setSelectedNodeView(ep.lineId)}
+                        title={`${ep.name} (${ep.host}:${ep.port})`}
+                      >
+                        {ep.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
+                    <SelectTrigger
+                      className="h-6 min-w-[130px] max-w-[180px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
+                      aria-label="选择代码出网节点视图"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
+                      <SelectItem value="all" className="text-xs">
+                        🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                      </SelectItem>
+                      {effectiveEndpoints.map((ep) => (
+                        <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
+                          {ep.name} ({ep.host}:{ep.port})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 右侧操作按钮组 */}
@@ -458,6 +599,11 @@ export function ProxyExportSection({
         </div>
 
         {/* 终端内容视窗 */}
+        {viewMode === 'code' && protocol === 'socks5' && selectedEndpoints.some((e) => e.tls) && (
+          <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300">
+            <span>⚠️ 已选出网节点中有 {selectedEndpoints.filter((e) => e.tls).length} 个启用了 TLS 加密，原生 SOCKS5 无法直连，已自动从轮换池与代码中过滤。若需使用这些节点，请在上方将协议切换为 HTTP (HTTPS)。</span>
+          </div>
+        )}
         <div className="max-h-80 min-h-36 overflow-auto p-4 font-mono text-xs leading-relaxed select-all">
           {viewMode === 'export' ? (
             <pre className="whitespace-pre-wrap break-all text-zinc-200">{exportContent}</pre>
