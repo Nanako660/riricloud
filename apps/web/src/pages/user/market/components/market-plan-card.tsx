@@ -47,27 +47,27 @@ function parseFeatureItem(raw: string) {
 
   if (text.startsWith('[zap]')) {
     IconComponent = Zap;
-    iconColor = 'text-amber-400';
+    iconColor = 'text-amber-500 dark:text-amber-400';
     text = text.replace('[zap]', '').trim();
   } else if (text.startsWith('[rocket]')) {
     IconComponent = Rocket;
-    iconColor = 'text-sky-400';
+    iconColor = 'text-sky-500 dark:text-sky-400';
     text = text.replace('[rocket]', '').trim();
   } else if (text.startsWith('[crown]')) {
     IconComponent = Crown;
-    iconColor = 'text-amber-300';
+    iconColor = 'text-amber-600 dark:text-amber-300';
     text = text.replace('[crown]', '').trim();
   } else if (text.startsWith('[shield]')) {
     IconComponent = Shield;
-    iconColor = 'text-emerald-400';
+    iconColor = 'text-emerald-500 dark:text-emerald-400';
     text = text.replace('[shield]', '').trim();
   } else if (text.startsWith('[sparkles]')) {
     IconComponent = Sparkles;
-    iconColor = 'text-purple-400';
+    iconColor = 'text-purple-500 dark:text-purple-400';
     text = text.replace('[sparkles]', '').trim();
   } else if (text.startsWith('[star]')) {
     IconComponent = Star;
-    iconColor = 'text-yellow-300';
+    iconColor = 'text-yellow-600 dark:text-yellow-300';
     text = text.replace('[star]', '').trim();
   }
 
@@ -164,17 +164,17 @@ export function MarketPlanCard({
       <Card
         className={cn(
           'relative flex flex-col justify-between h-full w-full overflow-hidden transition-all duration-300',
-          'bg-card/75 backdrop-blur-xl',
+          'bg-card/90 dark:bg-card/75 backdrop-blur-xl shadow-xs dark:shadow-none',
           hasSheen
-            ? 'rounded-[calc(1rem-1.5px)] border border-white/10'
+            ? 'rounded-[calc(1rem-1.5px)] border border-border/80 dark:border-white/10'
             : cn('rounded-2xl border', theme.borderClass),
-          isCurrent && 'ring-2 ring-primary/80 shadow-lg shadow-primary/10',
-          plan.isFeatured && !isCurrent && 'shadow-lg shadow-black/20'
+          isCurrent && 'ring-2 ring-primary/80 shadow-md shadow-primary/10',
+          plan.isFeatured && !isCurrent && 'shadow-md shadow-black/5 dark:shadow-black/20'
         )}
       >
         {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
         {hasAurora && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-35 dark:opacity-100 transition-opacity duration-300">
             {/* 主流体极光光池 1 */}
             <div
               className={cn(
@@ -197,7 +197,7 @@ export function MarketPlanCard({
         )}
 
         {/* 顶部 1px 倒角微光折射微线 (Chamfered Edge Light) */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent z-20" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent z-20" />
 
         {/* 鼠标悬停光斑追踪 (Spotlight) */}
         <div
@@ -263,7 +263,7 @@ export function MarketPlanCard({
 
           <CardContent className="space-y-4 flex-1">
             {/* 价格与折扣对比（微透晶体面板） */}
-            <div className="flex items-baseline justify-between rounded-xl bg-background/50 backdrop-blur-md p-3 border border-white/10 shadow-inner">
+            <div className="flex items-baseline justify-between rounded-xl bg-muted/40 dark:bg-background/50 backdrop-blur-md p-3 border border-border/60 dark:border-white/10 shadow-xs dark:shadow-inner">
               <div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-2xl font-extrabold tracking-tight text-foreground">
@@ -283,7 +283,7 @@ export function MarketPlanCard({
 
               {discountText && (
                 <div className="shrink-0 text-right">
-                  <span className="inline-block rounded-full bg-rose-500/15 px-2.5 py-0.5 text-xs font-semibold text-rose-400 border border-rose-500/25 shadow-sm">
+                  <span className="inline-block rounded-full bg-rose-500/10 dark:bg-rose-500/15 px-2.5 py-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400 border border-rose-500/20 dark:border-rose-500/25 shadow-xs">
                     {discountText}
                   </span>
                 </div>
