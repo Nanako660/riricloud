@@ -164,17 +164,18 @@ export function MarketPlanCard({
       <Card
         className={cn(
           'relative flex flex-col justify-between h-full w-full overflow-hidden transition-all duration-300',
-          'bg-card/90 dark:bg-card/75 backdrop-blur-xl shadow-xs dark:shadow-none',
+          'bg-card/95 dark:bg-card/75 backdrop-blur-xl',
+          theme.cardShadowClass,
           hasSheen
             ? 'rounded-[calc(1rem-1.5px)] border border-border/80 dark:border-white/10'
             : cn('rounded-2xl border', theme.borderClass),
           isCurrent && 'ring-2 ring-primary/80 shadow-md shadow-primary/10',
-          plan.isFeatured && !isCurrent && 'shadow-md shadow-black/5 dark:shadow-black/20'
+          plan.isFeatured && !isCurrent && 'ring-1 ring-primary/30 dark:ring-primary/20'
         )}
       >
         {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
         {hasAurora && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-35 dark:opacity-100 transition-opacity duration-300">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-80 dark:opacity-100 transition-opacity duration-300">
             {/* 主流体极光光池 1 */}
             <div
               className={cn(
@@ -263,7 +264,12 @@ export function MarketPlanCard({
 
           <CardContent className="space-y-4 flex-1">
             {/* 价格与折扣对比（微透晶体面板） */}
-            <div className="flex items-baseline justify-between rounded-xl bg-muted/40 dark:bg-background/50 backdrop-blur-md p-3 border border-border/60 dark:border-white/10 shadow-xs dark:shadow-inner">
+            <div
+              className={cn(
+                'flex items-baseline justify-between rounded-xl backdrop-blur-md p-3 border shadow-xs dark:shadow-inner transition-colors duration-300',
+                theme.priceBoxClass
+              )}
+            >
               <div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-2xl font-extrabold tracking-tight text-foreground">
@@ -283,7 +289,7 @@ export function MarketPlanCard({
 
               {discountText && (
                 <div className="shrink-0 text-right">
-                  <span className="inline-block rounded-full bg-rose-500/10 dark:bg-rose-500/15 px-2.5 py-0.5 text-xs font-semibold text-rose-600 dark:text-rose-400 border border-rose-500/20 dark:border-rose-500/25 shadow-xs">
+                  <span className="inline-block rounded-full bg-rose-500/15 dark:bg-rose-500/15 px-2.5 py-0.5 text-xs font-bold text-rose-700 dark:text-rose-400 border border-rose-500/30 dark:border-rose-500/25 shadow-xs">
                     {discountText}
                   </span>
                 </div>
