@@ -388,39 +388,52 @@ export function ProxyExportSection({
                       variant={isSelected ? 'secondary' : 'outline'}
                       size="sm"
                       className={cn(
-                        'h-auto py-1.5 px-2.5 justify-start gap-2 text-left font-normal transition-all rounded-md',
+                        'h-auto py-1.5 px-2.5 w-full sm:w-auto max-w-full justify-between sm:justify-start gap-2 text-left font-normal transition-all rounded-md overflow-hidden',
                         isSelected
                           ? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/20 shadow-2xs'
                           : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
                       )}
                       onClick={() => toggleLine(endpoint.lineId, !isSelected)}
                     >
-                      <span
-                        className={cn(
-                          'size-2 rounded-full shrink-0',
-                          endpoint.online ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-                        )}
-                      />
-                      <span className="font-semibold text-xs text-foreground">{endpoint.name}</span>
-                      {endpoint.region ? (
-                        <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">
-                          {endpoint.region}
+                      <div className="flex min-w-0 items-center gap-1.5 shrink">
+                        <span
+                          className={cn(
+                            'size-2 rounded-full shrink-0',
+                            endpoint.online ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+                          )}
+                        />
+                        <span
+                          className="font-semibold text-xs text-foreground truncate max-w-[90px] sm:max-w-[130px]"
+                          title={endpoint.name}
+                        >
+                          {endpoint.name}
                         </span>
-                      ) : null}
-                      {endpoint.tls ? (
-                        <span className="text-[10px] px-1 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium">
-                          HTTPS
+                        {endpoint.region ? (
+                          <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground shrink-0">
+                            {endpoint.region}
+                          </span>
+                        ) : null}
+                        {endpoint.tls ? (
+                          <span className="text-[10px] px-1 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium shrink-0">
+                            HTTPS
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="flex min-w-0 items-center gap-1.5 shrink-0 text-muted-foreground/80 ml-auto sm:ml-0">
+                        <span
+                          className="font-mono text-[11px] truncate max-w-[110px] sm:max-w-[160px] md:max-w-none text-muted-foreground/80"
+                          title={`${endpoint.host}:${endpoint.port}`}
+                        >
+                          {endpoint.host}:{endpoint.port}
                         </span>
-                      ) : null}
-                      <span className="font-mono text-[11px] text-muted-foreground/80">
-                        {endpoint.host}:{endpoint.port}
-                      </span>
-                      {endpoint.latencyMs != null ? (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
-                          {endpoint.latencyMs}ms
-                        </span>
-                      ) : null}
-                      {isSelected && <Check className="size-3 text-primary shrink-0 ml-0.5" />}
+                        {endpoint.latencyMs != null ? (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono shrink-0">
+                            {endpoint.latencyMs}ms
+                          </span>
+                        ) : null}
+                        {isSelected && <Check className="size-3 text-primary shrink-0 ml-0.5" />}
+                      </div>
                     </Button>
                   );
                 })}
@@ -501,7 +514,7 @@ export function ProxyExportSection({
                         variant="ghost"
                         size="sm"
                         className={cn(
-                          'h-6 max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
+                          'h-6 max-w-[80px] sm:max-w-[120px] truncate px-2 text-[11px] text-zinc-400 hover:text-zinc-100',
                           selectedNodeView === ep.lineId && 'bg-zinc-700 text-zinc-100 font-medium'
                         )}
                         onClick={() => setSelectedNodeView(ep.lineId)}
