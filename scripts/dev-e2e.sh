@@ -83,7 +83,7 @@ if [ -z "${JWT_SECRET:-}" ]; then
   if [ -s "$E2E_SECRET_FILE" ]; then
     read -r JWT_SECRET <"$E2E_SECRET_FILE" || true
   fi
-  if [ -z "$JWT_SECRET" ]; then
+  if [ -z "${JWT_SECRET:-}" ]; then
     JWT_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
     printf '%s' "$JWT_SECRET" >"$E2E_SECRET_FILE"
   fi
