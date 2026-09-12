@@ -87,6 +87,10 @@ export interface ApiLine {
   entryPort: number;
   landingNodeId?: string | null;
   landingPort?: number | null;
+  allowLanAccess?: boolean;
+  tunnelType?: string | null;
+  tunnelPort?: number | null;
+  tunnelSecret?: string | null;
   certificateId: string | null;
   endpointOverrideEnabled: boolean;
   serverHost: string;
@@ -109,8 +113,8 @@ export interface ApiLine {
   lastTestedAt?: string | null;
   lastTestStatus?: 'SUCCESS' | 'TIMEOUT' | 'ERROR' | null;
   lastTestMessage?: string | null;
-  entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
-  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
+  entryNode: { id: string; name: string; serverHost: string; status: string; isLocal: boolean; reachability?: 'PUBLIC' | 'NAT' };
+  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean; reachability?: 'PUBLIC' | 'NAT' } | null;
   targetLine?: {
     id: string;
     name: string;

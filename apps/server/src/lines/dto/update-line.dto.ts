@@ -115,6 +115,29 @@ export class UpdateLineDto {
   @IsOptional()
   trafficRate?: number;
 
+  @ApiPropertyOptional({ description: '落地端是否允许访问局域网私网 IP (默认 false 拦截保护内网安全)' })
+  @IsBoolean()
+  @IsOptional()
+  allowLanAccess?: boolean;
+
+  @ApiPropertyOptional({ enum: ['TCP_MUX', 'WIREGUARD'], nullable: true, description: '反向穿透隧道类型' })
+  @IsIn(['TCP_MUX', 'WIREGUARD'])
+  @IsOptional()
+  tunnelType?: string | null;
+
+  @ApiPropertyOptional({ example: 29000, minimum: 1, maximum: 65535, nullable: true, description: '反向穿透端口' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  tunnelPort?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: '反向穿透鉴权 Token' })
+  @IsString()
+  @IsOptional()
+  tunnelSecret?: string | null;
+
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsString({ each: true })

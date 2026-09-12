@@ -177,6 +177,7 @@ model Node {
   id              String        @id @default(uuid())
   name            String                                // 节点显示名称 (如 "🇯🇵 东京 01 - 专线")
   serverHost      String                                // 节点公网 IP 或解析域名
+  reachability    String        @default("PUBLIC")      // 节点网络可达性：PUBLIC (公网 VPS) | NAT (无公网 IP/家宽节点，通过反向隧道作为落地中继)
   isLocal         Boolean       @default(false)          // 是否为主控本机预置节点；系统节点不可删除
 
   // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并；含 inbounds 则整组替换）
@@ -305,6 +306,10 @@ model Line {
   serverName      String?
   host            String?
   trafficRate     Float    @default(1)
+  allowLanAccess  Boolean  @default(false) // 落地端是否允许访问局域网私网 IP (默认 false 拦截私网目标保护家庭内网安全)
+  tunnelType      String?  // 反向穿透隧道类型：TCP_MUX (Yamux 多路复用) | WIREGUARD (NAT 落地中继时生效)
+  tunnelPort      Int?     // 入口 VPS 监听的隧道连接端口
+  tunnelSecret    String?  // AES-GCM 加密存储的隧道握手鉴权凭据
   tagsJson        String   @default("[]")
   level           Int      @default(0)
   sortOrder       Int      @default(0)

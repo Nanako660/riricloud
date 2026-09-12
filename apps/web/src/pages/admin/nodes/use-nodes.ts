@@ -155,6 +155,10 @@ export interface NodeLine {
   entryPort: number;
   landingNodeId?: string | null;
   landingPort?: number | null;
+  allowLanAccess?: boolean;
+  tunnelType?: string | null;
+  tunnelPort?: number | null;
+  tunnelSecret?: string | null;
   serverHost: string | null;
   serverPort: number | null;
   trafficRate: number;
@@ -164,14 +168,15 @@ export interface NodeLine {
   isPublic: boolean;
   status: 'ACTIVE' | 'DISABLED';
   role: 'ENTRY' | 'LANDING' | 'DIRECT';
-  entryNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean };
-  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean } | null;
+  entryNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean; reachability?: 'PUBLIC' | 'NAT' };
+  landingNode?: { id: string; name: string; serverHost: string; status: string; isLocal: boolean; reachability?: 'PUBLIC' | 'NAT' } | null;
 }
 
 export interface AdminNode {
   id: string;
   name: string;
   serverHost: string;
+  reachability?: 'PUBLIC' | 'NAT';
   isLocal: boolean;
   configOverride: string | null;
   communicationMode: CommunicationMode;
@@ -321,7 +326,7 @@ export function useNodeMutations() {
 
   // 创建成功不弹 toast：弹窗内切换到 AgentToken 与安装命令展示页
   const createNode = useMutation({
-    mutationFn: async (payload: { name?: string; serverHost: string; communicationMode?: CommunicationMode }) =>
+    mutationFn: async (payload: { name?: string; serverHost?: string; reachability?: 'PUBLIC' | 'NAT'; communicationMode?: CommunicationMode }) =>
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
@@ -346,6 +351,7 @@ export function useNodeMutations() {
       id: string;
       name?: string;
       serverHost?: string;
+      reachability?: 'PUBLIC' | 'NAT';
       configOverride?: string | null;
       communicationMode?: CommunicationMode;
       pollIntervalSecs?: number;

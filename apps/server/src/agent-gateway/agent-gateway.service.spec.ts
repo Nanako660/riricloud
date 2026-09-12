@@ -98,7 +98,8 @@ describe('AgentGatewayService', () => {
     id: 'line-1', name: 'VLESS 线路', tag: null, listen: '0.0.0.0', type: 'DIRECT', relayMode: null, protocolType: 'VLESS', paramsJson: JSON.stringify(vlessParams),
     entryNodeId: 'node-1', entryPort: 24443, landingNodeId: null, landingPort: null, targetLineId: null, endpointOverrideEnabled: false, serverHost: null, serverPort: null, serverName: null, host: null,
     status: 'ACTIVE',
-    ...overrides, landingNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' }
+    landingNode: { id: 'node-2', serverHost: '198.51.100.20', status: 'ONLINE' },
+    ...overrides
   });
 
   it('按 Line 顶层协议生成 VLESS、Hysteria2 与 Shadowsocks 入站', async () => {
@@ -220,6 +221,99 @@ describe('AgentGatewayService', () => {
     ]));
     expect((exitConfig.singboxConfig.experimental as { v2ray_api: { stats: { users: string[] } } }).v2ray_api.stats.users)
       .toContain(INTERNAL_RELAY_TRANSIT_EMAIL);
+  });
+
+  it('NAT 落地中继正确重定向出口地址至 127.0.0.1、限制入站监听本地、注入局域网防护及下发反向隧道配置', async () => {
+    const natRelay = line({
+      id: 'nat-line',
+      tag: 'relay-nat',
+      type: 'RELAY',
+      relayMode: 'BLIND_FORWARD',
+      entryNodeId: 'entry-node',
+      entryPort: 26001,
+      landingNodeId: 'nat-node',
+      landingPort: 26002,
+      tunnelType: 'TCP_MUX',
+      tunnelPort: 40001,
+      tunnelSecret: 'secret-xyz',
+      allowLanAccess: false,
+      landingNode: { serverHost: '192.168.1.50', reachability: 'NAT', status: 'ONLINE' }
+    });
+
+    // 1. 入口公网 VPS（Server 角色）
+    prisma.node.findUnique.mockResolvedValueOnce({
+      id: 'entry-node',
+      serverHost: 'entry.example.com',
+      reachability: 'PUBLIC',
+      status: 'ONLINE',
+      configOverride: null,
+      entryLines: [natRelay],
+      landingLines: []
+    });
+    prisma.user.findMany.mockResolvedValue([user]);
+
+    const entrySync = await service.buildConfigSync('entry-node');
+    expect(entrySync.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tag: 'relay-nat-entry',
+        listen_port: 26001,
+        override_address: '127.0.0.1',
+        override_port: 26002
+      })
+    ]));
+    expect(entrySync.tunnelConfigs).toEqual([
+      {
+        id: 'tunnel-server-40001',
+        role: 'SERVER',
+        listenPort: 40001,
+        secret: 'secret-xyz',
+        mappings: [{ lineId: 'nat-line', localPort: 26002, targetPort: 26002 }]
+      }
+    ]);
+
+    // 2. 内网落地 NAT 主机（Client 角色）
+    prisma.node.findUnique.mockResolvedValueOnce({
+      id: 'nat-node',
+      serverHost: '192.168.1.50',
+      reachability: 'NAT',
+      status: 'ONLINE',
+      configOverride: null,
+      entryLines: [],
+      landingLines: [{
+        ...natRelay,
+        entryNode: { serverHost: 'entry.example.com', status: 'ONLINE', reachability: 'PUBLIC' }
+      }]
+    });
+
+    const landingSync = await service.buildConfigSync('nat-node');
+    expect(landingSync.singboxConfig.inbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        tag: 'relay-nat-landing',
+        listen: '127.0.0.1',
+        listen_port: 26002
+      })
+    ]));
+    expect((landingSync.singboxConfig.route as { rules: Array<Record<string, unknown>> }).rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          inbound: ['relay-nat-landing'],
+          ip_cidr: expect.arrayContaining(['10.0.0.0/8', '192.168.0.0/16']),
+          outbound: 'block'
+        })
+      ])
+    );
+    expect(landingSync.singboxConfig.outbounds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'block', tag: 'block' })
+    ]));
+    expect(landingSync.tunnelConfigs).toEqual([
+      {
+        id: 'tunnel-client-40001',
+        role: 'CLIENT',
+        serverAddr: 'entry.example.com:40001',
+        secret: 'secret-xyz',
+        mappings: [{ lineId: 'nat-line', localPort: 26002, targetPort: 26002 }]
+      }
+    ]);
   });
 
   it('目标线路桥接生成入口协议、目标协议出口，并复用目标直连入站', async () => {

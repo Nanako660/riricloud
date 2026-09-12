@@ -33,4 +33,8 @@ export class UpdateNodeDto {
   @IsOptional()
   pollIntervalSecs?: number;
 
+  @ApiPropertyOptional({ enum: ['PUBLIC', 'NAT'] })
+  @IsIn(['PUBLIC', 'NAT'])
+  @IsOptional()
+  reachability?: 'PUBLIC' | 'NAT';
 }

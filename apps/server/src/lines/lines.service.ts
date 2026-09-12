@@ -14,6 +14,7 @@ import {
 } from '../common/constants';
 import { DEFAULT_INBOUND_LISTEN, findAvailableRandomPort } from '../common/ports';
 import { resolveLineTags } from '../common/line-tags';
+import { generateAgentToken } from '../common/utils';
 import { PrismaService } from '../prisma/prisma.service';
 import { BatchLineStatusDto } from './dto/batch-line-status.dto';
 import { CreateLineDto } from './dto/create-line.dto';
@@ -69,6 +70,10 @@ type LineInput = {
   sortOrder?: number;
   isPublic?: boolean;
   status?: LineStatus;
+  allowLanAccess?: boolean;
+  tunnelType?: string | null;
+  tunnelPort?: number | null;
+  tunnelSecret?: string | null;
 };
 
 const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
@@ -290,6 +295,45 @@ export class LinesService {
     if (!entryNode) throw new NotFoundException('入口节点不存在');
     if (landingNodeId && !landingNode) throw new NotFoundException('落地节点不存在');
 
+    if (entryNode.reachability === 'NAT') {
+      if (type === 'DIRECT') {
+        throw new BadRequestException('NAT 节点（无公网 IP）不支持作为直连线路节点，仅支持作为中继落地节点');
+      }
+      throw new BadRequestException('NAT 节点（无公网 IP）不支持作为中继入口节点，仅支持作为中继落地节点');
+    }
+
+    let tunnelType: string | null = null;
+    let tunnelPort: number | null = null;
+    let tunnelSecret: string | null = null;
+
+    if (type === 'RELAY' && landingNode?.reachability === 'NAT') {
+      if (relayMode === 'TARGET_LINE') {
+        throw new BadRequestException('NAT 落地节点不支持桥接目标线路');
+      }
+      tunnelType = input.tunnelType ?? current?.tunnelType ?? 'TCP_MUX';
+      const existingTunnelLine = await this.prisma.line.findFirst({
+        where: {
+          entryNodeId,
+          landingNodeId,
+          tunnelPort: { not: null },
+          ...(current?.id ? { id: { not: current.id } } : {})
+        },
+        select: { tunnelPort: true, tunnelSecret: true, tunnelType: true }
+      });
+
+      if (existingTunnelLine?.tunnelPort && existingTunnelLine?.tunnelSecret) {
+        tunnelPort = input.tunnelPort ?? existingTunnelLine.tunnelPort;
+        tunnelSecret = input.tunnelSecret ?? existingTunnelLine.tunnelSecret;
+        tunnelType = existingTunnelLine.tunnelType ?? tunnelType;
+      } else {
+        tunnelPort = input.tunnelPort !== undefined && input.tunnelPort !== null
+          ? input.tunnelPort
+          : current?.tunnelPort ?? await this.findAvailablePort(entryNodeId, 'VLESS', current?.id);
+        tunnelSecret = input.tunnelSecret ?? current?.tunnelSecret ?? generateAgentToken();
+      }
+    }
+    const allowLanAccess = input.allowLanAccess !== undefined ? Boolean(input.allowLanAccess) : current?.allowLanAccess ?? false;
+
     const entryPort = input.entryPort !== undefined && input.entryPort !== null
       ? input.entryPort
       : current?.entryPort ?? await this.findAvailablePort(entryNodeId, protocolType, current?.id);
@@ -344,6 +388,10 @@ export class LinesService {
       landingPort,
       targetLineId,
       certificateId,
+      allowLanAccess,
+      tunnelType,
+      tunnelPort,
+      tunnelSecret,
       endpointOverrideEnabled: input.endpointOverrideEnabled ?? current?.endpointOverrideEnabled ?? false,
       serverHost: optionalText(input.serverHost, current?.serverHost),
       serverPort: input.serverPort !== undefined ? input.serverPort : current?.serverPort,

@@ -69,11 +69,15 @@ export class NodesService {
       configuredBaseUrl: settings?.publicBaseUrl,
       requestBaseUrl
     });
+    const reachability = dto.reachability ?? 'PUBLIC';
+    const serverHost = dto.serverHost?.trim() || (reachability === 'NAT' ? '127.0.0.1' : '');
+    if (!serverHost) throw new BadRequestException('节点公网主机地址不能为空');
     const agentToken = generateAgentToken();
     const node = await this.prisma.node.create({
       data: {
-        name: dto.name?.trim() || `节点 ${dto.serverHost}`,
-        serverHost: dto.serverHost.trim(),
+        name: dto.name?.trim() || `节点 ${serverHost}`,
+        serverHost,
+        reachability,
         agentToken: encryptSecret(agentToken),
         agentTokenHash: hashAgentToken(agentToken),
         communicationMode,
@@ -260,7 +264,7 @@ export class NodesService {
 
   async update(id: string, dto: UpdateNodeDto) {
     await this.requireNode(id);
-    const data: { name?: string; serverHost?: string; configOverride?: string | null; communicationMode?: 'WS' | 'HTTP'; pollIntervalSecs?: number } = {};
+    const data: { name?: string; serverHost?: string; reachability?: string; configOverride?: string | null; communicationMode?: 'WS' | 'HTTP'; pollIntervalSecs?: number } = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) throw new BadRequestException('节点名称不能为空');
@@ -270,6 +274,17 @@ export class NodesService {
       const serverHost = dto.serverHost.trim();
       if (!serverHost) throw new BadRequestException('服务器地址不能为空');
       data.serverHost = serverHost;
+    }
+    if (dto.reachability !== undefined) {
+      if (dto.reachability === 'NAT') {
+        const activeEntryLines = await this.prisma.line.count({
+          where: { entryNodeId: id }
+        });
+        if (activeEntryLines > 0) {
+          throw new BadRequestException('该节点正在作为直连线路或中继入口节点使用，无法变更为 NAT 节点，请先调整相关线路');
+        }
+      }
+      data.reachability = dto.reachability;
     }
     if (dto.configOverride !== undefined) {
       data.configOverride = dto.configOverride === null || dto.configOverride.trim() === ''

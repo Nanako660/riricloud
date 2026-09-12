@@ -95,9 +95,25 @@ export interface ConfigApplyResultData {
   message: string;
 }
 
+export interface TunnelPortMapping {
+  lineId: string;
+  localPort: number;
+  targetPort: number;
+}
+
+export interface TunnelConfigPayload {
+  id: string;
+  role: 'SERVER' | 'CLIENT';
+  listenPort?: number;
+  serverAddr?: string;
+  secret: string;
+  mappings: TunnelPortMapping[];
+}
+
 export interface ConfigSyncData {
   version: number;
   singboxConfig: Record<string, unknown>;
+  tunnelConfigs?: TunnelConfigPayload[];
 }
 
 export type UpgradeTarget = 'singbox' | 'agent';

@@ -13,6 +13,8 @@
 ## [Unreleased]
 
 ### Added
+- **原生 TCP/TLS 反向多路复用隧道引擎 (Yamux)**：新增 `internal/tunnel` 核心模块，支持 `SERVER`（公网入口 VPS 监听与本地端口转发桥接）与 `CLIENT`（内网 NAT 落地端主动拨号与本地 Sing-box 流量泵出）双模式。基于 `github.com/hashicorp/yamux` 实现高并发流式解复用，严格遵循 `CGO_ENABLED=0`，零系统依赖，常驻内存 < 30MB，免疫家庭宽带 UDP QoS 限速并完全免除 root/TUN 特权要求。
+- **长连接心跳保活与指数退避断线自愈**：客户端集成 25 秒周期底层 Ping 探测与超时自毁判定，内置 1s~30s 指数退避断线重连状态机，提供对家庭宽带运营商 PPPoE 定时重拨、光猫休眠与网络瞬断的秒级平滑自愈。
 
 ### Changed
 

@@ -17,9 +17,17 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
   const type = form.watch('type');
   const relayMode = form.watch('relayMode');
   const entryNodeId = form.watch('entryNodeId');
+  const landingNodeId = form.watch('landingNodeId');
   const targetLineId = form.watch('targetLineId');
   const endpointOverrideEnabled = form.watch('endpointOverrideEnabled');
-  const nodeOptions = nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.serverHost}` }));
+  const selectedLandingNode = nodes.find((node) => node.id === landingNodeId);
+  const isNatLanding = selectedLandingNode?.reachability === 'NAT';
+  const nodeOptions = nodes
+    .filter((node) => node.id !== entryNodeId)
+    .map((node) => ({
+      value: node.id,
+      label: `${node.name} · ${node.serverHost}${node.reachability === 'NAT' ? ' (NAT 落地)' : ''}`
+    }));
   const targetLines = lines.filter((line) => (
     line.id !== currentLineId &&
     line.type === 'DIRECT' &&
@@ -51,7 +59,61 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
           {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="landingNodeId" label="落地节点" options={nodeOptions} />}
           {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="landingPort" label="落地监听端口" type="number" placeholder="留空自动分配" />}
         </FieldGrid>
-        {type === 'RELAY' && <SelectField form={form} name="relayMode" label="中继机制" options={[{ value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' }, { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' }, { value: 'TARGET_LINE', label: '协议转换：桥接已有线路' }]} onValueChange={changeRelayMode} />}
+        {type === 'RELAY' && (
+          <SelectField
+            form={form}
+            name="relayMode"
+            label="中继机制"
+            options={
+              isNatLanding
+                ? [
+                    { value: 'BLIND_FORWARD', label: '盲转发：反向隧道直接穿透（推荐）' },
+                    { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后经反向隧道重建连接' }
+                  ]
+                : [
+                    { value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' },
+                    { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' },
+                    { value: 'TARGET_LINE', label: '协议转换：桥接已有线路' }
+                  ]
+            }
+            onValueChange={changeRelayMode}
+          />
+        )}
+        {type === 'RELAY' && isNatLanding && (
+          <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-amber-700 dark:text-amber-400">
+                NAT 穿透落地节点安全与配置
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              检测到所选落地节点为内网 NAT 主机，将通过基于 Yamux 的 TCP 反向隧道由入口公网 VPS 桥接穿透。Sing-box 在该节点仅监听 127.0.0.1 本地回环。
+            </p>
+            <SwitchField
+              form={form}
+              name="allowLanAccess"
+              label="允许访问落地端局域网资源"
+              description="默认关闭：仅允许访问公网目标，自动拦截发往 10.0.0.0/8、192.168.0.0/16 等局域网私网地址的流量；开启后允许外部流量访问该家庭内网。"
+            />
+            <FieldGrid>
+              <TextField
+                form={form}
+                name="tunnelPort"
+                label="反向隧道监听端口（入口 VPS 端）"
+                type="number"
+                placeholder="留空自动分配 (如 40001+)"
+                description="同一对 (入口, 落地) 节点自动复用聚合端口"
+              />
+              <TextField
+                form={form}
+                name="tunnelSecret"
+                label="隧道通讯密钥（可选）"
+                placeholder="留空自动生成高熵 Token"
+                description="同一对节点复用已有密钥"
+              />
+            </FieldGrid>
+          </div>
+        )}
         {type === 'RELAY' && relayMode === 'TARGET_LINE' && <div className="space-y-3">
           <SelectField
             form={form}
