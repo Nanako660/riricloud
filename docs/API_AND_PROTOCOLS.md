@@ -90,7 +90,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。回执会持久化到节点 `lastProbeResult`。
 - `POST /admin/nodes/:id/restart-agent`：请求 Agent 自身平滑重启。⭐ 返回 `{ taskId, requested }`，Agent 在回执后使用原始命令行参数重新启动。
-- `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。
+- `GET /admin/nodes/:id/tasks`：分页查询该节点的升级分发任务（`page`/`pageSize`/`status`），行内含资源版本摘要与 `previousAssetId`；配合任务重试/回滚接口使用。⭐
+- `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。持久化的升级分发任务另见 §2.4 的重试 `POST /admin/nodes/:id/tasks/:taskId/retry`（FAILED/COMPLETED 可重试）与回滚 `POST /admin/nodes/:id/tasks/:taskId/rollback`（存在 `previousAssetId` 时按上一版本资源重新下发，`operation=ROLLBACK`）。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 二进制分发中心
@@ -409,23 +410,31 @@ Agent 在配置应用失败、升级异常、内核异常退出或关键操作�
 
 Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result`、`log_report` 六类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
-## 2.4 二进制资源中心 API（v0.5.0）
+## 2.4 二进制资源中心 API（v0.5.0，v0.8.8 扩展）
 
 以下管理接口均需要管理员 JWT 与 `ADMIN` 角色：
 
 | 方法 | 路径 | 用途 |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/admin/binary-resources` | 按资源类型、版本、状态返回资源、平台资产、文件摘要与最近分发任务。 |
-| `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件、引用任务和分发历史。 |
+| `GET` | `/api/v1/admin/binary-resources` | 服务端分页查询资源列表；支持 `page`、`pageSize`（≤100）、`search`（匹配上游版本或备注）、`kind`、`status`、`platform`（如 `linux-amd64`，按平台资产覆盖筛选）参数；响应为 `{ data, total, page, pageSize, supportedTargets }`，`supportedTargets` 为服务端支持的全部平台 target 列表（前端下拉与筛选的唯一来源）。列表行内嵌平台资产与 `deploymentCount` 汇总，不再内嵌最近任务。 |
+| `GET` | `/api/v1/admin/binary-resources/audit-logs` | 分页查询资源中心操作审计；支持 `page`、`pageSize`、`releaseId`、`action` 参数；行内补全操作者 `operator`（昵称/邮箱）。 |
+| `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件与最近 50 条分发任务。 |
+| `PATCH` | `/api/v1/admin/binary-resources/:id` | 编辑资源 `notes` 与 `compatibility`（兼容性约束对象，字段白名单：`minAgentProtocolVersion`/`maxAgentProtocolVersion` 数字，`minAgentVersion`/`maxAgentVersion`/`cronetVersion` 字符串）；版本与修订号为资源身份标识，不可修改。 |
+| `DELETE` | `/api/v1/admin/binary-resources/:id` | 物理删除资源；仅允许非 `BUILTIN`、非 `ACTIVE` 且无分发任务引用的资源，事务删除 DB 行并清理 RUNTIME 下 `resources/<releaseId>/` 磁盘文件；有分发历史的资源请使用归档保留审计。 |
+| `POST` | `/api/v1/admin/binary-resources/batch` | 批量操作：`{ action: 'activate' \| 'disable' \| 'retire' \| 'delete', ids: string[] }`（≤100 项）；逐项执行并返回 `{ succeeded, failed, results: [{ id, ok, error? }] }`。 |
 | `POST` | `/api/v1/admin/binary-resources/upload` | `multipart/form-data` 上传本地文件；表单字段与远程导入相同，文件上限 100 MiB。 |
 | `POST` | `/api/v1/admin/binary-resources/import` | 按管理员提供的 HTTP(S) URL 下载并托管资源。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/activate` | 启用资源。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/disable` | 停用资源并取消默认标记。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/retire` | 归档资源并取消默认标记。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/restore` | 将 `RETIRED` 归档资源恢复为 `DISABLED`（归档状态的唯一出口）。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/default` | 将 ACTIVE 资源设为该类型默认版本。 |
-| `GET` | `/api/v1/admin/binary-resources/:id/deployments` | 查看该资源最近 200 条分发任务。 |
+| `GET` | `/api/v1/admin/binary-resources/:id/deployments` | 分页查询该资源的分发任务；支持 `page`、`pageSize`、`status` 参数，行内含节点摘要。 |
+| `GET` | `/api/v1/admin/nodes/:id/tasks` | 分页查询该节点的升级分发任务；支持 `page`、`pageSize`、`status` 参数，行内含资源版本摘要与 `previousAssetId`（回滚依据）。 |
 
-导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 形如 `singbox-linux-amd64`。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
+导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 必须取自服务端平台枚举（agent/singbox × linux/macos/windows × amd64/arm64，与 `scripts/build-agent.sh --all` 发布矩阵一致）。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
+
+资源状态机：`DRAFT → ACTIVE ⇄ DISABLED → RETIRED`；`RETIRED` 只能经 `restore` 回到 `DISABLED`。停用或归档默认资源时，服务端在同一事务内把默认标记自动转移到同类型最新的 ACTIVE 资源（无候选则置空），并记录在审计元数据 `defaultTransferredTo` 中。每次导入/编辑/启停/归档/恢复/删除/切换默认均写入 `BinaryAuditLog`。
 
 节点升级 `POST /api/v1/admin/nodes/:id/upgrade` 新增可选 `resourceId`。服务端根据节点 OS/架构选择资源的 `assetId`，下发响应包含 `resourceId`、`assetId`、主文件 URL/SHA-256 与 `files[]`；`files[]` 可包含 Sing-box 主文件及 `libcronet.so` 辅助文件。旧版 `target`、`version`、`url`、`sha256` 参数继续支持，旧 Agent 仍可执行只有单文件 URL/SHA-256 的 `upgrade_task`。
 
