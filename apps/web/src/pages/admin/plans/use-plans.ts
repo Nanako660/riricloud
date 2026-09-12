@@ -6,9 +6,11 @@ export type PlanThemeColor = 'default' | 'amber' | 'blue' | 'purple' | 'emerald'
 export type PlanAnimationEffect = 'none' | 'beam' | 'pulse' | 'beam_pulse';
 export type PlanBeamColor = 'theme' | 'rainbow';
 export type PlanBadgeVariant = 'default' | 'outline' | 'secondary' | 'glow' | 'gradient';
+export type PlanCardStyle = 'fusion' | 'holographic' | 'neon' | 'custom';
 
 export interface PlanCardConfig {
   themeColor?: PlanThemeColor;
+  cardStyle?: PlanCardStyle;
   icon?: string;
   buttonText?: string | null;
   originalPrice?: number | null;
@@ -18,6 +20,11 @@ export interface PlanCardConfig {
   beamColor?: PlanBeamColor;
   shimmerButton?: boolean;
   syncToSubscription?: boolean;
+  enable3DTilt?: boolean;
+  enableShineBorder?: boolean;
+  enableHolographic?: boolean;
+  enableAmbientGlow?: boolean;
+  enableAurora?: boolean;
 }
 
 export interface Plan {

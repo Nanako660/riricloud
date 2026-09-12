@@ -58,6 +58,36 @@ export class PlanCardConfigDto {
   @IsBoolean()
   @IsOptional()
   syncToSubscription?: boolean;
+
+  @ApiPropertyOptional({ enum: ['fusion', 'holographic', 'neon', 'custom'], description: '卡片视觉流派方案' })
+  @IsString()
+  @IsOptional()
+  cardStyle?: string;
+
+  @ApiPropertyOptional({ description: '高级微调：是否启用 3D 视差微倾斜' })
+  @IsBoolean()
+  @IsOptional()
+  enable3DTilt?: boolean;
+
+  @ApiPropertyOptional({ description: '高级微调：是否启用 1.5px 导光流光微边框' })
+  @IsBoolean()
+  @IsOptional()
+  enableShineBorder?: boolean;
+
+  @ApiPropertyOptional({ description: '高级微调：是否启用全息彩虹晶格折射' })
+  @IsBoolean()
+  @IsOptional()
+  enableHolographic?: boolean;
+
+  @ApiPropertyOptional({ description: '高级微调：是否启用双层呼吸环境霓虹光晕' })
+  @IsBoolean()
+  @IsOptional()
+  enableAmbientGlow?: boolean;
+
+  @ApiPropertyOptional({ description: '高级微调：是否启用流体极光内衬' })
+  @IsBoolean()
+  @IsOptional()
+  enableAurora?: boolean;
 }
 
 export class CreatePlanDto {
