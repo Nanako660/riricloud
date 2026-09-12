@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
@@ -10,6 +10,9 @@ import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
 import { BinaryResourcesService } from './binary-resources.service';
 import { BinaryResourceImportDto, BinaryResourceUploadDto } from './dto/binary-resource.dto';
+import { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
+import { QueryBinaryAuditLogDto, QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
+import { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
 
 @ApiTags('binaries')
 @Controller()
@@ -109,15 +112,30 @@ export class BinariesController {
   @ApiBearerAuth()
   @Roles('ADMIN')
   @Get('admin/binary-resources')
-  listResources() {
-    return this.resources!.list();
+  listResources(@Query() query: QueryBinaryResourceDto) {
+    return this.resources!.list(query);
+  }
+
+  // 注意：audit-logs 是固定路径，必须在 :id 动态路由之前注册
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Get('admin/binary-resources/audit-logs')
+  auditLogs(@Query() query: QueryBinaryAuditLogDto) {
+    return this.resources!.auditLogs(query);
+  }
+
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Post('admin/binary-resources/batch')
+  batchResources(@Body() dto: BatchBinaryResourceDto, @CurrentUser() user: { id: string }) {
+    return this.resources!.batch(dto, user.id);
   }
 
   @ApiBearerAuth()
   @Roles('ADMIN')
   @Get('admin/binary-resources/:id/deployments')
-  resourceDeployments(@Param('id') id: string) {
-    return this.resources!.deployments(id);
+  resourceDeployments(@Param('id') id: string, @Query() query: QueryBinaryDeploymentDto) {
+    return this.resources!.deployments(id, query);
   }
 
   @ApiBearerAuth()
@@ -125,6 +143,20 @@ export class BinariesController {
   @Get('admin/binary-resources/:id')
   resourceDetail(@Param('id') id: string) {
     return this.resources!.detail(id);
+  }
+
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Patch('admin/binary-resources/:id')
+  updateResource(@Param('id') id: string, @Body() dto: UpdateBinaryResourceDto, @CurrentUser() user: { id: string }) {
+    return this.resources!.update(id, dto, user.id);
+  }
+
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Delete('admin/binary-resources/:id')
+  removeResource(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.resources!.remove(id, user.id);
   }
 
   @ApiBearerAuth()
@@ -166,6 +198,13 @@ export class BinariesController {
   @Post('admin/binary-resources/:id/retire')
   retireResource(@Param('id') id: string, @CurrentUser() user: { id: string }) {
     return this.resources!.retire(id, user.id);
+  }
+
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Post('admin/binary-resources/:id/restore')
+  restoreResource(@Param('id') id: string, @CurrentUser() user: { id: string }) {
+    return this.resources!.restore(id, user.id);
   }
 
   @ApiBearerAuth()
