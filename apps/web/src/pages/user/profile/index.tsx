@@ -545,7 +545,7 @@ export default function ProfilePage() {
                             <FormControl>
                               <Input placeholder="输入充值卡密" autoComplete="off" {...field} />
                             </FormControl>
-                            <FormDescription>卡密区分大小写，兑换成功后无法撤回。</FormDescription>
+                            <FormDescription>卡密不区分大小写，兑换成功后无法撤回。</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
