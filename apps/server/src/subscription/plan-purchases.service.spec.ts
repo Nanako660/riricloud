@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { PlanPurchasesService } from './plan-purchases.service';
 
 describe('PlanPurchasesService', () => {
+  const originalJwtSecret = process.env.JWT_SECRET;
   const prisma = {
     user: { findUnique: jest.fn(), update: jest.fn() },
     planPurchaseIdentity: { create: jest.fn() },
@@ -16,12 +17,18 @@ describe('PlanPurchasesService', () => {
   };
 
   beforeEach(() => {
+    process.env.JWT_SECRET = 'test-secret-for-plan-purchases-service-0123456789';
     jest.clearAllMocks();
     prisma.user.findUnique.mockResolvedValue(user);
     prisma.user.update.mockResolvedValue(user);
     prisma.planPurchaseEmailAlias.findUnique.mockResolvedValue({ identityId: 'identity-1' });
     prisma.planPurchaseEmailAlias.create.mockResolvedValue({});
     prisma.planPurchase.create.mockImplementation(async ({ data }) => ({ id: 'purchase-1', ...data }));
+  });
+
+  afterAll(() => {
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originalJwtSecret;
   });
 
   it('免费套餐首次领取按序号 1 写入台账', async () => {
