@@ -84,6 +84,10 @@ interface SystemSettings {
   emailDomainMode: 'none' | 'whitelist' | 'blacklist';
   emailDomainList: string[];
   passwordMinLength: number;
+  passwordRequireLowercase: boolean;
+  passwordRequireUppercase: boolean;
+  passwordRequireDigit: boolean;
+  passwordRequireSpecial: boolean;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled: boolean;
@@ -136,6 +140,10 @@ const settingsSchema = z.object({
   emailDomainMode: z.enum(['none', 'whitelist', 'blacklist']),
   emailDomainListText: z.string().max(16000),
   passwordMinLength: z.coerce.number().int().min(8).max(64),
+  passwordRequireLowercase: z.boolean(),
+  passwordRequireUppercase: z.boolean(),
+  passwordRequireDigit: z.boolean(),
+  passwordRequireSpecial: z.boolean(),
   subscriptionBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的订阅基准 URL'),
   subscriptionShortLinksEnabled: z.boolean(),
   subscriptionEffectsSyncEnabled: z.boolean(),
@@ -190,7 +198,7 @@ export default function AdminSettingsPage() {
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       systemTimezone: 'Asia/Shanghai',
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
-      emailDomainList: [], passwordMinLength: 8, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
+      emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
@@ -290,7 +298,16 @@ export default function AdminSettingsPage() {
                 <p className="font-medium text-foreground">关于新用户流量与有效期：</p>
                 <p>新用户注册后的流量配额与账号有效期完全统一由「新用户默认套餐」决定。若选择「不自动绑定套餐」，新注册用户初始配额为 0 且无到期限制，用户可通过赠送的初始余额在「套餐市场」自选开通。</p>
               </div>
-              <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} />
+              <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} description="密码长度下限（8-64 位），与下方复杂度要求共同构成密码策略。" />
+              <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm">
+                <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">密码复杂度要求</h3><p className="text-xs text-muted-foreground">注册、找回密码、修改密码与管理员建户等所有设置密码场景统一生效；全部关闭时仅校验长度。</p></div></div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SettingsSwitch name="passwordRequireLowercase" label="必须包含小写字母" description="要求密码中出现 a-z 中的至少一个字符。" />
+                  <SettingsSwitch name="passwordRequireUppercase" label="必须包含大写字母" description="要求密码中出现 A-Z 中的至少一个字符。" />
+                  <SettingsSwitch name="passwordRequireDigit" label="必须包含数字" description="要求密码中出现 0-9 中的至少一个字符。" />
+                  <SettingsSwitch name="passwordRequireSpecial" label="必须包含特殊字符" description="除字母、数字和空格外的字符，例如 !@#$%。空格不算特殊字符。" />
+                </div>
+              </div>
               <SettingsSelect name="emailDomainMode" label="邮箱域名过滤模式" options={[{ value: 'none', label: '不限制' }, { value: 'whitelist', label: '白名单，仅允许列表域名' }, { value: 'blacklist', label: '黑名单，拒绝列表域名' }]} />
                <SettingsTextarea name="emailDomainListText" label="邮箱域名列表" rows={5} className="md:col-span-2" description="每行一个域名，例如 example.com；不需要填写 @。" />
                <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm">
@@ -508,6 +525,10 @@ function toForm(settings: SystemSettings): SettingsForm {
     emailDomainMode: settings.emailDomainMode,
     emailDomainListText: settings.emailDomainList.join('\n'),
     passwordMinLength: settings.passwordMinLength,
+    passwordRequireLowercase: settings.passwordRequireLowercase ?? true,
+    passwordRequireUppercase: settings.passwordRequireUppercase ?? false,
+    passwordRequireDigit: settings.passwordRequireDigit ?? true,
+    passwordRequireSpecial: settings.passwordRequireSpecial ?? false,
     subscriptionBaseUrl: settings.subscriptionBaseUrl,
     subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled ?? true,
@@ -562,6 +583,10 @@ function toPayload(values: SettingsForm) {
     emailDomainList: values.emailDomainListText.split(/\r?\n|,/).map((item) => item.trim().toLowerCase().replace(/^@+/, '')).filter(Boolean),
     emailDomainMode: values.emailDomainMode,
     passwordMinLength: values.passwordMinLength,
+    passwordRequireLowercase: values.passwordRequireLowercase,
+    passwordRequireUppercase: values.passwordRequireUppercase,
+    passwordRequireDigit: values.passwordRequireDigit,
+    passwordRequireSpecial: values.passwordRequireSpecial,
     subscriptionBaseUrl: values.subscriptionBaseUrl,
     subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: values.subscriptionEffectsSyncEnabled,

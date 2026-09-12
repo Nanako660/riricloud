@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **用户密码复杂度策略全面可配置**：系统设置「注册与用户」新增密码复杂度要求区块，小写字母、大写字母、数字、特殊字符四个必含开关（`passwordRequire*`）与密码最小长度共同构成密码策略，对注册、找回密码、修改密码与管理员建户/重置密码全场景生效，全部关闭时仅校验长度；默认策略放宽为「须含小写字母与数字」，不再强制大写与特殊字符。服务端按设置动态构建校验正则并移除 DTO 层硬编码强度规则，公开设置透出策略供前端动态校验与占位提示，`admin:reset` 与首管理员 bootstrap 脚本同步遵循配置策略。
 - **免费套餐重复购买限制与终身购买台账**：套餐新增 `purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal` 配置；新增 `PlanPurchaseIdentity`、`PlanPurchaseEmailAlias` 与 `PlanPurchase` 持久化台账，并将购买身份与可删除账号解耦。自助订购、升配、注册默认套餐和管理员发放统一记账，唯一约束负责并发去重；取消、过期、升配、管理员删除账号后重新注册均不能再次领取已用尽免费套餐，管理员补发可破例但必须留下 `ADMIN` 来源记录。
 - **套餐卡片高阶视觉流派方案与后台完全可配置化**：吸纳 Aceternity UI 与 Magic UI 业界顶流视觉设计精髓，全面落地三大高阶流派方案（`cardStyle`：`fusion` 尊享流光合璧、`holographic` 全息黑曜 3D 闪卡、`neon` 赛博霓虹导光晶体）。在套餐管理后台（`PlanFormDialog`）新增流派方案卡片式三选一交互配置，管理员可自由为各个套餐独立指定专属流派，右侧实机预览即时联动；`PlanCardConfigDto` 同步扩展 `cardStyle` 字段契约并支持 Swagger 与 class-validator 校验；全新引入物理阻尼 $\pm 6^\circ$ 的细腻 3D Tilt 视差微倾斜、1.5px 极细微导光流动微边框容器（Shine Border）、高透动态全息彩虹晶格折射（Holographic Foil）以及双层环境霓虹光晕（Ambient Neon Bloom），浅色模式适配为典雅通透的珠光白玉微晶质感（Pearlescent Frost），彻底解决原有大面积深暗色调发脏发浊痛点，达成流光溢彩且极度奢华沉稳的高阶质感。
 - **预设流派基线与折叠式「高级视觉微调」抽屉面板**：在套餐管理后台（`PlanFormDialog`）实现“预设流派 + 折叠式高级微调面板”双层交互架构。选择任一流派自动一键载入对应最佳基线配置，展开折叠面板可对 5 项原子能力（3D 视差微倾斜 `enable3DTilt`、1.5px 流光微边框 `enableShineBorder`、全息彩虹折射 `enableHolographic`、双层环境霓虹 `enableAmbientGlow`、流体极光内衬 `enableAurora`）进行毫秒级独立微调开关，微调后卡片流派自动转为自定义模式；服务端 DTO 与客户端类型无缝兼容并提供向后平滑过渡。

@@ -16,7 +16,7 @@ import { ChangeEmailDto } from './dto/change-email.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { getTrafficPeriod } from '../common/traffic-reset';
 import { VerificationService } from '../verification/verification.service';
-import { assertEmailLength, assertPasswordPolicy, normalizeEmail } from '../common/auth-security';
+import { assertEmailLength, assertPasswordPolicy, buildPasswordStrengthPolicy, normalizeEmail, passwordComplexityFromSettings } from '../common/auth-security';
 import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from './user-identity';
 import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
 import { PlanPurchasesService } from '../subscription/plan-purchases.service';
@@ -131,8 +131,8 @@ export class UsersService {
       this.audit('PASSWORD_CHANGE_FAILURE', { reason: 'old_password' }, userId);
       throw new UnauthorizedException('旧密码错误');
     }
-    const passwordMinLength = (await this.settingsService.getSettings())?.passwordMinLength ?? 8;
-    assertPasswordPolicy(dto.newPassword, passwordMinLength);
+    const passwordSettings = await this.settingsService.getSettings();
+    assertPasswordPolicy(dto.newPassword, passwordSettings?.passwordMinLength ?? 8, buildPasswordStrengthPolicy(passwordComplexityFromSettings(passwordSettings)));
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, 10), sessionVersion: { increment: 1 } } });
     this.audit('PASSWORD_CHANGED', {}, userId);
     this.audit('SESSION_INVALIDATED', { reason: 'password_change' }, userId);
@@ -315,8 +315,7 @@ export class UsersService {
       throw new ConflictException('邮箱已存在');
     }
     const settings = await this.settingsService.getSettings();
-    const passwordMinLength = settings?.passwordMinLength ?? 8;
-    assertPasswordPolicy(dto.password, passwordMinLength);
+    assertPasswordPolicy(dto.password, settings?.passwordMinLength ?? 8, buildPasswordStrengthPolicy(passwordComplexityFromSettings(settings)));
     const plan = await this.resolveInitialPlan(dto.planId);
     const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
     const now = new Date();
@@ -397,8 +396,7 @@ export class UsersService {
       data.emailVerifiedAt = dto.emailVerified ? new Date() : null;
     }
     if (dto.password !== undefined) {
-      const passwordMinLength = settings?.passwordMinLength ?? 8;
-      assertPasswordPolicy(dto.password, passwordMinLength);
+      assertPasswordPolicy(dto.password, settings?.passwordMinLength ?? 8, buildPasswordStrengthPolicy(passwordComplexityFromSettings(settings)));
       data.passwordHash = await bcrypt.hash(dto.password, 10);
     }
     if (dto.password !== undefined || dto.isActive === false) {

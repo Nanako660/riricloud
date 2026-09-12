@@ -16,13 +16,13 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64，含大小写/数字/特殊字符), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；密码长度需满足动态 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在统一返回 400 `注册信息无效`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
+  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；密码需满足系统设置的密码复杂度策略：长度满足动态 `passwordMinLength`，字符类别满足 `passwordRequire*` 开关（默认须含小写字母与数字，全部关闭时仅校验长度）；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在统一返回 400 `注册信息无效`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
   - 响应：`{ authenticated: true }`，并通过 `Set-Cookie` 建立 HttpOnly 会话（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
 - `POST /auth/login`：登录并通过 HttpOnly Cookie 建立 JWT 会话，响应 `{ authenticated: true }`。⭐
 - `POST /auth/logout`：递增当前用户 `sessionVersion` 使现有 JWT 立即失效，并清除认证 Cookie。⭐
 - `POST /auth/reset-password`：找回/重置登录密码。⭐
   - 请求：`{ email, code(6位数字), newPassword(8~64) }`。
-  - 邮箱不存在、验证码错误或过期时统一返回 400 `重置请求无效`；新密码长度必须满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码，并递增 `sessionVersion` 使旧会话失效。
+  - 邮箱不存在、验证码错误或过期时统一返回 400 `重置请求无效`；新密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码，并递增 `sessionVersion` 使旧会话失效。
   - 存量或未核验邮箱的用户重置成功后，系统自动将其标记为已核验（`emailVerifiedAt = now()`），并向在线节点推送配置恢复其节点代理访问。
   - 响应：`{ success: true, message: '密码重置成功' }`。
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐、角色与邮箱核验状态 (`emailVerifiedAt`)；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
@@ -32,7 +32,7 @@
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
-- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；新密码长度需满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；旧密码校验通过后使用 bcrypt 更新。
+- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；新密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；旧密码校验通过后使用 bcrypt 更新。
 - `PATCH /user/profile`：修改当前用户昵称。⭐ 请求 `{ nickname }`，服务端清洗首尾空白并限制为 2~20 个字符；响应 `{ uid, nickname }`。
 - `POST /user/verify-email`：核验当前账号邮箱所有权。⭐ 请求 `{ code }`（6 位数字验证码，需登录态）；核验 `VERIFY_CURRENT_EMAIL` 验证码成功后更新 `emailVerifiedAt = now()` 并向节点推送配置恢复订阅与节点连接，响应 `{ verified: true, emailVerifiedAt }`。
 - `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后标记 `emailVerifiedAt = now()` 并向节点推送配置，返回 `{ updated: true, email }`。
@@ -62,8 +62,8 @@
 
 #### 用户管理
 - `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码必须同时包含大写字母、小写字母、数字和特殊字符；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
-- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样必须同时包含大写字母、小写字母、数字和特殊字符。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
+- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
@@ -180,7 +180,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回主控版本、Agent 独立版本与推荐镜像（`{ version, agentVersion, agentImage }`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, passwordMinLength, passwordRequireLowercase, passwordRequireUppercase, passwordRequireDigit, passwordRequireSpecial, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`passwordMinLength` 与 `passwordRequire*` 构成公开的密码复杂度策略，供注册/改密等表单前端动态校验与占位提示。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
 
 ### 1.5 邮箱验证码与人机验证
 - `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；答案、令牌和绑定 IP 仅以 HMAC 保存于 SQLite，`captchaToken` 为不可解码的随机一次性凭据，默认 5 分钟过期，最多 5 次失败并绑定生成时客户端 IP。

@@ -156,6 +156,26 @@ export class UpdateSettingsDto {
   @IsOptional()
   passwordMinLength?: number;
 
+  @ApiPropertyOptional({ example: true, description: '密码必须包含小写字母' })
+  @IsBoolean()
+  @IsOptional()
+  passwordRequireLowercase?: boolean;
+
+  @ApiPropertyOptional({ example: false, description: '密码必须包含大写字母' })
+  @IsBoolean()
+  @IsOptional()
+  passwordRequireUppercase?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: '密码必须包含数字' })
+  @IsBoolean()
+  @IsOptional()
+  passwordRequireDigit?: boolean;
+
+  @ApiPropertyOptional({ example: false, description: '密码必须包含特殊字符' })
+  @IsBoolean()
+  @IsOptional()
+  passwordRequireSpecial?: boolean;
+
   @ApiPropertyOptional({ example: 'https://panel.example.com', nullable: true })
   @ValidateIf((o) => o.subscriptionBaseUrl !== undefined && o.subscriptionBaseUrl !== null && o.subscriptionBaseUrl !== '')
   @IsUrl({ require_protocol: true })

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
+import { passwordZodSchema, type PasswordStrengthPolicy } from '@/lib/password-policy';
 
 export const GB = 1024 ** 3;
 
@@ -8,19 +8,23 @@ const optionalPositiveInt = z.preprocess(
   z.coerce.number().int().min(1).optional()
 );
 
-export const createUserSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
-  password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
-  role: z.enum(['USER', 'ADMIN']).default('USER'),
-  planId: z.string().optional()
-});
+export function buildCreateUserSchema(minLength: number, policy: PasswordStrengthPolicy) {
+  return z.object({
+    email: z.string().email('请输入有效的邮箱地址'),
+    password: passwordZodSchema(minLength, policy),
+    role: z.enum(['USER', 'ADMIN']).default('USER'),
+    planId: z.string().optional()
+  });
+}
 
-export const editAccountSchema = z.object({
-  role: z.enum(['USER', 'ADMIN']),
-  isActive: z.boolean(),
-  emailVerified: z.boolean(),
-  password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE).optional().or(z.literal(''))
-});
+export function buildEditAccountSchema(minLength: number, policy: PasswordStrengthPolicy) {
+  return z.object({
+    role: z.enum(['USER', 'ADMIN']),
+    isActive: z.boolean(),
+    emailVerified: z.boolean(),
+    password: passwordZodSchema(minLength, policy).optional().or(z.literal(''))
+  });
+}
 
 export const subscriptionSchema = z.object({
   planId: z.string().optional(),
@@ -32,8 +36,8 @@ export const subscriptionSchema = z.object({
   extraLineIds: z.array(z.string()).default([])
 });
 
-export type CreateUserForm = z.infer<typeof createUserSchema>;
-export type EditAccountForm = z.infer<typeof editAccountSchema>;
+export type CreateUserForm = z.infer<ReturnType<typeof buildCreateUserSchema>>;
+export type EditAccountForm = z.infer<ReturnType<typeof buildEditAccountSchema>>;
 export type SubscriptionForm = z.infer<typeof subscriptionSchema>;
 
 export function dateInputAfterDays(days: number): string {

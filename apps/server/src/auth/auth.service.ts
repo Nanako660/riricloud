@@ -3,7 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { AgentService } from '../agent-gateway/agent.service';
 import { CaptchaService } from '../captcha/captcha.service';
-import { assertEmailLength, assertPasswordPolicy, normalizeEmail } from '../common/auth-security';
+import { assertEmailLength, assertPasswordPolicy, buildPasswordStrengthPolicy, normalizeEmail, passwordComplexityFromSettings } from '../common/auth-security';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { SubscriptionService } from '../subscription/subscription.service';
@@ -62,8 +62,7 @@ export class AuthService {
     if (!settings.registrationEnabled) {
       throw new ForbiddenException('注册已关闭');
     }
-    const passwordMinLength = settings.passwordMinLength ?? 8;
-    assertPasswordPolicy(dto.password, passwordMinLength);
+    assertPasswordPolicy(dto.password, settings.passwordMinLength ?? 8, buildPasswordStrengthPolicy(passwordComplexityFromSettings(settings)));
     this.assertEmailDomainAllowed(email, settings.emailDomainMode ?? 'none', settings.emailDomainList ?? []);
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -147,8 +146,7 @@ export class AuthService {
       throw new BadRequestException('重置请求无效');
     }
     const settings = await this.settingsService.getSettings();
-    const minLength = settings.passwordMinLength ?? 8;
-    assertPasswordPolicy(dto.newPassword, minLength);
+    assertPasswordPolicy(dto.newPassword, settings.passwordMinLength ?? 8, buildPasswordStrengthPolicy(passwordComplexityFromSettings(settings)));
 
     if (!this.verificationService) throw new BadRequestException('邮箱验证服务不可用');
 

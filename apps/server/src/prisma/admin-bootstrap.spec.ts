@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 const {
   ensureAdmin,
   resolveAdminCredentials,
+  resolvePasswordPolicy,
   validateAdminEmail,
   validateAdminPassword
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -13,8 +14,9 @@ const {
     email: string | null;
     password: string | null;
   };
+  resolvePasswordPolicy: (prisma: MockPrisma) => Promise<{ passwordMinLength: number } & Record<string, boolean>>;
   validateAdminEmail: (value: unknown) => string;
-  validateAdminPassword: (value: unknown) => string;
+  validateAdminPassword: (value: unknown, minimum?: number, complexity?: Record<string, boolean>) => string;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -31,6 +33,7 @@ const { ensureDefaultTemplate, buildDefaultTemplateData } = require('../../prism
 
 type User = { id: string; email: string; role: string; passwordHash?: string };
 type MockPrisma = {
+  systemSetting?: { findMany: jest.Mock };
   user: {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
@@ -148,9 +151,49 @@ describe('管理员 bootstrap', () => {
     expect(validateAdminEmail(' admin@example.com ')).toBe('admin@example.com');
     expect(() => validateAdminEmail('invalid-email')).toThrow();
     expect(validateAdminPassword('Strong-Password1!')).toBe('Strong-Password1!');
-    expect(() => validateAdminPassword('12345678')).toThrow('密码必须同时包含');
+    expect(() => validateAdminPassword('12345678')).toThrow('密码必须包含：小写字母、数字');
     expect(() => validateAdminPassword('short')).toThrow(/8-64/);
     expect(() => validateAdminPassword('x'.repeat(65))).toThrow(/8-64/);
+  });
+
+  it('validateAdminPassword 支持自定义复杂度策略', () => {
+    const complexity = { passwordRequireLowercase: true, passwordRequireUppercase: true, passwordRequireDigit: true, passwordRequireSpecial: false };
+    expect(validateAdminPassword('Password123', 8, complexity)).toBe('Password123');
+    expect(() => validateAdminPassword('password123', 8, complexity)).toThrow('密码必须包含：小写字母、大写字母、数字');
+    expect(
+      validateAdminPassword('only-length', 8, { passwordRequireLowercase: false, passwordRequireUppercase: false, passwordRequireDigit: false, passwordRequireSpecial: false })
+    ).toBe('only-length');
+  });
+
+  it('resolvePasswordPolicy 键缺失时回退默认值', async () => {
+    prisma.systemSetting = { findMany: jest.fn().mockResolvedValue([]) };
+    await expect(resolvePasswordPolicy(prisma)).resolves.toEqual({
+      passwordMinLength: 8,
+      passwordRequireLowercase: true,
+      passwordRequireUppercase: false,
+      passwordRequireDigit: true,
+      passwordRequireSpecial: false
+    });
+  });
+
+  it('首管理员密码校验跟随系统设置的复杂度策略', async () => {
+    process.env.ADMIN_EMAIL = 'admin@example.com';
+    process.env.ADMIN_PASSWORD = 'Password123';
+    prisma.user.findFirst.mockResolvedValue(null);
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.systemSetting = {
+      findMany: jest.fn().mockResolvedValue([
+        { key: 'passwordMinLength', value: '10' },
+        { key: 'passwordRequireSpecial', value: 'true' }
+      ])
+    };
+    prisma.user.create.mockImplementation(async ({ data }: { data: User }) => ({ ...data, id: 'admin-1' }));
+
+    await expect(ensureAdmin(prisma)).rejects.toThrow('密码必须包含：小写字母、数字、特殊字符');
+
+    process.env.ADMIN_PASSWORD = 'Password123!';
+    const result = await ensureAdmin(prisma);
+    expect(result.created).toBe(true);
   });
 
   it('创建并持久化 Master-Local 节点', async () => {

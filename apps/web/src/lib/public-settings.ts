@@ -16,6 +16,10 @@ export interface PublicSystemSettings {
   supportCustomUrl: string;
   registrationEnabled: boolean;
   passwordMinLength: number;
+  passwordRequireLowercase: boolean;
+  passwordRequireUppercase: boolean;
+  passwordRequireDigit: boolean;
+  passwordRequireSpecial: boolean;
   systemTimezone: string;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;

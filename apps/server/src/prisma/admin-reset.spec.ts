@@ -33,7 +33,7 @@ describe('admin reset', () => {
   it('读取系统设置执行管理员密码最小长度', async () => {
     const update = jest.fn().mockResolvedValue({ id: 'admin-1' });
     const client = {
-      systemSetting: { findUnique: jest.fn().mockResolvedValue({ value: '12' }) },
+      systemSetting: { findMany: jest.fn().mockResolvedValue([{ key: 'passwordMinLength', value: '12' }]) },
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'admin-1', role: 'ADMIN' }),
         update
@@ -42,5 +42,23 @@ describe('admin reset', () => {
 
     await expect(resetAdminPassword(client, 'admin@example.com', 'Short1!')).rejects.toThrow('12-64');
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it('重置密码遵循配置的字符类别要求', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'admin-1' });
+    const client = {
+      systemSetting: { findMany: jest.fn().mockResolvedValue([{ key: 'passwordRequireSpecial', value: 'true' }]) },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'admin-1', role: 'ADMIN' }),
+        update
+      }
+    };
+
+    await expect(resetAdminPassword(client, 'admin@example.com', 'Password123')).rejects.toThrow('密码必须包含：小写字母、数字、特殊字符');
+    await resetAdminPassword(client, 'admin@example.com', 'Password123!');
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'admin-1' },
+      data: { passwordHash: expect.any(String), sessionVersion: { increment: 1 } }
+    });
   });
 });
