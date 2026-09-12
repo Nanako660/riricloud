@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { BINARY_KINDS, BINARY_TARGET_VALUES, ManagedBinaryKind } from '../binary-targets';
 
-export const BINARY_KINDS = ['AGENT', 'SINGBOX'] as const;
-export type ManagedBinaryKind = (typeof BINARY_KINDS)[number];
+export { BINARY_KINDS };
+export type { ManagedBinaryKind };
 
 export const BINARY_STATUSES = ['DRAFT', 'ACTIVE', 'DISABLED', 'RETIRED'] as const;
 export type ManagedBinaryStatus = (typeof BINARY_STATUSES)[number];
@@ -27,9 +28,8 @@ export class BinaryResourceImportDto {
   @IsOptional()
   revision?: number;
 
-  @ApiProperty({ example: 'singbox-linux-amd64' })
-  @IsString()
-  @Matches(/^(agent|singbox)-(linux|windows|macos)-(amd64|arm64|armv7)$/)
+  @ApiProperty({ example: 'singbox-linux-amd64', enum: BINARY_TARGET_VALUES })
+  @IsIn(BINARY_TARGET_VALUES)
   target!: string;
 
   @ApiPropertyOptional({ example: 'sing-box' })
@@ -62,6 +62,7 @@ export class BinaryResourceImportDto {
   url!: string;
 
   @ApiProperty({ example: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' })
+  @IsString()
   @Matches(/^[a-f0-9]{64}$/i)
   sha256!: string;
 }
@@ -85,9 +86,8 @@ export class BinaryResourceUploadDto {
   @IsOptional()
   revision?: number;
 
-  @ApiProperty({ example: 'singbox-linux-amd64' })
-  @IsString()
-  @Matches(/^(agent|singbox)-(linux|windows|macos)-(amd64|arm64|armv7)$/)
+  @ApiProperty({ example: 'singbox-linux-amd64', enum: BINARY_TARGET_VALUES })
+  @IsIn(BINARY_TARGET_VALUES)
   target!: string;
 
   @ApiPropertyOptional({ example: 'sing-box' })
@@ -116,6 +116,7 @@ export class BinaryResourceUploadDto {
   notes?: string;
 
   @ApiProperty({ example: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' })
+  @IsString()
   @Matches(/^[a-f0-9]{64}$/i)
   sha256!: string;
 }

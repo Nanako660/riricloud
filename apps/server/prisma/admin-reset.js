@@ -4,7 +4,8 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const {
   validateAdminEmail,
-  validateAdminPassword
+  validateAdminPassword,
+  resolvePasswordPolicy
 } = require('./admin-bootstrap');
 
 const prisma = new PrismaClient();
@@ -128,19 +129,12 @@ async function resetAdminPassword(client, inputEmail, inputPassword) {
     throw new Error(`账号 ${email} 不是 ADMIN，密码重置不会提权账号`);
   }
 
-  const password = validateAdminPassword(inputPassword, await resolvePasswordMinimum(client));
+  const policy = await resolvePasswordPolicy(client);
+  const password = validateAdminPassword(inputPassword, policy.passwordMinLength, policy);
   return client.user.update({
     where: { id: user.id },
     data: { passwordHash: await bcrypt.hash(password, 10), sessionVersion: { increment: 1 } }
   });
-}
-
-async function resolvePasswordMinimum(client) {
-  const settingStore = client?.systemSetting;
-  if (!settingStore || typeof settingStore.findUnique !== 'function') return 8;
-  const setting = await settingStore.findUnique({ where: { key: 'passwordMinLength' }, select: { value: true } });
-  const value = Number(setting?.value);
-  return Number.isInteger(value) && value >= 8 && value <= 64 ? value : 8;
 }
 
 if (require.main === module) {

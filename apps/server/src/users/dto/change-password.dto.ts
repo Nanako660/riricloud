@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '../../common/auth-security';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
   @ApiProperty({ minLength: 8, maxLength: 64 })
@@ -9,10 +8,9 @@ export class ChangePasswordDto {
   @MaxLength(64)
   oldPassword!: string;
 
-  @ApiProperty({ minLength: 8, maxLength: 64 })
+  @ApiProperty({ minLength: 8, maxLength: 64, description: '字符类别复杂度由系统设置动态决定' })
   @IsString()
   @MinLength(8)
   @MaxLength(64)
-  @Matches(PASSWORD_STRENGTH_PATTERN, { message: PASSWORD_STRENGTH_MESSAGE })
   newPassword!: string;
 }

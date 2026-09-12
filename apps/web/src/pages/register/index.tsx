@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
@@ -7,7 +7,13 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, Loader2, Mail, Timer } from 'lucide-react';
 import { api, extractErrorMessage } from '@/lib/api';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
+import {
+  buildPasswordStrengthPolicy,
+  passwordComplexityFromSettings,
+  passwordComplexityHint,
+  passwordZodSchema,
+  type PasswordStrengthPolicy
+} from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
@@ -17,20 +23,21 @@ import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
 import { CaptchaDialog, CaptchaInline, type CaptchaPayload } from '@/components/shared/captcha-challenge';
 
-const registerSchema = z
-  .object({
-    email: z.string().email('请输入有效的邮箱地址'),
-    nickname: z.string().max(20, '昵称最多 20 个字符').optional(),
-    password: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
-    confirmPassword: z.string(),
-    verificationCode: z.string().optional()
-  })
-  .refine((v) => v.password === v.confirmPassword, {
-    message: '两次输入的密码不一致',
-    path: ['confirmPassword']
-  });
+const buildRegisterSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
+  z
+    .object({
+      email: z.string().email('请输入有效的邮箱地址'),
+      nickname: z.string().max(20, '昵称最多 20 个字符').optional(),
+      password: passwordZodSchema(minLength, policy),
+      confirmPassword: z.string(),
+      verificationCode: z.string().optional()
+    })
+    .refine((v) => v.password === v.confirmPassword, {
+      message: '两次输入的密码不一致',
+      path: ['confirmPassword']
+    });
 
-type RegisterForm = z.infer<typeof registerSchema>;
+type RegisterForm = z.infer<ReturnType<typeof buildRegisterSchema>>;
 
 export default function RegisterPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -44,6 +51,10 @@ export default function RegisterPage() {
   const captchaMode = infoQuery.data?.captchaMode ?? 'OFF';
   const siteKey = infoQuery.data?.turnstileSiteKey ?? '';
   const passwordMinLength = infoQuery.data?.passwordMinLength ?? 8;
+  const passwordComplexity = useMemo(() => passwordComplexityFromSettings(infoQuery.data), [infoQuery.data]);
+  const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
+  const passwordHint = passwordComplexityHint(passwordComplexity);
+  const passwordPlaceholder = `请设置 ${passwordMinLength}-64 位${passwordHint ? `，${passwordHint}` : ''}`;
 
   useEffect(() => {
     if (infoQuery.data && !infoQuery.data.registrationEnabled) {
@@ -59,6 +70,7 @@ export default function RegisterPage() {
     return () => window.clearInterval(timer);
   }, [cooldown]);
 
+  const registerSchema = useMemo(() => buildRegisterSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: { email: '', nickname: '', password: '', confirmPassword: '', verificationCode: '' }
@@ -108,10 +120,6 @@ export default function RegisterPage() {
   };
 
   const onSubmit = (values: RegisterForm) => {
-    if (values.password.length < passwordMinLength) {
-      form.setError('password', { message: `密码至少 ${passwordMinLength} 位` });
-      return;
-    }
     if (!emailVerificationEnabled && captchaMode !== 'OFF' && !registerCaptcha) {
       toast.error('请先完成人机验证');
       return;
@@ -142,7 +150,7 @@ export default function RegisterPage() {
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
               <FormField control={form.control} name="email" render={({ field }) => <FormItem><FormLabel>邮箱</FormLabel><FormControl><Input type="email" placeholder="请输入常用邮箱" autoComplete="username" {...field} /></FormControl><FormMessage /></FormItem>} />
               <FormField control={form.control} name="nickname" render={({ field }) => <FormItem><FormLabel>昵称（选填）</FormLabel><FormControl><Input placeholder="留空则使用默认昵称" autoComplete="nickname" {...field} /></FormControl><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="password" render={({ field }) => <FormItem><FormLabel>密码</FormLabel><FormControl><Input type="password" placeholder={`请设置 ${passwordMinLength}-64 位，含大小写、数字和特殊字符`} autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
+              <FormField control={form.control} name="password" render={({ field }) => <FormItem><FormLabel>密码</FormLabel><FormControl><Input type="password" placeholder={passwordPlaceholder} autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
               <FormField control={form.control} name="confirmPassword" render={({ field }) => <FormItem><FormLabel>确认密码</FormLabel><FormControl><Input type="password" placeholder="请再次输入密码" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
               {emailVerificationEnabled ? (
                 <FormField control={form.control} name="verificationCode" render={({ field }) => <FormItem><FormLabel>邮箱验证码</FormLabel><div className="flex gap-2"><FormControl><Input inputMode="numeric" placeholder="6 位验证码" autoComplete="one-time-code" {...field} /></FormControl><Button type="button" variant="outline" className="shrink-0" onClick={() => void requestCode()} disabled={cooldown > 0 || sendCodeMutation.isPending}><Mail />{cooldown ? `${cooldown}s` : '获取验证码'}</Button></div><FormMessage /></FormItem>} />

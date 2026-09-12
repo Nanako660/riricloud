@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
@@ -242,6 +242,29 @@ export interface NodeTaskStatus {
   message?: string;
 }
 
+export interface NodeDeploymentTask {
+  id: string;
+  nodeId: string;
+  assetId: string;
+  previousAssetId: string | null;
+  releaseId: string;
+  kind: 'AGENT' | 'SINGBOX' | string;
+  operation: 'UPGRADE' | 'ROLLBACK' | string;
+  status: 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED' | string;
+  attempts: number;
+  errorMessage: string | null;
+  requestedAt: string;
+  dispatchedAt: string | null;
+  completedAt: string | null;
+  version?: string | null;
+  asset?: {
+    id: string;
+    target: string;
+    size: number;
+    release?: { id: string; kind: string; upstreamVersion: string; revision: number };
+  } | null;
+}
+
 // 节点列表：5 秒轮询实时观察 Agent 在线状态与负载
 export function useAdminNodes() {
   return useQuery({
@@ -266,6 +289,23 @@ export function useAdminBinaryInfo() {
     queryFn: async () => (await api.get<AdminBinaryInfo>('/admin/binaries/info')).data,
     staleTime: 60_000,
     refetchInterval: 60_000
+  });
+}
+
+// 节点升级分发任务列表：15 秒轮询观察 QUEUED/DISPATCHED → 终态流转
+export function useNodeTasks(nodeId: string, query: { page?: number; status?: string } = {}) {
+  return useQuery({
+    queryKey: ['admin', 'nodes', nodeId, 'tasks', query],
+    queryFn: async () => {
+      const params: Record<string, string | number | undefined> = {
+        page: query.page ?? 1,
+        pageSize: 10,
+        status: query.status || undefined
+      };
+      return (await api.get<{ data: NodeDeploymentTask[]; total: number; page: number; pageSize: number }>(`/admin/nodes/${nodeId}/tasks`, { params })).data;
+    },
+    placeholderData: keepPreviousData,
+    refetchInterval: 15_000
   });
 }
 
@@ -376,6 +416,26 @@ export function useNodeMutations() {
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '内核导入失败'))
   });
 
+  const retryTask = useMutation({
+    mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
+      (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/retry`)).data,
+    onSuccess: (_data, variables) => {
+      toast.success('分发任务已重新下发');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes', variables.nodeId, 'tasks'] });
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '任务重试失败'))
+  });
+
+  const rollbackTask = useMutation({
+    mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
+      (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/rollback`)).data,
+    onSuccess: (_data, variables) => {
+      toast.success('回滚任务已下发');
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes', variables.nodeId, 'tasks'] });
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '任务回滚失败'))
+  });
+
   const waitForTask = async ({ nodeId, taskId, label }: { nodeId: string; taskId: string; label: string }) => {
     for (let attempt = 0; attempt < 60; attempt += 1) {
       const status = (await api.get<NodeTaskStatus>(`/admin/nodes/${nodeId}/tasks/${taskId}`)).data;
@@ -391,5 +451,5 @@ export function useNodeMutations() {
     return undefined;
   };
 
-  return { createNode, rotateToken, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask };
+  return { createNode, rotateToken, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, retryTask, rollbackTask, waitForTask };
 }

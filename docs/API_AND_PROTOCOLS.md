@@ -16,13 +16,13 @@
 
 ### 1.1 认证模块 (`/auth`)
 - `POST /auth/register`：用户注册。⭐
-  - 请求：`{ email, password(8~64，含大小写/数字/特殊字符), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；密码长度需满足动态 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在统一返回 400 `注册信息无效`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
+  - 请求：`{ email, password(8~64), nickname?(2~20), verificationCode?(6位), captchaToken?, captchaAnswer?, turnstileToken? }`；密码需满足系统设置的密码复杂度策略：长度满足动态 `passwordMinLength`，字符类别满足 `passwordRequire*` 开关（默认须含小写字母与数字，全部关闭时仅校验长度）；注册开关（SystemSetting `registrationEnabled`）关闭时返回 403，邮箱已存在统一返回 400 `注册信息无效`，并通过 `emailDomainMode` / `emailDomainList` 过滤。启用 `emailVerificationEnabled` 时必须提供已验证的 `REGISTER` 邮箱验证码；未启用邮箱验证但 `captchaMode` 非 `OFF` 时必须提交对应 CAPTCHA 凭据。注册成功且开启邮箱验证时自动标记 `emailVerifiedAt`。
   - 响应：`{ authenticated: true }`，并通过 `Set-Cookie` 建立 HttpOnly 会话（注册即登录）。新用户固定 `role=USER`，服务端分配全局唯一的 6 位数字 `uid`，昵称留空时回退为 `用户_<UID>`；初始余额发放 `defaultBalance`（分）；配置 `defaultPlanId` 时自动激活公开套餐并同步订阅镜像，未配置时新用户无默认有效订阅。
 - `POST /auth/login`：登录并通过 HttpOnly Cookie 建立 JWT 会话，响应 `{ authenticated: true }`。⭐
 - `POST /auth/logout`：递增当前用户 `sessionVersion` 使现有 JWT 立即失效，并清除认证 Cookie。⭐
 - `POST /auth/reset-password`：找回/重置登录密码。⭐
   - 请求：`{ email, code(6位数字), newPassword(8~64) }`。
-  - 邮箱不存在、验证码错误或过期时统一返回 400 `重置请求无效`；新密码长度必须满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码，并递增 `sessionVersion` 使旧会话失效。
+  - 邮箱不存在、验证码错误或过期时统一返回 400 `重置请求无效`；新密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；核验 `RESET_PASSWORD` 验证码后使用 bcrypt 加密更新密码，并递增 `sessionVersion` 使旧会话失效。
   - 存量或未核验邮箱的用户重置成功后，系统自动将其标记为已核验（`emailVerifiedAt = now()`），并向在线节点推送配置恢复其节点代理访问。
   - 响应：`{ success: true, message: '密码重置成功' }`。
 - `GET /auth/me`：获取当前登录用户的详细信息、套餐、角色与邮箱核验状态 (`emailVerifiedAt`)；用户自身视图额外返回 `uid`、`nickname`、`balance`（分）和 `uuid`。⭐
@@ -32,14 +32,14 @@
 - `GET /user/nodes`：兼容路径，获取当前用户有权访问的线路列表（响应同时保留 `nodes` 镜像字段）。⭐
 - 用户订阅页面使用 `/user/subscription` 数据展示当前套餐可用线路；用户侧不再提供独立线路页面。
 - `POST /user/reset-sub`：重置用户的 `subscriptionToken`（防止订阅泄漏）。⭐ 响应 `{ subscriptionToken }`；旧链接立即失效（404）；若当前用户未绑定有效订阅返回 400。
-- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；新密码长度需满足系统设定的 `passwordMinLength`，且必须同时包含大写字母、小写字母、数字和特殊字符；旧密码校验通过后使用 bcrypt 更新。
+- `POST /user/change-password`：修改当前登录密码。⭐ 请求 `{ oldPassword, newPassword }`；新密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；旧密码校验通过后使用 bcrypt 更新。
 - `PATCH /user/profile`：修改当前用户昵称。⭐ 请求 `{ nickname }`，服务端清洗首尾空白并限制为 2~20 个字符；响应 `{ uid, nickname }`。
 - `POST /user/verify-email`：核验当前账号邮箱所有权。⭐ 请求 `{ code }`（6 位数字验证码，需登录态）；核验 `VERIFY_CURRENT_EMAIL` 验证码成功后更新 `emailVerifiedAt = now()` 并向节点推送配置恢复订阅与节点连接，响应 `{ verified: true, emailVerifiedAt }`。
 - `POST /user/change-email`：换绑当前账号邮箱。⭐ 请求 `{ newEmail, verificationCode, currentPassword }`；验证码必须是发往新邮箱且行为为 `CHANGE_EMAIL` 的有效 6 位验证码，当前密码使用 bcrypt 二次确认，邮箱唯一性检查与更新完成后标记 `emailVerifiedAt = now()` 并向节点推送配置，返回 `{ updated: true, email }`。
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
-- `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功。
+- `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功；卡密不区分大小写（服务端统一大写归一），接口按用户限流（默认 5 次/分钟），超限返回 429。
 - `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、`trafficResetMode`、节点匹配模式、`purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal`。
 - `GET /user/subscription`：查询当前用户唯一订阅、可用线路与套餐购买额度。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [], planClaims: [] }`；有订阅时返回 `lines[]`、`planClaims[{ planId, used }]` 并保留 `nodes` 兼容镜像。订阅视图包含 `trafficResetMode`、`nextTrafficResetAt` 和 `extraLineIds`；线路为套餐匹配线路与用户额外授权线路的并集。
 - `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409；达到该套餐每用户限购次数时返回 409；成功后写入购买台账并按套餐价格扣款、写入 `PLAN_BUY` 流水（0 元套餐不产生钱包流水），余额不足返回 400。
@@ -62,8 +62,8 @@
 
 #### 用户管理
 - `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码必须同时包含大写字母、小写字母、数字和特殊字符；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
-- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样必须同时包含大写字母、小写字母、数字和特殊字符。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
+- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
@@ -90,7 +90,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。回执会持久化到节点 `lastProbeResult`。
 - `POST /admin/nodes/:id/restart-agent`：请求 Agent 自身平滑重启。⭐ 返回 `{ taskId, requested }`，Agent 在回执后使用原始命令行参数重新启动。
-- `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。
+- `GET /admin/nodes/:id/tasks`：分页查询该节点的升级分发任务（`page`/`pageSize`/`status`），行内含资源版本摘要与 `previousAssetId`；配合任务重试/回滚接口使用。⭐
+- `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。持久化的升级分发任务另见 §2.4 的重试 `POST /admin/nodes/:id/tasks/:taskId/retry`（FAILED/COMPLETED 可重试）与回滚 `POST /admin/nodes/:id/tasks/:taskId/rollback`（存在 `previousAssetId` 时按上一版本资源重新下发，`operation=ROLLBACK`）。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 
 #### 二进制分发中心
@@ -130,9 +131,14 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
 
 #### 卡密管理
-- `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选。⭐
-- `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。
+- `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选与卡密模糊搜索。⭐ 列表项附带 `redeemedBy{ id, email, nickname }` 兑换人信息。
+- `GET /admin/redeem-codes/stats`：卡密汇总统计。⭐ 响应 `{ total, totalAmount, byStatus }`；`byStatus` 四态互斥（`UNUSED` 表示未使用且未过期，`EXPIRED` 为读取时派生状态），每项含 `count` 与 `amount`（分）。
+- `GET /admin/redeem-codes/export?format=csv|txt&status&search`：按列表同款筛选导出卡密。⭐ `csv` 含 id/卡密/面额/状态/有效期/备注/兑换时间/兑换人/创建时间全部审计字段，`txt` 仅输出卡密行；响应带 `Content-Disposition` 附件下载头，单次上限 10000 条。
+- `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。生成采用候选码预生成 + 碰撞预检，写入阶段为单事务 `createMany`，避免长事务持锁。
+- `POST /admin/redeem-codes/batch-revoke`：批量作废未使用卡密。⭐ 请求 `{ ids[] }`（最多 500 个 UUID）；仅 `UNUSED` 状态会被作废，响应 `{ requested, revoked, skipped }`。
+- `POST /admin/redeem-codes/cleanup`：清理过期卡密。⭐ 请求 `{ retentionDays? }`（默认 30，天）；删除已过期超过保留期且仍未使用的卡密，已兑换与已作废记录永久保留，响应 `{ deleted, retentionDays }`。
 - `POST /admin/redeem-codes/:id/revoke`：作废未使用卡密。⭐ 已兑换或已作废卡密返回 409。
+- **审计与限流**：批量生成、作废（单张/批量）与清理均写入系统日志（`module=REDEEM_CODE`，含操作者 userId 与数量参数，不含卡密明文）；`POST /user/wallet/redeem` 按用户限流（默认 5 次/分钟），超限返回 429。
 
 #### 直连代理池管理（v0.9.0，完整规约见 §5）
 - `GET /admin/proxy-pool/overview`：直连代理池总览。⭐ 响应 `{ totalKeys, activeKeys, disabledKeys, trafficUsedBytes, endpointCount, endpoints[] }`。
@@ -180,7 +186,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回主控版本、Agent 独立版本与推荐镜像（`{ version, agentVersion, agentImage }`，见 `docs/VERSIONING.md` §3）。⭐
-- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
+- `GET /system/public-info`：站点公开信息。⭐ 响应 `{ siteName, siteDescription, logoUrl, faviconUrl, siteAnnouncement, footerCopyright, supportTelegramUrl, supportDiscordUrl, supportEmail, supportCustomUrl, registrationEnabled, passwordMinLength, passwordRequireLowercase, passwordRequireUppercase, passwordRequireDigit, passwordRequireSpecial, publicBaseUrl, subscriptionBaseUrl, subscriptionShortLinksEnabled, systemTimezone, customCss, customHeadHtml, emailVerificationEnabled, enforceEmailVerification, captchaMode, turnstileSiteKey }`；不包含 SMTP 凭据、Turnstile Secret、套餐、JWT、Agent、二进制和探针运维私密参数。`passwordMinLength` 与 `passwordRequire*` 构成公开的密码复杂度策略，供注册/改密等表单前端动态校验与占位提示。`customHeadHtml` 是管理员可信边界配置，可能读取当前面板 JWT；默认 CSP 禁止任意 inline script，管理员只应配置已审计资源。
 
 ### 1.5 邮箱验证码与人机验证
 - `GET /captcha/local`：生成本地 SVG 图形/算术验证码。⭐ 响应 `{ svg, captchaToken, expiresAt }`；答案、令牌和绑定 IP 仅以 HMAC 保存于 SQLite，`captchaToken` 为不可解码的随机一次性凭据，默认 5 分钟过期，最多 5 次失败并绑定生成时客户端 IP。
@@ -441,23 +447,31 @@ Agent 在配置应用失败、升级异常、内核异常退出或关键操作�
 
 Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result`、`log_report` 六类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
-## 2.4 二进制资源中心 API（v0.5.0）
+## 2.4 二进制资源中心 API（v0.5.0，v0.8.8 扩展）
 
 以下管理接口均需要管理员 JWT 与 `ADMIN` 角色：
 
 | 方法 | 路径 | 用途 |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/admin/binary-resources` | 按资源类型、版本、状态返回资源、平台资产、文件摘要与最近分发任务。 |
-| `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件、引用任务和分发历史。 |
+| `GET` | `/api/v1/admin/binary-resources` | 服务端分页查询资源列表；支持 `page`、`pageSize`（≤100）、`search`（匹配上游版本或备注）、`kind`、`status`、`platform`（如 `linux-amd64`，按平台资产覆盖筛选）参数；响应为 `{ data, total, page, pageSize, supportedTargets }`，`supportedTargets` 为服务端支持的全部平台 target 列表（前端下拉与筛选的唯一来源）。列表行内嵌平台资产与 `deploymentCount` 汇总，不再内嵌最近任务。 |
+| `GET` | `/api/v1/admin/binary-resources/audit-logs` | 分页查询资源中心操作审计；支持 `page`、`pageSize`、`releaseId`、`action` 参数；行内补全操作者 `operator`（昵称/邮箱）。 |
+| `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件与最近 50 条分发任务。 |
+| `PATCH` | `/api/v1/admin/binary-resources/:id` | 编辑资源 `notes` 与 `compatibility`（兼容性约束对象，字段白名单：`minAgentProtocolVersion`/`maxAgentProtocolVersion` 数字，`minAgentVersion`/`maxAgentVersion`/`cronetVersion` 字符串）；版本与修订号为资源身份标识，不可修改。 |
+| `DELETE` | `/api/v1/admin/binary-resources/:id` | 物理删除资源；仅允许非 `BUILTIN`、非 `ACTIVE` 且无分发任务引用的资源，事务删除 DB 行并清理 RUNTIME 下 `resources/<releaseId>/` 磁盘文件；有分发历史的资源请使用归档保留审计。 |
+| `POST` | `/api/v1/admin/binary-resources/batch` | 批量操作：`{ action: 'activate' \| 'disable' \| 'retire' \| 'delete', ids: string[] }`（≤100 项）；逐项执行并返回 `{ succeeded, failed, results: [{ id, ok, error? }] }`。 |
 | `POST` | `/api/v1/admin/binary-resources/upload` | `multipart/form-data` 上传本地文件；表单字段与远程导入相同，文件上限 100 MiB。 |
 | `POST` | `/api/v1/admin/binary-resources/import` | 按管理员提供的 HTTP(S) URL 下载并托管资源。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/activate` | 启用资源。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/disable` | 停用资源并取消默认标记。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/retire` | 归档资源并取消默认标记。 |
+| `POST` | `/api/v1/admin/binary-resources/:id/restore` | 将 `RETIRED` 归档资源恢复为 `DISABLED`（归档状态的唯一出口）。 |
 | `POST` | `/api/v1/admin/binary-resources/:id/default` | 将 ACTIVE 资源设为该类型默认版本。 |
-| `GET` | `/api/v1/admin/binary-resources/:id/deployments` | 查看该资源最近 200 条分发任务。 |
+| `GET` | `/api/v1/admin/binary-resources/:id/deployments` | 分页查询该资源的分发任务；支持 `page`、`pageSize`、`status` 参数，行内含节点摘要。 |
+| `GET` | `/api/v1/admin/nodes/:id/tasks` | 分页查询该节点的升级分发任务；支持 `page`、`pageSize`、`status` 参数，行内含资源版本摘要与 `previousAssetId`（回滚依据）。 |
 
-导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 形如 `singbox-linux-amd64`。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
+导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 必须取自服务端平台枚举（agent/singbox × linux/macos/windows × amd64/arm64，与 `scripts/build-agent.sh --all` 发布矩阵一致）。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
+
+资源状态机：`DRAFT → ACTIVE ⇄ DISABLED → RETIRED`；`RETIRED` 只能经 `restore` 回到 `DISABLED`。停用或归档默认资源时，服务端在同一事务内把默认标记自动转移到同类型最新的 ACTIVE 资源（无候选则置空），并记录在审计元数据 `defaultTransferredTo` 中。每次导入/编辑/启停/归档/恢复/删除/切换默认均写入 `BinaryAuditLog`。
 
 节点升级 `POST /api/v1/admin/nodes/:id/upgrade` 新增可选 `resourceId`。服务端根据节点 OS/架构选择资源的 `assetId`，下发响应包含 `resourceId`、`assetId`、主文件 URL/SHA-256 与 `files[]`；`files[]` 可包含 Sing-box 主文件及 `libcronet.so` 辅助文件。旧版 `target`、`version`、`url`、`sha256` 参数继续支持，旧 Agent 仍可执行只有单文件 URL/SHA-256 的 `upgrade_task`。
 

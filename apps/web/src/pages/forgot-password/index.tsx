@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
@@ -7,7 +7,13 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, KeyRound, Loader2, Mail } from 'lucide-react';
 import { api, extractErrorMessage } from '@/lib/api';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
+import {
+  buildPasswordStrengthPolicy,
+  passwordComplexityFromSettings,
+  passwordComplexityHint,
+  passwordZodSchema,
+  type PasswordStrengthPolicy
+} from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,19 +22,20 @@ import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
 import { CaptchaDialog, type CaptchaPayload } from '@/components/shared/captcha-challenge';
 
-const forgotPasswordSchema = z
-  .object({
-    email: z.string().email('请输入有效的邮箱地址'),
-    verificationCode: z.string().min(6, '请输入 6 位验证码').max(6, '请输入 6 位验证码'),
-    newPassword: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
-    confirmPassword: z.string()
-  })
-  .refine((v) => v.newPassword === v.confirmPassword, {
-    message: '两次输入的密码不一致',
-    path: ['confirmPassword']
-  });
+const buildForgotPasswordSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
+  z
+    .object({
+      email: z.string().email('请输入有效的邮箱地址'),
+      verificationCode: z.string().min(6, '请输入 6 位验证码').max(6, '请输入 6 位验证码'),
+      newPassword: passwordZodSchema(minLength, policy),
+      confirmPassword: z.string()
+    })
+    .refine((v) => v.newPassword === v.confirmPassword, {
+      message: '两次输入的密码不一致',
+      path: ['confirmPassword']
+    });
 
-type ForgotPasswordForm = z.infer<typeof forgotPasswordSchema>;
+type ForgotPasswordForm = z.infer<ReturnType<typeof buildForgotPasswordSchema>>;
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -41,6 +48,10 @@ export default function ForgotPasswordPage() {
   const siteKey = infoQuery.data?.turnstileSiteKey ?? '';
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
   const passwordMinLength = infoQuery.data?.passwordMinLength ?? 8;
+  const passwordComplexity = useMemo(() => passwordComplexityFromSettings(infoQuery.data), [infoQuery.data]);
+  const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
+  const passwordHint = passwordComplexityHint(passwordComplexity);
+  const passwordPlaceholder = `请设置 ${passwordMinLength}-64 位${passwordHint ? `，${passwordHint}` : ''}`;
 
   useEffect(() => {
     if (!cooldown) return;
@@ -48,6 +59,7 @@ export default function ForgotPasswordPage() {
     return () => window.clearInterval(timer);
   }, [cooldown]);
 
+  const forgotPasswordSchema = useMemo(() => buildForgotPasswordSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
   const form = useForm<ForgotPasswordForm>({
     resolver: zodResolver(forgotPasswordSchema),
     defaultValues: { email: '', verificationCode: '', newPassword: '', confirmPassword: '' }
@@ -92,10 +104,6 @@ export default function ForgotPasswordPage() {
   };
 
   const onSubmit = (values: ForgotPasswordForm) => {
-    if (values.newPassword.length < passwordMinLength) {
-      form.setError('newPassword', { message: `密码至少 ${passwordMinLength} 位` });
-      return;
-    }
     resetPasswordMutation.mutate(values);
   };
 
@@ -160,7 +168,7 @@ export default function ForgotPasswordPage() {
                   <FormItem>
                     <FormLabel>新密码</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder={`请设置 ${passwordMinLength}-64 位，含大小写、数字和特殊字符`} autoComplete="new-password" {...field} />
+                      <Input type="password" placeholder={passwordPlaceholder} autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

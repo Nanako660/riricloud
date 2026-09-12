@@ -1,6 +1,6 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BinaryResourcesService } from './binary-resources.service';
@@ -27,18 +27,25 @@ describe('BinaryResourcesService', () => {
     binaryRelease: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
-      upsert: jest.fn()
+      upsert: jest.fn(),
+      count: jest.fn(),
+      delete: jest.fn()
     },
-    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn() },
+    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
     binaryAssetFile: { deleteMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
-    binaryDeploymentTask: { findMany: jest.fn() },
-    binaryAuditLog: { create: jest.fn() },
+    binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() },
+    binaryAuditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    user: { findMany: jest.fn() },
     $transaction: jest.fn()
   };
-  prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma));
+  prisma.$transaction.mockImplementation(async (arg: unknown) => {
+    if (Array.isArray(arg)) return Promise.all(arg as Promise<unknown>[]);
+    return (arg as (tx: typeof prisma) => Promise<unknown>)(prisma);
+  });
   const binaries = { refresh: jest.fn(async () => undefined), getAsset: jest.fn() };
 
   beforeAll(async () => {
@@ -231,5 +238,152 @@ describe('BinaryResourcesService', () => {
     expect(prisma.binaryAsset.create).not.toHaveBeenCalled();
     expect(prisma.binaryAssetFile.create).not.toHaveBeenCalled();
     await rm(legacyPath, { force: true });
+  });
+
+  it('资源列表按条件分页并返回支持的平台列表', async () => {
+    prisma.binaryRelease.findMany.mockResolvedValue([{ ...release(), _count: { deploymentTasks: 3 } }]);
+    prisma.binaryRelease.count.mockResolvedValue(11);
+
+    const result = await service.list({ page: 2, pageSize: 10, kind: 'AGENT', status: 'ACTIVE', search: '0.9', platform: 'linux-amd64' });
+
+    expect(prisma.binaryRelease.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        kind: 'AGENT',
+        status: 'ACTIVE',
+        OR: [{ upstreamVersion: { contains: '0.9' } }, { notes: { contains: '0.9' } }],
+        assets: { some: { target: { endsWith: '-linux-amd64' } } }
+      },
+      skip: 10,
+      take: 10
+    }));
+    expect(result.total).toBe(11);
+    expect(result.page).toBe(2);
+    expect(result.data[0].deploymentCount).toBe(3);
+    expect(result.supportedTargets).toContain('agent-linux-amd64');
+    expect(result.supportedTargets).not.toContain('agent-linux-armv7');
+  });
+
+  it('停用默认资源时自动转移默认标记到最新 ACTIVE 资源', async () => {
+    const current = release({ isDefault: true });
+    prisma.binaryRelease.findUnique.mockResolvedValue(current);
+    prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-next' });
+
+    await service.disable(current.id, 'admin-1');
+
+    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-next' }, data: { isDefault: true } });
+    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'RESOURCE_DISABLED',
+        metadataJson: expect.stringContaining('release-next')
+      })
+    }));
+  });
+
+  it('停用非默认资源不触发默认转移', async () => {
+    const current = release({ isDefault: false });
+    prisma.binaryRelease.findUnique.mockResolvedValue(current);
+
+    await service.disable(current.id, 'admin-1');
+
+    expect(prisma.binaryRelease.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('恢复归档资源回到停用状态，非归档资源被拒绝', async () => {
+    prisma.binaryRelease.findUnique.mockResolvedValue(release({ status: 'RETIRED', isDefault: false }));
+    await service.restore('release-singbox-1', 'admin-1');
+    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-singbox-1' }, data: { status: 'DISABLED' } });
+
+    prisma.binaryRelease.findUnique.mockResolvedValue(release({ status: 'ACTIVE' }));
+    await expect(service.restore('release-singbox-1')).rejects.toThrow(ConflictException);
+  });
+
+  it('更新资源备注与兼容性约束', async () => {
+    prisma.binaryRelease.findUnique.mockResolvedValue(release({ source: 'UPLOAD' }));
+
+    await service.update('release-singbox-1', { notes: ' 新备注 ', compatibility: { minAgentProtocolVersion: 2, minAgentVersion: '0.7.0' } }, 'admin-1');
+
+    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({
+      where: { id: 'release-singbox-1' },
+      data: { notes: '新备注', compatibilityJson: JSON.stringify({ minAgentProtocolVersion: 2, minAgentVersion: '0.7.0' }) }
+    });
+  });
+
+  it('更新资源拒绝未知或类型错误的兼容性字段', async () => {
+    prisma.binaryRelease.findUnique.mockResolvedValue(release({ source: 'UPLOAD' }));
+
+    await expect(service.update('release-singbox-1', { compatibility: { unknownField: 1 } })).rejects.toThrow(BadRequestException);
+    await expect(service.update('release-singbox-1', { compatibility: { minAgentProtocolVersion: '2' } })).rejects.toThrow(BadRequestException);
+  });
+
+  it('删除资源校验内置、启用状态与分发历史', async () => {
+    prisma.binaryRelease.findUnique
+      .mockResolvedValueOnce(release({ source: 'BUILTIN', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
+      .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'ACTIVE', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
+      .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'DISABLED', isDefault: false, assets: [], _count: { deploymentTasks: 2 } }));
+
+    await expect(service.remove('release-singbox-1')).rejects.toThrow('内置资源不可删除');
+    await expect(service.remove('release-singbox-1')).rejects.toThrow('启用中的资源不可删除');
+    await expect(service.remove('release-singbox-1')).rejects.toThrow('分发历史');
+  });
+
+  it('删除无引用资源会清理运行时目录并写审计', async () => {
+    const releaseId = 'release-delete-me';
+    const assetDir = join(dataDir, 'binaries', 'resources', releaseId, 'singbox-linux-amd64');
+    await mkdir(assetDir, { recursive: true });
+    await writeFile(join(assetDir, 'sing-box'), 'payload');
+    prisma.binaryRelease.findUnique.mockResolvedValue({
+      ...release({ id: releaseId, source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
+      assets: [{ storageRoot: 'RUNTIME', size: 7 }],
+      _count: { deploymentTasks: 0 }
+    });
+
+    const result = await service.remove(releaseId, 'admin-1');
+
+    expect(result).toEqual({ id: releaseId, deleted: true });
+    expect(prisma.binaryAssetFile.deleteMany).toHaveBeenCalledWith({ where: { asset: { releaseId } } });
+    expect(prisma.binaryAsset.deleteMany).toHaveBeenCalledWith({ where: { releaseId } });
+    expect(prisma.binaryRelease.delete).toHaveBeenCalledWith({ where: { id: releaseId } });
+    await expect(stat(join(assetDir, 'sing-box'))).rejects.toThrow();
+    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'RESOURCE_DELETED' })
+    }));
+  });
+
+  it('批量操作返回逐项成功与失败结果', async () => {
+    const deletable = {
+      ...release({ id: 'release-ok', source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
+      assets: [{ storageRoot: 'RUNTIME', size: 1 }],
+      _count: { deploymentTasks: 0 }
+    };
+    const builtin = { ...release({ id: 'release-builtin', source: 'BUILTIN' }), assets: [], _count: { deploymentTasks: 0 } };
+    prisma.binaryRelease.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+      where.id === 'release-ok' ? deletable : builtin);
+
+    const result = await service.batch({ action: 'delete', ids: ['release-ok', 'release-builtin'] }, 'admin-1');
+
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.results[0]).toEqual({ id: 'release-ok', ok: true });
+    expect(result.results[1].ok).toBe(false);
+    expect(result.results[1].error).toContain('内置资源不可删除');
+  });
+
+  it('审计日志分页返回并补全操作者信息', async () => {
+    prisma.binaryAuditLog.findMany.mockResolvedValue([
+      { id: 'a1', action: 'RESOURCE_IMPORTED', operatorId: 'admin-1', releaseId: 'release-1', createdAt: new Date() },
+      { id: 'a2', action: 'RESOURCE_ACTIVATED', operatorId: null, releaseId: null, createdAt: new Date() }
+    ]);
+    prisma.binaryAuditLog.count.mockResolvedValue(2);
+    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1', nickname: '管理员', email: 'a@b.c' }]);
+
+    const result = await service.auditLogs({ page: 1, pageSize: 20, action: 'RESOURCE_IMPORTED' });
+
+    expect(prisma.binaryAuditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { action: 'RESOURCE_IMPORTED' },
+      skip: 0,
+      take: 20
+    }));
+    expect(result.data[0].operator).toEqual({ id: 'admin-1', nickname: '管理员', email: 'a@b.c' });
+    expect(result.data[1].operator).toBeNull();
   });
 });

@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile as execFileCallback } from 'node:child_process';
-import { access, chmod, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -9,14 +10,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
 import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
 import { BinariesService, normalizeOsArch } from './binaries.service';
-import { BINARY_KINDS, type BinaryResourceImportDto, type BinaryResourceUploadDto, type ManagedBinaryKind } from './dto/binary-resource.dto';
+import { BINARY_TARGET_VALUES } from './binary-targets';
+import {
+  BINARY_KINDS,
+  type BinaryResourceImportDto,
+  type BinaryResourceUploadDto,
+  type ManagedBinaryKind
+} from './dto/binary-resource.dto';
+import type { QueryBinaryResourceDto, QueryBinaryDeploymentDto, QueryBinaryAuditLogDto } from './dto/query-binary-resource.dto';
+import type { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
+import type { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
 
 const execFile = promisify(execFileCallback);
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
-const LEGACY_TARGETS = [
-  'agent-linux-amd64', 'agent-linux-arm64', 'agent-macos-amd64', 'agent-macos-arm64', 'agent-windows-amd64',
-  'singbox-linux-amd64', 'singbox-linux-arm64', 'singbox-macos-amd64', 'singbox-macos-arm64', 'singbox-windows-amd64'
-] as const;
+
+// 兼容性约束的可写字段白名单：协议版本要求为数字，其余为字符串。
+const COMPATIBILITY_NUMBER_KEYS = ['minAgentProtocolVersion', 'maxAgentProtocolVersion'] as const;
+const COMPATIBILITY_STRING_KEYS = ['minAgentVersion', 'maxAgentVersion', 'cronetVersion'] as const;
 
 type ResourceFileInput = {
   name: string;
@@ -79,19 +89,37 @@ export class BinaryResourcesService implements OnModuleInit {
     this.logger.log('二进制资源中心已初始化');
   }
 
-  async list() {
-    const releases = await this.prisma.binaryRelease.findMany({
-      include: {
-        assets: { include: { files: true }, orderBy: { target: 'asc' } },
-        deploymentTasks: {
-          select: { id: true, nodeId: true, assetId: true, kind: true, operation: true, status: true, attempts: true, errorMessage: true, requestedAt: true, completedAt: true, node: { select: { id: true, name: true } } },
-          orderBy: { requestedAt: 'desc' },
-          take: 20
-        }
-      },
-      orderBy: [{ kind: 'asc' }, { createdAt: 'desc' }]
-    });
-    return releases.map((release) => this.serializeRelease(release));
+  async list(query: QueryBinaryResourceDto = {}) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = {
+      ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? { OR: [{ upstreamVersion: { contains: query.search } }, { notes: { contains: query.search } }] }
+        : {}),
+      ...(query.platform ? { assets: { some: { target: { endsWith: `-${query.platform}` } } } } : {})
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.binaryRelease.findMany({
+        where,
+        include: {
+          assets: { orderBy: { target: 'asc' } },
+          _count: { select: { deploymentTasks: true } }
+        },
+        orderBy: [{ kind: 'asc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      this.prisma.binaryRelease.count({ where })
+    ]);
+    return {
+      data: rows.map((release) => this.serializeRelease(release)),
+      total,
+      page,
+      pageSize,
+      supportedTargets: BINARY_TARGET_VALUES
+    };
   }
 
   async detail(id: string) {
@@ -110,13 +138,25 @@ export class BinaryResourcesService implements OnModuleInit {
     return this.serializeRelease(release);
   }
 
-  async deployments(id: string) {
+  async deployments(id: string, query: QueryBinaryDeploymentDto = {}) {
     await this.requireRelease(id);
-    return this.prisma.binaryDeploymentTask.findMany({
-      where: { releaseId: id },
-      orderBy: { requestedAt: 'desc' },
-      take: 200
-    });
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = {
+      releaseId: id,
+      ...(query.status ? { status: query.status } : {})
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.binaryDeploymentTask.findMany({
+        where,
+        include: { node: { select: { id: true, name: true } } },
+        orderBy: { requestedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      this.prisma.binaryDeploymentTask.count({ where })
+    ]);
+    return { data: rows, total, page, pageSize };
   }
 
   async importRemote(dto: BinaryResourceImportDto, operatorId?: string) {
@@ -138,25 +178,148 @@ export class BinaryResourcesService implements OnModuleInit {
   }
 
   async disable(id: string, operatorId?: string) {
-    await this.requireRelease(id);
-    const result = await this.prisma.binaryRelease.update({
-      where: { id },
-      data: { status: 'DISABLED', isDefault: false }
+    const release = await this.requireRelease(id);
+    const { updated, defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.binaryRelease.update({
+        where: { id },
+        data: { status: 'DISABLED', isDefault: false }
+      });
+      const transferredTo = await this.transferDefault(tx, release);
+      return { updated: result, defaultTransferredTo: transferredTo };
     });
-    await this.audit('RESOURCE_DISABLED', { releaseId: id, operatorId });
+    await this.audit('RESOURCE_DISABLED', {
+      releaseId: id,
+      operatorId,
+      metadataJson: JSON.stringify({ defaultTransferredTo: defaultTransferredTo ?? null })
+    });
     await this.binaries.refresh();
-    return result;
+    return updated;
   }
 
   async retire(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    const result = await this.prisma.binaryRelease.update({
-      where: { id },
-      data: { status: 'RETIRED', isDefault: false }
+    const { updated, defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.binaryRelease.update({
+        where: { id },
+        data: { status: 'RETIRED', isDefault: false }
+      });
+      const transferredTo = await this.transferDefault(tx, release);
+      return { updated: result, defaultTransferredTo: transferredTo };
     });
-    await this.audit('RESOURCE_RETIRED', { releaseId: id, operatorId, metadataJson: JSON.stringify({ previousStatus: release.status }) });
+    await this.audit('RESOURCE_RETIRED', {
+      releaseId: id,
+      operatorId,
+      metadataJson: JSON.stringify({ previousStatus: release.status, defaultTransferredTo: defaultTransferredTo ?? null })
+    });
+    await this.binaries.refresh();
+    return updated;
+  }
+
+  async restore(id: string, operatorId?: string) {
+    const release = await this.requireRelease(id);
+    if (release.status !== 'RETIRED') throw new ConflictException('只有已归档资源可以恢复');
+    const result = await this.prisma.binaryRelease.update({ where: { id }, data: { status: 'DISABLED' } });
+    await this.audit('RESOURCE_RESTORED', { releaseId: id, operatorId });
     await this.binaries.refresh();
     return result;
+  }
+
+  async update(id: string, dto: UpdateBinaryResourceDto, operatorId?: string) {
+    await this.requireRelease(id);
+    const data: { notes?: string | null; compatibilityJson?: string } = {};
+    if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
+    if (dto.compatibility !== undefined) data.compatibilityJson = JSON.stringify(this.normalizeCompatibility(dto.compatibility));
+    if (!Object.keys(data).length) throw new BadRequestException('没有需要更新的字段');
+    const result = await this.prisma.binaryRelease.update({ where: { id }, data });
+    await this.audit('RESOURCE_UPDATED', {
+      releaseId: id,
+      operatorId,
+      metadataJson: JSON.stringify({ fields: Object.keys(data) })
+    });
+    await this.binaries.refresh();
+    return result;
+  }
+
+  async remove(id: string, operatorId?: string) {
+    const release = await this.prisma.binaryRelease.findUnique({
+      where: { id },
+      include: { assets: true, _count: { select: { deploymentTasks: true } } }
+    });
+    if (!release) throw new NotFoundException('二进制资源不存在');
+    if (release.source === 'BUILTIN') throw new ConflictException('内置资源不可删除');
+    if (release.status === 'ACTIVE') throw new ConflictException('启用中的资源不可删除，请先停用');
+    if (release._count.deploymentTasks > 0) {
+      throw new ConflictException('资源已有分发历史，为保证审计可追溯请使用归档');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.binaryAssetFile.deleteMany({ where: { asset: { releaseId: id } } });
+      await tx.binaryAsset.deleteMany({ where: { releaseId: id } });
+      await tx.binaryRelease.delete({ where: { id } });
+    });
+    // 上传/远程导入的文件固定位于 RUNTIME 下 resources/<releaseId>/，可整目录清理；
+    // STATIC 资产与内置/旧目录认领文件共享静态目录，只删 DB 行不动磁盘。
+    if (release.assets.every((asset) => asset.storageRoot === 'RUNTIME')) {
+      await rm(join(this.runtimeDir, 'resources', release.id), { recursive: true, force: true }).catch((error) => {
+        this.logger.warn(`清理资源文件失败 release=${release.id}: ${error instanceof Error ? error.message : error}`);
+      });
+    }
+    await this.audit('RESOURCE_DELETED', {
+      operatorId,
+      metadataJson: JSON.stringify({
+        kind: release.kind,
+        version: this.versionOf(release),
+        targets: release.assets.map((asset) => asset.target),
+        freedBytes: release.assets.reduce((sum, asset) => sum + asset.size, 0)
+      })
+    });
+    await this.binaries.refresh();
+    return { id, deleted: true };
+  }
+
+  async batch(dto: BatchBinaryResourceDto, operatorId?: string) {
+    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+    for (const id of dto.ids) {
+      try {
+        if (dto.action === 'delete') await this.remove(id, operatorId);
+        else if (dto.action === 'activate') await this.activate(id, operatorId);
+        else if (dto.action === 'disable') await this.disable(id, operatorId);
+        else await this.retire(id, operatorId);
+        results.push({ id, ok: true });
+      } catch (error) {
+        results.push({ id, ok: false, error: error instanceof Error ? error.message : '操作失败' });
+      }
+    }
+    const succeeded = results.filter((item) => item.ok).length;
+    return { action: dto.action, succeeded, failed: results.length - succeeded, results };
+  }
+
+  async auditLogs(query: QueryBinaryAuditLogDto = {}) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = {
+      ...(query.releaseId ? { releaseId: query.releaseId } : {}),
+      ...(query.action ? { action: query.action } : {})
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.binaryAuditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      this.prisma.binaryAuditLog.count({ where })
+    ]);
+    const operatorIds = [...new Set(rows.map((row) => row.operatorId).filter((id): id is string => Boolean(id)))];
+    const users = operatorIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: operatorIds } }, select: { id: true, nickname: true, email: true } })
+      : [];
+    const operators = new Map(users.map((user) => [user.id, user]));
+    return {
+      data: rows.map((row) => ({ ...row, operator: row.operatorId ? operators.get(row.operatorId) ?? null : null })),
+      total,
+      page,
+      pageSize
+    };
   }
 
   async setDefault(id: string, operatorId?: string) {
@@ -169,6 +332,46 @@ export class BinaryResourcesService implements OnModuleInit {
     await this.audit('RESOURCE_DEFAULT_CHANGED', { releaseId: id, operatorId });
     await this.binaries.refresh();
     return result;
+  }
+
+  // 停用/归档清除默认标记后，把默认转移到同类型最新的 ACTIVE 资源，避免出现无默认版本可用。
+  private async transferDefault(tx: Prisma.TransactionClient, release: { id: string; kind: string; isDefault: boolean }): Promise<string | null> {
+    if (!release.isDefault) return null;
+    const candidate = await tx.binaryRelease.findFirst({
+      where: { kind: release.kind, status: 'ACTIVE', id: { not: release.id } },
+      orderBy: { updatedAt: 'desc' }
+    });
+    if (!candidate) return null;
+    await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+    return candidate.id;
+  }
+
+  private normalizeCompatibility(input: Record<string, unknown>): Record<string, unknown> {
+    for (const [key, value] of Object.entries(input)) {
+      if ((COMPATIBILITY_NUMBER_KEYS as readonly string[]).includes(key)) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) throw new BadRequestException(`兼容性字段 ${key} 必须为数字`);
+        continue;
+      }
+      if ((COMPATIBILITY_STRING_KEYS as readonly string[]).includes(key)) {
+        if (typeof value !== 'string') throw new BadRequestException(`兼容性字段 ${key} 必须为字符串`);
+        continue;
+      }
+      throw new BadRequestException(`不支持的兼容性字段: ${key}`);
+    }
+    return input;
+  }
+
+  private parseCompatibilityInput(raw: string): Record<string, unknown> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new BadRequestException('compatibilityJson 必须是合法 JSON');
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new BadRequestException('compatibilityJson 必须是 JSON 对象');
+    }
+    return this.normalizeCompatibility(parsed as Record<string, unknown>);
   }
 
   async getDownloadAsset(id: string) {
@@ -248,11 +451,14 @@ export class BinaryResourcesService implements OnModuleInit {
     const targetParts = dto.target.split('-');
     const kind = dto.kind;
     if (`${kind.toLowerCase()}-${targetParts.slice(1).join('-')}` !== dto.target) throw new Error('binary target does not match kind');
+    const normalizedCompatibility = dto.compatibilityJson?.trim()
+      ? JSON.stringify(this.parseCompatibilityInput(dto.compatibilityJson))
+      : undefined;
     const release = await this.prisma.binaryRelease.upsert({
       where: { kind_upstreamVersion_revision: { kind, upstreamVersion: dto.upstreamVersion.trim(), revision: dto.revision ?? 1 } },
       update: {
         builtFromAppVersion: dto.builtFromAppVersion?.trim() || undefined,
-        compatibilityJson: dto.compatibilityJson?.trim() || undefined,
+        compatibilityJson: normalizedCompatibility,
         notes: dto.notes?.trim() || undefined
       },
       create: {
@@ -262,7 +468,7 @@ export class BinaryResourcesService implements OnModuleInit {
         source,
         status: 'DRAFT',
         builtFromAppVersion: dto.builtFromAppVersion?.trim() || null,
-        compatibilityJson: dto.compatibilityJson?.trim() || '{}',
+        compatibilityJson: normalizedCompatibility ?? '{}',
         notes: dto.notes?.trim() || null
       }
     });
@@ -413,7 +619,7 @@ export class BinaryResourcesService implements OnModuleInit {
   }
 
   private async syncLegacyAssets(): Promise<void> {
-    for (const target of LEGACY_TARGETS) {
+    for (const target of BINARY_TARGET_VALUES) {
       let asset;
       try {
         asset = this.binaries.getAsset(target);

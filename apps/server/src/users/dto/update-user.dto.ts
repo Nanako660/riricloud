@@ -1,8 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, Matches, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLES, Role } from '../../common/constants';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '../../common/auth-security';
 
 // 部分更新：仅传入字段生效；expireAt 显式传 null 表示永久
 export class UpdateUserDto {
@@ -29,11 +28,10 @@ export class UpdateUserDto {
   @IsOptional()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ description: '管理端重置密码', minLength: 8 })
+  @ApiPropertyOptional({ description: '管理端重置密码；长度 8-64，字符类别复杂度由系统设置动态决定', minLength: 8 })
   @IsString()
   @MinLength(8)
   @MaxLength(64)
-  @Matches(PASSWORD_STRENGTH_PATTERN, { message: PASSWORD_STRENGTH_MESSAGE })
   @IsOptional()
   password?: string;
 

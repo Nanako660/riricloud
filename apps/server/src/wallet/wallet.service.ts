@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { RateLimitService } from '../common/rate-limit.service';
 import { QueryTransactionsDto } from './dto/query-transactions.dto';
 
 export const BALANCE_TRANSACTION_TYPES = ['SYSTEM_GIFT', 'REDEEM', 'PLAN_BUY', 'PLAN_RENEW', 'PLAN_UPGRADE', 'ADMIN_ADJUST'] as const;
@@ -28,7 +29,11 @@ export interface BalanceChangeResult {
 
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService) {}
+  // 兑换是等值现金动作，按用户限流抬高卡密爆破成本；码空间 32 hex，主要防御脚本化撞库
+  private static readonly REDEEM_RATE_LIMIT = 5;
+  private static readonly REDEEM_RATE_WINDOW_MS = 60_000;
+
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly rateLimitService?: RateLimitService) {}
 
   async getWallet(userId: string) {
     const [user, income, expense, transactionCount] = await Promise.all([
@@ -63,6 +68,7 @@ export class WalletService {
   }
 
   async redeem(userId: string, codeInput: string) {
+    this.assertRedeemRateLimit(userId);
     const code = normalizeCode(codeInput);
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -123,6 +129,12 @@ export class WalletService {
       }
     });
     return { balance: updated.balance, transaction: this.toTransactionView(transaction) };
+  }
+
+  private assertRedeemRateLimit(userId: string): void {
+    if (!this.rateLimitService) return;
+    const allowed = this.rateLimitService.consume(`wallet-redeem:${userId}`, WalletService.REDEEM_RATE_LIMIT, WalletService.REDEEM_RATE_WINDOW_MS);
+    if (!allowed) throw new HttpException('兑换尝试过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
   }
 
   generateCode(prefix?: string) {

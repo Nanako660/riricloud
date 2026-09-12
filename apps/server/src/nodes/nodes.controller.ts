@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { getRequestBaseUrl } from '../common/public-url';
+import { QueryBinaryDeploymentDto } from '../binaries/dto/query-binary-resource.dto';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { ProbeNodeDto } from './dto/probe-node.dto';
@@ -71,6 +72,11 @@ export class NodesController {
   @Post(':id/restart-agent')
   restartAgent(@Param('id', ParseUUIDPipe) id: string) {
     return this.nodesService.requestRestart(id);
+  }
+
+  @Get(':id/tasks')
+  listTasks(@Param('id', ParseUUIDPipe) id: string, @Query() query: QueryBinaryDeploymentDto) {
+    return this.nodesService.listTasks(id, query);
   }
 
   @Get(':id/tasks/:taskId')

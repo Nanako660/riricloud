@@ -5,8 +5,17 @@ const bcrypt = require('bcryptjs');
 
 const DEMO_ADMIN_EMAIL = 'admin@riricloud.local';
 const DEMO_ADMIN_PASSWORD = 'RiriCloud-Admin-2026!';
-const PASSWORD_STRENGTH_MESSAGE = '密码必须同时包含大写字母、小写字母、数字和特殊字符';
-const PASSWORD_STRENGTH_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/;
+// 密码复杂度默认策略与 src/system/settings.service.ts DEFAULTS 保持一致：必须含小写字母与数字
+const PASSWORD_COMPLEXITY_DEFAULTS = {
+  passwordRequireLowercase: true,
+  passwordRequireUppercase: false,
+  passwordRequireDigit: true,
+  passwordRequireSpecial: false
+};
+const PASSWORD_SETTING_KEYS = [
+  'passwordMinLength',
+  ...Object.keys(PASSWORD_COMPLEXITY_DEFAULTS)
+];
 
 const JWT_SECRET_PLACEHOLDER_PATTERNS = [
   /^replace-with-/i,
@@ -40,13 +49,54 @@ function validateAdminEmail(value) {
   return email.toLowerCase();
 }
 
-function validateAdminPassword(value, minimum = 8) {
+function buildPasswordStrengthPattern(complexity) {
+  const lookaheads = [];
+  if (complexity.passwordRequireLowercase) lookaheads.push('(?=.*[a-z])');
+  if (complexity.passwordRequireUppercase) lookaheads.push('(?=.*[A-Z])');
+  if (complexity.passwordRequireDigit) lookaheads.push('(?=.*\\d)');
+  if (complexity.passwordRequireSpecial) lookaheads.push('(?=.*[^A-Za-z0-9\\s])');
+  return lookaheads.length ? new RegExp(`${lookaheads.join('')}.+$`) : null;
+}
+
+function buildPasswordStrengthMessage(complexity) {
+  const groups = [];
+  if (complexity.passwordRequireLowercase) groups.push('小写字母');
+  if (complexity.passwordRequireUppercase) groups.push('大写字母');
+  if (complexity.passwordRequireDigit) groups.push('数字');
+  if (complexity.passwordRequireSpecial) groups.push('特殊字符');
+  return groups.length ? `密码必须包含：${groups.join('、')}` : '';
+}
+
+// 从 SystemSetting 读取密码策略；键缺失或取值非法时回退默认值（与 settings.service 语义一致）
+async function resolvePasswordPolicy(prisma) {
+  const policy = { passwordMinLength: 8, ...PASSWORD_COMPLEXITY_DEFAULTS };
+  const settingStore = prisma?.systemSetting;
+  if (!settingStore || typeof settingStore.findMany !== 'function') return policy;
+  const rows = await settingStore.findMany({
+    where: { key: { in: PASSWORD_SETTING_KEYS } },
+    select: { key: true, value: true }
+  });
+  const map = new Map(rows.map((row) => [row.key, row.value]));
+  const minLength = Number(map.get('passwordMinLength'));
+  if (Number.isInteger(minLength) && minLength >= 8 && minLength <= 64) {
+    policy.passwordMinLength = minLength;
+  }
+  for (const key of Object.keys(PASSWORD_COMPLEXITY_DEFAULTS)) {
+    const value = map.get(key)?.trim().toLowerCase();
+    if (value === 'true' || value === '1') policy[key] = true;
+    else if (value === 'false' || value === '0') policy[key] = false;
+  }
+  return policy;
+}
+
+function validateAdminPassword(value, minimum = 8, complexity = PASSWORD_COMPLEXITY_DEFAULTS) {
   const minLength = Number.isInteger(minimum) && minimum >= 8 && minimum <= 64 ? minimum : 8;
   if (typeof value !== 'string' || value.length < minLength || value.length > 64) {
     throw new Error(`管理员密码长度必须为 ${minLength}-64 位`);
   }
-  if (!PASSWORD_STRENGTH_PATTERN.test(value)) {
-    throw new Error(PASSWORD_STRENGTH_MESSAGE);
+  const pattern = buildPasswordStrengthPattern(complexity);
+  if (pattern && !pattern.test(value)) {
+    throw new Error(buildPasswordStrengthMessage(complexity));
   }
   return value;
 }
@@ -80,7 +130,8 @@ async function ensureAdmin(prisma, options = {}) {
   }
 
   const email = validateAdminEmail(credentials.email);
-  const password = validateAdminPassword(credentials.password);
+  const policy = await resolvePasswordPolicy(prisma);
+  const password = validateAdminPassword(credentials.password, policy.passwordMinLength, policy);
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new Error(`管理员邮箱 ${email} 已被非 ADMIN 账号占用，bootstrap 不会自动提权，请更换 ADMIN_EMAIL`);
@@ -114,8 +165,10 @@ async function ensureAdmin(prisma, options = {}) {
 module.exports = {
   DEMO_ADMIN_EMAIL,
   DEMO_ADMIN_PASSWORD,
+  PASSWORD_COMPLEXITY_DEFAULTS,
   ensureAdmin,
   resolveAdminCredentials,
+  resolvePasswordPolicy,
   validateAdminEmail,
   validateAdminPassword,
   validateJwtSecret

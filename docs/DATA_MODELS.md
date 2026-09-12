@@ -590,7 +590,11 @@ model SystemSetting {
 | `defaultBalance` | 十进制字符串（分，≥0） | `"0"` | 新用户注册初始余额；注册时写入 `SYSTEM_GIFT` 流水 |
 | `emailDomainMode` | `none` / `whitelist` / `blacklist` | `"none"` | 注册邮箱域名过滤模式 |
 | `emailDomainList` | JSON 字符串数组 | `[]` | 注册邮箱域名过滤列表 |
-| `passwordMinLength` | 十进制整数（8~64） | `"8"` | 注册密码最小长度 |
+| `passwordMinLength` | 十进制整数（8~64） | `"8"` | 密码最小长度（与下方 `passwordRequire*` 开关共同构成密码复杂度策略） |
+| `passwordRequireLowercase` | `"true"` / `"false"` | `"true"` | 密码必须包含小写字母 |
+| `passwordRequireUppercase` | `"true"` / `"false"` | `"false"` | 密码必须包含大写字母 |
+| `passwordRequireDigit` | `"true"` / `"false"` | `"true"` | 密码必须包含数字 |
+| `passwordRequireSpecial` | `"true"` / `"false"` | `"false"` | 密码必须包含特殊字符（非字母数字且非空白的可打印字符，空格不计） |
 | `subscriptionBaseUrl` | URL 或空字符串 | `""` | 用户端拼装订阅链接的基准地址（覆盖项；留空时自动回退继承 `publicBaseUrl` 或请求来源） |
 | `subscriptionShortLinksEnabled` | `"true"` / `"false"` | `"false"` | 用户端是否展示由 Nginx rewrite 提供的 UUID 伪静态订阅地址 |
 | `subscriptionEffectsSyncEnabled` | `"true"` / `"false"` | `"true"` | 是否开启「我的订阅」卡片套餐特效同步；开启后用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框，关闭后保持经典极简原生卡片 |
@@ -619,7 +623,7 @@ model SystemSetting {
 | `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册、获取注册/重置验证码前的人机验证模式 |
 | `turnstileSiteKey` / `turnstileSecretKey` | 文本 | `""` | Cloudflare Turnstile 公钥与服务端密钥；仅 Site Key 进入公共设置，Secret Key 管理端读取时脱敏 |
 
-读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。敏感设置 `smtpPass` 与 `turnstileSecretKey` 在管理端读取时返回 `********`，更新时提交该占位值表示保留原密钥。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关、特效同步开关 `subscriptionEffectsSyncEnabled`、运行时样式以及注册邮箱验证和 CAPTCHA 的公共参数（不含 SMTP 或 Turnstile Secret）。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。
+读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。密码复杂度策略由 `passwordMinLength` 与 `passwordRequire*` 四个开关构成，对注册、找回密码、修改密码与管理员建户/重置密码全场景生效，全部开关关闭时仅校验长度；公开信息端点 (`GET /system/public-info`) 返回该策略供前端动态校验。敏感设置 `smtpPass` 与 `turnstileSecretKey` 在管理端读取时返回 `********`，更新时提交该占位值表示保留原密钥。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关、特效同步开关 `subscriptionEffectsSyncEnabled`、运行时样式以及注册邮箱验证和 CAPTCHA 的公共参数（不含 SMTP 或 Turnstile Secret）。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。
 
 ---
 

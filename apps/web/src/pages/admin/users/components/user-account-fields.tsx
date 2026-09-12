@@ -3,10 +3,18 @@ import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessa
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { passwordComplexityFromSettings, passwordComplexityHint } from '@/lib/password-policy';
+import { usePublicSettings } from '@/lib/public-settings';
 import type { Plan } from '../../plans/use-plans';
 import type { CreateUserForm, EditAccountForm } from './user-form-schema';
 
+function usePasswordHint(): string {
+  const publicSettings = usePublicSettings();
+  return passwordComplexityHint(passwordComplexityFromSettings(publicSettings.data));
+}
+
 export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUserForm>; plans: Plan[] }) {
+  const passwordHint = usePasswordHint();
   return (
     <div className="space-y-4">
       <FormField
@@ -26,7 +34,7 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
         render={({ field }) => (
           <FormItem>
             <FormLabel>初始密码</FormLabel>
-            <FormControl><Input type="password" placeholder="至少 8 位，含大小写、数字和特殊字符" autoComplete="new-password" {...field} /></FormControl>
+            <FormControl><Input type="password" placeholder={`至少 8 位${passwordHint ? `，${passwordHint}` : ''}`} autoComplete="new-password" {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )}
@@ -79,6 +87,7 @@ export function CreateUserFields({ form, plans }: { form: UseFormReturn<CreateUs
 }
 
 export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAccountForm>; isSelf: boolean }) {
+  const passwordHint = usePasswordHint();
   return (
     <div className="space-y-4">
       <FormField
@@ -135,7 +144,7 @@ export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAc
         render={({ field }) => (
           <FormItem>
             <FormLabel>重置登录密码（可选）</FormLabel>
-            <FormControl><Input type="password" placeholder="留空表示不修改；新密码需含大小写、数字和特殊字符" autoComplete="new-password" {...field} /></FormControl>
+            <FormControl><Input type="password" placeholder={`留空表示不修改${passwordHint ? `；新密码需${passwordHint}` : ''}`} autoComplete="new-password" {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )}
