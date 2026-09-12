@@ -85,6 +85,7 @@ graph TB
 - **线路与订阅引擎 (`apps/server/lines`、`apps/server/subscription`)**：Line 是用户订阅端点的唯一业务实体，直接拥有协议、参数、监听地址、Tag、入口/出口拓扑和端口，支持直连、盲转发和协议代理中继；订阅服务按套餐匹配公开启用且入口/出口节点在线的线路，动态组装 Clash Meta YAML、Sing-box Client JSON 和 Base64 URI，并应用地址/端口、SNI/Host 与倍率覆盖。
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。ShadowTLS 固定为 v3 + SS2022 内层，配置生成两个入站：公网 ShadowTLS 外层通过 `detour` 接入仅监听回环地址的 SS 入站，用户凭证只用于外层用户鉴权。
 - **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围与流量重置策略，Subscription 维护用户唯一订阅和当前流量周期，UserLineGrant 维护独立于订阅生命周期的用户额外线路授权，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
+- **套餐购买台账与限购 (`PlanPurchaseIdentity` / `PlanPurchase`)**：Plan 可配置每位用户的限购次数与是否允许续费；购买身份通过邮箱 HMAC 别名与可删除的 User 解耦，订阅取消、过期、升配或账号删除后购买记录仍保留。自助订购/升配、注册默认套餐和管理员发放统一写入购买台账，唯一约束 `(identityId, planId, sequence)` 负责并发兜底；续费只校验套餐允许续费，不消耗限购次数。免费套餐默认限购 1 次且不可续费，管理员补发可通过 `ADMIN` 来源破例但仍记账。
 - **持久化层 (Prisma + SQLite)**：单文件轻量化存储，开启 WAL（Write-Ahead Logging）模式支持高并发读取，免去维护额外数据库容器的运维负担。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)

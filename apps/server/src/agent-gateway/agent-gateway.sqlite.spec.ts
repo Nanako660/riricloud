@@ -101,7 +101,8 @@ describe('AgentService SQLite traffic accounting', () => {
         "isActive" BOOLEAN NOT NULL DEFAULT 1,
         "sessionVersion" INTEGER NOT NULL DEFAULT 0,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "planPurchaseIdentityId" TEXT
       )`,
       `CREATE TABLE "Line" (
         "id" TEXT NOT NULL PRIMARY KEY,

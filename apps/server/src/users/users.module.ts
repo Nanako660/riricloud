@@ -9,11 +9,12 @@ import { UsersAdminController } from './users-admin.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { UserIdentityService } from './user-identity.service';
+import { PlanPurchasesService } from '../subscription/plan-purchases.service';
 
 @Module({
   imports: [AgentGatewayModule, SystemModule, LinesModule, WalletModule, VerificationModule, SystemLogsModule],
   controllers: [UsersController, UsersAdminController],
-  providers: [UsersService, UserIdentityService],
+  providers: [UsersService, UserIdentityService, PlanPurchasesService],
   exports: [UsersService]
 })
 export class UsersModule {}

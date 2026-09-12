@@ -23,6 +23,8 @@ type PlanViewInput = {
   cardConfigJson?: string;
   isPublic: boolean;
   sortOrder: number;
+  purchaseLimitPerUser?: number | null;
+  allowRenewal?: boolean;
   [key: string]: unknown;
 };
 
@@ -102,11 +104,11 @@ export class PlansService {
   async remove(id: string) {
     const plan = await this.prisma.plan.findUnique({
       where: { id },
-      include: { _count: { select: { subscriptions: true } } }
+      include: { _count: { select: { subscriptions: true, purchases: true } } }
     });
     if (!plan) throw new NotFoundException('套餐不存在');
-    if (plan._count.subscriptions > 0) {
-      throw new ConflictException('已有订阅使用该套餐，请先下架而不要删除');
+    if (plan._count.subscriptions > 0 || plan._count.purchases > 0) {
+      throw new ConflictException('已有订阅或购买记录使用该套餐，请先下架而不要删除');
     }
     await this.prisma.plan.delete({ where: { id } });
     return { deleted: true };
@@ -147,15 +149,22 @@ export class PlansService {
       featuresJson: JSON.stringify(dto.features ?? []),
       cardConfigJson: JSON.stringify(dto.cardConfig ?? {}),
       isPublic: dto.isPublic ?? true,
-      sortOrder: dto.sortOrder ?? 0
+      sortOrder: dto.sortOrder ?? 0,
+      purchaseLimitPerUser: dto.purchaseLimitPerUser !== undefined
+        ? dto.purchaseLimitPerUser
+        : toCents(dto.price ?? 0) === 0 ? 1 : null,
+      allowRenewal: dto.allowRenewal ?? (toCents(dto.price ?? 0) !== 0)
     };
   }
 
   private toUpdateData(dto: UpdatePlanDto) {
+    const price = dto.price !== undefined ? toCents(dto.price) : undefined;
+    const freePlan = price === 0;
+    const paidPlan = price !== undefined && price > 0;
     return {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
-      ...(dto.price !== undefined ? { price: toCents(dto.price) } : {}),
+      ...(price !== undefined ? { price } : {}),
       ...(dto.durationDays !== undefined ? { durationDays: dto.durationDays } : {}),
       ...(dto.trafficLimitBytes !== undefined ? { trafficLimitBytes: BigInt(dto.trafficLimitBytes) } : {}),
       ...(dto.trafficResetMode !== undefined ? { trafficResetMode: dto.trafficResetMode } : {}),
@@ -168,7 +177,21 @@ export class PlansService {
       ...(dto.features !== undefined ? { featuresJson: JSON.stringify(dto.features) } : {}),
       ...(dto.cardConfig !== undefined ? { cardConfigJson: JSON.stringify(dto.cardConfig) } : {}),
       ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
-      ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {})
+      ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+      ...(dto.purchaseLimitPerUser !== undefined
+        ? { purchaseLimitPerUser: dto.purchaseLimitPerUser }
+        : freePlan
+          ? { purchaseLimitPerUser: 1 }
+          : paidPlan
+            ? { purchaseLimitPerUser: null }
+            : {}),
+      ...(dto.allowRenewal !== undefined
+        ? { allowRenewal: dto.allowRenewal }
+        : freePlan
+          ? { allowRenewal: false }
+          : paidPlan
+            ? { allowRenewal: true }
+            : {})
     };
   }
 

@@ -33,6 +33,10 @@ export default function MarketPage() {
   const plans = usePlans();
 
   const planList = useMemo(() => plans.data ?? [], [plans.data]);
+  const claimCounts = useMemo(
+    () => new Map((current?.planClaims ?? []).map((claim) => [claim.planId, claim.used])),
+    [current?.planClaims]
+  );
 
   // 周期筛选过滤
   const filteredPlans = useMemo(() => {
@@ -134,12 +138,14 @@ export default function MarketPage() {
       {/* 套餐卡片网格 */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 pt-2">
         {filteredPlans.map((plan) => {
-          const isCurrent = current?.subscription?.plan.id === plan.id;
+          const isCurrent = active && current?.subscription?.plan.id === plan.id;
           const isLowerPriced = Boolean(
             active &&
               current?.subscription?.plan.price !== undefined &&
               plan.price < current.subscription.plan.price
           );
+          const used = claimCounts.get(plan.id) ?? 0;
+          const isPurchaseExhausted = plan.purchaseLimitPerUser !== null && used >= plan.purchaseLimitPerUser;
 
           return (
             <MarketPlanCard
@@ -147,6 +153,7 @@ export default function MarketPage() {
               plan={plan}
               isCurrent={isCurrent}
               isLowerPriced={isLowerPriced}
+              isPurchaseExhausted={isPurchaseExhausted}
               activeSubscription={active}
               onSelect={(p) => setSelected(p)}
             />
@@ -186,7 +193,10 @@ export default function MarketPage() {
             <AlertDialogTitle>{active ? '确认升配套餐？' : '确认订购套餐？'}</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
-                {active
+                {selected?.purchaseLimitPerUser !== null &&
+                (claimCounts.get(selected?.id ?? '') ?? 0) >= (selected?.purchaseLimitPerUser ?? Number.POSITIVE_INFINITY)
+                  ? '该套餐已达购买上限，请联系管理员补发。'
+                  : active
                   ? `将扣除 ${formatCurrency(selectedCostCents)}，升级至「${selected?.name}」。新套餐即时生效，周期与配额即时重置。`
                   : `将从你的账户余额中扣除 ${formatCurrency(selectedCostCents)} 订购「${selected?.name}」。`}
               </span>
@@ -213,6 +223,11 @@ export default function MarketPage() {
                 wallet.isPending ||
                 !wallet.data ||
                 isBalanceInsufficient ||
+                Boolean(
+                  selected &&
+                  selected.purchaseLimitPerUser !== null &&
+                  (claimCounts.get(selected.id) ?? 0) >= selected.purchaseLimitPerUser
+                ) ||
                 subscribe.isPending ||
                 upgrade.isPending
               }

@@ -61,6 +61,46 @@ describe('PlansService', () => {
     expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ price: 1234 }) }));
   });
 
+  it('新建免费套餐默认限购一次且不可续费', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'free', name: '免费', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, purchaseLimitPerUser: 1, allowRenewal: false
+    });
+
+    await service.create({ name: '免费', price: 0, durationDays: 30, trafficLimitBytes: 1024 });
+
+    expect(prisma.plan.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ purchaseLimitPerUser: 1, allowRenewal: false })
+    });
+  });
+
+  it('新建付费套餐默认不限购且允许续费', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'paid', name: '付费', description: null, price: 1000, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, purchaseLimitPerUser: null, allowRenewal: true
+    });
+
+    await service.create({ name: '付费', price: 10, durationDays: 30, trafficLimitBytes: 1024 });
+
+    expect(prisma.plan.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ purchaseLimitPerUser: null, allowRenewal: true })
+    });
+  });
+
+  it('存在购买台账时禁止删除套餐', async () => {
+    prisma.plan.findUnique.mockResolvedValue({
+      id: 'free',
+      _count: { subscriptions: 0, purchases: 1 }
+    });
+
+    await expect(service.remove('free')).rejects.toThrow('已有订阅或购买记录');
+    expect(prisma.plan.delete).not.toHaveBeenCalled();
+  });
+
   it('创建套餐时支持保存并序列化 badgeText, isFeatured 与 features', async () => {
     prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
     prisma.plan.create.mockResolvedValue({

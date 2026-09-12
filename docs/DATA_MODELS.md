@@ -90,6 +90,8 @@ model User {
   // 关联
   trafficLogs       TrafficLog[]
   subscription      Subscription?
+  planPurchaseIdentityId String?
+  planPurchaseIdentity PlanPurchaseIdentity? @relation(fields: [planPurchaseIdentityId], references: [id], onDelete: SetNull)
   extraLineGrants   UserLineGrant[]
   balanceTransactions BalanceTransaction[]
   redeemedCodes     RedeemCode[] @relation("RedeemedCodes")
@@ -97,6 +99,47 @@ model User {
 
   @@index([role])
   @@index([isActive])
+  @@index([planPurchaseIdentityId])
+}
+
+// 套餐购买身份：与可删除账号解耦；邮箱哈希别名确保同邮箱重建账号仍继承限购记录。
+model PlanPurchaseIdentity {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  emailAliases PlanPurchaseEmailAlias[]
+  purchases    PlanPurchase[]
+}
+
+model PlanPurchaseEmailAlias {
+  id         String   @id @default(uuid())
+  identityId String
+  emailHash  String   @unique
+  createdAt  DateTime @default(now())
+
+  identity PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+}
+
+model PlanPurchase {
+  id             String   @id @default(uuid())
+  identityId     String
+  planId         String
+  sequence       Int
+  source         String // SELF_BUY | SELF_UPGRADE | REGISTRATION | ADMIN | MIGRATED
+  subscriptionId String?
+  purchasedAt    DateTime @default(now())
+
+  identity     PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  plan         Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscription Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([identityId, planId, sequence])
+  @@index([identityId, planId])
+  @@index([planId])
 }
 
 // 注册、换绑邮箱、当前邮箱核验与找回密码使用的一次性验证码
@@ -333,11 +376,14 @@ model Plan {
   cardConfigJson    String   @default("{}")  // 套餐市场卡片视觉动效与定制配置 JSON（结构见 §3.8）
   isPublic          Boolean  @default(true)
   sortOrder         Int      @default(0)
+  purchaseLimitPerUser Int?  // null 表示不限购；>=1 时限制每购买身份累计次数
+  allowRenewal      Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   subscriptions Subscription[]
+  purchases     PlanPurchase[]
 
   @@index([isPublic])
   @@index([sortOrder])
@@ -386,6 +432,7 @@ model Subscription {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])
+  planPurchases PlanPurchase[]
 
   @@index([status])
   @@index([expireAt])

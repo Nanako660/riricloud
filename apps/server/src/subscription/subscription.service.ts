@@ -30,6 +30,8 @@ import type { SubscriptionTemplateConfig } from './builders';
 import { SettingsService } from '../system/settings.service';
 import { WalletService } from '../wallet/wallet.service';
 import { getTrafficPeriod, TRAFFIC_RESET_MODES } from '../common/traffic-reset';
+import type { PlanPurchaseSource } from './plan-purchases.service';
+import { PlanPurchasesService } from './plan-purchases.service';
 
 type SubscriptionPlan = {
   id: string;
@@ -42,6 +44,8 @@ type SubscriptionPlan = {
   lineIdsJson: string;
   isPublic?: boolean;
   price?: number;
+  purchaseLimitPerUser?: number | null;
+  allowRenewal?: boolean;
   template?: SubscriptionTemplateConfig | null;
 };
 
@@ -117,7 +121,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     private readonly linesService: LinesService,
     @Optional() private readonly agentGateway?: AgentService,
     @Optional() private readonly settingsService?: SettingsService,
-    @Optional() private readonly walletService?: WalletService
+    @Optional() private readonly walletService?: WalletService,
+    @Optional() private readonly planPurchases?: PlanPurchasesService
   ) {}
 
   onModuleInit() {
@@ -187,7 +192,12 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async subscribe(userId: string, planId: string, transactionClient?: Prisma.TransactionClient) {
+  async subscribe(
+    userId: string,
+    planId: string,
+    transactionClient?: Prisma.TransactionClient,
+    options: { source?: PlanPurchaseSource; skipIfClaimUnavailable?: boolean } = {}
+  ) {
     this.requireSubscriptionDelegate();
     const client = transactionClient ?? this.prisma;
     const plan = await client.plan.findUnique({ where: { id: planId }, include: { template: true } });
@@ -197,6 +207,21 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       const current = await tx.subscription.findUnique({ where: { userId } });
       if (current && this.isSubscriptionActive(current)) {
         throw new ConflictException('已有有效订阅，请使用升配操作');
+      }
+      let purchaseId: string | null = null;
+      if (this.planPurchases) {
+        try {
+          purchaseId = await this.planPurchases.claim(
+            userId,
+            plan,
+            options.source ?? 'SELF_BUY',
+            null,
+            tx
+          );
+        } catch (error) {
+          if (options.skipIfClaimUnavailable && error instanceof ConflictException) return null;
+          throw error;
+        }
       }
       const data = {
         planId: plan.id,
@@ -212,11 +237,15 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       const subscription = current
         ? await tx.subscription.update({ where: { id: current.id }, data })
         : await tx.subscription.create({ data: { ...data, userId } });
+      if (purchaseId) {
+        await tx.planPurchase.update({ where: { id: purchaseId }, data: { subscriptionId: subscription.id } });
+      }
       await this.chargePlan(tx, userId, plan.price, 'PLAN_BUY', '订购套餐', subscription.id);
       await this.syncUserMirror(tx, userId, subscription);
       return subscription;
     };
     const result = transactionClient ? await createSubscription(transactionClient) : await this.prisma.$transaction(createSubscription);
+    if (!result) return null;
     if (transactionClient) return result;
     void this.agentGateway?.pushConfigToAll();
     return this.get(result.id);
@@ -226,11 +255,15 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const delegate = this.requireSubscriptionDelegate();
     const plan = await this.prisma.plan.findUnique({ where: { id: planId }, include: { template: true } });
     if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
-    const current = await delegate.findUnique({ where: { userId }, include: { plan: { select: { price: true } } } });
+    const current = await delegate.findUnique({ where: { userId }, include: { plan: { select: { id: true, price: true } } } });
     if (!current || !this.isSubscriptionActive(current)) throw new ConflictException('当前没有可升配的有效订阅');
     if (typeof current.plan?.price !== 'number') throw new NotFoundException('当前套餐不存在');
+    if (current.plan.id === plan.id) throw new ConflictException('当前已是该套餐，如需延长周期请使用续费');
     if (plan.price < current.plan.price) throw new ConflictException('不能升级到价格更低的套餐');
     const subscription = await this.prisma.$transaction(async (tx) => {
+      const purchaseId = this.planPurchases
+        ? await this.planPurchases.claim(userId, plan, 'SELF_UPGRADE', current.id, tx)
+        : null;
       const updated = await tx.subscription.update({
         where: { id: current.id },
         data: {
@@ -244,6 +277,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, new Date())
         }
       });
+      if (purchaseId) {
+        await tx.planPurchase.update({ where: { id: purchaseId }, data: { subscriptionId: updated.id } });
+      }
       await this.chargePlan(tx, userId, plan.price, 'PLAN_UPGRADE', '升配套餐', updated.id);
       await this.syncUserMirror(tx, userId, updated);
       return updated;
@@ -260,6 +296,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     }
     const plan = await this.prisma.plan.findUnique({ where: { id: current.planId } });
     if (!plan) throw new NotFoundException('套餐不存在');
+    if (plan.allowRenewal === false) throw new ConflictException('该套餐不支持续费');
     const now = new Date();
     const baseExpireAt = current.expireAt && current.expireAt.getTime() > now.getTime() ? current.expireAt : now;
     const subscription = await this.prisma.$transaction(async (tx) => {
@@ -304,14 +341,22 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         plan: { include: { template: true } }
       }
     });
-    if (!subscription) return { subscription: null, lines: [], nodes: [] };
+    if (!subscription) {
+      return {
+        subscription: null,
+        lines: [],
+        nodes: [],
+        planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? []
+      };
+    }
     const current = subscription.plan?.trafficResetMode
       ? (await this.ensureTrafficReset(subscription as unknown as SubscriptionRecord)).subscription
       : subscription as unknown as SubscriptionRecord;
     return {
       subscription: this.toView(current),
       lines: await this.getLinesForSubscription(current),
-      nodes: await this.getLinesForSubscription(current)
+      nodes: await this.getLinesForSubscription(current),
+      planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? []
     };
   }
 
@@ -390,7 +435,18 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       : dto.addDays
         ? addDays(current.expireAt && current.expireAt.getTime() > Date.now() ? current.expireAt : new Date(), dto.addDays)
         : current.expireAt;
+    const planChanged = Boolean(dto.planId && dto.planId !== current.planId);
     const subscription = await this.prisma.$transaction(async (tx) => {
+      const purchaseId = planChanged && plan && this.planPurchases
+        ? await this.planPurchases.claim(
+            current.userId,
+            plan,
+            'ADMIN',
+            current.id,
+            tx,
+            { allowExceedLimit: true }
+          )
+        : null;
       const updated = await tx.subscription.update({
         where: { id },
         data: {
@@ -402,6 +458,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           ...(dto.planId ? { trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan!, new Date(), current.startedAt) } : {})
         }
       });
+      if (purchaseId) {
+        await tx.planPurchase.update({ where: { id: purchaseId }, data: { subscriptionId: updated.id } });
+      }
       if (dto.extraLineIds !== undefined) {
         await this.replaceExtraLineGrants(tx, current.userId, dto.extraLineIds);
       }
@@ -456,6 +515,16 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         : addDays(now, plan.durationDays);
     const subscriptionToken = randomUUID();
     const subscription = await this.prisma.$transaction(async (tx) => {
+      const purchaseId = this.planPurchases
+        ? await this.planPurchases.claim(
+            userId,
+            plan,
+            'ADMIN',
+            null,
+            tx,
+            { allowExceedLimit: true }
+          )
+        : null;
       const created = await tx.subscription.create({
         data: {
           userId,
@@ -469,6 +538,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, now)
         }
       });
+      if (purchaseId) {
+        await tx.planPurchase.update({ where: { id: purchaseId }, data: { subscriptionId: created.id } });
+      }
       if (dto.extraLineIds !== undefined) {
         await this.replaceExtraLineGrants(tx, userId, dto.extraLineIds);
       }

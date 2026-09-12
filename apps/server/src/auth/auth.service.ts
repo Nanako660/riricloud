@@ -111,7 +111,10 @@ export class AuthService {
             await this.walletService.applyBalanceChange(tx, created.id, settings.defaultBalance, 'SYSTEM_GIFT', '新用户注册赠金');
           }
           if (settings.defaultPlanId && this.subscriptionService) {
-            await this.subscriptionService.subscribe(created.id, settings.defaultPlanId, tx);
+            await this.subscriptionService.subscribe(created.id, settings.defaultPlanId, tx, {
+              source: 'REGISTRATION',
+              skipIfClaimUnavailable: true
+            });
           }
           return created;
         });

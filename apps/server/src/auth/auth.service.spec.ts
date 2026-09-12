@@ -191,7 +191,10 @@ describe('AuthService', () => {
       prisma.user.create.mockResolvedValue({ id: 'u-default-plan', email: 'plan@example.com', role: 'USER' });
       subscriptionService.subscribe.mockResolvedValue({ id: 'sub-1' });
       await service.register({ email: 'plan@example.com', password: 'Password123!' });
-      expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1', prisma);
+      expect(subscriptionService.subscribe).toHaveBeenCalledWith('u-default-plan', 'plan-1', prisma, {
+        source: 'REGISTRATION',
+        skipIfClaimUnavailable: true
+      });
       expect(agentGateway.pushConfigToAll).toHaveBeenCalledTimes(1);
     });
 

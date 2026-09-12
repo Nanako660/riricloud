@@ -19,6 +19,7 @@ import { VerificationService } from '../verification/verification.service';
 import { assertEmailLength, assertPasswordPolicy, normalizeEmail } from '../common/auth-security';
 import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from './user-identity';
 import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
+import { PlanPurchasesService } from '../subscription/plan-purchases.service';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -56,6 +57,7 @@ type UserPlanSnapshot = {
   trafficLimitBytes: bigint;
   isPublic: boolean;
   trafficResetMode: string;
+  purchaseLimitPerUser: number | null;
 };
 
 // 管理端用户视图字段（不含 passwordHash / uuid 等敏感字段）
@@ -98,7 +100,8 @@ export class UsersService {
     @Optional() private linesService?: LinesService,
     @Optional() private walletService?: WalletService,
     @Optional() private verificationService?: VerificationService,
-    @Optional() private authAuditService?: AuthAuditService
+    @Optional() private authAuditService?: AuthAuditService,
+    @Optional() private planPurchases?: PlanPurchasesService
   ) {}
 
   // 重置订阅令牌：旧链接立即失效，返回新 token
@@ -189,6 +192,7 @@ export class UsersService {
         const existing = await tx.user.findUnique({ where: { email: newEmail }, select: { id: true } });
         if (existing && existing.id !== userId) throw new ConflictException('新邮箱已被其他账号使用');
         await verificationService.verifyCode(newEmail, 'CHANGE_EMAIL', dto.verificationCode, tx);
+        await this.planPurchases?.prepareEmailChange(userId, newEmail, tx);
         await tx.user.update({ where: { id: userId }, data: { email: newEmail, emailVerifiedAt: new Date() } });
         return { updated: true, email: newEmail };
       });
@@ -340,7 +344,17 @@ export class UsersService {
     const user = plan
       ? await this.prisma.$transaction(async (tx) => {
           const created = await tx.user.create({ data, select: ADMIN_USER_SELECT });
-          await tx.subscription.create({
+          const purchaseId = this.planPurchases
+            ? await this.planPurchases.claim(
+                created.id,
+                plan,
+                'ADMIN',
+                null,
+                tx,
+                { allowExceedLimit: true }
+              )
+            : null;
+          const subscription = await tx.subscription.create({
             data: {
               userId: created.id,
               planId: plan.id,
@@ -353,6 +367,9 @@ export class UsersService {
               trafficPeriodStartAt: getTrafficPeriod(plan.trafficResetMode, now, now, plan.durationDays, timeZone)?.startAt ?? null
             }
           });
+          if (purchaseId) {
+            await tx.planPurchase.update({ where: { id: purchaseId }, data: { subscriptionId: subscription.id } });
+          }
           return created;
         })
       : await this.prisma.user.create({ data, select: ADMIN_USER_SELECT });
@@ -423,8 +440,11 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
-    // TrafficLog 经 schema onDelete: Cascade 级联删除
-    await this.prisma.user.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await this.planPurchases?.ensureAliasForDeletion(id, tx);
+      // TrafficLog 经 schema onDelete: Cascade 级联删除；购买身份通过 SetNull 保留。
+      await tx.user.delete({ where: { id } });
+    });
     this.audit('ACCOUNT_DISABLED', { operatorId, reason: 'deleted' }, id);
     void this.agentGateway.pushConfigToAll();
     return { deleted: true, id };

@@ -5,6 +5,7 @@ const { createHash, randomBytes, randomInt } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const { encryptSecret } = require('./secret-crypto');
+const { ensurePlanPurchaseForSubscription } = require('./plan-purchase-bootstrap');
 
 const prisma = new PrismaClient();
 const MIB = 1024n ** 2n;
@@ -251,6 +252,7 @@ async function createUser(definition, plan, index) {
       canceledAt: definition.subscriptionStatus === 'CANCELED' ? new Date(now.getTime() - randomBetween(1, 10) * DAY_MS) : null
     }
   });
+  await ensurePlanPurchaseForSubscription(prisma, user, subscription);
   return prisma.user.update({ where: { id: user.id }, data: { subscriptionToken: subscription.subscriptionToken } });
 }
 

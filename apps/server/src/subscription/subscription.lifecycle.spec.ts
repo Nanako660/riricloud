@@ -5,12 +5,14 @@ import { LinesService } from '../lines/lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubscriptionService } from './subscription.service';
 import { WalletService } from '../wallet/wallet.service';
+import { PlanPurchasesService } from './plan-purchases.service';
 
 describe('SubscriptionService lifecycle', () => {
   let service: SubscriptionService;
   const plan = {
     id: 'p1', name: '体验', isPublic: true, price: 1000, durationDays: 30, trafficLimitBytes: BigInt(1000),
-    trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null
+    trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', template: null,
+    purchaseLimitPerUser: 1, allowRenewal: false
   };
   const subscription = {
     id: 's1', userId: 'u1', planId: 'p1', status: 'ACTIVE', trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0),
@@ -21,7 +23,8 @@ describe('SubscriptionService lifecycle', () => {
     subscription: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
     userLineGrant: { deleteMany: jest.fn(), createMany: jest.fn() },
     user: { update: jest.fn() },
-    balanceTransaction: { create: jest.fn() }
+    balanceTransaction: { create: jest.fn() },
+    planPurchase: { update: jest.fn() }
   };
   const prisma = {
     plan: { findUnique: jest.fn() },
@@ -34,10 +37,11 @@ describe('SubscriptionService lifecycle', () => {
   const gateway = { pushConfigToAll: jest.fn() };
   const linesService = { getAvailableForPlan: jest.fn() };
   const walletService = { applyBalanceChange: jest.fn() };
+  const planPurchases = { claim: jest.fn() };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }, { provide: WalletService, useValue: walletService }]
+      providers: [SubscriptionService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: LinesService, useValue: linesService }, { provide: WalletService, useValue: walletService }, { provide: PlanPurchasesService, useValue: planPurchases }]
     }).compile();
     service = moduleRef.get(SubscriptionService);
   });
@@ -45,6 +49,7 @@ describe('SubscriptionService lifecycle', () => {
   beforeEach(() => {
     tx.subscription.updateMany.mockResolvedValue({ count: 0 });
     prisma.line.findMany.mockResolvedValue([]);
+    planPurchases.claim.mockResolvedValue('purchase-1');
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -64,6 +69,46 @@ describe('SubscriptionService lifecycle', () => {
     prisma.plan.findUnique.mockResolvedValue(plan);
     tx.subscription.findUnique.mockResolvedValue(subscription);
     await expect(service.subscribe('u1', 'p1')).rejects.toThrow(ConflictException);
+  });
+
+  it('免费套餐已领取后再次订购返回 ConflictException', async () => {
+    prisma.plan.findUnique.mockResolvedValue(plan);
+    tx.subscription.findUnique.mockResolvedValue(null);
+    planPurchases.claim.mockRejectedValue(new ConflictException('该套餐每位用户仅可购买一次'));
+
+    await expect(service.subscribe('u1', 'p1')).rejects.toThrow(ConflictException);
+    expect(tx.subscription.create).not.toHaveBeenCalled();
+  });
+
+  it('免费套餐禁止续费', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan });
+    prisma.plan.findUnique.mockResolvedValue(plan);
+
+    await expect(service.renew('u1')).rejects.toThrow('该套餐不支持续费');
+  });
+
+  it('升配目标套餐消耗一次限购名额', async () => {
+    const currentPlan = { ...plan, id: 'current-plan', price: 500 };
+    const paidPlan = { ...plan, id: 'p2', price: 2000, purchaseLimitPerUser: 1, allowRenewal: true };
+    prisma.plan.findUnique.mockResolvedValue(paidPlan);
+    prisma.subscription.findUnique.mockResolvedValueOnce({ ...subscription, plan: currentPlan });
+    tx.subscription.update.mockResolvedValue({ ...subscription, planId: 'p2', plan: paidPlan });
+    prisma.subscription.findUnique.mockResolvedValueOnce({ ...subscription, planId: 'p2', plan: paidPlan });
+
+    await service.upgrade('u1', 'p2');
+
+    expect(planPurchases.claim).toHaveBeenCalledWith('u1', paidPlan, 'SELF_UPGRADE', 's1', tx);
+    expect(tx.planPurchase.update).toHaveBeenCalledWith({
+      where: { id: 'purchase-1' },
+      data: { subscriptionId: 's1' }
+    });
+  });
+
+  it('目标套餐等于当前套餐时拒绝升配并提示使用续费', async () => {
+    prisma.plan.findUnique.mockResolvedValue(plan);
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan });
+
+    await expect(service.upgrade('u1', 'p1')).rejects.toThrow('请使用续费');
   });
 
   it('管理员为无订阅用户绑定套餐时在事务内创建订阅并同步 User 镜像', async () => {
@@ -102,6 +147,41 @@ describe('SubscriptionService lifecycle', () => {
     expect(gateway.pushConfigToAll).toHaveBeenCalled();
   });
 
+  it('管理员仅调整额度而未变更套餐时不写购买台账', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan });
+    tx.subscription.update.mockResolvedValue({ ...subscription, plan });
+    prisma.subscription.findUnique.mockResolvedValue({ ...subscription, plan });
+
+    await service.adminUpdate('s1', { trafficLimitBytes: 5000 });
+
+    expect(planPurchases.claim).not.toHaveBeenCalled();
+    expect(tx.planPurchase.update).not.toHaveBeenCalled();
+  });
+
+  it('管理员变更套餐时破例写入 ADMIN 来源台账', async () => {
+    const targetPlan = { ...plan, id: 'p-admin', price: 2000 };
+    prisma.plan.findUnique.mockResolvedValue(targetPlan);
+    tx.subscription.update.mockResolvedValue({ ...subscription, plan: targetPlan, planId: 'p-admin' });
+    prisma.subscription.findUnique
+      .mockResolvedValueOnce({ ...subscription, plan })
+      .mockResolvedValueOnce({ ...subscription, plan: targetPlan, planId: 'p-admin' });
+
+    await service.adminUpdate('s1', { planId: 'p-admin' });
+
+    expect(planPurchases.claim).toHaveBeenCalledWith(
+      'u1',
+      targetPlan,
+      'ADMIN',
+      's1',
+      tx,
+      { allowExceedLimit: true }
+    );
+    expect(tx.planPurchase.update).toHaveBeenCalledWith({
+      where: { id: 'purchase-1' },
+      data: { subscriptionId: 's1' }
+    });
+  });
+
   it('首次订购付费套餐会在订阅事务内扣除余额', async () => {
     const paidPlan = { ...plan, price: 1999 };
     prisma.plan.findUnique.mockResolvedValue(paidPlan);
@@ -122,7 +202,7 @@ describe('SubscriptionService lifecycle', () => {
   });
 
   it('续费会顺延周期、重置流量并扣除当前套餐价格', async () => {
-    const paidPlan = { ...plan, price: 500 };
+    const paidPlan = { ...plan, price: 500, allowRenewal: true };
     prisma.subscription.findUnique.mockResolvedValue(subscription);
     prisma.plan.findUnique.mockResolvedValue(paidPlan);
     tx.subscription.update.mockResolvedValue({ ...subscription, plan: paidPlan, trafficUsedBytes: BigInt(0) });
@@ -167,7 +247,7 @@ describe('SubscriptionService lifecycle', () => {
   });
 
   it('续费周期套餐时按原订阅起点计算当前周期，而不是把周期起点回退到初始日期', async () => {
-    const cyclePlan = { ...plan, trafficResetMode: 'SUBSCRIPTION_CYCLE' };
+    const cyclePlan = { ...plan, trafficResetMode: 'SUBSCRIPTION_CYCLE', allowRenewal: true };
     const current = { ...subscription, plan: cyclePlan, startedAt: new Date(Date.now() - 45 * 86400000) };
     prisma.subscription.findUnique.mockResolvedValue(current);
     prisma.plan.findUnique.mockResolvedValue(cyclePlan);
