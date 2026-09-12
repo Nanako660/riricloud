@@ -17,4 +17,8 @@ export class CreateNodeDto {
   @IsOptional()
   communicationMode?: 'WS' | 'HTTP';
 
+  @ApiProperty({ enum: ['PUBLIC', 'NAT'], required: false, default: 'PUBLIC' })
+  @IsIn(['PUBLIC', 'NAT'])
+  @IsOptional()
+  reachability?: 'PUBLIC' | 'NAT';
 }

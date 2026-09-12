@@ -13,6 +13,11 @@
 ## [Unreleased]
 
 ### Added
+- **无公网 NAT/家宽主机作为落地出口节点与反向穿透隧道全链路**：
+  - **网络可达性模型与业务约束**：`Node` 实体扩展 `reachability`（`PUBLIC` | `NAT`），`Line` 实体扩展 `allowLanAccess`、`tunnelType`、`tunnelPort` 与 `tunnelSecret`。服务端严格校验拓扑合法性，禁止将无公网的 NAT 节点作为直连入站或中继入口节点，仅允许作为中继落地出口节点，将家庭宽带与无公网 NAS/PC 原生 IP 盘活为解锁落地机。
+  - **Node-to-Node 聚合反向隧道编排**：主控端实现多线路单隧道聚合编排机制，同一对 `(entryNode, landingNode)` 之间复用单一持久长连接与动态隧道端口；在 `config_sync` 中实时向公网入口 VPS 下发服务端监听配置（自动将中继出站目标重定向至本地隧道转发端口），向落地 NAT 节点下发客户端主动反向拨号配置（业务入站监听强制绑定至 `127.0.0.1`）。
+  - **家庭局域网安全沙箱与拦截**：落地 NAT 节点作为出口时，若 `allowLanAccess` 为 `false`（默认策略），Master 在生成的 Sing-box 配置中自动注入首位私网阻断路由规则（`geoip:private`），彻底切断外部翻墙用户窥探家庭 NAS、路由器后台等内网资产的安全隐患；仅当管理员显式开启「允许访问落地端局域网资源」时放行私网流量。
+  - **前端管理与向导体验升级**：节点列表新增「公网 VPS / NAT 落地」徽标与反向隧道状态说明；添加节点弹窗支持可达性单选与自适应地址输入；线路创建/编辑向导支持落地选择 NAT 节点，自动展示「NAT 安全反向穿透」拓扑卡片与局域网访问安全开关。
 - **免费套餐重复购买限制与终身购买台账**：套餐新增 `purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal` 配置；新增 `PlanPurchaseIdentity`、`PlanPurchaseEmailAlias` 与 `PlanPurchase` 持久化台账，并将购买身份与可删除账号解耦。自助订购、升配、注册默认套餐和管理员发放统一记账，唯一约束负责并发去重；取消、过期、升配、管理员删除账号后重新注册均不能再次领取已用尽免费套餐，管理员补发可破例但必须留下 `ADMIN` 来源记录。
 - **套餐卡片高阶视觉流派方案与后台完全可配置化**：吸纳 Aceternity UI 与 Magic UI 业界顶流视觉设计精髓，全面落地三大高阶流派方案（`cardStyle`：`fusion` 尊享流光合璧、`holographic` 全息黑曜 3D 闪卡、`neon` 赛博霓虹导光晶体）。在套餐管理后台（`PlanFormDialog`）新增流派方案卡片式三选一交互配置，管理员可自由为各个套餐独立指定专属流派，右侧实机预览即时联动；`PlanCardConfigDto` 同步扩展 `cardStyle` 字段契约并支持 Swagger 与 class-validator 校验；全新引入物理阻尼 $\pm 6^\circ$ 的细腻 3D Tilt 视差微倾斜、1.5px 极细微导光流动微边框容器（Shine Border）、高透动态全息彩虹晶格折射（Holographic Foil）以及双层环境霓虹光晕（Ambient Neon Bloom），浅色模式适配为典雅通透的珠光白玉微晶质感（Pearlescent Frost），彻底解决原有大面积深暗色调发脏发浊痛点，达成流光溢彩且极度奢华沉稳的高阶质感。
 - **预设流派基线与折叠式「高级视觉微调」抽屉面板**：在套餐管理后台（`PlanFormDialog`）实现“预设流派 + 折叠式高级微调面板”双层交互架构。选择任一流派自动一键载入对应最佳基线配置，展开折叠面板可对 5 项原子能力（3D 视差微倾斜 `enable3DTilt`、1.5px 流光微边框 `enableShineBorder`、全息彩虹折射 `enableHolographic`、双层环境霓虹 `enableAmbientGlow`、流体极光内衬 `enableAurora`）进行毫秒级独立微调开关，微调后卡片流派自动转为自定义模式；服务端 DTO 与客户端类型无缝兼容并提供向后平滑过渡。

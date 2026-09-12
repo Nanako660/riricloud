@@ -14,6 +14,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
+	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 	"github.com/Nanako660/riricloud/apps/agent/internal/ws"
 )
@@ -39,12 +40,16 @@ func Run(ctx context.Context, configPath, version string) error {
 	}
 
 	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, logrus.NewEntry(log))
+	tunnelMgr := tunnel.NewManager(ctx, logrus.NewEntry(log))
+	defer tunnelMgr.Shutdown()
+
 	if cfg.Mode == config.ModeHTTP {
 		client := poll.NewClient(
 			cfg.MasterURL,
 			cfg.AgentToken,
 			time.Duration(cfg.PollIntervalSecs)*time.Second,
 			singboxMgr,
+			tunnelMgr,
 			version,
 			runtime.GOOS+"/"+runtime.GOARCH,
 			logrus.NewEntry(log),
@@ -56,6 +61,7 @@ func Run(ctx context.Context, configPath, version string) error {
 			cfg.AgentToken,
 			time.Duration(cfg.HeartbeatSecs)*time.Second,
 			singboxMgr,
+			tunnelMgr,
 			version,
 			runtime.GOOS+"/"+runtime.GOARCH,
 			logrus.NewEntry(log),

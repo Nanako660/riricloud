@@ -92,6 +92,7 @@ Linux 开发机使用系统环境安装 Node.js、pnpm 与 Go，不在仓库内�
 - `github.com/charmbracelet/lipgloss`：全屏 TUI 的 Banner、表单、状态卡片、结果页和诊断颜色。
 - `github.com/mattn/go-isatty`：精准检测 Stdin / Stdout 真实终端控制台与 Cygwin/MSYS TTY，确保 Docker 容器与无交互环境静默运行后台守护进程、交互终端下唤起全屏 TUI。
 - `gopkg.in/yaml.v3`：读写 `/etc/riri-agent/config.yaml`（Windows 使用 `%ProgramData%\RiriCloud\config.yaml`），并以环境变量覆盖容器运行时配置。
+- `github.com/hashicorp/yamux`：轻量高可靠的流式多路复用库，支撑 Agent 原生内置基于 TLS/TCP 的双向反向穿透隧道，实现无公网 IP 内网主机（NAT/CGNAT 家宽 NAS/软路由）安全接入系统作为落地中继。
 
 Docker 与发行包中的 Sing-box 使用 `with_v2ray_api,with_utls,with_quic,with_naive_outbound` 构建标签，以启用按用户流量统计、VLESS Reality、Hysteria2、TUIC 和 NaiveProxy 出站；Agent 仍保持 `CGO_ENABLED=0` 静态构建。
 

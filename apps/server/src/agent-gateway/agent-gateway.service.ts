@@ -27,7 +27,7 @@ import {
   INTERNAL_SPEEDTEST_UUID,
   type ProtocolType
 } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type TunnelConfigPayload, type TunnelPortMapping, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
@@ -35,6 +35,18 @@ import { isLineAuthorized } from '../common/line-access';
 import { getTrafficPeriod } from '../common/traffic-reset';
 import { hashAgentToken } from '../common/agent-token';
 import { decryptSecret } from '../common/secret-crypto';
+
+const PRIVATE_CIDR_BLOCKS = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '100.64.0.0/10',
+  '127.0.0.0/8',
+  '169.254.0.0/16',
+  'fc00::/7',
+  'fe80::/10',
+  '::1/128'
+];
 
 // 活跃连接注册表：nodeId → WebSocket
 export type AgentSocket = { send: (data: string | Buffer) => void; close: (code?: number, reason?: string) => void };
@@ -1189,11 +1201,15 @@ export class AgentService implements OnModuleDestroy {
       entryPort: number;
       landingNodeId: string | null;
       landingPort: number | null;
+      allowLanAccess?: boolean;
+      tunnelType?: string | null;
+      tunnelPort?: number | null;
+      tunnelSecret?: string | null;
       tagsJson: string;
       isPublic: boolean;
       status: string;
-      entryNode?: { status: string };
-      landingNode?: { serverHost: string; status?: string } | null;
+      entryNode?: { serverHost: string; status?: string; reachability?: string } | null;
+      landingNode?: { serverHost: string; status?: string; reachability?: string } | null;
       certificate: { certificatePem: string; privateKeyPem: string } | null;
       targetLine?: {
         id: string;
@@ -1207,10 +1223,18 @@ export class AgentService implements OnModuleDestroy {
       relaySources?: Array<{ id: string; tagsJson: string; isPublic: boolean; status: string }>;
     };
     const lines = new Map<string, ConfigLine>();
-    for (const line of node.entryLines ?? []) lines.set(line.id, line);
+    for (const line of node.entryLines ?? []) {
+      lines.set(line.id, {
+        ...line,
+        entryNode: { serverHost: node.serverHost, status: node.status, reachability: (node as { reachability?: string }).reachability ?? 'PUBLIC' }
+      });
+    }
     for (const line of node.landingLines ?? []) {
       if (!lines.has(line.id)) {
-        lines.set(line.id, { ...line, landingNode: { serverHost: node.serverHost, status: node.status } });
+        lines.set(line.id, {
+          ...line,
+          landingNode: { serverHost: node.serverHost, status: node.status, reachability: (node as { reachability?: string }).reachability ?? 'PUBLIC' }
+        });
       }
     }
 
@@ -1293,12 +1317,13 @@ export class AgentService implements OnModuleDestroy {
       }
 
       if (isEntry && line.relayMode === 'BLIND_FORWARD' && line.landingNode && line.landingPort) {
+        const isNatLanding = line.landingNode.reachability === 'NAT';
         inbounds.push({
           type: 'direct',
           tag: lineTags.entry ?? `relay-${line.id}-entry`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           listen_port: line.entryPort,
-          override_address: line.landingNode.serverHost,
+          override_address: isNatLanding ? '127.0.0.1' : line.landingNode.serverHost,
           override_port: line.landingPort
         });
       }
@@ -1360,16 +1385,24 @@ export class AgentService implements OnModuleDestroy {
           ? [this.internalRelayTransitUser()]
           : users;
         const landingTag = lineTags.landing ?? `line-${line.id}-landing`;
+        const isSelfNat = (node as { reachability?: string }).reachability === 'NAT';
         inbounds.push(...buildServerInbounds({
           type: protocolType,
           tag: landingTag,
-          listen: line.listen || DEFAULT_INBOUND_LISTEN,
+          listen: isSelfNat ? '127.0.0.1' : (line.listen || DEFAULT_INBOUND_LISTEN),
           port: line.landingPort,
           params,
           users: exitUsers,
           lineId: line.id,
           proxyPoolUsers: proxyPoolUsersForTag(landingTag)
         }));
+        if (isSelfNat && !line.allowLanAccess) {
+          relayRules.push({
+            inbound: [landingTag],
+            ip_cidr: PRIVATE_CIDR_BLOCKS,
+            outbound: 'block'
+          });
+        }
       }
     }
 
@@ -1378,6 +1411,83 @@ export class AgentService implements OnModuleDestroy {
       relayRules.push(
         ...buildProxyPoolWhitelistRules({ tag, credentials: proxyPoolWhitelistCredentials })
       );
+    }
+
+    if (relayRules.some((rule) => rule.outbound === 'block') && !outbounds.some((outbound) => outbound.tag === 'block')) {
+      outbounds.push({ type: 'block', tag: 'block' });
+    }
+
+    const tunnelConfigs: TunnelConfigPayload[] = [];
+    const serverTunnelMap = new Map<number, {
+      secret: string;
+      mappings: Map<number, TunnelPortMapping>;
+    }>();
+    const clientTunnelMap = new Map<string, {
+      serverHost: string;
+      serverPort: number;
+      secret: string;
+      mappings: Map<number, TunnelPortMapping>;
+    }>();
+
+    for (const line of lines.values()) {
+      if (node.status === 'DISABLED') continue;
+      if (line.type !== 'RELAY') continue;
+      const isEntry = line.entryNodeId === nodeId;
+      const isLanding = line.landingNodeId === nodeId;
+
+      // 如果当前节点为入口节点，且落地节点为 NAT 节点
+      if (isEntry && line.landingNode?.reachability === 'NAT' && line.tunnelPort && line.tunnelSecret && line.landingPort) {
+        let entry = serverTunnelMap.get(line.tunnelPort);
+        if (!entry) {
+          entry = { secret: line.tunnelSecret, mappings: new Map() };
+          serverTunnelMap.set(line.tunnelPort, entry);
+        }
+        entry.mappings.set(line.landingPort, {
+          lineId: line.id,
+          localPort: line.landingPort,
+          targetPort: line.landingPort
+        });
+      }
+
+      // 如果当前节点为落地节点，且自身为 NAT 节点
+      if (isLanding && (node as { reachability?: string }).reachability === 'NAT' && line.tunnelPort && line.tunnelSecret && line.landingPort && line.entryNode?.serverHost) {
+        const key = `${line.entryNode.serverHost}:${line.tunnelPort}`;
+        let entry = clientTunnelMap.get(key);
+        if (!entry) {
+          entry = {
+            serverHost: line.entryNode.serverHost,
+            serverPort: line.tunnelPort,
+            secret: line.tunnelSecret,
+            mappings: new Map()
+          };
+          clientTunnelMap.set(key, entry);
+        }
+        entry.mappings.set(line.landingPort, {
+          lineId: line.id,
+          localPort: line.landingPort,
+          targetPort: line.landingPort
+        });
+      }
+    }
+
+    for (const [listenPort, data] of serverTunnelMap.entries()) {
+      tunnelConfigs.push({
+        id: `tunnel-server-${listenPort}`,
+        role: 'SERVER',
+        listenPort,
+        secret: data.secret,
+        mappings: Array.from(data.mappings.values())
+      });
+    }
+
+    for (const data of clientTunnelMap.values()) {
+      tunnelConfigs.push({
+        id: `tunnel-client-${data.serverPort}`,
+        role: 'CLIENT',
+        serverAddr: `${data.serverHost}:${data.serverPort}`,
+        secret: data.secret,
+        mappings: Array.from(data.mappings.values())
+      });
     }
 
     const statsUsers = new Set<string>();
@@ -1409,7 +1519,7 @@ export class AgentService implements OnModuleDestroy {
     if (node.configOverride) {
       singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
     }
-    return { version: ++this.configVersion, singboxConfig };
+    return { version: ++this.configVersion, singboxConfig, tunnelConfigs };
   }
 
   private buildLineParams(line: {
@@ -1465,7 +1575,7 @@ export class AgentService implements OnModuleDestroy {
       protocolType: string;
       paramsJson: string;
       landingPort?: number | null;
-      landingNode?: { serverHost: string } | null;
+      landingNode?: { serverHost: string; reachability?: string } | null;
     }
   ): Record<string, unknown> | undefined {
     if (!line.landingNode || !line.landingPort) return undefined;
@@ -1479,10 +1589,11 @@ export class AgentService implements OnModuleDestroy {
         ? reality.serverNames[0]
         : undefined;
     const tlsServerName = fallbackServerName;
+    const isNatLanding = line.landingNode.reachability === 'NAT';
     const outbound: Record<string, unknown> = {
       type: protocolType.toLowerCase(),
       tag: `relay-out-${line.id}`,
-      server: line.landingNode.serverHost,
+      server: isNatLanding ? '127.0.0.1' : line.landingNode.serverHost,
       server_port: line.landingPort
     };
 

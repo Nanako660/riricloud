@@ -80,11 +80,11 @@
 Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最靠前的 ACTIVE 入口线路；没有匹配线路时保留 `lineId=null`。聚合历史流水时会按节点首选 ACTIVE 入口线路回退归组，仍无法归属的数据标记为“未分配线路（节点直连）”。
 
 #### 节点管理
-- `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
+- `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。返回字段包含网络可达性 `reachability`（`PUBLIC` | `NAT`）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
 - `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
-- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost, communicationMode?: "WS"|"HTTP" }`；线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
+- `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与双模式原生 CLI 安装命令）。⭐ 请求 `{ name?, serverHost?, reachability?: "PUBLIC"|"NAT", communicationMode?: "WS"|"HTTP" }`；`reachability` 默认为 `PUBLIC`，当为 `NAT` 时 `serverHost` 可选（默认回退为 `127.0.0.1`）；NAT 节点仅可作为中继落地出口节点，禁止作为直连入站或中继入口节点。线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。
 - `POST /admin/nodes/:id/rotate-token`：轮换远程节点 AgentToken。⭐ 管理员确认后立即使旧凭证失效、断开在线 Agent 并将节点标记为 `OFFLINE`；响应 `{ nodeId, agentToken, installCommand, installCommands: { ws, http }, uninstallCommand }`，新 Token 仅在本次响应中返回一次，安装命令通过终端隐藏输入 Token，不在命令或 URL 中内嵌凭证。`isLocal=true` 的 `Master-Local` 返回 `409`，必须通过主控配置重置凭证。
-- `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, configOverride?(string|null) }`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
+- `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, reachability?: "PUBLIC"|"NAT", configOverride?(string|null) }`；若节点被现有直连线路或中继入口引用，修改为 `NAT` 将返回 `409`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`，只能通过禁用内置 Agent 或停止 Master 进程使其离线。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
@@ -105,7 +105,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 #### 线路管理
 - `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`targetLineId`/`targetLine` 目标摘要、`topology`（入口/落地节点与端口）、最终生效的 `serverHost/serverPort`、原始 `endpointOverrides` 以及测速快照（`lastLatencyMs`、`lastTestedAt`、`lastTestStatus`、`lastTestMessage`）。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
 - `GET /admin/lines/:id`：查询线路详情及入口/落地节点关联、协议参数、证书简要信息、端点解析结果与最新测速快照。⭐
-- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, landingNodeId?, landingPort?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路仅需指定入口节点与端口，落地字段保持为 null；普通中继线路必须指定入口、落地和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，落地节点与端口动态由目标线路解析。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~65535` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
+- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, landingNodeId?, landingPort?, allowLanAccess?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路仅需指定入口节点与端口，落地字段保持为 null；普通中继线路必须指定入口、落地和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，落地节点与端口动态由目标线路解析。入口节点 `entryNodeId` 必须为公网可达节点（`reachability=PUBLIC`）；落地节点支持公网节点或 NAT 节点（`reachability=NAT`）。当落地为 NAT 节点时，系统自动编排反向 Yamux 多路复用隧道（`tunnelType=YAMUX`），复用或自动分配隧道端口（`tunnelPort`）与高熵密钥（`tunnelSecret`）；`allowLanAccess` 控制落地端是否放行家庭/私网局域网资源访问（布尔值，默认 `false` 严格拦截私网网段）。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~65535` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
 - `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
@@ -313,6 +313,43 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 }
 ```
 线路 CRUD、套餐/用户订阅变动均通过现有 250ms 防抖机制触发相关在线节点的 `config_sync`；目标线路或目标节点地址变更也会刷新桥接入口节点。节点上的配置来源始终是 Line 与节点级 `configOverride`。
+
+##### 反向多路复用隧道编排与协同 (Yamux Reverse Tunnel)
+
+当存在以 NAT 节点（`reachability=NAT`）作为落地出口的中继线路时，Master 会在 `config_sync` 数据包中为入口 VPS 节点和落地 NAT 节点注入 `tunnelConfigs` 数组：
+
+```json
+{
+  "type": "config_sync",
+  "data": {
+    "version": 1,
+    "singboxConfig": { ... },
+    "tunnelConfigs": [
+      {
+        "nodeId": "target-node-uuid",
+        "role": "SERVER",
+        "targetHost": "entry.vps.example.com",
+        "targetPort": 39001,
+        "secret": "high-entropy-tunnel-secret",
+        "mappings": [
+          { "remotePort": 30001, "localPort": 30001 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- **拓扑聚合机制 (Node-to-Node Aggregated Mux)**：同一对 `(entryNode, landingNode)` 之间无论承载多少条中继线路，均复用单一底层 TLS 长连接与单一 `tunnelPort`。多条线路的端口映射在 `mappings` 中统一聚合分发，由底层 Yamux 虚拟 Stream 进行数据解复用，极大节省系统 Socket 与 NAT 连接池资源。
+- **角色协作机制**：
+  - **入口节点 (`role: "SERVER"`)**：在 `targetPort` 上开启 TLS 监听服务；当收到落地 NAT 客户端的主动反向拨号并验证预共享密钥（`secret`）后，升级为 Yamux Session；同时在本地 `127.0.0.1:<remotePort>` 启动监听转发器，将进入该端口的流量通过 Yamux Stream 穿透转发给对端。
+  - **落地 NAT 节点 (`role: "CLIENT"`)**：作为客户端主动向公网入口节点的 `targetHost:targetPort` 发起 TLS 拨号；握手并认证后保持 Yamux Session（集成 25s 心跳保活与指数退避断线重连，自愈家宽 PPPoE 重拨）；当对端发起新 Stream 时，主动连接落地主机本地的 `127.0.0.1:<localPort>`（落地 Sing-box 入站）。
+- **监听收敛与流量重定向**：
+  - 入口公网 VPS 节点的 Sing-box 中继出站目标（`override_address`）自动重定向为 `127.0.0.1`，直接将中继流量喂入本地的隧道转发端口；
+  - 落地 NAT 节点上的 Sing-box 业务入站监听地址强制绑定至 `127.0.0.1`，避免在家庭/内网局域网中暴露端口。
+- **落地局域网安全访问防护**：
+  - 若中继线路的 `allowLanAccess` 为 `false`（默认策略），Master 在为落地 NAT 节点生成 Sing-box 配置时，会在 `route.rules` 首位自动注入局域网阻断规则，将私有网段（`geoip:private`，涵盖 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `169.254.0.0/16`, `::1/128`, `fc00::/7`, `fe80::/10` 等）路由至 `reject` 出站，杜绝外部翻墙流量穿透访问家庭 NAS、路由器管理面板等局域网资产；
+  - 仅当管理员显式开启 `allowLanAccess: true` 时，私网拦截规则放行，允许通过代理访问落地内网设备。
 
 #### 3. 遥测心跳与流量上报 (`heartbeat`) —— Agent -> Master (每 5~10 秒)
 ```json

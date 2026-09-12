@@ -23,6 +23,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
+	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
 
@@ -120,6 +121,7 @@ type pollResponse struct {
 	NeedUpdate      bool            `json:"needUpdate"`
 	Version         int64           `json:"version"`
 	SingboxConfig   json.RawMessage `json:"singboxConfig"`
+	TunnelConfigs   []tunnel.Config `json:"tunnelConfigs,omitempty"`
 	Tasks           []taskMessage   `json:"tasks"`
 	NextPollSecs    int             `json:"nextPollSecs"`
 }
@@ -137,6 +139,7 @@ type Client struct {
 	interval   time.Duration
 	httpClient *http.Client
 	singboxMgr *singbox.Manager
+	tunnelMgr  *tunnel.Manager
 	version    string
 	osArch     string
 	log        *logrus.Entry
@@ -151,13 +154,14 @@ type Client struct {
 	tasks            sync.WaitGroup
 }
 
-func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, version, osArch string, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry) *Client {
 	return &Client{
 		masterURL:      masterURL,
 		token:          token,
 		interval:       interval,
 		httpClient:     &http.Client{Timeout: 20 * time.Second},
 		singboxMgr:     singboxMgr,
+		tunnelMgr:      tunnelMgr,
 		version:        version,
 		osArch:         osArch,
 		log:            log,
@@ -263,6 +267,11 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		} else {
 			c.addResult("config", configApplyResult{Version: response.Version, Success: true, Message: "ok"})
 			c.log.WithField("version", response.Version).Info("polled sing-box config applied")
+		}
+	}
+	if response.TunnelConfigs != nil && c.tunnelMgr != nil {
+		if err := c.tunnelMgr.ApplyConfigs(response.TunnelConfigs); err != nil {
+			c.log.WithError(err).Warn("apply polled tunnel configs failed")
 		}
 	}
 	for _, task := range response.Tasks {

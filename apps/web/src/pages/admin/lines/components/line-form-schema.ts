@@ -119,7 +119,11 @@ export const lineFormSchema = z.object({
   level: z.coerce.number().int().min(0),
   sortOrder: z.coerce.number().int().min(0),
   isPublic: z.boolean(),
-  status: z.enum(['ACTIVE', 'DISABLED'])
+  status: z.enum(['ACTIVE', 'DISABLED']),
+  allowLanAccess: z.boolean().default(false),
+  tunnelType: z.string().optional(),
+  tunnelPort: optionalPort,
+  tunnelSecret: z.string().optional()
 }).superRefine((value, ctx) => {
   if (!value.entryNodeId) ctx.addIssue({ code: 'custom', path: ['entryNodeId'], message: '请选择入口节点' });
   if (value.type === 'RELAY' && value.relayMode !== 'TARGET_LINE' && !value.landingNodeId) {
@@ -213,7 +217,8 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
     stHandshakeDest: 'gateway.icloud.com:443', stInnerMethod: '2022-blake3-aes-128-gcm', stInnerPassword: '', stStrictMode: true,
     localAllowLan: false, localUsersEnabled: false, directOverrideAddress: '', directOverridePort: undefined,
     endpointOverrideEnabled: false, serverHost: '', serverPort: undefined, serverName: '', host: '',
-    trafficRate: 1, tags: '', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE'
+    trafficRate: 1, tags: '', level: 0, sortOrder: 0, isPublic: true, status: 'ACTIVE',
+    allowLanAccess: false, tunnelType: 'TCP_MUX', tunnelPort: undefined, tunnelSecret: ''
   };
 }
 
@@ -322,7 +327,11 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     level: line.level,
     sortOrder: line.sortOrder,
     isPublic: line.isPublic,
-    status: line.status
+    status: line.status,
+    allowLanAccess: line.allowLanAccess ?? false,
+    tunnelType: line.tunnelType ?? 'TCP_MUX',
+    tunnelPort: line.tunnelPort ?? undefined,
+    tunnelSecret: line.tunnelSecret ?? ''
   };
 }
 
@@ -465,6 +474,10 @@ export function toLinePayload(values: LineFormValues) {
     level: values.level,
     sortOrder: values.sortOrder,
     isPublic: values.isPublic,
-    status: values.status
+    status: values.status,
+    allowLanAccess: values.allowLanAccess,
+    tunnelType: values.tunnelType || null,
+    tunnelPort: values.tunnelPort ?? null,
+    tunnelSecret: values.tunnelSecret?.trim() || null
   };
 }

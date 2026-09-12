@@ -24,6 +24,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
+	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
 
@@ -31,6 +32,11 @@ import (
 type message struct {
 	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`
+}
+
+// 握手包（Agent -> Master）：附带协议版本号
+type handshakeData struct {
+	ProtocolVersion int `json:"protocolVersion"`
 }
 
 type authResult struct {
@@ -43,6 +49,7 @@ type authResult struct {
 type configSync struct {
 	Version       int             `json:"version"`
 	SingboxConfig json.RawMessage `json:"singboxConfig"`
+	TunnelConfigs []tunnel.Config `json:"tunnelConfigs,omitempty"`
 }
 
 type heartbeatTraffic struct {
@@ -183,6 +190,7 @@ type Client struct {
 	token         string
 	heartbeat     time.Duration
 	singboxMgr    *singbox.Manager
+	tunnelMgr     *tunnel.Manager
 	version       string
 	osArch        string
 	log           *logrus.Entry
@@ -193,12 +201,13 @@ type Client struct {
 	mirrorCancels map[string]context.CancelFunc
 }
 
-func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, version, osArch string, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry) *Client {
 	return &Client{
 		masterURL:     masterURL,
 		token:         token,
 		heartbeat:     heartbeat,
 		singboxMgr:    singboxMgr,
+		tunnelMgr:     tunnelMgr,
 		version:       version,
 		osArch:        osArch,
 		log:           log,
@@ -319,6 +328,11 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 					Message: fmt.Sprintf("Apply singbox config v%d failed: %v", sync.Version, err),
 				}})
 				continue
+			}
+			if c.tunnelMgr != nil && sync.TunnelConfigs != nil {
+				if err := c.tunnelMgr.ApplyConfigs(sync.TunnelConfigs); err != nil {
+					c.log.WithError(err).Warn("apply tunnel configs failed")
+				}
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")
 			c.sendApplyResult(conn, sync.Version, true, "ok")

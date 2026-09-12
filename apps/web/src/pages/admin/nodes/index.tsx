@@ -126,11 +126,31 @@ export default function AdminNodesPage() {
                 {filteredNodes.map((node) => (
                   <TableRow key={node.id}>
                     <TableCell className="font-medium">
-                      <Link to={`/admin/nodes/${node.id}`} className="hover:underline">
-                        {node.name}
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        <Link to={`/admin/nodes/${node.id}`} className="hover:underline">
+                          {node.name}
+                        </Link>
+                        {node.reachability === 'NAT' ? (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                            NAT 落地
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground">
+                            公网 VPS
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{node.serverHost}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {node.reachability === 'NAT' ? (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          反向隧道穿透
+                          <span className="font-mono text-[11px] opacity-75">({node.serverHost})</span>
+                        </span>
+                      ) : (
+                        node.serverHost
+                      )}
+                    </TableCell>
                     <TableCell>
                       {node.lines.length ? (
                         <div className="flex max-w-52 flex-wrap gap-1">

@@ -144,6 +144,7 @@ model Node {
   id                    String    @id @default(uuid())
   name                  String
   serverHost            String
+  reachability          String    @default("PUBLIC") // PUBLIC | NAT (无公网 IP/家宽节点，通过反向隧道作为落地中继)
   isLocal               Boolean   @default(false) // 主控本机预置节点
   configOverride        String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
   agentToken            String    @unique
@@ -298,6 +299,10 @@ model Line {
   serverName              String?
   host                    String?
   trafficRate             Float     @default(1)
+  allowLanAccess          Boolean   @default(false) // 落地端是否允许访问局域网私网 IP (默认 false 拦截)
+  tunnelType              String? // TCP_MUX | WIREGUARD (反向穿透隧道类型，NAT 落地中继时生效)
+  tunnelPort              Int? // 入口 VPS 监听的隧道连接端口
+  tunnelSecret            String? // AES-GCM 加密存储的隧道握手鉴权凭据
   tagsJson                String    @default("[]")
   level                   Int       @default(0)
   sortOrder               Int       @default(0)

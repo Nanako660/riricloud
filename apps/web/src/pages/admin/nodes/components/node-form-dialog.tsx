@@ -31,8 +31,17 @@ import { useNodeMutations, type CommunicationMode, type CreateNodeResult } from 
 // 创建只收基础信息：协议/端口等入站配置进节点详情页单独管理
 const createSchema = z.object({
   name: z.string().max(32, '名称不超过 32 字符').optional(),
-  serverHost: z.string().min(1, '请输入服务器地址'),
+  reachability: z.enum(['PUBLIC', 'NAT']),
+  serverHost: z.string().optional(),
   communicationMode: z.enum(['WS', 'HTTP'])
+}).refine((data) => {
+  if (data.reachability === 'PUBLIC') {
+    return Boolean(data.serverHost && data.serverHost.trim().length > 0);
+  }
+  return true;
+}, {
+  message: '公网 VPS 必须输入服务器公网地址',
+  path: ['serverHost']
 });
 
 type CreateForm = z.infer<typeof createSchema>;
@@ -52,14 +61,19 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: '', serverHost: '', communicationMode: 'WS' }
+    defaultValues: { name: '', reachability: 'PUBLIC', serverHost: '', communicationMode: 'WS' }
   });
 
   // 打开时重置到初始状态
   useFormResetOnKey({
     open,
     resetKey: 'create',
-    reset: () => { setCreated(null); setInstallMode('WS'); setDeployType('native'); createForm.reset(); }
+    reset: () => {
+      setCreated(null);
+      setInstallMode('WS');
+      setDeployType('native');
+      createForm.reset({ name: '', reachability: 'PUBLIC', serverHost: '', communicationMode: 'WS' });
+    }
   });
 
   const currentCommand = useMemo(() => {
@@ -74,7 +88,12 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
-       { name: v.name?.trim() || undefined, serverHost: v.serverHost, communicationMode: v.communicationMode },
+       {
+         name: v.name?.trim() || undefined,
+         reachability: v.reachability,
+         serverHost: v.reachability === 'NAT' ? (v.serverHost?.trim() || '127.0.0.1') : v.serverHost?.trim(),
+         communicationMode: v.communicationMode
+       },
        { onSuccess: (data) => { setInstallMode(v.communicationMode); setCreated(data); } }
     );
   };
@@ -153,6 +172,36 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                 />
                 <FormField
                   control={createForm.control}
+                  name="reachability"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>网络可达性</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={(val) => {
+                          field.onChange(val);
+                          if (val === 'NAT' && !createForm.getValues('serverHost')) {
+                            createForm.setValue('serverHost', '127.0.0.1');
+                          }
+                        }}
+                      >
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="PUBLIC">公网 VPS (独立公网 IPv4 / IPv6，可作为直连或中继)</SelectItem>
+                          <SelectItem value="NAT">内网 NAT 主机 (家宽 NAS、软路由、无公网 IP，作为反向中继落地)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {field.value === 'NAT'
+                          ? '此主机无公网 IP，通过反向多路复用隧道由入口 VPS 中继纳管，仅作为中继落地节点。'
+                          : '具备公网 IP 的独立服务器，可作为直连节点或中继入口/落地节点。'}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
                   name="communicationMode"
                   render={({ field }) => (
                     <FormItem>
@@ -169,19 +218,37 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={createForm.control}
-                  name="serverHost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>服务器地址</FormLabel>
-                      <FormControl>
-                        <Input placeholder="203.0.113.10" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {createForm.watch('reachability') === 'PUBLIC' ? (
+                  <FormField
+                    control={createForm.control}
+                    name="serverHost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>服务器公网地址</FormLabel>
+                        <FormControl>
+                          <Input placeholder="203.0.113.10 或 vps.example.com" {...field} />
+                        </FormControl>
+                        <FormDescription>客户端或中继节点连接此主机的公网 IP 或域名</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <FormField
+                    control={createForm.control}
+                    name="serverHost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>内网标识地址（可选）</FormLabel>
+                        <FormControl>
+                          <Input placeholder="127.0.0.1 或 nas.lan" {...field} />
+                        </FormControl>
+                        <FormDescription>无公网 IP 时用于控制台显示标识，默认填 127.0.0.1</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                     取消
