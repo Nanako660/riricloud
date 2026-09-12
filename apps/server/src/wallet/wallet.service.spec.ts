@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from './wallet.service';
@@ -77,6 +77,36 @@ describe('WalletService', () => {
     prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
     await expect(service.adjustBalance('u1', -101, 'ADMIN_ADJUST')).rejects.toThrow(BadRequestException);
     expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('兑换触发限流时返回 429 且不进入核销事务', async () => {
+    const consume = jest.fn().mockReturnValue(false);
+    const limited = new WalletService(prisma as never, { consume } as never);
+    await expect(limited.redeem('u1', 'RIRI-ABC')).rejects.toThrow(HttpException);
+    expect(consume).toHaveBeenCalledWith('wallet-redeem:u1', expect.any(Number), expect.any(Number));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('限流窗口内的正常兑换放行', async () => {
+    const consume = jest.fn().mockReturnValue(true);
+    const limited = new WalletService(prisma as never, { consume } as never);
+    const tx = {
+      redeemCode: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'rc1', code: 'RIRI-ABC', amount: 100, status: 'UNUSED', expiresAt: null }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({ balance: 0 }),
+        update: jest.fn().mockResolvedValue({ balance: 100 })
+      },
+      balanceTransaction: {
+        create: jest.fn().mockResolvedValue({ id: 'bt1', userId: 'u1', amount: 100, balanceBefore: 0, balanceAfter: 100, type: 'REDEEM', description: '卡密充值', referenceId: 'rc1', redeemCodeId: 'rc1', createdAt: new Date() })
+      }
+    };
+    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+
+    await expect(limited.redeem('u1', 'RIRI-ABC')).resolves.toMatchObject({ balance: 100 });
+    expect(consume).toHaveBeenCalled();
   });
 
   it('查询不存在的用户时抛出 NotFoundException', async () => {
