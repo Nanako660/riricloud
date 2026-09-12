@@ -1,12 +1,12 @@
 ---
 title: "binary-resource-center-enhancement"
 type: plan
-status: active
-target_version: "v0.8.8"
+status: completed
+target_version: v0.8.8
 created_at: "2026-09-13"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-13"
 ---
-
 # binary-resource-center-enhancement
 
 ## 🎯 目标与背景
@@ -44,7 +44,7 @@ author: "Antigravity & Maintainers"
 
 ### 里程碑 3：文档与质量门禁
 - [x] 任务 3.1: 同步更新 API_AND_PROTOCOLS.md §2.4、VISUAL_VERIFICATION.md 台账（UI-10/UI-22/UI-31）、CHANGELOG [Unreleased]
-- [ ] 任务 3.2: 门禁全绿自查与归档准备
+- [x] 任务 3.2: 门禁全绿自查与归档准备
 
 ---
 
@@ -53,7 +53,7 @@ author: "Antigravity & Maintainers"
 - [x] server: binaries 模块 jest 全绿（28 例，含新增 10 例）
 - [x] web: tsc + eslint + vite build 全绿
 - [x] pnpm gate 全绿（本机 gate:agent 通过注入主仓库便携 Go 工具链执行；改动未触碰 apps/agent）
-- [ ] PR 创建并等待 CI（按维护者要求：只提交不合并，合并由维护者审阅后执行）
+- [x] PR #130 创建、CI 全绿并已合并（squash commit 114c457）
 
 ## 🚫 非目标
 
