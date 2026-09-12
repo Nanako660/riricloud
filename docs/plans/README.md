@@ -29,6 +29,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [卡密管理功能优化（统计/搜索分页/批量操作/安全审计/数据治理）](./archive/2026-09-13-redeem-code-management-optimization.md) | `0.9.0` | 2026-09-13 | — |
 | [免费套餐重复购买限制与购买台账](./archive/2026-09-13-free-plan-purchase-limit.md) | `v0.9.0` | 2026-09-13 | — |
 | [独立 Mixed (SOCKS5/HTTP) 直连代理池机制](./archive/2026-09-11-standalone-mixed-proxy-pool.md) | `v0.9.0` | 2026-09-11 | — |
 | [web-form-init-clobber](./archive/2026-09-10-web-form-init-clobber.md) | `v0.8.2` | 2026-09-10 | — |

@@ -39,7 +39,7 @@
 - `POST /user/reset-uuid`：重置当前用户代理凭据（底层为 UUID）。⭐ 响应 `{ uuid }`；更新后向在线 Agent 全量推送配置，旧代理凭据立即失效。
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
-- `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功。
+- `POST /user/wallet/redeem`：兑换充值卡密。⭐ 请求 `{ code }`；卡密核销、余额增加和 `REDEEM` 流水在同一 SQLite 事务内完成，并发兑换只允许一次成功；卡密不区分大小写（服务端统一大写归一），接口按用户限流（默认 5 次/分钟），超限返回 429。
 - `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、`trafficResetMode`、节点匹配模式、`purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal`。
 - `GET /user/subscription`：查询当前用户唯一订阅、可用线路与套餐购买额度。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [], planClaims: [] }`；有订阅时返回 `lines[]`、`planClaims[{ planId, used }]` 并保留 `nodes` 兼容镜像。订阅视图包含 `trafficResetMode`、`nextTrafficResetAt` 和 `extraLineIds`；线路为套餐匹配线路与用户额外授权线路的并集。
 - `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409；达到该套餐每用户限购次数时返回 409；成功后写入购买台账并按套餐价格扣款、写入 `PLAN_BUY` 流水（0 元套餐不产生钱包流水），余额不足返回 400。
@@ -130,9 +130,14 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
 
 #### 卡密管理
-- `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选。⭐
-- `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。
+- `GET /admin/redeem-codes?page&pageSize&search&status`：分页查询卡密，支持 `UNUSED`、`REDEEMED`、`REVOKED`、`EXPIRED` 状态筛选与卡密模糊搜索。⭐ 列表项附带 `redeemedBy{ id, email, nickname }` 兑换人信息。
+- `GET /admin/redeem-codes/stats`：卡密汇总统计。⭐ 响应 `{ total, totalAmount, byStatus }`；`byStatus` 四态互斥（`UNUSED` 表示未使用且未过期，`EXPIRED` 为读取时派生状态），每项含 `count` 与 `amount`（分）。
+- `GET /admin/redeem-codes/export?format=csv|txt&status&search`：按列表同款筛选导出卡密。⭐ `csv` 含 id/卡密/面额/状态/有效期/备注/兑换时间/兑换人/创建时间全部审计字段，`txt` 仅输出卡密行；响应带 `Content-Disposition` 附件下载头，单次上限 10000 条。
+- `POST /admin/redeem-codes/batch`：批量生成高强度卡密。⭐ 请求 `{ count, amount, prefix?, expiresAt?, note? }`；`amount` 为分，响应同时返回卡密列表和换行可复制的 `codes[]`。生成采用候选码预生成 + 碰撞预检，写入阶段为单事务 `createMany`，避免长事务持锁。
+- `POST /admin/redeem-codes/batch-revoke`：批量作废未使用卡密。⭐ 请求 `{ ids[] }`（最多 500 个 UUID）；仅 `UNUSED` 状态会被作废，响应 `{ requested, revoked, skipped }`。
+- `POST /admin/redeem-codes/cleanup`：清理过期卡密。⭐ 请求 `{ retentionDays? }`（默认 30，天）；删除已过期超过保留期且仍未使用的卡密，已兑换与已作废记录永久保留，响应 `{ deleted, retentionDays }`。
 - `POST /admin/redeem-codes/:id/revoke`：作废未使用卡密。⭐ 已兑换或已作废卡密返回 409。
+- **审计与限流**：批量生成、作废（单张/批量）与清理均写入系统日志（`module=REDEEM_CODE`，含操作者 userId 与数量参数，不含卡密明文）；`POST /user/wallet/redeem` 按用户限流（默认 5 次/分钟），超限返回 429。
 
 #### 直连代理池管理（v0.9.0，完整规约见 §5）
 - `GET /admin/proxy-pool/overview`：直连代理池总览。⭐ 响应 `{ totalKeys, activeKeys, disabledKeys, trafficUsedBytes, endpointCount, endpoints[] }`。
