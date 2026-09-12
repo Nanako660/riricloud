@@ -201,3 +201,43 @@
 .animate-ambient-pulse {
   animation: ambient-glow-pulse 4s ease-in-out infinite;
 }
+
+@keyframes shine-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes holographic-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-shine-spin {
+  animation: shine-spin 5.5s linear infinite;
+}
+
+.animate-holographic-foil {
+  background-size: 200% 200%;
+  animation: holographic-shift 7s ease infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-aurora-1,
+  .animate-aurora-2,
+  .animate-crystal-sheen,
+  .animate-shimmer,
+  .animate-ambient-pulse,
+  .animate-shine-spin,
+  .animate-holographic-foil {
+    animation: none !important;
+  }
+}
+

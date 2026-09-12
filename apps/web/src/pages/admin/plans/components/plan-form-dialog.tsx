@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm, Controller } from 'react-hook-form';
@@ -12,10 +13,12 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   type Plan,
   type PlanPayload,
   type PlanThemeColor,
+  type PlanCardStyle,
   type PlanAnimationEffect,
   type PlanBeamColor,
   type PlanBadgeVariant,
@@ -25,7 +28,7 @@ import type { AdminLine } from '../../lines/use-lines';
 import type { UserPlan } from '@/pages/user/subscription/use-user-subscription';
 import { MarketPlanCard } from '@/pages/user/market/components/market-plan-card';
 import { PLAN_ICONS } from '@/pages/user/market/components/market-plan-constants';
-import { Sparkles, Palette, Eye, HelpCircle } from 'lucide-react';
+import { Sparkles, Palette, Eye, HelpCircle, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const PRESET_FEATURES = [
@@ -65,6 +68,7 @@ const schema = z.object({
   isPublic: z.boolean(),
   sortOrder: z.coerce.number().int().min(0),
   // 视觉与营销动效配置
+  cardStyle: z.enum(['fusion', 'holographic', 'neon', 'custom']).default('fusion'),
   themeColor: z.enum(['default', 'amber', 'blue', 'purple', 'emerald', 'rose', 'indigo']),
   icon: z.string().min(1),
   buttonText: z.string().optional(),
@@ -74,10 +78,15 @@ const schema = z.object({
   ),
   discountText: z.string().optional(),
   badgeVariant: z.enum(['default', 'outline', 'secondary', 'glow', 'gradient']),
-  animationEffect: z.enum(['none', 'beam', 'pulse', 'beam_pulse']),
+  animationEffect: z.enum(['none', 'beam', 'pulse', 'beam_pulse']).optional().default('none'),
   beamColor: z.enum(['theme', 'rainbow']),
   shimmerButton: z.boolean(),
-  syncToSubscription: z.boolean()
+  syncToSubscription: z.boolean(),
+  enable3DTilt: z.boolean().optional(),
+  enableShineBorder: z.boolean().optional(),
+  enableHolographic: z.boolean().optional(),
+  enableAmbientGlow: z.boolean().optional(),
+  enableAurora: z.boolean().optional()
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -98,6 +107,7 @@ export function PlanFormDialog({
   lineOptions,
   templateOptions
 }: PlanFormDialogProps) {
+  const [showAdvancedVisuals, setShowAdvancedVisuals] = useState(false);
   const { create, update } = usePlanMutations();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -117,6 +127,7 @@ export function PlanFormDialog({
       featuresText: '',
       isPublic: true,
       sortOrder: 0,
+      cardStyle: 'fusion',
       themeColor: 'default',
       icon: 'Zap',
       buttonText: '',
@@ -126,7 +137,12 @@ export function PlanFormDialog({
       animationEffect: 'none',
       beamColor: 'theme',
       shimmerButton: true,
-      syncToSubscription: true
+      syncToSubscription: true,
+      enable3DTilt: undefined,
+      enableShineBorder: undefined,
+      enableHolographic: undefined,
+      enableAmbientGlow: undefined,
+      enableAurora: undefined
     }
   });
 
@@ -181,6 +197,7 @@ export function PlanFormDialog({
               featuresText: plan.features?.join('\n') ?? '',
               isPublic: plan.isPublic,
               sortOrder: plan.sortOrder,
+              cardStyle: plan.cardConfig?.cardStyle ?? 'fusion',
               themeColor: plan.cardConfig?.themeColor ?? 'default',
               icon: plan.cardConfig?.icon ?? 'Zap',
               buttonText: plan.cardConfig?.buttonText ?? '',
@@ -190,7 +207,12 @@ export function PlanFormDialog({
               animationEffect: plan.cardConfig?.animationEffect ?? 'none',
               beamColor: plan.cardConfig?.beamColor ?? 'theme',
               shimmerButton: plan.cardConfig?.shimmerButton ?? true,
-              syncToSubscription: plan.cardConfig?.syncToSubscription ?? true
+              syncToSubscription: plan.cardConfig?.syncToSubscription ?? true,
+              enable3DTilt: plan.cardConfig?.enable3DTilt,
+              enableShineBorder: plan.cardConfig?.enableShineBorder,
+              enableHolographic: plan.cardConfig?.enableHolographic,
+              enableAmbientGlow: plan.cardConfig?.enableAmbientGlow,
+              enableAurora: plan.cardConfig?.enableAurora
             }
           : undefined
       )
@@ -221,6 +243,7 @@ export function PlanFormDialog({
       isPublic: values.isPublic,
       sortOrder: values.sortOrder,
       cardConfig: {
+        cardStyle: values.cardStyle,
         themeColor: values.themeColor,
         icon: values.icon,
         buttonText: values.buttonText?.trim() || null,
@@ -230,7 +253,12 @@ export function PlanFormDialog({
         animationEffect: values.animationEffect,
         beamColor: values.beamColor,
         shimmerButton: values.shimmerButton,
-        syncToSubscription: values.syncToSubscription
+        syncToSubscription: values.syncToSubscription,
+        enable3DTilt: values.enable3DTilt,
+        enableShineBorder: values.enableShineBorder,
+        enableHolographic: values.enableHolographic,
+        enableAmbientGlow: values.enableAmbientGlow,
+        enableAurora: values.enableAurora
       }
     };
 
@@ -260,6 +288,7 @@ export function PlanFormDialog({
       ? watchedValues.featuresText.split('\n').filter(Boolean)
       : undefined,
     cardConfig: {
+      cardStyle: (watchedValues.cardStyle || 'fusion') as PlanCardStyle,
       themeColor: watchedValues.themeColor as PlanThemeColor,
       icon: watchedValues.icon,
       buttonText: watchedValues.buttonText,
@@ -269,7 +298,12 @@ export function PlanFormDialog({
       animationEffect: watchedValues.animationEffect as PlanAnimationEffect,
       beamColor: watchedValues.beamColor as PlanBeamColor,
       shimmerButton: watchedValues.shimmerButton,
-      syncToSubscription: watchedValues.syncToSubscription
+      syncToSubscription: watchedValues.syncToSubscription,
+      enable3DTilt: watchedValues.enable3DTilt,
+      enableShineBorder: watchedValues.enableShineBorder,
+      enableHolographic: watchedValues.enableHolographic,
+      enableAmbientGlow: watchedValues.enableAmbientGlow,
+      enableAurora: watchedValues.enableAurora
     }
   };
 
@@ -373,6 +407,184 @@ export function PlanFormDialog({
                 </Badge>
               </div>
 
+              {/* 视觉流派方案 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium text-foreground/90">视觉流派方案</Label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      form.setValue('cardStyle', 'fusion', { shouldDirty: true });
+                      form.setValue('enable3DTilt', undefined, { shouldDirty: true });
+                      form.setValue('enableShineBorder', undefined, { shouldDirty: true });
+                      form.setValue('enableHolographic', undefined, { shouldDirty: true });
+                      form.setValue('enableAmbientGlow', undefined, { shouldDirty: true });
+                      form.setValue('enableAurora', undefined, { shouldDirty: true });
+                    }}
+                    className={cn(
+                      'flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all',
+                      form.watch('cardStyle') === 'fusion'
+                        ? 'border-primary ring-2 ring-primary/40 bg-accent/40 font-semibold'
+                        : 'border-border/60 hover:border-border hover:bg-muted/40'
+                    )}
+                  >
+                    <span className="text-xs font-bold text-foreground">尊享流光合璧</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">旗舰双流光推荐</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      form.setValue('cardStyle', 'holographic', { shouldDirty: true });
+                      form.setValue('enable3DTilt', undefined, { shouldDirty: true });
+                      form.setValue('enableShineBorder', undefined, { shouldDirty: true });
+                      form.setValue('enableHolographic', undefined, { shouldDirty: true });
+                      form.setValue('enableAmbientGlow', undefined, { shouldDirty: true });
+                      form.setValue('enableAurora', undefined, { shouldDirty: true });
+                    }}
+                    className={cn(
+                      'flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all',
+                      form.watch('cardStyle') === 'holographic'
+                        ? 'border-primary ring-2 ring-primary/40 bg-accent/40 font-semibold'
+                        : 'border-border/60 hover:border-border hover:bg-muted/40'
+                    )}
+                  >
+                    <span className="text-xs font-bold text-foreground">全息黑曜 3D 闪卡</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">科技冷光黑卡</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      form.setValue('cardStyle', 'neon', { shouldDirty: true });
+                      form.setValue('enable3DTilt', undefined, { shouldDirty: true });
+                      form.setValue('enableShineBorder', undefined, { shouldDirty: true });
+                      form.setValue('enableHolographic', undefined, { shouldDirty: true });
+                      form.setValue('enableAmbientGlow', undefined, { shouldDirty: true });
+                      form.setValue('enableAurora', undefined, { shouldDirty: true });
+                    }}
+                    className={cn(
+                      'flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all',
+                      form.watch('cardStyle') === 'neon'
+                        ? 'border-primary ring-2 ring-primary/40 bg-accent/40 font-semibold'
+                        : 'border-border/60 hover:border-border hover:bg-muted/40'
+                    )}
+                  >
+                    <span className="text-xs font-bold text-foreground">赛博霓虹导光晶体</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">高对比发光边缘</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 高级视觉微调（折叠抽屉面板） */}
+              <div className="rounded-xl border bg-muted/10 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedVisuals((prev) => !prev)}
+                  className="w-full flex items-center justify-between p-3 text-xs font-medium text-foreground/90 hover:bg-muted/20 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    高级视觉微调
+                  </span>
+                  <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
+                    <span>{showAdvancedVisuals ? '收起' : '展开微调'}</span>
+                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', showAdvancedVisuals && 'rotate-180')} />
+                  </div>
+                </button>
+
+                {showAdvancedVisuals && (
+                  <div className="p-3 pt-0 border-t space-y-2.5 mt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+                      <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
+                        <Label htmlFor="plan-enable-tilt" className="text-xs cursor-pointer">
+                          3D 视差微倾斜
+                        </Label>
+                        <Controller
+                          control={form.control}
+                          name="enable3DTilt"
+                          render={({ field }) => (
+                            <Switch
+                              id="plan-enable-tilt"
+                              checked={field.value ?? (form.watch('cardStyle') === 'fusion' || form.watch('cardStyle') === 'holographic')}
+                              onCheckedChange={field.onChange}
+                            />
+                          )}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
+                        <Label htmlFor="plan-enable-shine" className="text-xs cursor-pointer">
+                          1.5px 流光微边框
+                        </Label>
+                        <Controller
+                          control={form.control}
+                          name="enableShineBorder"
+                          render={({ field }) => (
+                            <Switch
+                              id="plan-enable-shine"
+                              checked={field.value ?? (form.watch('cardStyle') === 'fusion' || form.watch('cardStyle') === 'neon')}
+                              onCheckedChange={field.onChange}
+                            />
+                          )}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
+                        <Label htmlFor="plan-enable-holo" className="text-xs cursor-pointer">
+                          全息彩虹晶格折射
+                        </Label>
+                        <Controller
+                          control={form.control}
+                          name="enableHolographic"
+                          render={({ field }) => (
+                            <Switch
+                              id="plan-enable-holo"
+                              checked={field.value ?? (form.watch('cardStyle') === 'fusion' || form.watch('cardStyle') === 'holographic')}
+                              onCheckedChange={field.onChange}
+                            />
+                          )}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
+                        <Label htmlFor="plan-enable-ambient" className="text-xs cursor-pointer">
+                          双层呼吸环境霓虹
+                        </Label>
+                        <Controller
+                          control={form.control}
+                          name="enableAmbientGlow"
+                          render={({ field }) => (
+                            <Switch
+                              id="plan-enable-ambient"
+                              checked={field.value ?? (form.watch('cardStyle') === 'neon' || form.watch('cardStyle') === 'fusion')}
+                              onCheckedChange={field.onChange}
+                            />
+                          )}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background sm:col-span-2">
+                        <Label htmlFor="plan-enable-aurora" className="text-xs cursor-pointer">
+                          流体极光内衬
+                        </Label>
+                        <Controller
+                          control={form.control}
+                          name="enableAurora"
+                          render={({ field }) => (
+                            <Switch
+                              id="plan-enable-aurora"
+                              checked={field.value ?? form.watch('cardStyle') === 'fusion'}
+                              onCheckedChange={field.onChange}
+                            />
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* 主题色系选择 */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-foreground/90">主题色系</Label>
@@ -429,29 +641,8 @@ export function PlanFormDialog({
                 </div>
               </div>
 
-              {/* 动效模式与流光颜色 */}
+              {/* 流光光色与角标风格 */}
               <div className="grid gap-3 sm:grid-cols-2 pt-1">
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">卡片动效模式</Label>
-                  <Controller
-                    control={form.control}
-                    name="animationEffect"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">无动效（常规极简）</SelectItem>
-                          <SelectItem value="pulse">流体极光 (Fluid Aurora)</SelectItem>
-                          <SelectItem value="beam">晶体微光漫射 (Crystal Sheen)</SelectItem>
-                          <SelectItem value="beam_pulse">北欧极光 + 晶体漫射 (Aurora & Sheen)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">流光边框光色</Label>
                   <Controller
@@ -463,8 +654,29 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="theme">主题宝石单色光晕</SelectItem>
-                          <SelectItem value="rainbow">北欧极光幻彩 (Nordic Aurora)</SelectItem>
+                          <SelectItem value="theme">主题单色光晕</SelectItem>
+                          <SelectItem value="rainbow">北欧极光幻彩</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">角标视觉样式</Label>
+                  <Controller
+                    control={form.control}
+                    name="badgeVariant"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gradient">质感渐变高光</SelectItem>
+                          <SelectItem value="glow">微光柔和</SelectItem>
+                          <SelectItem value="outline">线框精致</SelectItem>
+                          <SelectItem value="default">经典纯色</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -505,32 +717,11 @@ export function PlanFormDialog({
                 </div>
               </div>
 
-              {/* 角标风格与开关 */}
-              <div className="grid gap-3 sm:grid-cols-3 pt-2">
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">角标视觉样式</Label>
-                  <Controller
-                    control={form.control}
-                    name="badgeVariant"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="gradient">质感渐变高光 (Gradient)</SelectItem>
-                          <SelectItem value="glow">微光柔和 (Glow)</SelectItem>
-                          <SelectItem value="outline">线框精致 (Outline)</SelectItem>
-                          <SelectItem value="default">经典纯色 (Default)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 self-end h-9">
+              {/* 按钮微光与订阅同步开关 */}
+              <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
                   <Label htmlFor="plan-shimmer" className="text-xs font-medium cursor-pointer truncate mr-1">
-                    按钮微光扫光 (Shimmer)
+                    按钮微光扫光
                   </Label>
                   <Controller
                     control={form.control}
@@ -541,7 +732,7 @@ export function PlanFormDialog({
                   />
                 </div>
 
-                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 self-end h-9">
+                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
                   <Label htmlFor="plan-sync-sub" className="text-xs font-medium cursor-pointer truncate mr-1">
                     同步特效至「我的订阅」
                   </Label>
@@ -583,8 +774,37 @@ export function PlanFormDialog({
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="plan-features" className="text-xs">自定义权益特性清单</Label>
-                  <span className="text-[11px] text-muted-foreground">每行一项，支持图标微标记</span>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="plan-features" className="text-xs">自定义权益特性清单</Label>
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground inline-flex items-center"
+                            aria-label="查看特性清单图标语法指南"
+                          >
+                            <HelpCircle className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs p-3 space-y-2">
+                          <p className="font-semibold text-xs">特性清单微标记语法指南</p>
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                            <div><code className="bg-muted px-1 rounded text-primary">[zap]</code> 极速闪电</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[rocket]</code> 冲刺火箭</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[crown]</code> 尊享王冠</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[shield]</code> 安全盾牌</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[sparkles]</code> 特惠星芒</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[star]</code> 金色星标</div>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/50">
+                            行首加 <code className="bg-muted px-1 rounded text-foreground">!</code> 如 <code className="bg-muted px-1 rounded text-foreground">!承诺</code> 可将整行重点加粗
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">每行一项</span>
                 </div>
                 <Textarea
                   id="plan-features"
@@ -741,25 +961,6 @@ export function PlanFormDialog({
             <div className="rounded-2xl border bg-muted/20 p-4 sm:p-5 flex items-center justify-center min-h-[460px]">
               <div className="w-full max-w-sm">
                 <MarketPlanCard plan={previewPlan} isPreview />
-              </div>
-            </div>
-
-            {/* 微标记语法小贴士 */}
-            <div className="rounded-xl border p-3 bg-muted/30 text-xs text-muted-foreground space-y-2">
-              <div className="flex items-center gap-1.5 font-medium text-foreground">
-                <HelpCircle className="h-3.5 w-3.5 text-primary" />
-                特性清单图标语法指南
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                <div><code className="bg-muted px-1 rounded text-primary">[zap]</code> 极速闪电</div>
-                <div><code className="bg-muted px-1 rounded text-primary">[rocket]</code> 冲刺火箭</div>
-                <div><code className="bg-muted px-1 rounded text-primary">[crown]</code> 尊享王冠</div>
-                <div><code className="bg-muted px-1 rounded text-primary">[shield]</code> 安全盾牌</div>
-                <div><code className="bg-muted px-1 rounded text-primary">[sparkles]</code> 特惠星芒</div>
-                <div><code className="bg-muted px-1 rounded text-primary">[star]</code> 金色星标</div>
-                <div className="col-span-2 text-[10px] text-muted-foreground pt-0.5">
-                  行首加 <code className="bg-muted px-1 rounded text-foreground">!</code> 如 <code className="bg-muted px-1 rounded text-foreground">!承诺</code> 可将整行重点加粗
-                </div>
               </div>
             </div>
           </div>

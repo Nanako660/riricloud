@@ -327,60 +327,67 @@ function ActiveSubscriptionContent({
       <div
         className={cn(
           'group relative flex flex-col justify-between transition-all duration-300',
-          isEffectsEnabled && 'rounded-2xl p-[1.5px] overflow-hidden'
+          isEffectsEnabled && 'rounded-2xl p-0'
         )}
         onMouseMove={isEffectsEnabled ? handleMouseMove : undefined}
         onMouseLeave={isEffectsEnabled ? handleMouseLeave : undefined}
       >
-        {/* 晶体边缘漫射折射微光 (Crystal Sheen) */}
-        {isEffectsEnabled && (
-          <div
-            className="absolute -inset-[140%] animate-crystal-sheen pointer-events-none opacity-85 blur-[0.8px]"
-            style={{
-              background: isRainbow
-                ? 'conic-gradient(from 0deg, transparent 0 220deg, rgba(99,102,241,0.25) 260deg, rgba(168,85,247,0.6) 295deg, rgba(6,182,212,0.7) 330deg, rgba(16,185,129,0.4) 355deg, transparent 360deg)'
-                : `conic-gradient(from 0deg, transparent 0 250deg, ${theme.beamColor}25 290deg, ${theme.beamColor}75 335deg, transparent 360deg)`
-            }}
-          />
-        )}
-
         <Card
           className={cn(
             'relative flex flex-col overflow-hidden transition-all duration-300',
             isEffectsEnabled
-              ? cn('backdrop-blur-xl rounded-[calc(1rem-1.5px)] border', theme.cardBgClass, theme.cardShadowClass, theme.borderClass)
+              ? cn('backdrop-blur-xl rounded-2xl border', theme.cardBgClass, theme.cardShadowClass, theme.borderClass)
               : ''
           )}
         >
-          {/* 流体极光内衬光池 (Fluid Aurora Engine) */}
+          {/* 顶部 1px 晶体棱线导光条 (Chamfered Top Rim Specular Line) */}
           {isEffectsEnabled && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-80 dark:opacity-100 transition-opacity duration-300">
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-x-0 top-0 h-[1px] z-20 transition-opacity duration-300',
+                'bg-gradient-to-r from-transparent',
+                theme.topRimHighlight,
+                'to-transparent opacity-80 group-hover:opacity-100'
+              )}
+            />
+          )}
+
+          {/* 顶部物理天光漫射 (Top Ambient Light) */}
+          {isEffectsEnabled && (
+            <div
+              className={cn(
+                'pointer-events-none absolute -top-16 inset-x-0 h-56 rounded-t-2xl z-0 transition-opacity duration-500',
+                'bg-gradient-to-b blur-2xl',
+                theme.topAmbientGlow,
+                'opacity-75 dark:opacity-65 group-hover:opacity-90'
+              )}
+            />
+          )}
+
+          {/* 流体极光内衬微光 (Fluid Aurora Engine) */}
+          {isEffectsEnabled && (
+            <div className="pointer-events-none absolute inset-0 overflow-hidden z-0 opacity-30 dark:opacity-40 transition-opacity duration-300">
               <div
                 className={cn(
                   'absolute -top-24 -left-24 h-96 w-96 rounded-full bg-gradient-to-br blur-3xl animate-aurora-1',
-                  isRainbow ? 'from-indigo-400/50 via-purple-500/40 to-transparent' : theme.auroraOrb1
+                  isRainbow ? 'from-indigo-400/30 via-purple-500/20 to-transparent' : theme.auroraOrb1
                 )}
               />
               <div
                 className={cn(
                   'absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-gradient-to-tl blur-3xl animate-aurora-2',
-                  isRainbow ? 'from-cyan-400/45 via-emerald-500/35 to-transparent' : theme.auroraOrb2
+                  isRainbow ? 'from-cyan-400/25 via-emerald-500/20 to-transparent' : theme.auroraOrb2
                 )}
               />
             </div>
           )}
 
-          {/* 顶部 1px 倒角微光折射微线 (Chamfered Edge Light) */}
-          {isEffectsEnabled && (
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent z-20" />
-          )}
-
-          {/* 鼠标悬停光斑追踪 (Spotlight) */}
+          {/* 鼠标物理镜面反射追踪 (Dual-Layer Specular Spotlight) */}
           {isEffectsEnabled && (
             <div
               className="pointer-events-none absolute -inset-px opacity-0 transition-opacity duration-300 group-hover:opacity-100 z-10"
               style={{
-                background: `radial-gradient(420px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
+                background: `radial-gradient(160px circle at ${mousePos.x}px ${mousePos.y}px, rgba(255, 255, 255, 0.12), transparent 70%), radial-gradient(380px circle at ${mousePos.x}px ${mousePos.y}px, ${theme.spotlightRgba}, transparent 80%)`
               }}
             />
           )}
