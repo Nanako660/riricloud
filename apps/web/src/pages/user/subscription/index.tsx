@@ -415,7 +415,7 @@ function ActiveSubscriptionContent({
               </div>
 
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                {['ACTIVE', 'CANCELED'].includes(sub.status) && (
+                {['ACTIVE', 'CANCELED'].includes(sub.status) && sub.plan.allowRenewal !== false && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button

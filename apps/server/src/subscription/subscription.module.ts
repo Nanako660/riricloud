@@ -8,11 +8,12 @@ import { SubscriptionController } from './subscription.controller';
 import { SubscriptionService } from './subscription.service';
 import { UserSubscriptionController } from './user-subscription.controller';
 import { WalletModule } from '../wallet/wallet.module';
+import { PlanPurchasesService } from './plan-purchases.service';
 
 @Module({
   imports: [AgentGatewayModule, PlansModule, LinesModule, SystemModule, WalletModule],
   controllers: [SubscriptionController, UserSubscriptionController, AdminSubscriptionController],
-  providers: [SubscriptionService],
-  exports: [SubscriptionService]
+  providers: [SubscriptionService, PlanPurchasesService],
+  exports: [SubscriptionService, PlanPurchasesService]
 })
 export class SubscriptionModule {}

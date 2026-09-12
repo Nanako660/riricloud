@@ -67,6 +67,11 @@ const schema = z.object({
   featuresText: z.string().optional(),
   isPublic: z.boolean(),
   sortOrder: z.coerce.number().int().min(0),
+  purchaseLimitPerUser: z.preprocess(
+    (value) => (value === '' || value === null || value === undefined ? null : Number(value)),
+    z.number().int().min(1).nullable()
+  ),
+  allowRenewal: z.boolean(),
   // 视觉与营销动效配置
   cardStyle: z.enum(['fusion', 'holographic', 'neon', 'custom']).default('fusion'),
   themeColor: z.enum(['default', 'amber', 'blue', 'purple', 'emerald', 'rose', 'indigo']),
@@ -127,6 +132,8 @@ export function PlanFormDialog({
       featuresText: '',
       isPublic: true,
       sortOrder: 0,
+      purchaseLimitPerUser: 1,
+      allowRenewal: false,
       cardStyle: 'fusion',
       themeColor: 'default',
       icon: 'Zap',
@@ -197,6 +204,8 @@ export function PlanFormDialog({
               featuresText: plan.features?.join('\n') ?? '',
               isPublic: plan.isPublic,
               sortOrder: plan.sortOrder,
+              purchaseLimitPerUser: plan.purchaseLimitPerUser,
+              allowRenewal: plan.allowRenewal,
               cardStyle: plan.cardConfig?.cardStyle ?? 'fusion',
               themeColor: plan.cardConfig?.themeColor ?? 'default',
               icon: plan.cardConfig?.icon ?? 'Zap',
@@ -242,6 +251,8 @@ export function PlanFormDialog({
       features,
       isPublic: values.isPublic,
       sortOrder: values.sortOrder,
+      purchaseLimitPerUser: values.purchaseLimitPerUser,
+      allowRenewal: values.allowRenewal,
       cardConfig: {
         cardStyle: values.cardStyle,
         themeColor: values.themeColor,
@@ -284,6 +295,8 @@ export function PlanFormDialog({
     lineMatchMode: watchedValues.lineMatchMode || 'ALL',
     badgeText: watchedValues.badgeText || null,
     isFeatured: watchedValues.isFeatured,
+    purchaseLimitPerUser: watchedValues.purchaseLimitPerUser,
+    allowRenewal: watchedValues.allowRenewal,
     features: watchedValues.featuresText
       ? watchedValues.featuresText.split('\n').filter(Boolean)
       : undefined,
@@ -345,7 +358,24 @@ export function PlanFormDialog({
 
                 <div className="space-y-2">
                   <Label htmlFor="plan-price">现价售价（元）</Label>
-                  <Input id="plan-price" type="number" min="0" step="0.01" {...form.register('price')} />
+                  <Input
+                    id="plan-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    {...form.register('price', {
+                      onChange: (event) => {
+                        const price = Number(event.target.value);
+                        if (price === 0) {
+                          form.setValue('purchaseLimitPerUser', 1, { shouldDirty: true });
+                          form.setValue('allowRenewal', false, { shouldDirty: true });
+                        } else if (Number.isFinite(price) && price > 0) {
+                          form.setValue('purchaseLimitPerUser', null, { shouldDirty: true });
+                          form.setValue('allowRenewal', true, { shouldDirty: true });
+                        }
+                      }
+                    })}
+                  />
                   {form.formState.errors.price && (
                     <p className="text-xs text-destructive">{form.formState.errors.price.message}</p>
                   )}
@@ -385,6 +415,31 @@ export function PlanFormDialog({
                   <Label htmlFor="plan-sort">排序权重</Label>
                   <Input id="plan-sort" type="number" min="0" placeholder="0" {...form.register('sortOrder')} />
                   <p className="text-[11px] text-muted-foreground">数值越小在市场中排序越靠前</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plan-purchase-limit">每用户限购次数</Label>
+                  <Input
+                    id="plan-purchase-limit"
+                    type="number"
+                    min="1"
+                    placeholder="留空表示不限购"
+                    {...form.register('purchaseLimitPerUser')}
+                  />
+                  <p className="text-[11px] text-muted-foreground">免费套餐默认限购 1 次；付费套餐留空默认不限购</p>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
+                  <Label htmlFor="plan-allow-renewal" className="text-xs font-medium cursor-pointer truncate mr-1">
+                    允许续费
+                  </Label>
+                  <Controller
+                    control={form.control}
+                    name="allowRenewal"
+                    render={({ field }) => (
+                      <Switch id="plan-allow-renewal" checked={field.value} onCheckedChange={field.onChange} />
+                    )}
+                  />
                 </div>
 
                 <div className="space-y-2">

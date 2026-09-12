@@ -77,6 +77,18 @@ export class UpdatePlanDto {
   @IsOptional()
   sortOrder?: number;
 
+  @ApiPropertyOptional({ example: 1, nullable: true, description: '每位用户限购次数；null 表示不限购，最小为 1' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  purchaseLimitPerUser?: number | null;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  allowRenewal?: boolean;
+
   @ApiPropertyOptional({ nullable: true })
   @IsString()
   @IsOptional()

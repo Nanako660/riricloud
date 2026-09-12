@@ -46,6 +46,8 @@ export interface Plan {
   cardConfig?: PlanCardConfig;
   isPublic: boolean;
   sortOrder: number;
+  purchaseLimitPerUser: number | null;
+  allowRenewal: boolean;
 }
 
 export interface PlanPayload {
@@ -65,6 +67,8 @@ export interface PlanPayload {
   cardConfig?: PlanCardConfig;
   isPublic: boolean;
   sortOrder: number;
+  purchaseLimitPerUser: number | null;
+  allowRenewal: boolean;
 }
 
 export function useAdminPlans() {

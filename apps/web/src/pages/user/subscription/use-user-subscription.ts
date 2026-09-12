@@ -17,6 +17,8 @@ export interface UserPlan {
   isFeatured?: boolean;
   features?: string[];
   cardConfig?: PlanCardConfig;
+  purchaseLimitPerUser: number | null;
+  allowRenewal: boolean;
 }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; trafficResetMode: TrafficResetMode; nextTrafficResetAt: string | null; extraLineIds: string[]; plan: UserPlan; }
 export interface UserLine {
@@ -32,10 +34,15 @@ export interface UserLine {
   landingNode?: { name?: string; status: string } | null;
 }
 
+export interface PlanClaim {
+  planId: string;
+  used: number;
+}
+
 export function useUserSubscription() {
   return useQuery({
     queryKey: ['user', 'subscription'],
-    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[] }>('/user/subscription')).data,
+    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[]; planClaims: PlanClaim[] }>('/user/subscription')).data,
     refetchInterval: 5000
   });
 }

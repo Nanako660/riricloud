@@ -160,6 +160,18 @@ export class CreatePlanDto {
   @IsOptional()
   sortOrder?: number;
 
+  @ApiPropertyOptional({ example: 1, description: '每位用户限购次数；留空表示不限购，最小为 1' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  purchaseLimitPerUser?: number | null;
+
+  @ApiPropertyOptional({ default: true, description: '是否允许用户在当前套餐上续费' })
+  @IsBoolean()
+  @IsOptional()
+  allowRenewal?: boolean;
+
   @ApiPropertyOptional({ example: '热卖推荐' })
   @IsString()
   @IsOptional()

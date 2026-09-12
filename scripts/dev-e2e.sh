@@ -8,8 +8,9 @@
 #   NODE_PORT=9443 USE_MASTER_LOCAL=0 bash scripts/dev-e2e.sh # 自定义独立节点端口
 #   AGENT_TOKEN=xxx bash scripts/dev-e2e.sh  # 复用既有节点 Token（跳过自动建节点）
 #
-# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / SERVER_ENV_FILE / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
+# 环境变量：SERVER_URL / SERVER_PORT / STATS_API_LISTEN / WEB_URL / ADMIN_EMAIL / ADMIN_PASSWORD / SERVER_ENV_FILE / E2E_DATABASE_URL / NODE_NAME / NODE_HOST / NODE_PORT / USE_MASTER_LOCAL / E2E_SYNC_RESOURCES
 # 联调端口：主控端默认 30800（避开 Windows 保留/动态端口区间），实际使用端口写入 .cache/dev-e2e-server-port 供后续运行复用
+# 联调数据库：默认使用 apps/server/prisma/dev-e2e.db，避免与手动启动的 3000 端口主控共享 SQLite 写锁；可通过 E2E_DATABASE_URL 显式改回其他 SQLite URL
 # 资源同步覆盖：E2E_RESOURCE_VERSION / E2E_AGENT_RESOURCE_FILE / E2E_AGENT_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_FILE / E2E_SINGBOX_RESOURCE_TARGET / E2E_SINGBOX_RESOURCE_VERSION
 # sing-box 二进制查找顺序：SINGBOX_BINARY_PATH > 当前平台缓存 > tools/ > PATH
 set -euo pipefail
@@ -45,6 +46,11 @@ SERVER_URL_OVERRIDE="${SERVER_URL:-}"
 SERVER_URL="${SERVER_URL:-http://localhost:30800}"
 WEB_URL="${WEB_URL:-http://localhost:5173}"
 SERVER_ENV_FILE="${SERVER_ENV_FILE:-$ROOT/apps/server/.env}"
+# 不读取 apps/server/.env 中的 DATABASE_URL 作为默认值：该文件通常指向 dev.db，
+# 而手动启动的开发主控可能正持有该文件的 WAL 写锁。显式 DATABASE_URL/E2E_DATABASE_URL
+# 仍然优先，便于需要复用指定数据库的场景。
+E2E_DATABASE_URL="${E2E_DATABASE_URL:-${DATABASE_URL:-file:./dev-e2e.db}}"
+export DATABASE_URL="$E2E_DATABASE_URL"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" ADMIN_EMAIL)}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-${SEED_ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" SEED_ADMIN_EMAIL)}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@riricloud.local}"
@@ -87,16 +93,27 @@ AGENT_PID=""
 # 记录本次实际使用的主控端口：端口一旦漂移，仅探测默认地址无法发现既有主控端，
 # 二次启动会重复拉起并抢占同一端口（Windows 下表现为 EADDRINUSE 竞态）。
 E2E_PORT_FILE="$ROOT/.cache/dev-e2e-server-port"
+E2E_DATABASE_MARKER_FILE="$ROOT/.cache/dev-e2e-server-db"
+SERVER_REUSE_ALLOWED=0
+if [ -n "$SERVER_URL_OVERRIDE" ]; then
+  SERVER_REUSE_ALLOWED=1
+fi
 RECORDED_PORT=""
 if [ -z "$SERVER_PORT_OVERRIDE" ] && [ -z "$SERVER_URL_OVERRIDE" ] && [ -f "$E2E_PORT_FILE" ]; then
   read -r RECORDED_PORT <"$E2E_PORT_FILE" || true
   case "$RECORDED_PORT" in
     ''|*[!0-9]*) RECORDED_PORT="" ;;
   esac
+  RECORDED_DATABASE_URL=""
+  if [ -f "$E2E_DATABASE_MARKER_FILE" ]; then
+    read -r RECORDED_DATABASE_URL <"$E2E_DATABASE_MARKER_FILE" || true
+  fi
   if [ -n "$RECORDED_PORT" ] && [ "${#RECORDED_PORT}" -le 5 ] \
+    && [ "$RECORDED_DATABASE_URL" = "$E2E_DATABASE_URL" ] \
     && curl -fsS --max-time 2 "http://localhost:$RECORDED_PORT/api/v1/system/version" >/dev/null 2>&1; then
     SERVER_PORT="$RECORDED_PORT"
     SERVER_URL="http://localhost:$RECORDED_PORT"
+    SERVER_REUSE_ALLOWED=1
     say "发现 $SERVER_URL 上已有主控端在运行，复用该端口"
   fi
 fi
@@ -160,11 +177,24 @@ sync_dev_resource() {
 master_agent_token() {
   (
     cd "$ROOT/apps/server"
-    DATABASE_URL="${DATABASE_URL:-file:./dev.db}" node prisma/master-agent-config.js --token
+    DATABASE_URL="$E2E_DATABASE_URL" node prisma/master-agent-config.js --token
   )
 }
 
 server_up() { curl -fsS --max-time 2 "$SERVER_URL/api/v1/system/version" >/dev/null 2>&1; }
+
+# Prisma 的相对 SQLite URL 相对于 schema.prisma 所在目录解析；这里仅用于判断
+# 是否已经存在联调数据库，不能直接依赖 apps/server/.env 的 DATABASE_URL。
+e2e_database_path() {
+  local value="${E2E_DATABASE_URL#file:}"
+  value="${value%%\?*}"
+  case "$value" in
+    ./*) printf '%s/%s' "$ROOT/apps/server/prisma" "${value#./}" ;;
+    /*) printf '%s' "$value" ;;
+    '') return 1 ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
 web_up() { curl -fsS --max-time 2 "$WEB_URL" >/dev/null 2>&1; }
 
 port_available() {
@@ -347,21 +377,23 @@ if ! singbox_has_required_features "$SINGBOX_VERSION_OUTPUT"; then
 fi
 
 # ---------- 2. 主控端（已在跑则复用） ----------
+E2E_DATABASE_PATH="$(e2e_database_path)"
+[ -n "$E2E_DATABASE_PATH" ] || die "仅支持 SQLite 联调数据库 URL：$E2E_DATABASE_URL"
 DB_WAS_PRESENT=0
-if [ -f apps/server/prisma/dev.db ]; then
+if [ -f "$E2E_DATABASE_PATH" ]; then
   DB_WAS_PRESENT=1
 fi
 SERVER_ALREADY_UP=0
-if server_up; then
+if [ "$SERVER_REUSE_ALLOWED" = "1" ] && server_up; then
   # 运行中的 Master 可能持有 SQLite WAL 写锁，迁移必须在启动服务前完成。
   SERVER_ALREADY_UP=1
   say "主控端已在 $SERVER_URL 运行，跳过数据库迁移并直接复用"
 else
-  say "检查并应用数据库迁移…"
-  pnpm --filter @riricloud/server exec prisma migrate deploy || die "数据库迁移失败"
+  say "检查并应用数据库迁移（$E2E_DATABASE_URL）…"
+  DATABASE_URL="$E2E_DATABASE_URL" pnpm --dir apps/server exec prisma migrate deploy || die "数据库迁移失败；若你显式复用了 dev.db，请先停止占用该数据库的主控进程"
   if [ "$DB_WAS_PRESENT" = "0" ]; then
     say "初始化种子数据…"
-    pnpm --filter @riricloud/server exec prisma db seed || die "数据库种子失败"
+    DATABASE_URL="$E2E_DATABASE_URL" pnpm --dir apps/server exec prisma db seed || die "数据库种子失败"
   fi
 fi
 
@@ -392,7 +424,7 @@ else
   for attempt in $(seq 1 "$SERVER_ATTEMPTS"); do
     rm -f apps/server/*.tsbuildinfo
     say "启动主控端（端口 $SERVER_PORT，日志：$LOG_DIR/server.log）…"
-    PORT="$SERVER_PORT" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
+    PORT="$SERVER_PORT" DATABASE_URL="$E2E_DATABASE_URL" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
     SERVER_PID=$!
     SERVER_EADDRINUSE=0
     for _ in $(seq 1 60); do
@@ -440,6 +472,7 @@ else
     die "主控端启动失败：已重试 $SERVER_ATTEMPTS 次仍无法绑定可用端口"
   fi
   printf '%s' "$SERVER_PORT" >"$E2E_PORT_FILE"
+  printf '%s' "$E2E_DATABASE_URL" >"$E2E_DATABASE_MARKER_FILE"
   say "主控端就绪：$SERVER_URL"
 fi
 

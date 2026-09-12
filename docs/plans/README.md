@@ -29,6 +29,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [免费套餐重复购买限制与购买台账](./archive/2026-09-13-free-plan-purchase-limit.md) | `v0.9.0` | 2026-09-13 | — |
 | [独立 Mixed (SOCKS5/HTTP) 直连代理池机制](./archive/2026-09-11-standalone-mixed-proxy-pool.md) | `v0.9.0` | 2026-09-11 | — |
 | [web-form-init-clobber](./archive/2026-09-10-web-form-init-clobber.md) | `v0.8.2` | 2026-09-10 | — |
 | [swagger-security-hardening](./archive/2026-09-10-swagger-security-hardening.md) | `v0.8.1` | 2026-09-10 | — |

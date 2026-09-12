@@ -34,6 +34,7 @@ export interface MarketPlanCardProps {
   plan: UserPlan;
   isCurrent?: boolean;
   isLowerPriced?: boolean;
+  isPurchaseExhausted?: boolean;
   activeSubscription?: boolean;
   onSelect?: (plan: UserPlan) => void;
   actionSlot?: ReactNode;
@@ -82,6 +83,7 @@ export function MarketPlanCard({
   plan,
   isCurrent = false,
   isLowerPriced = false,
+  isPurchaseExhausted = false,
   activeSubscription = false,
   onSelect,
   actionSlot,
@@ -130,10 +132,12 @@ export function MarketPlanCard({
     ? '当前使用中'
     : isLowerPriced
       ? '暂不支持降级'
+      : isPurchaseExhausted
+        ? plan.purchaseLimitPerUser === 1 ? '已领取' : '已购完'
       : activeSubscription
         ? '立即升配'
         : '立即订购';
-  const buttonLabel = (!isCurrent && !isLowerPriced && cardConfig.buttonText) ? cardConfig.buttonText : defaultActionText;
+  const buttonLabel = (!isCurrent && !isLowerPriced && !isPurchaseExhausted && cardConfig.buttonText) ? cardConfig.buttonText : defaultActionText;
 
   // Features
   const features = plan.features && plan.features.length > 0 ? plan.features : [
@@ -460,21 +464,21 @@ export function MarketPlanCard({
                 'relative w-full overflow-hidden transition-all duration-300 font-medium group/btn h-10',
                 isCurrent
                   ? 'border border-primary/30 bg-primary/10 text-primary font-semibold cursor-default hover:bg-primary/10'
-                  : isLowerPriced
+                  : isLowerPriced || isPurchaseExhausted
                     ? 'border border-zinc-200/80 dark:border-white/10 bg-zinc-100/60 dark:bg-white/[0.04] text-muted-foreground font-medium cursor-not-allowed opacity-80'
                     : theme.buttonGlassClass
               )}
               variant="ghost"
               onClick={() => onSelect?.(plan)}
-              disabled={isCurrent || isLowerPriced}
+              disabled={isCurrent || isLowerPriced || isPurchaseExhausted}
             >
               {/* 按钮金属微光扫光动效 (Shimmer) */}
-              {hasShimmer && !isCurrent && !isLowerPriced && (
+              {hasShimmer && !isCurrent && !isLowerPriced && !isPurchaseExhausted && (
                 <div className="absolute inset-0 -translate-x-full animate-shimmer pointer-events-none bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               )}
               <span className="relative z-10 flex items-center justify-center gap-1.5 text-sm tracking-wide">
                 {buttonLabel}
-                {!isCurrent && !isLowerPriced && (
+                {!isCurrent && !isLowerPriced && !isPurchaseExhausted && (
                   <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover/btn:translate-x-0.5" />
                 )}
               </span>

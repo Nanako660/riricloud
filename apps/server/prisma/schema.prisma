@@ -15,7 +15,7 @@ datasource db {
 model User {
   id                String    @id @default(uuid())
   uid               Int?      @unique // 6 位随机数字用户标识
-  nickname          String?   // 用户自定义昵称；为空时由应用层回退为 用户_<UID>
+  nickname          String? // 用户自定义昵称；为空时由应用层回退为 用户_<UID>
   email             String    @unique
   emailVerifiedAt   DateTime? // 邮箱核验时间；未核验或存量老用户为 null
   passwordHash      String
@@ -32,16 +32,59 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  trafficLogs         TrafficLog[]
-  subscription        Subscription?
-  balanceTransactions BalanceTransaction[]
-  redeemedCodes       RedeemCode[]         @relation("RedeemedCodes")
-  extraLineGrants     UserLineGrant[]
-  systemLogs          SystemLog[]
-  proxyKeys           ProxyKey[]
+  trafficLogs            TrafficLog[]
+  subscription           Subscription?
+  planPurchaseIdentityId String?
+  planPurchaseIdentity   PlanPurchaseIdentity? @relation(fields: [planPurchaseIdentityId], references: [id], onDelete: SetNull)
+  balanceTransactions    BalanceTransaction[]
+  redeemedCodes          RedeemCode[]          @relation("RedeemedCodes")
+  extraLineGrants        UserLineGrant[]
+  systemLogs             SystemLog[]
+  proxyKeys              ProxyKey[]
 
   @@index([role])
   @@index([isActive])
+  @@index([planPurchaseIdentityId])
+}
+
+// 套餐购买身份与可删除账号解耦；邮箱哈希别名确保同邮箱重建账号仍继承限购记录。
+model PlanPurchaseIdentity {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  emailAliases PlanPurchaseEmailAlias[]
+  purchases    PlanPurchase[]
+}
+
+model PlanPurchaseEmailAlias {
+  id         String   @id @default(uuid())
+  identityId String
+  emailHash  String   @unique
+  createdAt  DateTime @default(now())
+
+  identity PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+}
+
+model PlanPurchase {
+  id             String   @id @default(uuid())
+  identityId     String
+  planId         String
+  sequence       Int
+  source         String // SELF_BUY | SELF_UPGRADE | REGISTRATION | ADMIN | MIGRATED
+  subscriptionId String?
+  purchasedAt    DateTime @default(now())
+
+  identity     PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  plan         Plan                 @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscription Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([identityId, planId, sequence])
+  @@index([identityId, planId])
+  @@index([planId])
 }
 
 // ==============================
@@ -85,14 +128,14 @@ model VerificationCode {
 }
 
 model CaptchaChallenge {
-  id        String    @id @default(uuid())
-  tokenHash String    @unique
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
   answerHash String
-  ipHash    String?
-  attempts  Int       @default(0)
+  ipHash     String?
+  attempts   Int       @default(0)
   consumedAt DateTime?
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
 
   @@index([expiresAt])
 }
@@ -121,7 +164,7 @@ model Node {
   agentProtocolVersion  Int? // Agent 上报的 Master-Agent 协议版本
   osArch                String? // Agent 运行平台与架构，例如 linux/amd64
   kernelVersion         String? // sing-box 内核版本
-  capabilitiesJson      String   @default("[]")
+  capabilitiesJson      String    @default("[]")
   currentAgentAssetId   String?
   currentSingboxAssetId String?
   createdAt             DateTime  @default(now())
@@ -143,22 +186,22 @@ model Node {
 }
 
 model MirrorSite {
-  id                 String   @id @default(uuid())
+  id                 String    @id @default(uuid())
   name               String
-  slug               String   @unique
-  enabled            Boolean  @default(false)
+  slug               String    @unique
+  enabled            Boolean   @default(false)
   upstreamBaseUrl    String
-  allowedOriginsJson String   @default("[]")
+  allowedOriginsJson String    @default("[]")
   nodeId             String
-  accessMode         String   @default("ADMIN")
-  shareTokenHash     String?  @unique
+  accessMode         String    @default("ADMIN")
+  shareTokenHash     String?   @unique
   shareExpiresAt     DateTime?
   shareRotatedAt     DateTime?
   lastRequestAt      DateTime?
   lastStatusCode     Int?
   lastErrorCode      String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
@@ -200,28 +243,31 @@ model TrafficCursor {
 }
 
 model Plan {
-  id                String   @id @default(uuid())
-  name              String
-  description       String?
-  price             Int      @default(0) // 价格最小货币单位
-  durationDays      Int
-  trafficLimitBytes BigInt
-  trafficResetMode  String   @default("NONE") // NONE | CALENDAR_MONTH | SUBSCRIPTION_CYCLE
-  lineMatchMode     String   @default("ALL") // ALL | TAGS | EXPLICIT
-  lineTagsJson      String   @default("[]")
-  lineIdsJson       String   @default("[]")
-  templateId        String?
-  badgeText         String?
-  isFeatured        Boolean  @default(false)
-  featuresJson      String   @default("[]")
-  cardConfigJson    String   @default("{}")
-  isPublic          Boolean  @default(true)
-  sortOrder         Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  name                 String
+  description          String?
+  price                Int      @default(0) // 价格最小货币单位
+  durationDays         Int
+  trafficLimitBytes    BigInt
+  trafficResetMode     String   @default("NONE") // NONE | CALENDAR_MONTH | SUBSCRIPTION_CYCLE
+  lineMatchMode        String   @default("ALL") // ALL | TAGS | EXPLICIT
+  lineTagsJson         String   @default("[]")
+  lineIdsJson          String   @default("[]")
+  templateId           String?
+  badgeText            String?
+  isFeatured           Boolean  @default(false)
+  featuresJson         String   @default("[]")
+  cardConfigJson       String   @default("{}")
+  isPublic             Boolean  @default(true)
+  sortOrder            Int      @default(0)
+  purchaseLimitPerUser Int? // null 表示不限购；>=1 时限制每购买身份累计次数
+  allowRenewal         Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   subscriptions Subscription[]
+  purchases     PlanPurchase[]
 
   @@index([isPublic])
   @@index([sortOrder])
@@ -232,37 +278,37 @@ model Plan {
 // Line 是唯一面向用户的代理业务端点，内聚协议、参数与入口/出口拓扑。
 // ==============================
 model Line {
-  id                      String   @id @default(uuid())
+  id                      String    @id @default(uuid())
   name                    String
   tag                     String?
-  listen                  String   @default("0.0.0.0")
-  type                    String   @default("DIRECT") // DIRECT | RELAY
+  listen                  String    @default("0.0.0.0")
+  type                    String    @default("DIRECT") // DIRECT | RELAY
   relayMode               String? // BLIND_FORWARD | PROTOCOL_PROXY | TARGET_LINE
-  protocolType            String   @default("VLESS") // ProtocolType
-  paramsJson              String   @default("{}") // 协议专属参数 JSON
+  protocolType            String    @default("VLESS") // ProtocolType
+  paramsJson              String    @default("{}") // 协议专属参数 JSON
   entryNodeId             String
   entryPort               Int
   landingNodeId           String?
   landingPort             Int?
   targetLineId            String?
   certificateId           String?
-  endpointOverrideEnabled Boolean  @default(false)
+  endpointOverrideEnabled Boolean   @default(false)
   serverHost              String?
   serverPort              Int?
   serverName              String?
   host                    String?
-  trafficRate             Float    @default(1)
-  tagsJson                String   @default("[]")
-  level                   Int      @default(0)
-  sortOrder               Int      @default(0)
-  isPublic                Boolean  @default(true)
-  status                  String   @default("ACTIVE") // ACTIVE | DISABLED
-  lastLatencyMs           Int?     // 最近测速延迟（毫秒），null 为未测速或失败
+  trafficRate             Float     @default(1)
+  tagsJson                String    @default("[]")
+  level                   Int       @default(0)
+  sortOrder               Int       @default(0)
+  isPublic                Boolean   @default(true)
+  status                  String    @default("ACTIVE") // ACTIVE | DISABLED
+  lastLatencyMs           Int? // 最近测速延迟（毫秒），null 为未测速或失败
   lastTestedAt            DateTime? // 最近一次测速时间
-  lastTestStatus          String?  // 最近测速状态：SUCCESS | TIMEOUT | ERROR
-  lastTestMessage         String?  // 最近测速诊断详情
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  lastTestStatus          String? // 最近测速状态：SUCCESS | TIMEOUT | ERROR
+  lastTestMessage         String? // 最近测速诊断详情
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   entryNode       Node            @relation("LineEntryNode", fields: [entryNodeId], references: [id], onDelete: Cascade)
   landingNode     Node?           @relation("LineLandingNode", fields: [landingNodeId], references: [id], onDelete: Cascade)
@@ -335,8 +381,9 @@ model Subscription {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan Plan @relation(fields: [planId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan           @relation(fields: [planId], references: [id])
+  planPurchases PlanPurchase[]
 
   @@index([status])
   @@index([expireAt])
@@ -579,14 +626,14 @@ model BinaryAuditLog {
 // ==============================
 model SystemLog {
   id        String   @id @default(uuid())
-  traceId   String?  // 全链路关联 ID (X-Request-Id)
-  source    String   // SERVER | WEB | AGENT | SINGBOX
-  level     String   // DEBUG | INFO | WARN | ERROR
-  module    String   // 产生模块/上下文（如 Auth, Lines, Nodes, Gateway, UI, Kernel）
-  message   String   // 核心描述文本
+  traceId   String? // 全链路关联 ID (X-Request-Id)
+  source    String // SERVER | WEB | AGENT | SINGBOX
+  level     String // DEBUG | INFO | WARN | ERROR
+  module    String // 产生模块/上下文（如 Auth, Lines, Nodes, Gateway, UI, Kernel）
+  message   String // 核心描述文本
   metadata  String   @default("{}") // 结构化 JSON 详情（IP、路由、耗时、状态码、堆栈等）
-  nodeId    String?  // 关联 VPS 节点 ID（可选）
-  userId    String?  // 关联用户 ID（可选）
+  nodeId    String? // 关联 VPS 节点 ID（可选）
+  userId    String? // 关联用户 ID（可选）
   createdAt DateTime @default(now())
 
   node Node? @relation(fields: [nodeId], references: [id], onDelete: SetNull)

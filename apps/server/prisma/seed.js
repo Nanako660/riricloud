@@ -7,6 +7,7 @@ const { ensureAdmin } = require('./admin-bootstrap');
 const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
 const { buildDefaultTemplateData, migrateLegacyTemplates } = require('./default-template');
 const { encryptSecret } = require('./secret-crypto');
+const { ensurePlanPurchaseForSubscription } = require('./plan-purchase-bootstrap');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -126,7 +127,9 @@ async function main() {
     lineIdsJson: '[]',
     templateId: template.id,
     isPublic: true,
-    sortOrder: 0
+    sortOrder: 0,
+    purchaseLimitPerUser: 1,
+    allowRenewal: false
   };
   if (plan) {
     plan = await prisma.plan.update({ where: { id: plan.id }, data: planData });
@@ -216,6 +219,7 @@ async function main() {
           expireAt: new Date(Date.now() + plan.durationDays * 86400000)
         }
       });
+      await ensurePlanPurchaseForSubscription(prisma, seededUser, subscription);
       await prisma.user.update({
         where: { id: seededUser.id },
         data: {
@@ -225,6 +229,8 @@ async function main() {
           subscriptionToken: subscription.subscriptionToken
         }
       });
+    } else {
+      await ensurePlanPurchaseForSubscription(prisma, seededUser, existingSubscription);
     }
   }
 

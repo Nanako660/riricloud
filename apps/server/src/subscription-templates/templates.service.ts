@@ -320,17 +320,15 @@ export class TemplatesService {
     if (this.singboxBinaryChecked) return this.cachedSingboxPath;
     this.singboxBinaryChecked = true;
 
-    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
-    const candidates = [
-      process.env.SINGBOX_BINARY_PATH,
-      '/usr/local/bin/sing-box',
-      `/app/binaries/singbox-linux-${arch}`,
-      path.resolve(process.cwd(), 'binaries', `singbox-linux-${arch}`),
-      path.resolve(process.cwd(), 'binaries', `singbox-windows-${arch}.exe`),
-      path.resolve(process.cwd(), '.tools/sing-box/sing-box'),
-      path.resolve(process.cwd(), '.tools/sing-box/sing-box.exe'),
-      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box'),
-      path.resolve(process.cwd(), '../../.tools/sing-box/sing-box.exe')
+      const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+      const isWindows = process.platform === 'win32';
+      const candidates = [
+        process.env.SINGBOX_BINARY_PATH,
+        '/usr/local/bin/sing-box',
+        `/app/binaries/singbox-linux-${arch}`,
+        path.resolve(process.cwd(), 'binaries', isWindows ? `singbox-windows-${arch}.exe` : `singbox-linux-${arch}`),
+        path.resolve(process.cwd(), '.tools/sing-box', isWindows ? 'sing-box.exe' : 'sing-box'),
+        path.resolve(process.cwd(), '../../.tools/sing-box', isWindows ? 'sing-box.exe' : 'sing-box')
     ].filter((p): p is string => Boolean(p));
 
     for (const candidate of candidates) {
@@ -355,7 +353,7 @@ export class TemplatesService {
       return { executed: false, passed: true, message: '主控未挂载 sing-box 二进制，已通过结构语法校验' };
     }
 
-    const tmpDir = os.tmpdir();
+    const tmpDir = path.resolve(os.tmpdir());
     const tmpFile = path.join(tmpDir, `riri-singbox-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
     try {
       await fs.writeFile(tmpFile, configJson, 'utf-8');
@@ -385,19 +383,17 @@ export class TemplatesService {
     if (this.mihomoBinaryChecked) return this.cachedMihomoPath;
     this.mihomoBinaryChecked = true;
 
-    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
-    const candidates = [
+      const arch = process.arch === 'x64' ? 'amd64' : process.arch;
+      const isWindows = process.platform === 'win32';
+      const candidates = [
       process.env.MIHOMO_BINARY_PATH,
       process.env.CLASH_BINARY_PATH,
       '/usr/local/bin/mihomo',
       '/usr/local/bin/clash-meta',
       `/app/binaries/mihomo-linux-${arch}`,
-      path.resolve(process.cwd(), 'binaries', `mihomo-linux-${arch}`),
-      path.resolve(process.cwd(), 'binaries', `mihomo-windows-${arch}.exe`),
-      path.resolve(process.cwd(), '.tools/mihomo/mihomo'),
-      path.resolve(process.cwd(), '.tools/mihomo/mihomo.exe'),
-      path.resolve(process.cwd(), '../../.tools/mihomo/mihomo'),
-      path.resolve(process.cwd(), '../../.tools/mihomo/mihomo.exe')
+        path.resolve(process.cwd(), 'binaries', isWindows ? `mihomo-windows-${arch}.exe` : `mihomo-linux-${arch}`),
+        path.resolve(process.cwd(), '.tools/mihomo', isWindows ? 'mihomo.exe' : 'mihomo'),
+        path.resolve(process.cwd(), '../../.tools/mihomo', isWindows ? 'mihomo.exe' : 'mihomo')
     ].filter((p): p is string => Boolean(p));
 
     for (const candidate of candidates) {
@@ -429,7 +425,7 @@ export class TemplatesService {
       .replace(/^([ \t]*-[ \t]*)(['"]?)(?:GEOSITE|geosite)[ \t]*,[ \t]*([^,'"\r\n]+)[ \t]*,[ \t]*([^'"\r\n]+)\2/gim, '$1DOMAIN-SUFFIX,dummy-$3.local,$4')
       .replace(/^([ \t]*-[ \t]*)(['"]?)(?:GEOIP|geoip)[ \t]*,[ \t]*([^,'"\r\n]+)[ \t]*,[ \t]*([^'"\r\n]+)\2/gim, '$1IP-CIDR,198.18.0.1/32,$4');
 
-    const tmpDir = path.join(os.tmpdir(), `riri-mihomo-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const tmpDir = path.resolve(os.tmpdir(), `riri-mihomo-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const tmpFile = path.join(tmpDir, 'config.yaml');
     try {
       await fs.mkdir(tmpDir, { recursive: true });

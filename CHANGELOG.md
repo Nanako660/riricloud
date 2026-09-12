@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **免费套餐重复购买限制与终身购买台账**：套餐新增 `purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal` 配置；新增 `PlanPurchaseIdentity`、`PlanPurchaseEmailAlias` 与 `PlanPurchase` 持久化台账，并将购买身份与可删除账号解耦。自助订购、升配、注册默认套餐和管理员发放统一记账，唯一约束负责并发去重；取消、过期、升配、管理员删除账号后重新注册均不能再次领取已用尽免费套餐，管理员补发可破例但必须留下 `ADMIN` 来源记录。
 - **套餐卡片高阶视觉流派方案与后台完全可配置化**：吸纳 Aceternity UI 与 Magic UI 业界顶流视觉设计精髓，全面落地三大高阶流派方案（`cardStyle`：`fusion` 尊享流光合璧、`holographic` 全息黑曜 3D 闪卡、`neon` 赛博霓虹导光晶体）。在套餐管理后台（`PlanFormDialog`）新增流派方案卡片式三选一交互配置，管理员可自由为各个套餐独立指定专属流派，右侧实机预览即时联动；`PlanCardConfigDto` 同步扩展 `cardStyle` 字段契约并支持 Swagger 与 class-validator 校验；全新引入物理阻尼 $\pm 6^\circ$ 的细腻 3D Tilt 视差微倾斜、1.5px 极细微导光流动微边框容器（Shine Border）、高透动态全息彩虹晶格折射（Holographic Foil）以及双层环境霓虹光晕（Ambient Neon Bloom），浅色模式适配为典雅通透的珠光白玉微晶质感（Pearlescent Frost），彻底解决原有大面积深暗色调发脏发浊痛点，达成流光溢彩且极度奢华沉稳的高阶质感。
 - **预设流派基线与折叠式「高级视觉微调」抽屉面板**：在套餐管理后台（`PlanFormDialog`）实现“预设流派 + 折叠式高级微调面板”双层交互架构。选择任一流派自动一键载入对应最佳基线配置，展开折叠面板可对 5 项原子能力（3D 视差微倾斜 `enable3DTilt`、1.5px 流光微边框 `enableShineBorder`、全息彩虹折射 `enableHolographic`、双层环境霓虹 `enableAmbientGlow`、流体极光内衬 `enableAurora`）进行毫秒级独立微调开关，微调后卡片流派自动转为自定义模式；服务端 DTO 与客户端类型无缝兼容并提供向后平滑过渡。
 
@@ -21,6 +22,8 @@
 - **管理后台套餐表单界面降噪与空间精炼**：彻底移除原有容易引起认知混淆的旧版 `animationEffect` 动效下拉配置项，消除流派与动效的语义冲突；清理流光光色与角标选择器内的英文括号技术备注，回归极简中文语义；将原本挤占表单与预览区底部的特性清单语法指南卡片收纳为 Label 旁的小问号 `Tooltip` 悬浮气泡，右侧所见即所得实机卡片预览拥有更舒展从容的垂直对齐空间。
 
 ### Fixed
+- **本地联调 SQLite 写锁规避与数据库复用隔离**：`scripts/dev-e2e.sh` 默认改用独立的 `dev-e2e.db`，不再与手动启动的开发主控争用 `dev.db`；迁移与种子命令改为从 server 工作区执行，并记录联调数据库身份，避免错误复用旧主控。
+- **套餐续费与购买计数口径修复**：续费不再消耗限购次数，但 `allowRenewal=false` 时服务端拒绝；目标套餐与当前套餐相同的升配请求改为提示使用续费，杜绝通过重复升配刷新周期和流量。存量免费套餐迁移为限购 1 次且不可续费，未来新建或改价为 0 元的套餐自动采用相同安全默认。
 - **套餐卡片被激活状态与流光微边框硬裁剪及重叠冲突根除**：修复套餐市场中当前在用套餐卡片（`isCurrent`）的高亮边框（`ring`）与 1.5px Shine Border 流水光束互相挤压撕扯、且被容器 `overflow-hidden` 硬裁剪边缘的缺陷；将 `isCurrent` 高亮光环与景深阴影（`ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/20`）提升至卡片最外层独立包装容器，内层晶体卡片与流动光槽保持独立无缝渲染，形成外层激活光环与内层光槽导光的和谐视觉纵深。
 
 
