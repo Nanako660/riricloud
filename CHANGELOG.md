@@ -23,6 +23,7 @@
 - **管理后台套餐表单界面降噪与空间精炼**：彻底移除原有容易引起认知混淆的旧版 `animationEffect` 动效下拉配置项，消除流派与动效的语义冲突；清理流光光色与角标选择器内的英文括号技术备注，回归极简中文语义；将原本挤占表单与预览区底部的特性清单语法指南卡片收纳为 Label 旁的小问号 `Tooltip` 悬浮气泡，右侧所见即所得实机卡片预览拥有更舒展从容的垂直对齐空间。
 
 ### Fixed
+- **dev-e2e 联调密钥与数据库生命周期绑定**：`scripts/dev-e2e.sh` 未显式提供 `JWT_SECRET` 时改为按数据库 URL 维度生成并持久化密钥（`.cache/dev-e2e-secrets/`，同一联调库始终复用同一密钥），修复联调数据库跨运行复用后 Master-Local AgentToken 无法解密（`Unsupported state or unable to authenticate data`）导致 e2e 启动失败的问题。
 - **本地联调 SQLite 写锁规避与数据库复用隔离**：`scripts/dev-e2e.sh` 默认改用独立的 `dev-e2e.db`，不再与手动启动的开发主控争用 `dev.db`；迁移与种子命令改为从 server 工作区执行，并记录联调数据库身份，避免错误复用旧主控。
 - **套餐续费与购买计数口径修复**：续费不再消耗限购次数，但 `allowRenewal=false` 时服务端拒绝；目标套餐与当前套餐相同的升配请求改为提示使用续费，杜绝通过重复升配刷新周期和流量。存量免费套餐迁移为限购 1 次且不可续费，未来新建或改价为 0 元的套餐自动采用相同安全默认。
 - **套餐卡片被激活状态与流光微边框硬裁剪及重叠冲突根除**：修复套餐市场中当前在用套餐卡片（`isCurrent`）的高亮边框（`ring`）与 1.5px Shine Border 流水光束互相挤压撕扯、且被容器 `overflow-hidden` 硬裁剪边缘的缺陷；将 `isCurrent` 高亮光环与景深阴影（`ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/20`）提升至卡片最外层独立包装容器，内层晶体卡片与流动光槽保持独立无缝渲染，形成外层激活光环与内层光槽导光的和谐视觉纵深。

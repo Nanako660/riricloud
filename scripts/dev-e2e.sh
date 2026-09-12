@@ -73,7 +73,20 @@ if [ -n "$SERVER_PORT_OVERRIDE" ] && [ -z "$SERVER_URL_OVERRIDE" ]; then
   SERVER_URL="http://localhost:$SERVER_PORT"
 fi
 if [ -z "${JWT_SECRET:-}" ]; then
-  JWT_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+  # 联调库中 AgentToken 等凭据使用 JWT_SECRET 派生密钥加密（apps/server/src/common/secret-crypto.ts），
+  # 而联调数据库跨运行复用：每次随机生成密钥会导致上次加密的凭据无法解密
+  # （表现为 master agent config failed: Unsupported state or unable to authenticate data）。
+  # 因此按数据库 URL 维度持久化密钥，同一联调库始终复用同一密钥。
+  E2E_SECRET_DIR="$ROOT/.cache/dev-e2e-secrets"
+  E2E_SECRET_FILE="$E2E_SECRET_DIR/$(node -e 'process.stdout.write(require("crypto").createHash("sha1").update(process.argv[1]).digest("hex"))' "$E2E_DATABASE_URL")"
+  mkdir -p "$E2E_SECRET_DIR"
+  if [ -s "$E2E_SECRET_FILE" ]; then
+    read -r JWT_SECRET <"$E2E_SECRET_FILE" || true
+  fi
+  if [ -z "$JWT_SECRET" ]; then
+    JWT_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+    printf '%s' "$JWT_SECRET" >"$E2E_SECRET_FILE"
+  fi
 fi
 export JWT_SECRET
 
