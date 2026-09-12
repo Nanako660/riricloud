@@ -9,20 +9,16 @@ import { SettingsService } from '../system/settings.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
 import { hashAgentToken } from '../common/agent-token';
 import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
+import { BINARY_TARGETS } from './binary-targets';
 
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
-const TARGETS = [
-  { target: 'agent-linux-amd64', kind: 'agent', os: 'linux', arch: 'amd64', filename: 'riri-agent' },
-  { target: 'agent-linux-arm64', kind: 'agent', os: 'linux', arch: 'arm64', filename: 'riri-agent' },
-  { target: 'agent-macos-amd64', kind: 'agent', os: 'macos', arch: 'amd64', filename: 'riri-agent' },
-  { target: 'agent-macos-arm64', kind: 'agent', os: 'macos', arch: 'arm64', filename: 'riri-agent' },
-  { target: 'agent-windows-amd64', kind: 'agent', os: 'windows', arch: 'amd64', filename: 'riri-agent.exe' },
-  { target: 'singbox-linux-amd64', kind: 'singbox', os: 'linux', arch: 'amd64', filename: 'sing-box' },
-  { target: 'singbox-linux-arm64', kind: 'singbox', os: 'linux', arch: 'arm64', filename: 'sing-box' },
-  { target: 'singbox-macos-amd64', kind: 'singbox', os: 'macos', arch: 'amd64', filename: 'sing-box' },
-  { target: 'singbox-macos-arm64', kind: 'singbox', os: 'macos', arch: 'arm64', filename: 'sing-box' },
-  { target: 'singbox-windows-amd64', kind: 'singbox', os: 'windows', arch: 'amd64', filename: 'sing-box.exe' }
-] as const;
+const TARGETS = BINARY_TARGETS.map(({ kind, target }) => ({
+  target,
+  kind: kind.toLowerCase() as 'agent' | 'singbox',
+  os: target.split('-')[1] as 'linux' | 'macos' | 'windows',
+  arch: target.split('-')[2] as 'amd64' | 'arm64',
+  filename: `${kind === 'AGENT' ? 'riri-agent' : 'sing-box'}${target.endsWith('windows-amd64') ? '.exe' : ''}`
+}));
 
 export type BinaryTarget = (typeof TARGETS)[number]['target'];
 export type BinaryKind = (typeof TARGETS)[number]['kind'];

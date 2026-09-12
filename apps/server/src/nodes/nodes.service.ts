@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { AgentService, type UpgradeTaskOptions } from '../agent-gateway/agent.service';
 import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
 import { BinaryResourcesService } from '../binaries/binary-resources.service';
+import type { QueryBinaryDeploymentDto } from '../binaries/dto/query-binary-resource.dto';
 import { generateRealityKeypair } from '../common/inbound';
 import { generateAgentToken } from '../common/utils';
 import { hashAgentToken } from '../common/agent-token';
@@ -196,6 +197,44 @@ export class NodesService {
   async taskStatus(nodeId: string, taskId: string) {
     await this.requireNode(nodeId);
     return this.agentGateway.getPersistedTaskStatus(nodeId, taskId);
+  }
+
+  async listTasks(nodeId: string, query: QueryBinaryDeploymentDto = {}) {
+    await this.requireNode(nodeId);
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where = {
+      nodeId,
+      ...(query.status ? { status: query.status } : {})
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.binaryDeploymentTask.findMany({
+        where,
+        include: {
+          asset: {
+            select: {
+              id: true,
+              target: true,
+              size: true,
+              release: { select: { id: true, kind: true, upstreamVersion: true, revision: true } }
+            }
+          }
+        },
+        orderBy: { requestedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      this.prisma.binaryDeploymentTask.count({ where })
+    ]);
+    return {
+      data: rows.map((row) => ({
+        ...row,
+        version: row.asset?.release ? `${row.asset.release.upstreamVersion}-r${row.asset.release.revision}` : null
+      })),
+      total,
+      page,
+      pageSize
+    };
   }
 
   async retryUpgrade(nodeId: string, taskId: string, operatorId?: string) {
