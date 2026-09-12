@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,7 +13,8 @@ import type { AdminLine } from '../../lines/use-lines';
 import { useUserMutations, type AdminUser } from '../use-users';
 import { CreateUserFields, EditAccountFields } from './user-account-fields';
 import { UserSubscriptionFields } from './user-subscription-fields';
-import { createUserSchema, dateInputToIso, editAccountSchema, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
+import { buildCreateUserSchema, buildEditAccountSchema, dateInputToIso, GB, subscriptionSchema, type CreateUserForm, type EditAccountForm, type SubscriptionForm } from './user-form-schema';
+import { buildPasswordStrengthPolicy, passwordComplexityFromSettings } from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 
 interface UserFormDialogProps {
@@ -36,6 +37,10 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
   const { createUser, updateUser, updateSubscription, assignSubscription, resetSubscriptionToken } = useUserMutations();
   const publicSettings = usePublicSettings();
   const passwordMinLength = publicSettings.data?.passwordMinLength ?? 8;
+  const passwordComplexity = useMemo(() => passwordComplexityFromSettings(publicSettings.data), [publicSettings.data]);
+  const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
+  const createUserSchema = useMemo(() => buildCreateUserSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
+  const editAccountSchema = useMemo(() => buildEditAccountSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [removeSubscriptionConfirmOpen, setRemoveSubscriptionConfirmOpen] = useState(false);
   const isEdit = !!user;
@@ -68,18 +73,10 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
 
   const submitAccount = (values: EditAccountForm) => {
     if (!user) return;
-    if (values.password && values.password.length < passwordMinLength) {
-      accountForm.setError('password', { message: `密码至少 ${passwordMinLength} 位` });
-      return;
-    }
     updateUser.mutate({ id: user.id, role: values.role, isActive: values.isActive, emailVerified: values.emailVerified, ...(values.password ? { password: values.password } : {}) }, { onSuccess: () => onOpenChange(false) });
   };
 
   const submitCreate = (values: CreateUserForm) => {
-    if (values.password.length < passwordMinLength) {
-      createForm.setError('password', { message: `密码至少 ${passwordMinLength} 位` });
-      return;
-    }
     createUser.mutate({
       email: values.email,
       password: values.password,

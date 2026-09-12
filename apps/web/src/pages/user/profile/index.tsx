@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -45,23 +45,29 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Pagination, PaginationInfo, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { PASSWORD_STRENGTH_MESSAGE, PASSWORD_STRENGTH_PATTERN } from '@/lib/password-policy';
+import {
+  buildPasswordStrengthPolicy,
+  passwordComplexityFromSettings,
+  passwordZodSchema,
+  type PasswordStrengthPolicy
+} from '@/lib/password-policy';
 import { usePublicSettings } from '@/lib/public-settings';
 import { hasSupportContacts } from '@/lib/support';
 import { SupportDialog, SupportContactsInline } from '@/components/shared/support-dialog';
 import { useProfileMutations, useProfileUser, useWallet, useWalletTransactions } from './use-profile';
 
 const redeemSchema = z.object({ code: z.string().trim().min(6, '请输入有效卡密').max(128) });
-const passwordSchema = z
-  .object({
-    oldPassword: z.string().min(8, '密码至少 8 位'),
-    newPassword: z.string().min(8, '密码至少 8 位').max(64).regex(PASSWORD_STRENGTH_PATTERN, PASSWORD_STRENGTH_MESSAGE),
-    confirmPassword: z.string()
-  })
-  .refine((value) => value.newPassword === value.confirmPassword, {
-    path: ['confirmPassword'],
-    message: '两次输入的密码不一致'
-  });
+const buildPasswordSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
+  z
+    .object({
+      oldPassword: z.string().min(8, '密码至少 8 位'),
+      newPassword: passwordZodSchema(minLength, policy),
+      confirmPassword: z.string()
+    })
+    .refine((value) => value.newPassword === value.confirmPassword, {
+      path: ['confirmPassword'],
+      message: '两次输入的密码不一致'
+    });
 const nicknameSchema = z.object({
   nickname: z.string().trim().min(2, '昵称至少 2 个字符').max(20, '昵称最多 20 个字符')
 });
@@ -75,7 +81,7 @@ const verifyEmailSchema = z.object({
 });
 
 type RedeemValues = z.infer<typeof redeemSchema>;
-type PasswordValues = z.infer<typeof passwordSchema>;
+type PasswordValues = z.infer<ReturnType<typeof buildPasswordSchema>>;
 type NicknameValues = z.infer<typeof nicknameSchema>;
 type EmailValues = z.infer<typeof emailSchema>;
 type VerifyEmailValues = z.infer<typeof verifyEmailSchema>;
@@ -104,6 +110,9 @@ export default function ProfilePage() {
   const transactions = useWalletTransactions(page);
   const publicSettings = usePublicSettings();
   const passwordMinLength = publicSettings.data?.passwordMinLength ?? 8;
+  const passwordComplexity = useMemo(() => passwordComplexityFromSettings(publicSettings.data), [publicSettings.data]);
+  const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
+  const passwordSchema = useMemo(() => buildPasswordSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
   const { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail, sendCurrentEmailCode, verifyCurrentEmail } = useProfileMutations();
 
   const redeemForm = useForm<RedeemValues>({
@@ -174,10 +183,6 @@ export default function ProfilePage() {
     redeem.mutate(values.code, { onSuccess: () => redeemForm.reset() });
 
   const onPassword = (values: PasswordValues) => {
-    if (values.newPassword.length < passwordMinLength) {
-      passwordForm.setError('newPassword', { message: `密码至少 ${passwordMinLength} 位` });
-      return;
-    }
     changePassword.mutate(
       { oldPassword: values.oldPassword, newPassword: values.newPassword },
       { onSuccess: () => passwordForm.reset() }

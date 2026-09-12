@@ -32,6 +32,10 @@ export const SETTING_KEYS = {
   EMAIL_DOMAIN_MODE: 'emailDomainMode',
   EMAIL_DOMAIN_LIST: 'emailDomainList',
   PASSWORD_MIN_LENGTH: 'passwordMinLength',
+  PASSWORD_REQUIRE_LOWERCASE: 'passwordRequireLowercase',
+  PASSWORD_REQUIRE_UPPERCASE: 'passwordRequireUppercase',
+  PASSWORD_REQUIRE_DIGIT: 'passwordRequireDigit',
+  PASSWORD_REQUIRE_SPECIAL: 'passwordRequireSpecial',
   SUBSCRIPTION_BASE_URL: 'subscriptionBaseUrl',
   SUBSCRIPTION_SHORT_LINKS_ENABLED: 'subscriptionShortLinksEnabled',
   SUBSCRIPTION_EFFECTS_SYNC_ENABLED: 'subscriptionEffectsSyncEnabled',
@@ -86,6 +90,10 @@ export interface SystemSettings {
   emailDomainMode: EmailDomainMode;
   emailDomainList: string[];
   passwordMinLength: number;
+  passwordRequireLowercase: boolean;
+  passwordRequireUppercase: boolean;
+  passwordRequireDigit: boolean;
+  passwordRequireSpecial: boolean;
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled: boolean;
@@ -142,6 +150,10 @@ export type PublicSystemSettings = Pick<
   | 'supportCustomUrl'
   | 'registrationEnabled'
   | 'passwordMinLength'
+  | 'passwordRequireLowercase'
+  | 'passwordRequireUppercase'
+  | 'passwordRequireDigit'
+  | 'passwordRequireSpecial'
   | 'subscriptionBaseUrl'
   | 'subscriptionShortLinksEnabled'
   | 'subscriptionEffectsSyncEnabled'
@@ -171,6 +183,10 @@ export const DEFAULTS: SystemSettings = {
   emailDomainMode: 'none',
   emailDomainList: [],
   passwordMinLength: 8,
+  passwordRequireLowercase: true,
+  passwordRequireUppercase: false,
+  passwordRequireDigit: true,
+  passwordRequireSpecial: false,
   subscriptionBaseUrl: '',
   subscriptionShortLinksEnabled: false,
   subscriptionEffectsSyncEnabled: true,
@@ -228,6 +244,10 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   emailDomainMode: '邮箱域名过滤模式',
   emailDomainList: '邮箱域名过滤列表',
   passwordMinLength: '密码最小长度',
+  passwordRequireLowercase: '密码必须包含小写字母',
+  passwordRequireUppercase: '密码必须包含大写字母',
+  passwordRequireDigit: '密码必须包含数字',
+  passwordRequireSpecial: '密码必须包含特殊字符',
   subscriptionBaseUrl: '对外订阅基准地址',
   subscriptionShortLinksEnabled: '是否使用 Nginx 伪静态短订阅链接',
   subscriptionEffectsSyncEnabled: '是否开启「我的订阅」卡片套餐特效同步',
@@ -311,6 +331,10 @@ export class SettingsService {
       emailDomainMode: this.readEnum(map, 'emailDomainMode', ['none', 'whitelist', 'blacklist']),
       emailDomainList: this.readStringArray(map, 'emailDomainList').map(normalizeDomain).filter(Boolean),
       passwordMinLength: this.readInteger(map, 'passwordMinLength', 8, 64),
+      passwordRequireLowercase: this.readBoolean(map, 'passwordRequireLowercase'),
+      passwordRequireUppercase: this.readBoolean(map, 'passwordRequireUppercase'),
+      passwordRequireDigit: this.readBoolean(map, 'passwordRequireDigit'),
+      passwordRequireSpecial: this.readBoolean(map, 'passwordRequireSpecial'),
       subscriptionBaseUrl: this.readString(map, 'subscriptionBaseUrl'),
       subscriptionShortLinksEnabled: this.readBoolean(map, 'subscriptionShortLinksEnabled'),
       subscriptionEffectsSyncEnabled: this.readBoolean(map, 'subscriptionEffectsSyncEnabled'),
@@ -374,6 +398,10 @@ export class SettingsService {
       supportCustomUrl: settings.supportCustomUrl,
       registrationEnabled: settings.registrationEnabled,
       passwordMinLength: settings.passwordMinLength,
+      passwordRequireLowercase: settings.passwordRequireLowercase,
+      passwordRequireUppercase: settings.passwordRequireUppercase,
+      passwordRequireDigit: settings.passwordRequireDigit,
+      passwordRequireSpecial: settings.passwordRequireSpecial,
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled,

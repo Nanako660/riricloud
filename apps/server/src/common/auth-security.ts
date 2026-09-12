@@ -4,8 +4,71 @@ import { getJwtSecret } from './runtime-config';
 
 export const MAX_EMAIL_LENGTH = 254;
 export const MAX_PASSWORD_LENGTH = 64;
-export const PASSWORD_STRENGTH_MESSAGE = '密码必须同时包含大写字母、小写字母、数字和特殊字符';
-export const PASSWORD_STRENGTH_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/;
+
+// 密码字符类别要求，开关来自系统设置 passwordRequire*（见 settings.service DEFAULTS）
+export interface PasswordComplexity {
+  requireLowercase: boolean;
+  requireUppercase: boolean;
+  requireDigit: boolean;
+  requireSpecial: boolean;
+}
+
+// 与 settings.service DEFAULTS 保持一致：默认必须含小写字母与数字
+export const DEFAULT_PASSWORD_COMPLEXITY: PasswordComplexity = {
+  requireLowercase: true,
+  requireUppercase: false,
+  requireDigit: true,
+  requireSpecial: false
+};
+
+// SystemSettings 中密码复杂度相关字段的结构视图
+export interface PasswordComplexitySource {
+  passwordRequireLowercase: boolean;
+  passwordRequireUppercase: boolean;
+  passwordRequireDigit: boolean;
+  passwordRequireSpecial: boolean;
+}
+
+export interface PasswordStrengthPolicy {
+  // null 表示无字符类别要求（仅校验长度）
+  pattern: RegExp | null;
+  message: string;
+}
+
+// 缺失或未配置的字段回退默认策略（fail-closed，与前端 passwordComplexityFromSettings 语义一致）
+export function passwordComplexityFromSettings(source?: Partial<PasswordComplexitySource> | null): PasswordComplexity {
+  return {
+    requireLowercase: source?.passwordRequireLowercase ?? DEFAULT_PASSWORD_COMPLEXITY.requireLowercase,
+    requireUppercase: source?.passwordRequireUppercase ?? DEFAULT_PASSWORD_COMPLEXITY.requireUppercase,
+    requireDigit: source?.passwordRequireDigit ?? DEFAULT_PASSWORD_COMPLEXITY.requireDigit,
+    requireSpecial: source?.passwordRequireSpecial ?? DEFAULT_PASSWORD_COMPLEXITY.requireSpecial
+  };
+}
+
+export function buildPasswordStrengthPolicy(complexity: PasswordComplexity): PasswordStrengthPolicy {
+  const groups: string[] = [];
+  const lookaheads: string[] = [];
+  if (complexity.requireLowercase) {
+    groups.push('小写字母');
+    lookaheads.push('(?=.*[a-z])');
+  }
+  if (complexity.requireUppercase) {
+    groups.push('大写字母');
+    lookaheads.push('(?=.*[A-Z])');
+  }
+  if (complexity.requireDigit) {
+    groups.push('数字');
+    lookaheads.push('(?=.*\\d)');
+  }
+  if (complexity.requireSpecial) {
+    groups.push('特殊字符');
+    lookaheads.push('(?=.*[^A-Za-z0-9\\s])');
+  }
+  return {
+    pattern: lookaheads.length ? new RegExp(`${lookaheads.join('')}.+$`) : null,
+    message: groups.length ? `密码必须包含：${groups.join('、')}` : ''
+  };
+}
 
 export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -26,15 +89,15 @@ export function assertPasswordLength(password: string, minimum: number): void {
   }
 }
 
-export function assertPasswordStrength(password: string): void {
-  if (!PASSWORD_STRENGTH_PATTERN.test(password)) {
-    throw new BadRequestException(PASSWORD_STRENGTH_MESSAGE);
+export function assertPasswordStrength(password: string, policy: PasswordStrengthPolicy): void {
+  if (policy.pattern && !policy.pattern.test(password)) {
+    throw new BadRequestException(policy.message);
   }
 }
 
-export function assertPasswordPolicy(password: string, minimum: number): void {
+export function assertPasswordPolicy(password: string, minimum: number, policy: PasswordStrengthPolicy): void {
   assertPasswordLength(password, minimum);
-  assertPasswordStrength(password);
+  assertPasswordStrength(password, policy);
 }
 
 export function normalizeVerificationCode(value: string): string {
