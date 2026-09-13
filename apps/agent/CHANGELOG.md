@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.7.2] - 2026-09-13
+
+### Added
 - **免安装直接运行（便携模式）内核自举**：`riri-agent run` 仅凭 `AGENT_TOKEN` 等环境变量即可前台运行（配置文件可选），sing-box 内核缺失时后台自动下载（`--singbox-source auto|master|github|none`，默认 auto 先主控后 GitHub，失败按 5 分钟间隔重试，不阻断 Agent 存活）；显式设置 `SINGBOX_BINARY_PATH` 视为用户自管内核跳过下载。新增 `--singbox-url` 与 `--singbox-version` 旗标及 `SINGBOX_SOURCE` 环境变量。
 - **日志目录错误提示**：日志目录创建或打开失败时，错误信息附带 `RIRICLOUD_DATA_DIR` / `RIRICLOUD_LOG_PATH` 可写目录设置提示。
 
@@ -22,6 +31,7 @@
 ### Fixed
 - **修复 Windows 服务模式下 agent.log 恒为空**：日志输出原为 `io.MultiWriter(os.Stdout, file)`，而 Windows 服务进程的 stdout 是无效句柄，`MultiWriter` 遇到写入失败即短路跳过后续 writer，导致文件永远收不到日志（`riri-agent logs` 与 TUI 查看日志随之失效）。现改为文件优先写入，并仅在 stdout 可用的上下文（前台终端、Linux systemd/容器）附加 stdout 镜像；服务模式下不再产生无效写入。
 - **修复无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。
+
 
 
 ## [0.7.1] - 2026-09-13
