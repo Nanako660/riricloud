@@ -36,6 +36,8 @@ type Options struct {
 	Token string
 	// Destination 为内核二进制落盘路径。
 	Destination string
+	// GitHubMirrors 为 GitHub 加速镜像前缀列表（直连失败后按顺序回退）。
+	GitHubMirrors []string
 }
 
 // Ensure 确保 Destination 存在 sing-box 内核；已存在时直接返回 false 不重复下载。
@@ -55,6 +57,22 @@ func Ensure(ctx context.Context, options Options) (bool, error) {
 }
 
 // Download 下载 sing-box 内核并写入 Destination。
+// normalizeMirrors 规范化镜像前缀：补 https scheme、去尾斜杠，跳过空项。
+func normalizeMirrors(mirrors []string) []string {
+	result := make([]string, 0, len(mirrors))
+	for _, item := range mirrors {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if !strings.Contains(trimmed, "://") {
+			trimmed = "https://" + trimmed
+		}
+		result = append(result, strings.TrimRight(trimmed, "/")+"/")
+	}
+	return result
+}
+
 func Download(ctx context.Context, options Options) error {
 	source := strings.ToLower(strings.TrimSpace(options.Source))
 	if source == "" {
@@ -91,12 +109,21 @@ func Download(ctx context.Context, options Options) error {
 	if runtime.GOOS == "windows" {
 		extension = "zip"
 	}
-	archiveURL := fmt.Sprintf("https://github.com/SagerNet/sing-box/releases/download/v%s/sing-box-%s-%s-%s.%s", version, version, githubOS(), assetArch(), extension)
-	body, err := fetch(ctx, archiveURL, "")
-	if err != nil {
-		return fmt.Errorf("download sing-box from GitHub: %w", err)
+	archivePath := fmt.Sprintf("SagerNet/sing-box/releases/download/v%s/sing-box-%s-%s-%s.%s", version, version, githubOS(), assetArch(), extension)
+	// GitHub 直连优先，随后逐个尝试加速镜像（前缀代理）；全部失败才返回错误
+	var lastErr error
+	for _, base := range append([]string{"https://github.com/"}, normalizeMirrors(options.GitHubMirrors)...) {
+		archiveURL := base + archivePath
+		body, err := fetch(ctx, archiveURL, "")
+		if err == nil {
+			return writeArchiveOrBinary(options.Destination, body)
+		}
+		lastErr = err
 	}
-	return writeArchiveOrBinary(options.Destination, body)
+	if lastErr != nil {
+		return fmt.Errorf("download sing-box from GitHub: %w", lastErr)
+	}
+	return nil
 }
 
 func fetch(ctx context.Context, rawURL, token string) ([]byte, error) {

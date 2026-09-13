@@ -130,12 +130,13 @@ func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Optio
 		return
 	}
 	go bootstrapKernelLoop(ctx, kernel.Options{
-		Source:      options.SingboxSource,
-		URL:         options.SingboxURL,
-		Version:     options.SingboxVersion,
-		MasterURL:   cfg.MasterURL,
-		Token:       cfg.AgentToken,
-		Destination: cfg.SingboxBinPath,
+		Source:        options.SingboxSource,
+		URL:           options.SingboxURL,
+		Version:       options.SingboxVersion,
+		MasterURL:     cfg.MasterURL,
+		Token:         cfg.AgentToken,
+		Destination:   cfg.SingboxBinPath,
+		GitHubMirrors: cfg.GitHubMirrors,
 	}, log)
 }
 

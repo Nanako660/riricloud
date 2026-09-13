@@ -85,7 +85,7 @@ func newVersionCommand(options Options) *cobra.Command {
 }
 
 func newInstallCommand(options Options, configPath *string) *cobra.Command {
-	var token, master, mode, dataDir, source, singboxURL, singboxVersion string
+	var token, master, mode, dataDir, source, singboxURL, singboxVersion, githubMirrors string
 	var noStart bool
 	command := &cobra.Command{
 		Use:   "install",
@@ -94,7 +94,7 @@ func newInstallCommand(options Options, configPath *string) *cobra.Command {
 			cfg, err := install.Run(command.Context(), install.Options{
 				Token: token, Master: master, Mode: mode, ConfigPath: *configPath,
 				DataDir: dataDir, SingboxSource: source, SingboxURL: singboxURL,
-				SingboxVersion: singboxVersion, NoStart: noStart,
+				SingboxVersion: singboxVersion, GitHubMirrors: parseMirrorsFlag(githubMirrors), NoStart: noStart,
 			})
 			if err != nil {
 				return err
@@ -110,8 +110,20 @@ func newInstallCommand(options Options, configPath *string) *cobra.Command {
 	command.Flags().StringVar(&source, "singbox-source", "auto", "Sing-box 来源：auto、master 或 github")
 	command.Flags().StringVar(&singboxURL, "singbox-url", "", "自定义 Sing-box 下载地址")
 	command.Flags().StringVar(&singboxVersion, "singbox-version", "", "GitHub Sing-box 版本")
+	command.Flags().StringVar(&githubMirrors, "github-mirrors", os.Getenv("GITHUB_MIRRORS"), "GitHub 加速镜像前缀列表（逗号分隔）")
 	command.Flags().BoolVar(&noStart, "no-start", false, "只安装服务，不立即启动")
 	return command
+}
+
+// parseMirrorsFlag 解析逗号分隔的镜像前缀列表。
+func parseMirrorsFlag(raw string) []string {
+	result := make([]string, 0, 8)
+	for _, item := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func newUninstallCommand(options Options, configPath *string) *cobra.Command {

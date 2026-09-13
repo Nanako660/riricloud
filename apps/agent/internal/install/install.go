@@ -22,7 +22,9 @@ type Options struct {
 	SingboxURL     string
 	SingboxSource  string
 	SingboxVersion string
-	NoStart        bool
+	// GitHubMirrors 为 GitHub 加速镜像前缀（安装脚本经 GITHUB_MIRRORS 环境变量注入）。
+	GitHubMirrors []string
+	NoStart       bool
 }
 
 func Run(ctx context.Context, options Options) (*config.Config, error) {
@@ -70,6 +72,7 @@ func Run(ctx context.Context, options Options) (*config.Config, error) {
 		PollIntervalSecs: 15,
 		LogPath:          filepath.Join(dataDir, "agent.log"),
 		ConfigPath:       configPath,
+		GitHubMirrors:    options.GitHubMirrors,
 	}
 	if err := config.Save(configPath, cfg); err != nil {
 		return nil, err
@@ -106,12 +109,13 @@ func Run(ctx context.Context, options Options) (*config.Config, error) {
 
 func downloadSingbox(ctx context.Context, options Options, masterURL, destination string) error {
 	return kernel.Download(ctx, kernel.Options{
-		Source:      options.SingboxSource,
-		URL:         options.SingboxURL,
-		Version:     options.SingboxVersion,
-		MasterURL:   masterURL,
-		Token:       options.Token,
-		Destination: destination,
+		Source:        options.SingboxSource,
+		URL:           options.SingboxURL,
+		Version:       options.SingboxVersion,
+		MasterURL:     masterURL,
+		Token:         options.Token,
+		Destination:   destination,
+		GitHubMirrors: options.GitHubMirrors,
 	})
 }
 

@@ -92,3 +92,16 @@ func TestDownloadRejectsUnknownSource(t *testing.T) {
 		t.Fatal("expected unknown source to fail")
 	}
 }
+
+func TestNormalizeMirrors(t *testing.T) {
+	got := normalizeMirrors([]string{"ghfast.top/", "https://gh-proxy.com", " ", ""})
+	want := []string{"https://ghfast.top/", "https://gh-proxy.com/"}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected length: got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("mirror[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

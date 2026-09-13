@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **Sing-box 内核 GitHub 下载支持加速镜像**：新增 `GITHUB_MIRRORS` 环境变量 / `--github-mirrors` 安装旗标 / 配置项 `githubMirrors`（前缀代理列表，安装脚本自动注入并持久化）；内核 GitHub 回退路径按「直连 → 镜像」顺序尝试，免安装运行的后台内核自举同样生效。
 
 ### Changed
 
