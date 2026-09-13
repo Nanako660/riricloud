@@ -47,7 +47,7 @@ func runForeground(ctx context.Context, options Options) error {
 		return err
 	}
 
-	log, closeLog, err := newLogger(cfg.LogPath)
+	log, closeLog, err := newLogger(cfg.LogPath, stdoutUsable())
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,13 @@ func bootstrapKernelLoop(ctx context.Context, options kernel.Options, log *logru
 	}
 }
 
-func newLogger(path string) (*logrus.Logger, func(), error) {
+// stdoutUsable 判断是否应把日志镜像到 stdout：Windows 服务进程没有控制台句柄，
+// 写入必然失败；其余场景（前台终端、Linux systemd journald、容器）stdout 可用。
+func stdoutUsable() bool {
+	return runtime.GOOS != "windows" || service.Interactive()
+}
+
+func newLogger(path string, mirrorStdout bool) (*logrus.Logger, func(), error) {
 	log := logrus.New()
 	log.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 	if path == "" {
@@ -155,7 +161,13 @@ func newLogger(path string) (*logrus.Logger, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open log file: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
 	}
-	log.SetOutput(io.MultiWriter(os.Stdout, file))
+	// 文件必须排在 MultiWriter 首位：stdout 句柄失效时 MultiWriter 会短路，
+	// 若 stdout 在前，文件将永远收不到日志（Windows 服务模式下的空 agent.log 根因）。
+	if mirrorStdout {
+		log.SetOutput(io.MultiWriter(file, os.Stdout))
+	} else {
+		log.SetOutput(file)
+	}
 	return log, func() {
 		if err := file.Close(); err != nil {
 			log.WithError(err).Warn("close log file failed")

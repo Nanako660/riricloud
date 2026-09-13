@@ -20,6 +20,7 @@
 - `internal/install` 的 sing-box 下载逻辑抽取为可复用的 `internal/kernel` 包，安装与免安装运行共用同一内核获取链路。
 
 ### Fixed
+- **修复 Windows 服务模式下 agent.log 恒为空**：日志输出原为 `io.MultiWriter(os.Stdout, file)`，而 Windows 服务进程的 stdout 是无效句柄，`MultiWriter` 遇到写入失败即短路跳过后续 writer，导致文件永远收不到日志（`riri-agent logs` 与 TUI 查看日志随之失效）。现改为文件优先写入，并仅在 stdout 可用的上下文（前台终端、Linux systemd/容器）附加 stdout 镜像；服务模式下不再产生无效写入。
 - **修复无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。
 
 
