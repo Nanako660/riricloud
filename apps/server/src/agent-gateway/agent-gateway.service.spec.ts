@@ -940,6 +940,62 @@ describe('AgentGatewayService', () => {
     }));
   });
 
+  it('自定义 URL 升级无关联资产也落库 QUEUED 任务并保留操作人', async () => {
+    prisma.node.findUnique.mockResolvedValue({ status: 'ONLINE', communicationMode: 'HTTP' });
+    deploymentCreate.mockResolvedValue({ id: 'task-custom' });
+
+    const result = await service.requestUpgrade('node-1', 'agent', '0.7.3', 'https://mirror.example.com/riri-agent', 'c'.repeat(64), { requestedById: 'admin-1' });
+
+    expect(result.requested).toBe(true);
+    expect(deploymentCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        assetId: null,
+        releaseId: null,
+        requestedById: 'admin-1',
+        status: 'QUEUED',
+        kind: 'AGENT',
+        payloadJson: expect.stringContaining('0.7.3')
+      })
+    }));
+  });
+
+  it('自定义 URL 升级成功回执不回写节点资产指针', async () => {
+    const task = {
+      id: 'task-custom-2',
+      nodeId: 'node-1',
+      assetId: null,
+      previousAssetId: null,
+      releaseId: null,
+      kind: 'AGENT',
+      operation: 'UPGRADE',
+      status: 'DISPATCHED',
+      attempts: 1,
+      payloadJson: JSON.stringify({ taskId: 'task-custom-2', target: 'agent', version: '0.7.3', url: 'https://mirror.example.com/riri-agent', sha256: 'c'.repeat(64) }),
+      errorMessage: null,
+      requestedById: 'admin-1',
+      requestedAt: new Date(),
+      dispatchedAt: new Date(),
+      completedAt: null
+    };
+    deploymentFindFirst.mockResolvedValue(task);
+    prisma.node.update.mockResolvedValue(undefined);
+
+    await service.handleUpgradeResult('node-1', {
+      taskId: task.id,
+      target: 'agent',
+      version: '0.7.3',
+      success: true,
+      message: 'ok'
+    });
+
+    expect(deploymentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: task.id },
+      data: expect.objectContaining({ status: 'COMPLETED' })
+    }));
+    // 自定义 URL 无资产指针可回写
+    expect(prisma.node.update).not.toHaveBeenCalled();
+  });
+
   it('单节点承载多线路时，心跳上报复合凭证可精确拆分归属并按各线路倍率独立扣除额度', async () => {
     (service as unknown as { configCache: Map<string, unknown> }).configCache.clear();
     prisma.node.findUnique.mockResolvedValue({ id: 'node-1', serverHost: '198.51.100.10', configOverride: null, entryLines: [], landingLines: [] });

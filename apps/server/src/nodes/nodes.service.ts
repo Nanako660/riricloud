@@ -166,7 +166,8 @@ export class NodesService {
         requestedById: operatorId
       };
       if (!options.resourceId && !options.assetId && !options.files?.length) {
-        return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256);
+        // 自定义 URL 升级：无关联资产，仅保留任务时间线与操作人
+        return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256, { previousAssetId: options.previousAssetId, operation, requestedById: operatorId });
       }
       return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256, options);
     } catch (err) {
@@ -221,10 +222,18 @@ export class NodesService {
       this.prisma.binaryDeploymentTask.count({ where })
     ]);
     return {
-      data: rows.map((row) => ({
-        ...row,
-        version: row.asset?.release ? `${row.asset.release.upstreamVersion}-r${row.asset.release.revision}` : null
-      })),
+      data: rows.map((row) => {
+        // 管理资源任务用资源版本摘要；自定义 URL 任务回退到任务 payload 中的版本
+        let version: string | null = row.asset?.release ? `${row.asset.release.upstreamVersion}-r${row.asset.release.revision}` : null;
+        if (!version) {
+          try {
+            version = (JSON.parse(row.payloadJson) as { version?: string }).version ?? null;
+          } catch {
+            version = null;
+          }
+        }
+        return { ...row, version };
+      }),
       total,
       page,
       pageSize

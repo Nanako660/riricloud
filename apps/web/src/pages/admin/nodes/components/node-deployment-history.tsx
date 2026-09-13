@@ -89,6 +89,7 @@ export function NodeDeploymentHistory({ nodeId }: { nodeId: string }) {
                           {task.kind === 'AGENT' ? 'Agent' : 'Sing-box'}
                         </Badge>
                         <span className="text-xs font-medium">{taskVersion(task) ?? '—'}</span>
+                        {!task.assetId ? <Badge variant="secondary" className="text-[11px]">自定义 URL</Badge> : null}
                         <span className="text-xs text-muted-foreground">尝试 {task.attempts} 次</span>
                       </div>
                     </TableCell>

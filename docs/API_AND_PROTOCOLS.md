@@ -90,7 +90,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。回执会持久化到节点 `lastProbeResult`。
 - `POST /admin/nodes/:id/restart-agent`：请求 Agent 自身平滑重启。⭐ 返回 `{ taskId, requested }`，Agent 在回执后使用原始命令行参数重新启动。
-- `GET /admin/nodes/:id/tasks`：分页查询该节点的升级分发任务（`page`/`pageSize`/`status`），行内含资源版本摘要与 `previousAssetId`；配合任务重试/回滚接口使用。⭐
+- `GET /admin/nodes/:id/tasks`：分页查询该节点的升级分发任务（`page`/`pageSize`/`status`），行内含资源版本摘要与 `previousAssetId`；配合任务重试/回滚接口使用。⭐ 自定义 URL 升级（`POST /admin/nodes/:id/upgrade` 传 `url`+`sha256`）同样落库为任务行（`assetId`/`releaseId` 为空，版本摘要回退任务 payload 中的 `version`），获得部署历史、重试与回滚能力。
 - `GET /admin/nodes/:id/tasks/:taskId`：查询探针/升级任务状态。⭐ 返回 `{ taskId, status: "PENDING"|"QUEUED"|"COMPLETED", success?, message? }`；任务结果由 Master 进程内短期保存，不引入外部队列。持久化的升级分发任务另见 §2.4 的重试 `POST /admin/nodes/:id/tasks/:taskId/retry`（FAILED/COMPLETED 可重试）与回滚 `POST /admin/nodes/:id/tasks/:taskId/rollback`（存在 `previousAssetId` 时按上一版本资源重新下发，`operation=ROLLBACK`）。
 - `POST /admin/nodes/reality-keypair`：生成 X25519 Reality 密钥对（32 字节裸密钥 base64url，等价 `sing-box generate reality-keypair`；不落库，供线路向导「生成密钥对」按钮使用）。⭐ 响应 `{ privateKey, publicKey }`。
 

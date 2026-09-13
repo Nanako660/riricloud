@@ -257,9 +257,9 @@ export interface NodeTaskStatus {
 export interface NodeDeploymentTask {
   id: string;
   nodeId: string;
-  assetId: string;
+  assetId: string | null; // 自定义 URL 升级无关联资产
   previousAssetId: string | null;
-  releaseId: string;
+  releaseId: string | null;
   kind: 'AGENT' | 'SINGBOX' | string;
   operation: 'UPGRADE' | 'ROLLBACK' | string;
   status: 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED' | string;

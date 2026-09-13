@@ -1119,7 +1119,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
             completedAt: new Date(result.completedAt)
           }
         });
-        if (data.success) {
+        if (data.success && task.assetId) {
           const currentField = data.target === 'agent' ? 'currentAgentAssetId' : 'currentSingboxAssetId';
           await this.enqueueAgentWrite('upgrade-node-asset', () => this.prisma.node.update({
             where: { id: nodeId },
@@ -1850,14 +1850,15 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       ...(options.files?.length ? { files: options.files } : {})
     };
     const delegate = this.deploymentTasks();
-    if (delegate && options.assetId && options.releaseId) {
+    if (delegate) {
+      // 自定义 URL 升级无关联资产/资源，assetId 与 releaseId 落空值，仍保留完整任务时间线
       await delegate.create({
         data: {
           id: taskId,
           nodeId,
-          assetId: options.assetId,
+          assetId: options.assetId ?? null,
           previousAssetId: options.previousAssetId ?? null,
-          releaseId: options.releaseId,
+          releaseId: options.releaseId ?? null,
           kind: target.toUpperCase(),
           operation: options.operation ?? 'UPGRADE',
           status: 'QUEUED',
