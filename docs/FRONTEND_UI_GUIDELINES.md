@@ -38,7 +38,7 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
 | **正常 / 在线 / 成功** | `success` | `text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20` | 节点在线、同步成功、服务正常、已激活 |
 | **警告 / 负载过高 / 临界** | `warning` | `text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20` | 流量达 80%、CPU 负载高、证书即将过期、节点详情「Agent 接入与画像」卡的升级版本未确认警示横幅（升级任务已完成但心跳上报版本未达目标，提示 Agent 重启可能失败） |
 | **危险 / 离线 / 错误 / 封禁** | `destructive` | `text-destructive bg-destructive/10 border-destructive/20` | 节点离线、用户被封禁、鉴权失败、删除操作 |
-| **未启用 / 闲置 / 次要** | `secondary` / `muted` | `text-muted-foreground bg-muted border-border` | 未配置节点、未激活用户、无日志 |
+| **未启用 / 闲置 / 次要** | `secondary` / `muted` | `text-muted-foreground bg-muted border-border` | 未配置节点、未激活用户、无日志、节点部署历史中自定义 URL 升级任务徽标 |
 
 ### 2.3 全局基础控件与微交互规范 (Scrollbar & Input Controls)
 

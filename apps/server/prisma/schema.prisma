@@ -575,9 +575,9 @@ model BinaryAssetFile {
 model BinaryDeploymentTask {
   id              String    @id @default(uuid())
   nodeId          String
-  assetId         String
+  assetId         String? // 自定义 URL 升级无关联资产
   previousAssetId String?
-  releaseId       String
+  releaseId       String? // 自定义 URL 升级无关联资源
   kind            String // AGENT | SINGBOX
   operation       String    @default("UPGRADE") // UPGRADE | ROLLBACK
   status          String    @default("QUEUED") // QUEUED | DISPATCHED | COMPLETED | FAILED
@@ -592,9 +592,9 @@ model BinaryDeploymentTask {
   updatedAt       DateTime  @updatedAt
 
   node          Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  asset         BinaryAsset   @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  asset         BinaryAsset?  @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
   previousAsset BinaryAsset?  @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
-  release       BinaryRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+  release       BinaryRelease? @relation(fields: [releaseId], references: [id], onDelete: Restrict)
 
   auditLogs BinaryAuditLog[]
 

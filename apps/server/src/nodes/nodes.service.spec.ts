@@ -11,7 +11,8 @@ describe('NodesService', () => {
   const nodeWithLines = { ...baseNode, entryLines: [], landingLines: [] };
   const prisma = {
     node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-    systemLog: { create: jest.fn() }
+    systemLog: { create: jest.fn() },
+    binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() }
   };
   const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
   const binaries = { resolveForNode: jest.fn() };
@@ -84,6 +85,28 @@ describe('NodesService', () => {
     expect(result.node.pendingVersionConfirm).toBeNull();
   });
 
+  it('任务列表版本摘要优先资源版本，自定义 URL 任务回退 payload 版本', async () => {
+    prisma.node.findUnique.mockResolvedValue(nodeWithLines);
+    prisma.binaryDeploymentTask.findMany.mockResolvedValue([
+      {
+        id: 'task-managed', nodeId: baseNode.id, assetId: 'asset-1', previousAssetId: null, releaseId: 'release-1', kind: 'AGENT',
+        operation: 'UPGRADE', status: 'COMPLETED', attempts: 1, payloadJson: JSON.stringify({ version: '0.7.3' }), errorMessage: null,
+        requestedAt: new Date(), dispatchedAt: new Date(), completedAt: new Date(),
+        asset: { id: 'asset-1', target: 'agent-linux-amd64', size: 1024, release: { id: 'release-1', kind: 'AGENT', upstreamVersion: '0.7.2', revision: 1 } }
+      },
+      {
+        id: 'task-custom', nodeId: baseNode.id, assetId: null, previousAssetId: null, releaseId: null, kind: 'AGENT',
+        operation: 'UPGRADE', status: 'QUEUED', attempts: 0, payloadJson: JSON.stringify({ taskId: 'task-custom', version: '0.7.3' }), errorMessage: null,
+        requestedAt: new Date(), dispatchedAt: null, completedAt: null, asset: null
+      }
+    ]);
+    prisma.binaryDeploymentTask.count.mockResolvedValue(2);
+    const result = await service.listTasks(baseNode.id);
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].version).toBe('0.7.2-r1');
+    expect(result.data[1].version).toBe('0.7.3');
+  });
+
   it('节点详情透出升级版本待确认信息', async () => {
     prisma.node.findUnique.mockResolvedValue(nodeWithLines);
     gateway.getPendingVersionConfirmation.mockReturnValue({ taskId: 'task-1', expectedVersion: '0.7.3', completedAt: '2026-09-14T00:00:00.000Z' });
@@ -137,7 +160,7 @@ describe('NodesService', () => {
     gateway.requestUpgrade.mockResolvedValue({ taskId: 'task-1', requested: true });
     const result = await service.requestUpgrade(baseNode.id, { target: 'agent' });
     expect(binaries.resolveForNode).toHaveBeenCalledWith('agent', 'linux/amd64', baseNode.agentToken, undefined);
-    expect(gateway.requestUpgrade).toHaveBeenCalledWith(baseNode.id, 'agent', '0.3.0', expect.stringContaining('/downloads/binaries/'), 'a'.repeat(64));
+    expect(gateway.requestUpgrade).toHaveBeenCalledWith(baseNode.id, 'agent', '0.3.0', expect.stringContaining('/downloads/binaries/'), 'a'.repeat(64), { previousAssetId: undefined, operation: 'UPGRADE', requestedById: undefined });
     expect(result).toEqual({ taskId: 'task-1', requested: true });
   });
 

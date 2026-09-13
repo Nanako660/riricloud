@@ -755,7 +755,7 @@ model SystemSetting {
 | `BinaryRelease` | `kind=AGENT\|SINGBOX`、`upstreamVersion`、`revision` 唯一确定资源版本；`source=BUILTIN\|UPLOAD\|REMOTE`；`status=DRAFT\|ACTIVE\|DISABLED\|RETIRED`；可保存 `builtFromAppVersion`、`compatibilityJson`、备注和按类型唯一的默认标记。 |
 | `BinaryAsset` | 记录 `target`、OS、架构、主文件名、`storageRoot`、本地 `storagePath`、SHA-256、大小和可用状态；资源被引用后禁止物理删除。 |
 | `BinaryAssetFile` | 记录资产内每个文件的名称、角色、存储路径、SHA-256、大小与 Unix mode。辅助依赖与主文件共享资产生命周期。 |
-| `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。Master 重启后从此表恢复待处理任务。 |
+| `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。Master 重启后从此表恢复待处理任务。`assetId`/`releaseId` 可空（自定义 URL 升级无关联资源，升级成功不回写节点资产指针）。 |
 | `BinaryAuditLog` | 记录资源导入、启停用、默认资源变更和分发操作的操作者、资源/资产/任务/节点关联及元数据。 |
 
 文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。主 manifest 解析成功时，启动流程会把不在当前 manifest 中的 `BUILTIN` 资源自动归档、将磁盘文件缺失或 SHA-256 不符的资产标记为不可用（`available=false`，文件恢复后自愈）、无可用资产的启用资源自动停用，并把每类资源的默认标记收敛为唯一一条。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
