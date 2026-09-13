@@ -453,11 +453,11 @@ Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、
 
 | 方法 | 路径 | 用途 |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/admin/binary-resources` | 服务端分页查询资源列表；支持 `page`、`pageSize`（≤100）、`search`（匹配上游版本或备注）、`kind`、`status`、`platform`（如 `linux-amd64`，按平台资产覆盖筛选）参数；响应为 `{ data, total, page, pageSize, supportedTargets }`，`supportedTargets` 为服务端支持的全部平台 target 列表（前端下拉与筛选的唯一来源）。列表行内嵌平台资产与 `deploymentCount` 汇总，不再内嵌最近任务。 |
+| `GET` | `/api/v1/admin/binary-resources` | 服务端分页查询资源列表；支持 `page`、`pageSize`（≤100）、`search`（匹配上游版本或备注）、`kind`、`status`、`platform`（如 `linux-amd64`，按平台资产覆盖筛选）参数；响应为 `{ data, total, page, pageSize, supportedTargets, summary }`，`supportedTargets` 为服务端支持的全部平台 target 列表（前端下拉与筛选的唯一来源）。`summary` 为**全部匹配行**（非当前页）的空间聚合：`totalBytes`（登记体积，所有资产 size 求和）与 `reclaimableBytes`（删除可真实释放，仅统计 `storageRoot=RUNTIME` 的独占文件；`STATIC` 为与发行包共享的静态文件，不计入）。列表行内嵌平台资产与 `deploymentCount` 汇总，不再内嵌最近任务。 |
 | `GET` | `/api/v1/admin/binary-resources/audit-logs` | 分页查询资源中心操作审计；支持 `page`、`pageSize`、`releaseId`、`action` 参数；行内补全操作者 `operator`（昵称/邮箱）。 |
 | `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件与最近 50 条分发任务。 |
 | `PATCH` | `/api/v1/admin/binary-resources/:id` | 编辑资源 `notes` 与 `compatibility`（兼容性约束对象，字段白名单：`minAgentProtocolVersion`/`maxAgentProtocolVersion` 数字，`minAgentVersion`/`maxAgentVersion`/`cronetVersion` 字符串）；版本与修订号为资源身份标识，不可修改。 |
-| `DELETE` | `/api/v1/admin/binary-resources/:id` | 物理删除资源；仅允许非 `BUILTIN`、非 `ACTIVE` 且无分发任务引用的资源，事务删除 DB 行并清理 RUNTIME 下 `resources/<releaseId>/` 磁盘文件；有分发历史的资源请使用归档保留审计。 |
+| `DELETE` | `/api/v1/admin/binary-resources/:id` | 物理删除资源；仅允许非 `ACTIVE` 且无分发任务引用的资源。未归档的 `BUILTIN` 资源拒绝删除（提示先归档）；**已归档（`RETIRED`）且无分发历史的内置资源允许删除**（不在当前 manifest 中，不会被重新登记；审计日志经 `SetNull` 保留）。删除事务清理 DB 行，并清理 RUNTIME 下 `resources/<releaseId>/` 独占磁盘文件（`STATIC` 共享文件不动磁盘）；审计 `freedBytes` 仅计 RUNTIME 独占字节。有分发历史的资源请使用归档保留审计（DB 外键 `Restrict` 兜底）。 |
 | `POST` | `/api/v1/admin/binary-resources/batch` | 批量操作：`{ action: 'activate' \| 'disable' \| 'retire' \| 'delete', ids: string[] }`（≤100 项）；逐项执行并返回 `{ succeeded, failed, results: [{ id, ok, error? }] }`。 |
 | `POST` | `/api/v1/admin/binary-resources/upload` | `multipart/form-data` 上传本地文件；表单字段与远程导入相同，文件上限 100 MiB。 |
 | `POST` | `/api/v1/admin/binary-resources/import` | 按管理员提供的 HTTP(S) URL 下载并托管资源。 |

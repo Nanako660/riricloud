@@ -13,8 +13,10 @@
 ## [Unreleased]
 
 ### Added
+- **资源中心占用空间统计**：`GET /admin/binary-resources` 响应新增 `summary`（覆盖全部匹配行而非当前页）：`totalBytes` 登记体积与 `reclaimableBytes` 删除可真实释放字节（仅计上传/导入的独占运行时文件，与发行包共享的静态文件不计入）；资源管理页顶部新增「登记体积 / 删除可释放空间」统计卡片，资源详情弹窗展示登记体积/可释放汇总与资产存储类型徽标（独占文件/共享静态）。
 
 ### Changed
+- **资源中心允许删除已归档的内置资源**：`DELETE /admin/binary-resources/:id` 此前对 `BUILTIN` 资源一票否决（即使已被自动归档也无法删除）；现放宽为「未归档的内置资源提示先归档，已归档（RETIRED）且无分发历史的内置资源可物理删除」——此类资源不在当前 manifest 中不会被重新登记，审计日志经 `SetNull` 保留；删除审计 `freedBytes` 修正为仅统计 RUNTIME 独占文件的真实释放字节。前端行级删除入口同步放宽并更新确认文案。
 
 ### Fixed
 
