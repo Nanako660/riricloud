@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { KeyRound, RotateCcw } from 'lucide-react';
 import { CopyButton } from '@/components/shared/copy-button';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
@@ -6,36 +6,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNodeMutations, type AdminNode, type RotateNodeTokenResult } from '../use-nodes';
-
-type InstallMode = 'ws' | 'http';
+import { InstallCommandsPicker } from './install-commands-picker';
 
 export function RotateTokenDialog({ node }: { node: AdminNode }) {
   const { rotateToken } = useNodeMutations();
   const [result, setResult] = useState<RotateNodeTokenResult | null>(null);
   const [resultOpen, setResultOpen] = useState(false);
-  const [installMode, setInstallMode] = useState<InstallMode>('ws');
-  const [deployType, setDeployType] = useState<'native' | 'docker'>('native');
 
   const closeResult = (open: boolean) => {
     setResultOpen(open);
     if (!open) {
       setResult(null);
-      setInstallMode('ws');
-      setDeployType('native');
     }
   };
-
-  const currentCommand = useMemo(() => {
-    if (!result) return '';
-    if (deployType === 'docker') {
-      return installMode === 'http'
-        ? (result.installCommands.dockerHttp ?? '')
-        : (result.installCommands.dockerWs ?? '');
-    }
-    return result.installCommands[installMode];
-  }, [result, deployType, installMode]);
 
   return (
     <>
@@ -60,8 +44,6 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
               onClick={() => rotateToken.mutate({ id: node.id }, {
                 onSuccess: (data) => {
                   setResult(data);
-                  setInstallMode('ws');
-                  setDeployType('native');
                   setResultOpen(true);
                 }
               })}
@@ -89,24 +71,14 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
               </div>
               <div className="space-y-2">
                 <Label>重新安装与启动命令</Label>
-                <Tabs value={deployType} onValueChange={(value) => setDeployType(value === 'docker' ? 'docker' : 'native')}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="native">原生 CLI</TabsTrigger>
-                    <TabsTrigger value="docker">Docker 容器</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <Tabs value={installMode} onValueChange={(value) => setInstallMode(value === 'http' ? 'http' : 'ws')}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="ws">WS / WSS</TabsTrigger>
-                    <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <div className="flex min-w-0 items-start gap-2">
-                  <code className="min-w-0 flex-1 whitespace-pre-wrap break-all rounded-md border bg-muted/40 p-3 font-mono text-xs">{currentCommand}</code>
-                  <CopyButton value={currentCommand} />
-                </div>
+                <InstallCommandsPicker
+                  key={result.nodeId}
+                  commands={result.installCommands}
+                  fallbackCommand={result.installCommand}
+                  defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'}
+                />
               </div>
-              <p className="text-xs text-muted-foreground">关闭后主控不会再次返回这个明文 Token；安装命令会在终端中隐藏提示输入 Token。</p>
+              <p className="text-xs text-muted-foreground">关闭后主控不会再次返回这个明文 Token。</p>
             </div>
           ) : null}
           <DialogFooter>

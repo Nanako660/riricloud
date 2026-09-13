@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,8 +25,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useNodeMutations, type CommunicationMode, type CreateNodeResult } from '../use-nodes';
+import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
+import { InstallCommandsPicker } from './install-commands-picker';
 
 // 创建只收基础信息：协议/端口等入站配置进节点详情页单独管理
 const createSchema = z.object({
@@ -56,8 +56,6 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
   const { createNode } = useNodeMutations();
   // 创建成功后的 AgentToken / 安装命令展示（仅创建流程出现）
   const [created, setCreated] = useState<CreateNodeResult | null>(null);
-  const [installMode, setInstallMode] = useState<CommunicationMode>('WS');
-  const [deployType, setDeployType] = useState<'native' | 'docker'>('native');
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema),
@@ -70,21 +68,9 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
     resetKey: 'create',
     reset: () => {
       setCreated(null);
-      setInstallMode('WS');
-      setDeployType('native');
       createForm.reset({ name: '', reachability: 'PUBLIC', serverHost: '', communicationMode: 'WS' });
     }
   });
-
-  const currentCommand = useMemo(() => {
-    if (!created) return '';
-    if (deployType === 'docker') {
-      return installMode === 'HTTP'
-        ? (created.installCommands?.dockerHttp ?? '')
-        : (created.installCommands?.dockerWs ?? '');
-    }
-    return created.installCommands?.[installMode === 'HTTP' ? 'http' : 'ws'] ?? created.installCommand ?? '';
-  }, [created, deployType, installMode]);
 
   const onCreateSubmit = (v: CreateForm) => {
     createNode.mutate(
@@ -94,7 +80,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
          serverHost: v.reachability === 'NAT' ? (v.serverHost?.trim() || '127.0.0.1') : v.serverHost?.trim(),
          communicationMode: v.communicationMode
        },
-       { onSuccess: (data) => { setInstallMode(v.communicationMode); setCreated(data); } }
+       { onSuccess: (data) => { setCreated(data); } }
     );
   };
 
@@ -109,31 +95,21 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                 节点「{created.node.name}」已创建
               </DialogTitle>
               <DialogDescription>
-                在 VPS 上执行以下命令完成 Agent 接入；入站协议请在节点详情页配置
+                选择目标操作系统与部署方式，复制命令到目标主机执行完成 Agent 接入；入站协议请在节点详情页配置
               </DialogDescription>
             </DialogHeader>
             {/* min-w-0：Dialog 为 grid 布局，截断长文本固有宽度向上传递，避免内容撑出面板 */}
             <div className="min-w-0 space-y-3">
-              <Tabs value={deployType} onValueChange={(value) => setDeployType(value === 'docker' ? 'docker' : 'native')}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="native">原生 CLI</TabsTrigger>
-                  <TabsTrigger value="docker">Docker 容器</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <Tabs value={installMode.toLowerCase()} onValueChange={(value) => setInstallMode(value === 'http' ? 'HTTP' : 'WS')}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="ws">WS / WSS</TabsTrigger>
-                  <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
-                </TabsList>
-              </Tabs>
               <div className="flex items-center gap-2">
                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.agentToken}</code>
                 <CopyButton value={created.agentToken} />
               </div>
-              <div className="flex items-center gap-2">
-                <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{currentCommand}</code>
-                <CopyButton value={currentCommand} />
-              </div>
+              <InstallCommandsPicker
+                key={created.node.id}
+                commands={created.installCommands}
+                fallbackCommand={created.installCommand}
+                defaultMode={created.node.communicationMode === 'HTTP' ? 'http' : 'ws'}
+              />
             </div>
             <DialogFooter>
               <Button

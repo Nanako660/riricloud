@@ -33,6 +33,7 @@ import { UpgradeNodeDialog } from './components/upgrade-node-dialog';
 import { NodeDeploymentHistory } from './components/node-deployment-history';
 import { ProbeNodeDialog } from './components/probe-node-dialog';
 import { RotateTokenDialog } from './components/rotate-token-dialog';
+import { InstallCommandsPicker } from './components/install-commands-picker';
 
 function nodeRate(status: string, value: number | null) {
   return status === 'ONLINE' && value != null ? formatRate(value) : '—';
@@ -68,62 +69,31 @@ function ProbeSnapshotCard({ snapshot }: { snapshot: ProbeSnapshot | null }) {
 }
 
 function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onOpenChange: (open: boolean) => void; node: AdminNode }) {
-  const commands = node.installCommands ?? { ws: '请刷新节点详情后重试', http: '请刷新节点详情后重试' };
   const uninstallCommand = node.uninstallCommand ?? 'sudo /usr/local/bin/riri-agent uninstall --purge --yes';
+  const windowsUninstallCommand = node.windowsUninstallCommand ?? '& "$env:ProgramFiles\\RiriCloud\\riri-agent.exe" uninstall --purge --yes';
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="compact">
         <DialogHeader>
           <DialogTitle>Agent 安装与部署</DialogTitle>
-          <DialogDescription>在目标 VPS 上以 root 身份执行原生 CLI 安装命令，或通过 Docker 容器化运行。</DialogDescription>
+          <DialogDescription>选择目标操作系统与部署方式，复制命令到目标主机执行；原生安装注册系统服务，免安装运行适合临时验证或无法注册服务的环境。</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <Tabs defaultValue="native" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="native">原生 CLI</TabsTrigger>
-              <TabsTrigger value="docker">Docker 容器</TabsTrigger>
-            </TabsList>
-            <TabsContent value="native" className="space-y-3 pt-2">
-              <div className="space-y-2">
-                <Label>WS / WSS 长连接</Label>
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{commands.ws}</code>
-                  <CopyButton value={commands.ws} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>HTTP / HTTPS 轮询</Label>
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{commands.http}</code>
-                  <CopyButton value={commands.http} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>彻底卸载</Label>
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{uninstallCommand}</code>
-                  <CopyButton value={uninstallCommand} />
-                </div>
-              </div>
-            </TabsContent>
-            <TabsContent value="docker" className="space-y-3 pt-2">
-              <div className="space-y-2">
-                <Label>WS / WSS 长连接</Label>
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{commands.dockerWs || '请刷新节点详情后重试'}</code>
-                  <CopyButton value={commands.dockerWs || ''} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>HTTP / HTTPS 轮询</Label>
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{commands.dockerHttp || '请刷新节点详情后重试'}</code>
-                  <CopyButton value={commands.dockerHttp || ''} />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">容器以 host 网络模式与 NET_ADMIN 能力运行，数据持久化于宿主机 /var/lib/riri-agent。</p>
-            </TabsContent>
-          </Tabs>
+        <div className="min-w-0 space-y-4">
+          <InstallCommandsPicker key={open ? node.id : 'closed'} commands={node.installCommands} defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'} />
+          <div className="space-y-2">
+            <Label>彻底卸载（Linux / macOS）</Label>
+            <div className="flex min-w-0 items-start gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{uninstallCommand}</code>
+              <CopyButton value={uninstallCommand} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>彻底卸载（Windows，管理员 PowerShell）</Label>
+            <div className="flex min-w-0 items-start gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{windowsUninstallCommand}</code>
+              <CopyButton value={windowsUninstallCommand} />
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>关闭</Button>
