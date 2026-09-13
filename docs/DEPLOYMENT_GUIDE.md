@@ -195,10 +195,54 @@ curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
 ```
 
 #### CLI 安装步骤：
-1. User-Agent 使用 `riri-agent-installer/<os>-<arch>` 声明目标平台，例如 `linux-amd64`、`linux-arm64`、`macos-arm64` 或 `windows-amd64`；主控的 `GET /api/v1/downloads/agent` 据此 302 到 Agent 二进制。
-2. `riri-agent install` 将 Sing-box 优先从主控 `GET /api/v1/downloads/binaries/singbox-<os>-<arch>` 下载；主控没有该资产时，`--singbox-source auto` 回退到 GitHub Release。
-3. 默认写入 `/etc/riri-agent/config.yaml`（权限 `0600`）与 `/var/lib/riri-agent/`，配置包含 Token、Master 地址、通信模式、内核路径和日志路径。
-4. 基于 `kardianos/service` 注册并启动开机服务：Linux 使用 systemd/OpenRC/SysVinit，Windows 使用 Windows Service，macOS 使用 Launchd。
+1. 主控面板的安装命令弹窗支持选择目标操作系统（Linux / macOS / Windows）与部署方式（原生安装 / 免安装运行 / Docker），命令由主控按选择动态生成；也可参考下方示例手工执行。
+2. User-Agent 使用 `riri-agent-installer/<os>-<arch>` 声明目标平台，例如 `linux-amd64`、`linux-arm64`、`macos-arm64` 或 `windows-amd64`；主控的 `GET /api/v1/downloads/agent` 据此 302 到 Agent 二进制。
+3. `riri-agent install` 将 Sing-box 优先从主控 `GET /api/v1/downloads/binaries/singbox-<os>-<arch>` 下载；主控没有该资产时，`--singbox-source auto` 回退到 GitHub Release。
+4. 默认写入 `/etc/riri-agent/config.yaml`（权限 `0600`）与 `/var/lib/riri-agent/`，配置包含 Token、Master 地址、通信模式、内核路径和日志路径；Windows 写入 `%ProgramData%\RiriCloud\`。
+5. 基于 `kardianos/service` 注册并启动开机服务：Linux 使用 systemd/OpenRC/SysVinit，macOS 使用 Launchd；Windows 注册 Windows Service。Agent 二进制内置 Windows 服务入口（检测到 SCM 上下文时自动接入服务控制管理器的启动/停止生命周期），因此 Windows 服务的启动、停止与重启均由 SCM 正常驱动。
+
+**Windows 原生安装示例**（以管理员身份运行 PowerShell）：
+
+```powershell
+$Token = Read-Host 'AgentToken'
+curl.exe -fsSL --location -A 'riri-agent-installer/windows-amd64' `
+  -H "X-Agent-Token: $Token" `
+  'https://<master-domain>/api/v1/downloads/agent' `
+  -o "$env:TEMP\riri-agent.exe"
+New-Item -ItemType Directory -Force "$env:ProgramFiles\RiriCloud" | Out-Null
+Move-Item -Force "$env:TEMP\riri-agent.exe" "$env:ProgramFiles\RiriCloud\riri-agent.exe"
+& "$env:ProgramFiles\RiriCloud\riri-agent.exe" install --token="$Token" --master=wss://<master-domain>/ws/agent
+```
+
+#### 免安装直接运行（便携模式）
+无需写入系统目录或注册服务，仅凭 `AGENT_TOKEN` 环境变量即可前台运行；连接 Master 失败会持续重试，sing-box 配置完全由 Master 下发。若内核二进制缺失，Agent 会在后台自动下载（默认 `auto`：先主控后 GitHub，可用 `--singbox-source none` 关闭）。该模式适合临时验证、无法注册服务的受限环境以及 Windows 上的快速体验：
+
+```bash
+# Linux / macOS（数据目录 $HOME/.riri-cloud，Ctrl+C 停止）
+read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
+curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
+  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
+  'https://<master-domain>/api/v1/downloads/agent' \
+  -o /tmp/riri-agent && chmod +x /tmp/riri-agent && \
+  RIRICLOUD_DATA_DIR="$HOME/.riri-cloud" AGENT_TOKEN="$RIRI_AGENT_TOKEN" \
+  MASTER_URL='wss://<master-domain>/ws/agent' /tmp/riri-agent run
+```
+
+```powershell
+# Windows（数据目录 %LOCALAPPDATA%\RiriCloud，Ctrl+C 停止）
+$Token = Read-Host 'AgentToken'
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\RiriCloud" | Out-Null
+curl.exe -fsSL --location -A 'riri-agent-installer/windows-amd64' `
+  -H "X-Agent-Token: $Token" `
+  'https://<master-domain>/api/v1/downloads/agent' `
+  -o "$env:LOCALAPPDATA\RiriCloud\riri-agent.exe"
+$env:RIRICLOUD_DATA_DIR = "$env:LOCALAPPDATA\RiriCloud"
+$env:AGENT_TOKEN = "$Token"
+$env:MASTER_URL = 'wss://<master-domain>/ws/agent'
+& "$env:LOCALAPPDATA\RiriCloud\riri-agent.exe" run
+```
+
+`riri-agent run` 支持 `--singbox-source`（auto/master/github/none，环境变量 `SINGBOX_SOURCE`）、`--singbox-url` 与 `--singbox-version` 控制内核自举来源；显式设置 `SINGBOX_BINARY_PATH` 时视为用户自管内核，不做自动下载。
 
 常用生命周期命令：
 
@@ -210,7 +254,7 @@ riri-agent restart
 riri-agent uninstall --purge --yes
 ```
 
-> **Agent 环境变量**：`AGENT_TOKEN`、`MASTER_URL`、`AGENT_MODE`、`POLL_INTERVAL_SECS`、`HEARTBEAT_SECS`、`SINGBOX_CONFIG_PATH`、`SINGBOX_BINARY_PATH` 与 `RIRICLOUD_LOG_PATH` 可覆盖 YAML 配置；`MASTER_WS_URL` 继续兼容旧版 Agent。安装后的标准配置路径为 Linux/macOS `/etc/riri-agent/config.yaml`，Windows `%ProgramData%\RiriCloud\config.yaml`。
+> **Agent 环境变量**：`AGENT_TOKEN`、`MASTER_URL`、`AGENT_MODE`、`POLL_INTERVAL_SECS`、`HEARTBEAT_SECS`、`SINGBOX_CONFIG_PATH`、`SINGBOX_BINARY_PATH`、`SINGBOX_SOURCE` 与 `RIRICLOUD_LOG_PATH` 可覆盖 YAML 配置；`MASTER_WS_URL` 继续兼容旧版 Agent。安装后的标准配置路径为 Linux/macOS `/etc/riri-agent/config.yaml`，Windows `%ProgramData%\RiriCloud\config.yaml`。
 
 直接在连接终端中运行 `riri-agent`（不带子命令）会进入 Bubble Tea 全屏控制台 GUI/TUI：使用方向键选择菜单，Enter 执行，Esc 返回，q 退出；安装页提供 AgentToken、Master URL 和通信模式表单，长诊断/日志输出可在结果页滚动查看。脚本、服务管理器、内置 Agent 和无 TTY 环境继续使用上面的一级子命令，不依赖交互输入。
 
