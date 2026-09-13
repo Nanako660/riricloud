@@ -32,6 +32,33 @@ describe('NodesService', () => {
     expect(result).not.toHaveProperty('inbounds');
   });
 
+  it('安装命令按目标操作系统区分并覆盖免安装模式', async () => {
+    prisma.node.create.mockResolvedValue(nodeWithLines);
+    const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
+    expect(result.installCommands.native.windows.ws).toContain('riri-agent-installer/windows-amd64');
+    expect(result.installCommands.native.windows.ws).toContain('curl.exe');
+    expect(result.installCommands.native.windows.ws).toContain('& "$env:ProgramFiles\\RiriCloud\\riri-agent.exe" install');
+    expect(result.installCommands.native.windows.ws).toContain('--master=wss://panel.example.com/ws/agent');
+    expect(result.installCommands.native.macos.ws).toContain('riri-agent-installer/macos-amd64');
+    expect(result.installCommands.native.macos.ws).toContain('/usr/local/bin/riri-agent');
+    expect(result.installCommands.native.linux.ws).toContain('riri-agent-installer/linux-amd64');
+    expect(result.installCommands.portable.linux.ws).toContain('RIRICLOUD_DATA_DIR="$HOME/.riri-cloud"');
+    expect(result.installCommands.portable.linux.ws).toContain("MASTER_URL='wss://panel.example.com/ws/agent'");
+    expect(result.installCommands.portable.linux.ws).toMatch(/\/tmp\/riri-agent-download run$/);
+    expect(result.installCommands.portable.windows.ws).toContain('$env:LOCALAPPDATA\\RiriCloud');
+    expect(result.installCommands.portable.windows.ws).toContain('& "$env:LOCALAPPDATA\\RiriCloud\\riri-agent.exe" run');
+    expect(result.installCommands.portable.windows.http).toContain("$env:MASTER_URL = 'https://panel.example.com'");
+    expect(result.windowsUninstallCommand).toContain('uninstall --purge --yes');
+  });
+
+  it('节点上报的架构复用到目标 OS 匹配的命令，不匹配时回退 amd64', async () => {
+    prisma.node.create.mockResolvedValue({ ...nodeWithLines, osArch: 'macos/arm64' });
+    const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
+    expect(result.installCommands.native.macos.ws).toContain('riri-agent-installer/macos-arm64');
+    expect(result.installCommands.native.linux.ws).toContain('riri-agent-installer/linux-amd64');
+    expect(result.installCommands.native.windows.ws).toContain('riri-agent-installer/windows-amd64');
+  });
+
   it('创建节点返回使用当前访问域名的 AgentToken 与安装命令', async () => {
     prisma.node.create.mockResolvedValue(nodeWithLines);
     const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
