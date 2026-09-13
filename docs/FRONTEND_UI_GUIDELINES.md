@@ -41,6 +41,7 @@ RiriCloud 采用 shadcn/ui 的 **New York** 风格预设，以更紧凑的内边
 | **未启用 / 闲置 / 次要** | `secondary` / `muted` | `text-muted-foreground bg-muted border-border` | 未配置节点、未激活用户、无日志、节点部署历史中自定义 URL 升级任务徽标 |
 
 > **系统设置 · Agent 分发源配置**：设置页「Agent 运维」分组内的「项目 GitHub 仓库地址」（`SettingsInput`）与「GitHub 加速镜像列表」（`SettingsTextarea`，每行一个前缀代理 URL），为节点安装脚本的 GitHub Release 优先下载与镜像测速提供数据源，与「二进制分发基准 URL」同域展示。
+> **安装命令选择器 · 平台可用性提示**：选择器按当前 OS tab 与节点上报架构匹配 `agent-<os>-<arch>` 的主控二进制清单（`/admin/binaries/info`），可用时展示 success 绿色提示、缺失时展示 warning 琥珀色提示（安装脚本将回退 GitHub Release/镜像下载），不阻断安装。
 
 ### 2.3 全局基础控件与微交互规范 (Scrollbar & Input Controls)
 

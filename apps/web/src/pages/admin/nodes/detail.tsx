@@ -79,7 +79,7 @@ function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onO
           <DialogDescription>选择目标操作系统与部署方式，复制命令到目标主机执行；原生安装注册系统服务，免安装运行适合临时验证或无法注册服务的环境。</DialogDescription>
         </DialogHeader>
         <div className="min-w-0 space-y-4">
-          <InstallCommandsPicker key={open ? node.id : 'closed'} commands={node.installCommands} defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'} />
+          <InstallCommandsPicker key={open ? node.id : 'closed'} commands={node.installCommands} defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'} nodeOsArch={node.osArch} />
           <div className="space-y-2">
             <Label>彻底卸载（Linux / macOS）</Label>
             <div className="flex min-w-0 items-start gap-2">

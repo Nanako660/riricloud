@@ -76,6 +76,7 @@ export function RotateTokenDialog({ node }: { node: AdminNode }) {
                   commands={result.installCommands}
                   fallbackCommand={result.installCommand}
                   defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'}
+                  nodeOsArch={node.osArch}
                 />
               </div>
               <p className="text-xs text-muted-foreground">关闭后主控不会再次返回这个明文 Token。</p>
