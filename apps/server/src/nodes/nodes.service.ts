@@ -50,6 +50,8 @@ export class NodesService {
     return {
       node: {
         ...this.sanitize(node),
+        // 升级任务已完成但心跳版本尚未确认（Agent 重启可能失败）时的待确认信息
+        pendingVersionConfirm: this.agentGateway.getPendingVersionConfirmation(id),
         installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl),
         agentImage,
         uninstallCommand: this.buildUninstallCommand(),

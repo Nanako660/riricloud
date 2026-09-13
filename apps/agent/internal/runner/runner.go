@@ -16,6 +16,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
 	"github.com/Nanako660/riricloud/apps/agent/internal/kernel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
+	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
@@ -67,6 +68,9 @@ func runForeground(ctx context.Context, options Options) error {
 	tunnelMgr := tunnel.NewManager(ctx, entry)
 	defer tunnelMgr.Shutdown()
 
+	// 升级后进程接管：系统服务重启优先（systemd/SCM 立即从新二进制拉起），自拉起兜底
+	restarter := restart.NewManager(restart.NewSystemServiceFactory(cfg.ConfigPath), restart.DefaultSelfSpawn, entry)
+
 	if cfg.Mode == config.ModeHTTP {
 		client := poll.NewClient(
 			cfg.MasterURL,
@@ -77,6 +81,7 @@ func runForeground(ctx context.Context, options Options) error {
 			options.Version,
 			runtime.GOOS+"/"+runtime.GOARCH,
 			entry,
+			restarter,
 		)
 		client.Run(ctx)
 	} else {
@@ -89,6 +94,7 @@ func runForeground(ctx context.Context, options Options) error {
 			options.Version,
 			runtime.GOOS+"/"+runtime.GOARCH,
 			entry,
+			restarter,
 		)
 		client.Run(ctx)
 	}
