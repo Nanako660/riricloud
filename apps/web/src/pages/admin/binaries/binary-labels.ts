@@ -96,6 +96,11 @@ export function totalAssetBytes(assets: Array<{ size: number; available?: boolea
   return bytes(assets.reduce((sum, asset) => sum + (asset.available === false ? 0 : asset.size || 0), 0));
 }
 
+// RUNTIME 为资源独占文件（删除真实释放）；STATIC 与发行包静态目录共享，删除不动磁盘，不计入可释放。
+export function reclaimableAssetBytes(assets: Array<{ size: number; storageRoot: string; available?: boolean }>) {
+  return bytes(assets.reduce((sum, asset) => (asset.storageRoot === 'RUNTIME' && asset.available !== false ? sum + (asset.size || 0) : sum), 0));
+}
+
 export function deploymentBadgeVariant(status: BinaryDeployment['status']) {
   if (status === 'COMPLETED') return 'default' as const;
   if (status === 'FAILED') return 'destructive' as const;

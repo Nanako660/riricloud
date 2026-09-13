@@ -26,6 +26,7 @@ export interface BinaryResourceAsset {
   sha256: string;
   size: number;
   available: boolean;
+  storageRoot: string;
   files?: BinaryResourceFile[];
 }
 
@@ -76,6 +77,8 @@ export interface BinaryResourceListResult {
   page: number;
   pageSize: number;
   supportedTargets: string[];
+  // 全量匹配行（非当前页）的空间聚合：totalBytes 为登记体积，reclaimableBytes 仅计 RUNTIME 独占文件。
+  summary?: { totalBytes: number; reclaimableBytes: number };
 }
 
 export interface BinaryAuditLog {
@@ -168,7 +171,7 @@ export function useBinaryResourceMutations() {
   const setDefault = useResourceAction('default', '默认资源已更新', invalidate);
   const removeResource = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/binary-resources/${id}`)).data,
-    onSuccess: () => { toast.success('资源已删除并清理文件'); invalidate(); },
+    onSuccess: () => { toast.success('资源已删除'); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源删除失败'))
   });
   const updateResource = useMutation({
