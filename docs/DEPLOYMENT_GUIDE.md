@@ -62,7 +62,7 @@ pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模�
 仓库根目录提供主控 `Dockerfile`、边缘节点 `Dockerfile.agent`、默认协同编排 `docker-compose.yml` 与离线运行模板 `docker-compose.image.yml`。
 
 在解耦架构下，**Docker Compose 默认同时拉起 `master` 与 `agent`（Master-Local 本机节点）两个独立容器**：
-- **Master 容器**：专注控制平面与 Web 面板，仅暴露 3000 端口，不再以子进程托管 Agent；在构建期会将当前宿主平台的 `riri-agent`、定制 Sing-box 与 Mihomo 打入 `/app/binaries/`（静态分发基线仓），并将 `sing-box` 内核放置于 `/usr/local/bin/sing-box`、`mihomo` 内核放置于 `/usr/local/bin/mihomo`（并通过环境变量 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo` 声明路径）供服务端 `LineSpeedtestService` 与 `TemplatesService` 执行精准的端到端线路代理测速和 Sing-box / Mihomo 双内核真实验证诊断。即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供 Agent 二进制与内核的下载和升级分发。
+- **Master 容器**：专注控制平面与 Web 面板，仅暴露 3000 端口，不再以子进程托管 Agent；在构建期会将当前宿主平台的 `riri-agent`、定制 Sing-box（含 `libcronet.so`）按 manifest 登记的版本化布局打入 `/app/binaries/`（静态分发基线仓，不再复制旧的平铺路径副本），并将 `sing-box` 内核放置于 `/usr/local/bin/sing-box`、`mihomo` 内核放置于 `/usr/local/bin/mihomo`（并通过环境变量 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo` 声明路径）供服务端 `LineSpeedtestService` 与 `TemplatesService` 执行精准的端到端线路代理测速和 Sing-box / Mihomo 双内核真实验证诊断。即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供 Agent 二进制与内核的下载和升级分发。
 - **Agent 容器（Master-Local）**：独立容器运行，镜像通过 `AGENT_IMAGE`（默认 `riricloud/agent:latest`）注入；采用 `network_mode: host` 与 `NET_ADMIN` 能力直接监听宿主机网络，并通过 `MASTER_LOCAL_AGENT_TOKEN` 环境变量与 Master 服务端完成 Token 预置与生命周期对接。
 
 Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL，PowerShell/Git Bash 不直接承担 Docker 操作：
@@ -525,13 +525,15 @@ artifacts/binaries/
 
 ### 8.2 Master 包与 Docker
 
-`bundle-master.sh` 将目标架构的 Agent、版本化 Sing-box 目录、`libcronet.so` 和 manifest 一起放入 Master 包，同时保留旧的平铺文件路径用于兼容。`release.sh` 只有在 Sing-box/Cronet 参数或真实产物变化时才应准备新的资源版本；普通 RiriCloud 应用发版可以重新装配而不改变既有 Sing-box 资源标识。
+`bundle-master.sh` 将目标架构的 Agent、版本化 Sing-box 目录、`libcronet.so` 和 manifest 一起放入 Master 包，只保留 manifest 引用的版本化布局（`agent/<target>/riri-agent`、`singbox/<版本>/<target>/`），不再复制旧的平铺文件路径。`release.sh` 只有在 Sing-box/Cronet 参数或真实产物变化时才应准备新的资源版本；普通 RiriCloud 应用发版可以重新装配而不改变既有 Sing-box 资源标识。
 
 Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_VERSION` build args，并把资源版本写入镜像 label、容器内 `/app/binaries/manifest.json` 或 Agent 的 `/var/lib/riri-agent/binaries/manifest.json`。`pnpm docker:export` 生成镜像归档、SHA-256 校验文件和带应用/镜像/Sing-box 元数据的 manifest。SQLite 和 `data/binaries` 必须使用持久化卷，以保留导入资源、任务历史和逻辑状态。
 
 ### 8.3 运行时资源管理
 
 管理员从 `/admin/binaries` 管理内置、上传和远程导入资源。资源激活后才可分发；服务端会校验节点 OS/架构、Agent 协议兼容性和资产 SHA-256。升级失败时应从节点详情重试或选择上一资源回滚，回滚会重新发送完整平台资产包。
+
+升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
 
 ## 9. 实时节点镜像站部署
 

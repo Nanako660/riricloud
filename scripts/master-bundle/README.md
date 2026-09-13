@@ -58,4 +58,4 @@ printf '%s\n' 'New-admin-password1!' | ./admin-reset.sh --email admin@example.co
 ## 运行时说明
 
 - 出厂包在 Linux x64（glibc）上验证；其他平台需自行确认 Prisma 引擎兼容性
-- 主控包内 `binaries/agent-linux-amd64` 与 `binaries/singbox-linux-amd64` 由 `start.sh` 默认启动为本机 Agent，仅精准包含匹配当前宿主架构的二进制；其他架构资产用于远程节点升级时可通过 `data/binaries/` 挂载或管理端按需导入。远程 Agent 仍可按仓库 `docs/DEPLOYMENT_GUIDE.md` §2 独立部署。
+- 主控包内 `binaries/` 按 manifest 登记的版本化布局存放（`agent/<target>/riri-agent`、`singbox/<版本>/<target>/`），仅精准包含匹配当前宿主架构的二进制；启动时自动认领为内置资源，并把被新包取代的历史内置版本自动归档。其他架构资产用于远程节点升级时可通过 `data/binaries/` 挂载或管理端按需导入。远程 Agent 仍可按仓库 `docs/DEPLOYMENT_GUIDE.md` §2 独立部署。
