@@ -758,7 +758,7 @@ model SystemSetting {
 | `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。Master 重启后从此表恢复待处理任务。 |
 | `BinaryAuditLog` | 记录资源导入、启停用、默认资源变更和分发操作的操作者、资源/资产/任务/节点关联及元数据。 |
 
-文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
+文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。主 manifest 解析成功时，启动流程会把不在当前 manifest 中的 `BUILTIN` 资源自动归档、将磁盘文件缺失或 SHA-256 不符的资产标记为不可用（`available=false`，文件恢复后自愈）、无可用资产的启用资源自动停用，并把每类资源的默认标记收敛为唯一一条。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
 
 资源分发前由服务端校验 ACTIVE 状态、目标平台、资产 SHA-256 及 `compatibilityJson` 中的 Agent 协议/版本约束；节点升级完成后通过部署任务保留历史，回滚复用旧资产完整文件包。
 

@@ -141,6 +141,7 @@ RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked
     && find /out/server -type f \( -name '*.map' -o -name '*.tsbuildinfo' \) -delete
 
 # 将应用版本与可分发的 Sing-box 资源版本分开登记，文件哈希写入运行时 manifest。
+# 只保留 manifest 引用的版本化布局，不再复制扁平旧路径副本（由 manifest 认领链路兜底）。
 COPY --from=agent-build /out/riri-agent /tmp/riri-agent
 COPY --from=singbox-build /sing-box /tmp/sing-box
 COPY --from=singbox-build /libcronet.so /tmp/libcronet.so
@@ -152,11 +153,7 @@ RUN mkdir -p \
     && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH}/riri-agent \
     && cp /tmp/sing-box /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box \
     && cp /tmp/libcronet.so /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/libcronet.so \
-    && cp /tmp/riri-agent /out/binaries/agent-linux-${TARGETARCH} \
-    && cp /tmp/sing-box /out/binaries/singbox-linux-${TARGETARCH} \
-    && cp /tmp/libcronet.so /out/binaries/libcronet.so \
-    && cp /tmp/mihomo /out/binaries/mihomo-linux-${TARGETARCH} \
-    && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/agent-linux-${TARGETARCH} /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box /out/binaries/singbox-linux-${TARGETARCH} /out/binaries/mihomo-linux-${TARGETARCH}
+    && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box
 # 使用 Dockerfile heredoc 保持 manifest 生成脚本为单条 RUN 指令。
 RUN node - /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION" <<'NODE'
   const fs = require("fs");

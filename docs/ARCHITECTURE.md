@@ -259,7 +259,7 @@ sequenceDiagram
 
 Master 将“应用发布”和“可分发二进制资源”拆成两条生命周期。根 `package.json` 版本继续代表 Master/Web/Agent 应用与协议版本；Sing-box 资源由 `upstreamVersion + revision` 独立标识，平台文件由 `BinaryAsset` 管理，`libcronet.so` 与 Sing-box 主文件挂在同一资产包内。
 
-启动时 `BinaryResourcesService` 读取静态内置仓和运行态 `data/binaries` 中的 `manifest.json`，将资源元数据认领到 SQLite，再兼容旧目录扫描。资源文件不进入数据库，运行态文件按 `data/binaries/resources/<releaseId>/<target>/` 保存。管理员通过资源中心上传或远程导入，资源状态流转为 DRAFT、ACTIVE、DISABLED、RETIRED；节点或默认配置引用的资源只能逻辑停用/归档。
+启动时 `BinaryResourcesService` 读取静态内置仓和运行态 `data/binaries` 中的 `manifest.json`，将资源元数据认领到 SQLite，再兼容旧目录扫描；随后自动收敛内置资源生命周期——镜像/发行包主 manifest 解析成功时，把不在当前 manifest 中的 `BUILTIN` 资源自动归档（保留审计、可手动恢复），避免升级镜像后在资源列表中积累历史“内置”版本；同时把磁盘文件缺失或 SHA-256 不符的资产标记为不可用（文件恢复后自愈回填），无任何可用资产的启用资源自动停用，并将每类资源的默认版本收敛为唯一一条。资源文件不进入数据库，运行态文件按 `data/binaries/resources/<releaseId>/<target>/` 保存。管理员通过资源中心上传或远程导入，资源状态流转为 DRAFT、ACTIVE、DISABLED、RETIRED；节点或默认配置引用的资源只能逻辑停用/归档。
 
 节点升级由 `BinaryDeploymentTask` 驱动：服务端按节点平台与兼容约束解析 ACTIVE 资源，生成受 AgentToken 保护的下载 URL 和文件清单；任务状态与尝试次数落库，WS/HTTP 两种传输都复用同一任务服务。Master 重启后继续处理队列，WS 重连会恢复已投递但未收到回执的任务。
 

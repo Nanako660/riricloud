@@ -89,8 +89,11 @@ export function bytes(value: number) {
   return `${(value / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export function totalAssetBytes(assets: Array<{ size: number }>) {
-  return bytes(assets.reduce((sum, asset) => sum + (asset.size || 0), 0));
+// 与服务端 verifyAssetsAvailability 对应：available=false 表示磁盘文件缺失或校验不符。
+export const ASSET_UNAVAILABLE_LABEL = '文件失效';
+
+export function totalAssetBytes(assets: Array<{ size: number; available?: boolean }>) {
+  return bytes(assets.reduce((sum, asset) => sum + (asset.available === false ? 0 : asset.size || 0), 0));
 }
 
 export function deploymentBadgeVariant(status: BinaryDeployment['status']) {

@@ -208,8 +208,6 @@ if [ ! -f "$AGENT_SRC" ]; then
   bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --target "$TARGET" --version "$AGENT_VERSION"
 fi
 [ -f "$AGENT_SRC" ] || die "缺少匹配架构的 Agent 二进制：$AGENT_SRC"
-cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent-$TARGET_NORM"
-chmod +x "$MASTER_DIR/binaries/agent-$TARGET_NORM"
 mkdir -p "$MASTER_DIR/binaries/agent/$TARGET_NORM"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 chmod +x "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
@@ -227,9 +225,6 @@ fi
 [ -f "$CRONET_SRC" ] || CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/libcronet.so"
 [ -f "$SINGBOX_SRC" ] || die "缺少匹配架构的 Sing-box 二进制：$SINGBOX_SRC"
 [ -f "$CRONET_SRC" ] || die "缺少匹配架构的 libcronet.so：$CRONET_SRC"
-cp "$SINGBOX_SRC" "$MASTER_DIR/binaries/singbox-$TARGET_NORM"
-cp "$CRONET_SRC" "$MASTER_DIR/binaries/libcronet.so"
-chmod +x "$MASTER_DIR/binaries/singbox-$TARGET_NORM"
 mkdir -p "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM"
 cp "$SINGBOX_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
 cp "$CRONET_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"
