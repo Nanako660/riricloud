@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"testing"
+
+	"github.com/Nanako660/riricloud/apps/agent/internal/runner"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -12,7 +14,7 @@ func TestVersionCommand(t *testing.T) {
 		Version: "0.4.1",
 		Out:     &output,
 		ErrOut:  &output,
-		Run: func(context.Context, string, string) error {
+		Run: func(context.Context, runner.Options) error {
 			return nil
 		},
 	})

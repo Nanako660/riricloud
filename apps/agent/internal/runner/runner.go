@@ -7,11 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/kardianos/service"
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
+	"github.com/Nanako660/riricloud/apps/agent/internal/kernel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
@@ -19,9 +22,27 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/ws"
 )
 
-// Run 以前台方式启动 Agent，取消信号由调用方负责。
-func Run(ctx context.Context, configPath, version string) error {
-	cfg, err := config.LoadFrom(configPath)
+// Options 汇总一次 Agent 启动所需的输入；Singbox* 字段用于免安装模式的内核自举。
+type Options struct {
+	ConfigPath     string
+	Version        string
+	SingboxSource  string
+	SingboxURL     string
+	SingboxVersion string
+}
+
+// Run 启动 Agent。Windows 服务上下文（由 SCM 拉起）走服务生命周期接入，
+// 其余场景保持前台运行；systemd/launchd 均以前台进程纳管，行为不变。
+func Run(ctx context.Context, options Options) error {
+	if runtime.GOOS == "windows" && !service.Interactive() {
+		return runAsService(options)
+	}
+	return runForeground(ctx, options)
+}
+
+// runForeground 以前台方式启动 Agent，取消信号由调用方负责。
+func runForeground(ctx context.Context, options Options) error {
+	cfg, err := config.LoadFrom(options.ConfigPath)
 	if err != nil {
 		return err
 	}
@@ -31,16 +52,19 @@ func Run(ctx context.Context, configPath, version string) error {
 		return err
 	}
 	defer closeLog()
-	log.Infof("riri-agent starting, version=%s", version)
+	log.Infof("riri-agent starting, version=%s", options.Version)
+
+	entry := logrus.NewEntry(log)
+	startKernelBootstrap(ctx, cfg, options, entry)
 
 	if executable, err := os.Executable(); err == nil {
 		if err := upgrade.CleanupStaleBackup(executable); err != nil {
-			log.WithError(err).Warn("cleanup stale agent backup failed")
+			entry.WithError(err).Warn("cleanup stale agent backup failed")
 		}
 	}
 
-	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, logrus.NewEntry(log))
-	tunnelMgr := tunnel.NewManager(ctx, logrus.NewEntry(log))
+	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, entry)
+	tunnelMgr := tunnel.NewManager(ctx, entry)
 	defer tunnelMgr.Shutdown()
 
 	if cfg.Mode == config.ModeHTTP {
@@ -50,9 +74,9 @@ func Run(ctx context.Context, configPath, version string) error {
 			time.Duration(cfg.PollIntervalSecs)*time.Second,
 			singboxMgr,
 			tunnelMgr,
-			version,
+			options.Version,
 			runtime.GOOS+"/"+runtime.GOARCH,
-			logrus.NewEntry(log),
+			entry,
 		)
 		client.Run(ctx)
 	} else {
@@ -62,15 +86,60 @@ func Run(ctx context.Context, configPath, version string) error {
 			time.Duration(cfg.HeartbeatSecs)*time.Second,
 			singboxMgr,
 			tunnelMgr,
-			version,
+			options.Version,
 			runtime.GOOS+"/"+runtime.GOARCH,
-			logrus.NewEntry(log),
+			entry,
 		)
 		client.Run(ctx)
 	}
 	singboxMgr.Shutdown(5 * time.Second)
 	log.Info("riri-agent stopped")
 	return nil
+}
+
+// kernelRetryInterval 为内核自举失败后的固定重试间隔。
+const kernelRetryInterval = 5 * time.Minute
+
+// startKernelBootstrap 在内核二进制缺失时（典型为免安装运行）后台拉取；
+// 显式指定 SINGBOX_BINARY_PATH 或 source=none 视为用户自管内核，跳过下载。
+// 下载失败不阻断 Agent 存活，仅记录告警并按固定间隔重试。
+func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Options, log *logrus.Entry) {
+	if strings.EqualFold(strings.TrimSpace(options.SingboxSource), "none") {
+		return
+	}
+	if strings.TrimSpace(os.Getenv("SINGBOX_BINARY_PATH")) != "" {
+		return
+	}
+	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
+		return
+	}
+	go bootstrapKernelLoop(ctx, kernel.Options{
+		Source:      options.SingboxSource,
+		URL:         options.SingboxURL,
+		Version:     options.SingboxVersion,
+		MasterURL:   cfg.MasterURL,
+		Token:       cfg.AgentToken,
+		Destination: cfg.SingboxBinPath,
+	}, log)
+}
+
+func bootstrapKernelLoop(ctx context.Context, options kernel.Options, log *logrus.Entry) {
+	log.Info("sing-box kernel not found, start background download")
+	for {
+		downloaded, err := kernel.Ensure(ctx, options)
+		if err == nil {
+			if downloaded {
+				log.Info("sing-box kernel downloaded")
+			}
+			return
+		}
+		log.WithError(err).Warnf("download sing-box kernel failed, retry in %s", kernelRetryInterval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(kernelRetryInterval):
+		}
+	}
 }
 
 func newLogger(path string) (*logrus.Logger, func(), error) {
@@ -80,11 +149,11 @@ func newLogger(path string) (*logrus.Logger, func(), error) {
 		return log, func() {}, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, nil, fmt.Errorf("create log directory: %w", err)
+		return nil, nil, fmt.Errorf("create log directory: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open log file: %w", err)
+		return nil, nil, fmt.Errorf("open log file: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
 	}
 	log.SetOutput(io.MultiWriter(os.Stdout, file))
 	return log, func() {

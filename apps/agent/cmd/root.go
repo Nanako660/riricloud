@@ -26,7 +26,7 @@ type Options struct {
 	Version string
 	Out     io.Writer
 	ErrOut  io.Writer
-	Run     func(context.Context, string, string) error
+	Run     func(context.Context, runner.Options) error
 }
 
 func NewRootCommand(options Options) *cobra.Command {
@@ -51,7 +51,7 @@ func NewRootCommand(options Options) *cobra.Command {
 			if tui.IsInteractive() {
 				return runTUI(command.Context(), options, configPath)
 			}
-			return options.Run(command.Context(), configPath, options.Version)
+			return options.Run(command.Context(), runner.Options{ConfigPath: configPath, Version: options.Version})
 		},
 	}
 	root.SetOut(options.Out)
@@ -225,13 +225,24 @@ func newLogsCommand(options Options, configPath *string) *cobra.Command {
 }
 
 func newRunCommand(options Options, configPath *string) *cobra.Command {
-	return &cobra.Command{
+	var singboxSource, singboxURL, singboxVersion string
+	command := &cobra.Command{
 		Use:   "run",
 		Short: "以前台方式运行 Agent 守护进程",
 		RunE: func(command *cobra.Command, _ []string) error {
-			return options.Run(command.Context(), *configPath, options.Version)
+			return options.Run(command.Context(), runner.Options{
+				ConfigPath:     *configPath,
+				Version:        options.Version,
+				SingboxSource:  singboxSource,
+				SingboxURL:     singboxURL,
+				SingboxVersion: singboxVersion,
+			})
 		},
 	}
+	command.Flags().StringVar(&singboxSource, "singbox-source", os.Getenv("SINGBOX_SOURCE"), "Sing-box 来源：auto、master、github 或 none（跳过内核下载）")
+	command.Flags().StringVar(&singboxURL, "singbox-url", "", "自定义 Sing-box 下载地址")
+	command.Flags().StringVar(&singboxVersion, "singbox-version", "", "GitHub Sing-box 版本")
+	return command
 }
 
 func runTUI(ctx context.Context, options Options, configPath string) error {
