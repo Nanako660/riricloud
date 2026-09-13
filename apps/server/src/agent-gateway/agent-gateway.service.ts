@@ -1303,6 +1303,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       landingNodeId: string | null;
       landingPort: number | null;
       allowLanAccess?: boolean;
+      endpointOverrideEnabled?: boolean;
+      serverHost?: string | null;
       tunnelType?: string | null;
       tunnelPort?: number | null;
       tunnelSecret?: string | null;
@@ -1551,29 +1553,32 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       }
 
       // 如果当前节点为落地节点，且自身为 NAT 节点
-      if (isLanding && (node as { reachability?: string }).reachability === 'NAT' && line.tunnelPort && line.tunnelSecret && line.landingPort && line.entryNode?.serverHost) {
-        const key = `${line.entryNode.serverHost}:${line.tunnelPort}`;
-        let entry = clientTunnelMap.get(key);
-        if (!entry) {
-          entry = {
-            serverHost: line.entryNode.serverHost,
-            serverPort: line.tunnelPort,
-            secret: line.tunnelSecret,
-            mappings: new Map()
-          };
-          clientTunnelMap.set(key, entry);
+      if (isLanding && (node as { reachability?: string }).reachability === 'NAT' && line.tunnelPort && line.tunnelSecret && line.landingPort) {
+        const entryServerHost = (line.endpointOverrideEnabled && line.serverHost ? line.serverHost : line.entryNode?.serverHost)?.trim();
+        if (entryServerHost) {
+          const key = `${entryServerHost}:${line.tunnelPort}`;
+          let entry = clientTunnelMap.get(key);
+          if (!entry) {
+            entry = {
+              serverHost: entryServerHost,
+              serverPort: line.tunnelPort,
+              secret: line.tunnelSecret,
+              mappings: new Map()
+            };
+            clientTunnelMap.set(key, entry);
+          }
+          entry.mappings.set(line.landingPort, {
+            lineId: line.id,
+            localPort: line.landingPort,
+            targetPort: line.landingPort
+          });
         }
-        entry.mappings.set(line.landingPort, {
-          lineId: line.id,
-          localPort: line.landingPort,
-          targetPort: line.landingPort
-        });
       }
     }
 
     for (const [listenPort, data] of serverTunnelMap.entries()) {
       tunnelConfigs.push({
-        id: `tunnel-server-${listenPort}`,
+        id: `tunnel-${listenPort}`,
         role: 'SERVER',
         listenPort,
         secret: data.secret,
@@ -1583,7 +1588,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
 
     for (const data of clientTunnelMap.values()) {
       tunnelConfigs.push({
-        id: `tunnel-client-${data.serverPort}`,
+        id: `tunnel-${data.serverPort}`,
         role: 'CLIENT',
         serverAddr: `${data.serverHost}:${data.serverPort}`,
         secret: data.secret,

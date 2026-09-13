@@ -17,6 +17,9 @@
 ### Changed
 
 ### Fixed
+- **中继反向穿透隧道地址覆盖与鉴权标识修复**：
+  1. 修复主控在下发反向多路复用隧道（`tunnelConfigs`）时两侧 ID 不匹配的缺陷（此前入口服务端为 `tunnel-server-<port>`，落地客户端为 `tunnel-client-<port>`，导致握手鉴权时因 ID 不一致被服务端直接拒斥 `unauthorized`）；现在双端统一为 `tunnel-<port>`。
+  2. 修复 NAT 落地中继客户端只能连接入口节点底层 `serverHost` 的限制：现在优先读取中继线路开启的端点覆盖域名（`line.endpointOverrideEnabled && line.serverHost`），支持配合合法域名与 TLS SNI 避免直连裸 IP 遭到防火墙与云厂商拦截，未覆盖时安全回退入口节点 `serverHost`。
 - **自定义 URL 升级落库**：节点升级任务携带自定义 `url`+`sha256` 时同样写入 `BinaryDeploymentTask` 部署任务行（迁移将 `assetId`/`releaseId` 改为可空，任务列表版本摘要回退任务 payload 中的版本，部署历史以"自定义 URL"徽标区分），获得完整任务时间线、重试与回滚能力。
 - **升级任务版本对账与重启失败告警**：修复节点下发 Agent 升级任务后，即使 VPS 磁盘二进制已替换成功、但 Agent 重启失败导致旧进程继续以旧版本心跳，主控任务状态仍显示 COMPLETED、详情页"Agent 接入与画像"永远停留在老版本的问题。主控现在会记录升级目标版本并与后续心跳上报的 `agentVersion` 对账：确认后写入 INFO 系统日志；超过 5 分钟未确认产生一次性 WARN 告警（含任务与版本信息），15 分钟窗口后放弃追踪。`GET /admin/nodes/:id` 响应新增加性字段 `pendingVersionConfirm`，节点详情"Agent 接入与画像"卡顶部据此渲染琥珀色警示横幅，指引检查节点日志或手动重启 Agent；主控重启后从 `BinaryDeploymentTask` 恢复对账窗口，不影响在线存量旧版 Agent 的检测。WS 协议契约无变更。
 - **升级任务重派发防抖**：Agent 重连注册时的升级任务恢复派发（`dispatchQueuedUpgradeTasks`）增加与轮询通道一致的 60 秒去重防护，消除"重连顶替时刚派发的任务被重复下发、触发二次升级与二次重启"的隐患。

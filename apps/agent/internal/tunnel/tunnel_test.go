@@ -190,3 +190,25 @@ func TestTunnelConfigValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchTunnelID(t *testing.T) {
+	tests := []struct {
+		actual   string
+		expected string
+		want     bool
+	}{
+		{"tunnel-28340", "tunnel-28340", true},
+		{"tunnel-client-28340", "tunnel-server-28340", true},
+		{"tunnel-client-28340", "tunnel-28340", true},
+		{"tunnel-server-28340", "tunnel-28340", true},
+		{"tunnel-28340", "tunnel-40001", false},
+		{"tunnel-client-28340", "tunnel-server-40001", false},
+		{"", "", false},
+		{"tunnel-", "tunnel-", false},
+	}
+	for _, tt := range tests {
+		if got := matchTunnelID(tt.actual, tt.expected); got != tt.want {
+			t.Errorf("matchTunnelID(%q, %q) = %v, want %v", tt.actual, tt.expected, got, tt.want)
+		}
+	}
+}

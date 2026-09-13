@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,7 +127,7 @@ func (s *Server) handleClientHandshake(conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-	if req.TunnelID != s.cfg.ID || req.Secret != s.cfg.Secret {
+	if !matchTunnelID(req.TunnelID, s.cfg.ID) || req.Secret != s.cfg.Secret {
 		s.log.Warn("handshake unauthorized: secret or tunnel id mismatch")
 		s.sendHandshakeResponse(conn, "ERROR", "unauthorized")
 		_ = conn.Close()
@@ -275,4 +276,20 @@ func relay(c1, c2 io.ReadWriteCloser) {
 	}()
 
 	wg.Wait()
+}
+
+// matchTunnelID 校验客户端上报的隧道 ID 是否与服务端匹配，兼容量产版本的前缀归一化 (tunnel-server-XXX vs tunnel-client-XXX vs tunnel-XXX)
+func matchTunnelID(actual, expected string) bool {
+	normalize := func(s string) string {
+		s = strings.TrimPrefix(s, "tunnel-server-")
+		s = strings.TrimPrefix(s, "tunnel-client-")
+		s = strings.TrimPrefix(s, "tunnel-")
+		return strings.TrimSpace(s)
+	}
+	normActual := normalize(actual)
+	normExpected := normalize(expected)
+	if normActual == "" || normExpected == "" {
+		return false
+	}
+	return normActual == normExpected
 }
