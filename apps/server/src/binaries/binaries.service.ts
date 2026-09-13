@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { ImportBinaryDto } from './dto/import-binary.dto';
 import { SettingsService } from '../system/settings.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
+import { formatBinaryVersion } from '../common/binary-version';
 import { hashAgentToken } from '../common/agent-token';
 import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
 import { BINARY_TARGETS } from './binary-targets';
@@ -266,7 +267,7 @@ export class BinariesService implements OnModuleInit {
         if (!definition || result.has(row.target as BinaryTarget)) continue;
         result.set(row.target as BinaryTarget, {
           ...definition,
-          version: `${row.release.upstreamVersion}-r${row.release.revision}`,
+          version: formatBinaryVersion(row.release.kind, row.release.upstreamVersion, row.release.revision),
           path,
           sha256: file.sha256,
           size: file.size,

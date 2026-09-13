@@ -5,6 +5,7 @@ import { BinariesService, normalizeOsArch } from '../binaries/binaries.service';
 import { BinaryResourcesService } from '../binaries/binary-resources.service';
 import type { QueryBinaryDeploymentDto } from '../binaries/dto/query-binary-resource.dto';
 import { generateRealityKeypair } from '../common/inbound';
+import { formatBinaryVersion } from '../common/binary-version';
 import { generateAgentToken } from '../common/utils';
 import { hashAgentToken } from '../common/agent-token';
 import { PrismaService } from '../prisma/prisma.service';
@@ -224,7 +225,7 @@ export class NodesService {
     return {
       data: rows.map((row) => {
         // 管理资源任务用资源版本摘要；自定义 URL 任务回退到任务 payload 中的版本
-        let version: string | null = row.asset?.release ? `${row.asset.release.upstreamVersion}-r${row.asset.release.revision}` : null;
+        let version: string | null = row.asset?.release ? formatBinaryVersion(row.asset.release.kind, row.asset.release.upstreamVersion, row.asset.release.revision) : null;
         if (!version) {
           try {
             version = (JSON.parse(row.payloadJson) as { version?: string }).version ?? null;

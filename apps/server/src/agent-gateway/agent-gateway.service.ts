@@ -35,6 +35,7 @@ import { isLineAuthorized } from '../common/line-access';
 import { getTrafficPeriod } from '../common/traffic-reset';
 import { hashAgentToken } from '../common/agent-token';
 import { decryptSecret } from '../common/secret-crypto';
+import { normalizeBinaryVersion } from '../common/binary-version';
 
 const PRIVATE_CIDR_BLOCKS = [
   '10.0.0.0/8',
@@ -440,7 +441,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   private reconcileUpgradeVersion(nodeId: string, reportedVersion: string | undefined): void {
     const entry = this.versionConfirmations.get(nodeId);
     if (!entry) return;
-    if (reportedVersion !== undefined && reportedVersion === entry.expectedVersion) {
+    if (reportedVersion !== undefined && normalizeBinaryVersion(reportedVersion) === normalizeBinaryVersion(entry.expectedVersion)) {
       this.versionConfirmations.delete(nodeId);
       this.systemLogsService?.enqueue({
         nodeId,
@@ -503,7 +504,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       } catch {
         continue;
       }
-      if (reportedByNode.get(nodeId) === expectedVersion) continue;
+      if (normalizeBinaryVersion(reportedByNode.get(nodeId)) === normalizeBinaryVersion(expectedVersion)) continue;
       const completedAt = task.completedAt?.getTime() ?? Date.now();
       this.versionConfirmations.set(nodeId, {
         taskId: task.id,

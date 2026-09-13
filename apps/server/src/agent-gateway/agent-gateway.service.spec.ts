@@ -1259,6 +1259,20 @@ describe('AgentGatewayService', () => {
       expect(service.getPendingVersionConfirmation('reconcile-node')).toBeNull();
     });
 
+    it('对账归一化：目标版本带 -r1 后缀时与纯编译版本心跳可确认', async () => {
+      await service.handleUpgradeResult('reconcile-node-suffix', { taskId: 'task-reconcile-r1', target: 'agent', version: '0.7.3-r1', success: true, message: 'ok' });
+      systemLogEnqueue.mockClear();
+
+      // 心跳上报纯编译版本 0.7.3，任务目标为资源口径 0.7.3-r1：归一化后应直接确认而非告警
+      await service.handleHeartbeat('reconcile-node-suffix', heartbeat('0.7.3'));
+      expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+        nodeId: 'reconcile-node-suffix',
+        level: 'INFO',
+        message: expect.stringContaining('升级版本已确认上报 (0.7.3-r1)')
+      }));
+      expect(service.getPendingVersionConfirmation('reconcile-node-suffix')).toBeNull();
+    });
+
     it('onModuleInit 恢复窗口内已完成任务的对账状态，已达版本节点不恢复', async () => {
       deploymentFindMany.mockResolvedValue([
         {

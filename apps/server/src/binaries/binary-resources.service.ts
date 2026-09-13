@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
 import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
+import { formatBinaryVersion } from '../common/binary-version';
 import { BinariesService, normalizeOsArch } from './binaries.service';
 import { BINARY_TARGET_VALUES } from './binary-targets';
 import {
@@ -823,8 +824,8 @@ export class BinaryResourcesService implements OnModuleInit {
     };
   }
 
-  private versionOf(release: { upstreamVersion: string; revision: number }) {
-    return `${release.upstreamVersion}-r${release.revision}`;
+  private versionOf(release: { kind?: unknown; upstreamVersion: string; revision: number }) {
+    return formatBinaryVersion(typeof release.kind === 'string' ? release.kind : undefined, release.upstreamVersion, release.revision);
   }
 
   private parseCompatibility(value: string): Record<string, unknown> {

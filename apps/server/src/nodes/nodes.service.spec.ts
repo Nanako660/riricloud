@@ -103,7 +103,8 @@ describe('NodesService', () => {
     prisma.binaryDeploymentTask.count.mockResolvedValue(2);
     const result = await service.listTasks(baseNode.id);
     expect(result.data).toHaveLength(2);
-    expect(result.data[0].version).toBe('0.7.2-r1');
+    // AGENT 资源 revision=1 展示纯版本号（与管理端 formatBinaryVersion 口径一致）
+    expect(result.data[0].version).toBe('0.7.2');
     expect(result.data[1].version).toBe('0.7.3');
   });
 
