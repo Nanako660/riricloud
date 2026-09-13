@@ -34,19 +34,19 @@ author: "Antigravity & Maintainers"
 ## 📋 里程碑与任务清单
 
 ### 里程碑 1：Agent 端重启策略重构
-- [ ] 任务 1.1: 新增 `apps/agent/internal/restart` 包（Restarter 接口 + 决策矩阵 + 单测）
-- [ ] 任务 1.2: runner 注入 restart.Manager，ws/poll client 接入并在失败路径上报 log_report
-- [ ] 任务 1.3: go vet / gofmt / go test / go build 通过
+- [x] 任务 1.1: 新增 `apps/agent/internal/restart` 包（Restarter 接口 + 决策矩阵 + 单测）
+- [x] 任务 1.2: runner 注入 restart.Manager，ws/poll client 接入并在失败路径上报 log_report
+- [x] 任务 1.3: go vet / gofmt / go test / go build 通过
 
 ### 里程碑 2：主控版本对账与详情警示
-- [ ] 任务 2.1: agent-gateway 增加版本对账（内存 map + OnModuleInit 水合 + reconcile + 公共 getter）与 jest 复现用例
-- [ ] 任务 2.2: dispatchQueuedUpgradeTasks 增加 60 秒重派发防抖（含单测）
-- [ ] 任务 2.3: 节点详情 API 返回 `pendingVersionConfirm`（加性字段）
-- [ ] 任务 2.4: 节点详情"Agent 接入与画像"卡渲染升级版本未确认警示横幅
+- [x] 任务 2.1: agent-gateway 增加版本对账（内存 map + OnModuleInit 水合 + reconcile + 公共 getter）与 jest 复现用例
+- [x] 任务 2.2: dispatchQueuedUpgradeTasks 增加 60 秒重派发防抖（含单测）
+- [x] 任务 2.3: 节点详情 API 返回 `pendingVersionConfirm`（加性字段）
+- [x] 任务 2.4: 节点详情"Agent 接入与画像"卡渲染升级版本未确认警示横幅
 
 ### 里程碑 3：文档同步与质量门禁
-- [ ] 任务 3.1: 同步 `docs/API_AND_PROTOCOLS.md`（详情响应加性字段）与 `docs/FRONTEND_UI_GUIDELINES.md`
-- [ ] 任务 3.2: 更新根 `CHANGELOG.md` 与 `apps/agent/CHANGELOG.md` 的 [Unreleased]
+- [x] 任务 3.1: 同步 `docs/API_AND_PROTOCOLS.md`（详情响应加性字段）与 `docs/FRONTEND_UI_GUIDELINES.md`
+- [x] 任务 3.2: 更新根 `CHANGELOG.md` 与 `apps/agent/CHANGELOG.md` 的 [Unreleased]
 - [ ] 任务 3.3: `pnpm gate` 五门禁全绿，PR1 合入 main
 - [ ] 任务 3.4: PR2（自定义 URL 升级落库 + Prisma 迁移 + DATA_MODELS 同步）
 - [ ] 任务 3.5: 100% 完成后 `pnpm plan:archive` 归档
