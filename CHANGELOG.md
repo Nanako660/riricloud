@@ -17,6 +17,9 @@
 - **Agent 日志目录错误提示**：日志目录创建或打开失败时，错误信息附带 `RIRICLOUD_DATA_DIR` / `RIRICLOUD_LOG_PATH` 可写目录设置提示。
 
 ### Changed
+- **内置二进制资源生命周期启动自动收敛**：Master 启动认领 manifest 后自动归档不在当前镜像/发行包 manifest 中的内置（BUILTIN）旧版本（审计记录 `reason=builtin-superseded`，可手动恢复），彻底避免 Docker 升级后在资源管理页积累大量历史“内置”版本；同时把每类资源的默认版本收敛为唯一一条（修复多条记录同时挂“默认”的历史脏数据），启动校验会把磁盘文件缺失或 SHA-256 不符的资产标记为不可用（文件恢复后自愈回填），无任何可用资产的启用资源自动停用（审计 `reason=asset-missing`）。
+- **Docker 镜像与离线主控包去重瘦身**：`Dockerfile` 与 `bundle-master.sh` 不再把 Sing-box、`libcronet.so` 复制为旧版平铺路径副本，Master 镜像同时移除被 `MIHOMO_BINARY_PATH` 覆盖的 `/app/binaries/mihomo-linux-*` 冗余副本，统一只保留 manifest 引用的版本化布局（预期镜像体积减少约百 MB 级）。
+- **资源管理页展示“文件失效”标识**：资源列表平台资产徽标与详情弹窗对 `available=false` 的资产显示琥珀色警示徽标与说明 Tooltip，总体积仅累计可用资产。
 
 ### Fixed
 - **修复 Agent 无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。

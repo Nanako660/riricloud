@@ -35,7 +35,7 @@ describe('BinaryResourcesService', () => {
       count: jest.fn(),
       delete: jest.fn()
     },
-    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
     binaryAssetFile: { deleteMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
     binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() },
     binaryAuditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
@@ -385,5 +385,155 @@ describe('BinaryResourcesService', () => {
     }));
     expect(result.data[0].operator).toEqual({ id: 'admin-1', nickname: '管理员', email: 'a@b.c' });
     expect(result.data[1].operator).toBeNull();
+  });
+
+  describe('内置资源生命周期', () => {
+    type LifecycleInternals = {
+      syncManifests: () => Promise<{ keys: Set<string>; staticManifestLoaded: boolean }>;
+      retireSupersededBuiltins: (manifest: { keys: Set<string>; staticManifestLoaded: boolean }) => Promise<void>;
+      normalizeDefaults: () => Promise<void>;
+      verifyAssetsAvailability: () => Promise<void>;
+    };
+    const internals = () => service as unknown as LifecycleInternals;
+
+    it('syncManifests 认领资源键并如实汇报主 manifest 加载状态', async () => {
+      const runtimeRoot = join(dataDir, 'binaries');
+      await mkdir(runtimeRoot, { recursive: true });
+      const body = Buffer.from('agent-0.7.1');
+      await writeFile(join(runtimeRoot, 'riri-agent'), body);
+      await writeFile(join(runtimeRoot, 'manifest.json'), JSON.stringify({
+        schemaVersion: 1,
+        resources: [{
+          kind: 'AGENT',
+          upstreamVersion: '0.7.1',
+          revision: 1,
+          source: 'BUILTIN',
+          status: 'ACTIVE',
+          isDefault: true,
+          assets: [{ target: 'agent-linux-amd64', os: 'linux', arch: 'amd64', files: [{ name: 'riri-agent', role: 'main', path: 'riri-agent', sha256: digest(body) }] }]
+        }]
+      }));
+
+      const result = await internals().syncManifests();
+
+      expect(result.staticManifestLoaded).toBe(false);
+      expect(Array.from(result.keys)).toEqual(['AGENT:0.7.1:1']);
+      await rm(join(runtimeRoot, 'manifest.json'), { force: true });
+      await rm(join(runtimeRoot, 'riri-agent'), { force: true });
+    });
+
+    it('主 manifest 加载成功时归档被取代的内置资源并转移默认', async () => {
+      const stale = release({ id: 'release-old-agent', kind: 'AGENT', upstreamVersion: '0.6.0', isDefault: true });
+      const current = release({ id: 'release-new-agent', kind: 'AGENT', upstreamVersion: '0.7.1', isDefault: false });
+      prisma.binaryRelease.findMany.mockResolvedValue([stale, current]);
+      prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-new-agent' });
+
+      await internals().retireSupersededBuiltins({ keys: new Set(['AGENT:0.7.1:1']), staticManifestLoaded: true });
+
+      expect(prisma.binaryRelease.findMany).toHaveBeenCalledWith({ where: { source: 'BUILTIN', status: { not: 'RETIRED' } } });
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-old-agent' }, data: { status: 'RETIRED', isDefault: false } });
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-new-agent' }, data: { isDefault: true } });
+      expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'RESOURCE_RETIRED',
+          metadataJson: expect.stringContaining('builtin-superseded')
+        })
+      }));
+    });
+
+    it('主 manifest 未加载或资源仍受当前 manifest 支持时不触发归档', async () => {
+      prisma.binaryRelease.findMany.mockResolvedValue([release({ id: 'release-old', upstreamVersion: '0.6.0' })]);
+
+      await internals().retireSupersededBuiltins({ keys: new Set(), staticManifestLoaded: false });
+      expect(prisma.binaryRelease.update).not.toHaveBeenCalled();
+
+      prisma.binaryRelease.findMany.mockResolvedValue([release({ id: 'release-current', upstreamVersion: '1.14.0' })]);
+      await internals().retireSupersededBuiltins({ keys: new Set(['SINGBOX:1.14.0:1']), staticManifestLoaded: true });
+      expect(prisma.binaryRelease.update).not.toHaveBeenCalled();
+      expect(prisma.binaryAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('多默认脏数据收敛为每类型唯一默认', async () => {
+      prisma.binaryRelease.findMany.mockImplementation(async ({ where }: { where: { kind: string } }) =>
+        where.kind === 'AGENT'
+          ? [
+              release({ id: 'release-default-new' }),
+              release({ id: 'release-default-old', upstreamVersion: '0.6.0' }),
+              release({ id: 'release-default-stale', status: 'RETIRED', upstreamVersion: '0.5.0' })
+            ]
+          : []);
+      prisma.binaryRelease.findFirst.mockResolvedValue(null);
+      prisma.binaryRelease.updateMany.mockResolvedValue({ count: 2 });
+
+      await internals().normalizeDefaults();
+
+      expect(prisma.binaryRelease.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['release-default-old', 'release-default-stale'] } },
+        data: { isDefault: false }
+      });
+      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { isDefault: true } }));
+    });
+
+    it('同类型缺失默认时补设最新 ACTIVE 资源', async () => {
+      prisma.binaryRelease.findMany.mockResolvedValue([]);
+      prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-next' });
+
+      await internals().normalizeDefaults();
+
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-next' }, data: { isDefault: true } });
+    });
+
+    it('文件缺失或哈希不符的资产标记不可用，无可用资产的启用资源自动停用', async () => {
+      const verifyDir = join(dataDir, 'binaries', 'verify');
+      await mkdir(verifyDir, { recursive: true });
+      const good = Buffer.from('good-bin');
+      await writeFile(join(verifyDir, 'good'), good);
+      await writeFile(join(verifyDir, 'tampered'), Buffer.from('tampered-bin'));
+      const originalSha = digest(Buffer.from('original-bin'));
+      const validAsset = { id: 'asset-good', target: 'singbox-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good), available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good) }] };
+      const mismatchAsset = { id: 'asset-mismatch', target: 'singbox-linux-arm64', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha, available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha }] };
+      const missingAsset = { id: 'asset-missing', target: 'agent-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'verify/missing', sha256: originalSha, available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/missing', sha256: originalSha }] };
+      prisma.binaryRelease.findMany.mockImplementation(async ({ where }: { where: { status: { in: string[] } } }) =>
+        where.status.in.includes('ACTIVE')
+          ? [
+              { ...release({ id: 'release-partial', kind: 'SINGBOX', isDefault: false }), assets: [validAsset, mismatchAsset] },
+              { ...release({ id: 'release-empty', kind: 'AGENT' }), assets: [missingAsset] }
+            ]
+          : []);
+      prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-fallback' });
+
+      await internals().verifyAssetsAvailability();
+
+      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-mismatch' }, data: { available: false } });
+      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-missing' }, data: { available: false } });
+      expect(prisma.binaryAsset.update).not.toHaveBeenCalledWith({ where: { id: 'asset-good' }, data: expect.anything() });
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-empty' }, data: { status: 'DISABLED', isDefault: false } });
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-fallback' }, data: { isDefault: true } });
+      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'release-partial' } }));
+      expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'RESOURCE_DISABLED',
+          metadataJson: expect.stringContaining('asset-missing')
+        })
+      }));
+      await rm(verifyDir, { recursive: true, force: true });
+    });
+
+    it('文件恢复后资产可用状态自愈回填', async () => {
+      const healDir = join(dataDir, 'binaries', 'heal');
+      await mkdir(healDir, { recursive: true });
+      const body = Buffer.from('restored-bin');
+      await writeFile(join(healDir, 'sing-box'), body);
+      const healedAsset = { id: 'asset-heal', target: 'singbox-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'heal/sing-box', sha256: digest(body), available: false, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'heal/sing-box', sha256: digest(body) }] };
+      prisma.binaryRelease.findMany.mockResolvedValue([
+        { ...release({ id: 'release-heal', kind: 'SINGBOX', isDefault: false }), assets: [healedAsset] }
+      ]);
+
+      await internals().verifyAssetsAvailability();
+
+      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-heal' }, data: { available: true } });
+      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'release-heal' } }));
+      await rm(healDir, { recursive: true, force: true });
+    });
   });
 });

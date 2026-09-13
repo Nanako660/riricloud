@@ -82,9 +82,12 @@ export class BinaryResourcesService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await mkdir(this.resourceDir, { recursive: true });
-    await this.syncManifests();
+    const manifest = await this.syncManifests();
     await this.binaries.refresh();
     await this.syncLegacyAssets();
+    await this.retireSupersededBuiltins(manifest);
+    await this.verifyAssetsAvailability();
+    await this.normalizeDefaults();
     await this.binaries.refresh();
     this.logger.log('二进制资源中心已初始化');
   }
@@ -519,14 +522,106 @@ export class BinaryResourcesService implements OnModuleInit {
     return this.detail(release.id);
   }
 
-  private async syncManifests(): Promise<void> {
+  // 读取运行态与静态仓 manifest 并认领资源；返回本轮成功认领的资源键集合，
+  // 供归档逻辑判断“当前部署应存在的内置资源”。staticManifestLoaded 表示镜像/发行包自带
+  // 的主 manifest 是否解析成功——它缺失或损坏时不得触发自动归档，避免误伤全部内置资源。
+  private async syncManifests(): Promise<{ keys: Set<string>; staticManifestLoaded: boolean }> {
+    const keys = new Set<string>();
+    let staticManifestLoaded = false;
     for (const root of [this.runtimeDir, this.staticDir]) {
       const path = join(root, 'manifest.json');
       try {
         const parsed = JSON.parse(await readFile(path, 'utf8')) as BinaryManifest;
-        for (const resource of parsed.resources ?? []) await this.upsertManifestResource(root, resource);
-      } catch {
-        // 没有 manifest 时由旧路径认领逻辑兜底。
+        if (root === this.staticDir) staticManifestLoaded = true;
+        for (const resource of parsed.resources ?? []) {
+          await this.upsertManifestResource(root, resource);
+          keys.add(this.manifestKey(resource.kind, resource.upstreamVersion, resource.revision));
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+          this.logger.warn(`读取二进制 manifest 失败 root=${root}: ${error instanceof Error ? error.message : error}`);
+        }
+      }
+    }
+    return { keys, staticManifestLoaded };
+  }
+
+  private manifestKey(kind: string, upstreamVersion: string, revision?: number): string {
+    return `${kind}:${upstreamVersion}:${revision ?? 1}`;
+  }
+
+  // 升级镜像/发行包后，旧内置资源指向的 STATIC 文件已被新版本替换（sha256 失配），
+  // 保留“启用”状态只会误导管理员。这里把不在当前 manifest 中的 BUILTIN 资源自动归档：
+  // 记录与审计全部保留、可手动恢复，默认标记按既有规则转移。
+  private async retireSupersededBuiltins(manifest: { keys: Set<string>; staticManifestLoaded: boolean }): Promise<void> {
+    if (!manifest.staticManifestLoaded) return;
+    const builtins = await this.prisma.binaryRelease.findMany({ where: { source: 'BUILTIN', status: { not: 'RETIRED' } } });
+    for (const release of builtins) {
+      if (manifest.keys.has(this.manifestKey(release.kind, release.upstreamVersion, release.revision))) continue;
+      const { defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.binaryRelease.update({ where: { id: release.id }, data: { status: 'RETIRED', isDefault: false } });
+        const transferredTo = await this.transferDefault(tx, release);
+        return { updated, defaultTransferredTo: transferredTo };
+      });
+      await this.audit('RESOURCE_RETIRED', {
+        releaseId: release.id,
+        metadataJson: JSON.stringify({ previousStatus: release.status, reason: 'builtin-superseded', defaultTransferredTo: defaultTransferredTo ?? null })
+      });
+      this.logger.log(`内置资源已被当前 manifest 取代，自动归档：${release.kind} ${release.upstreamVersion}-r${release.revision}`);
+    }
+  }
+
+  // 收敛每类型唯一默认：多条时仅保留最新的 ACTIVE 默认，零条时补设最新 ACTIVE，
+  // 修复历史版本重复登记 isDefault 造成的脏数据。
+  private async normalizeDefaults(): Promise<void> {
+    for (const kind of BINARY_KINDS) {
+      const defaults = await this.prisma.binaryRelease.findMany({ where: { kind, isDefault: true }, orderBy: { updatedAt: 'desc' } });
+      const keep = defaults.find((release) => release.status === 'ACTIVE');
+      const staleIds = defaults.filter((release) => release.id !== keep?.id).map((release) => release.id);
+      if (staleIds.length) {
+        await this.prisma.binaryRelease.updateMany({ where: { id: { in: staleIds } }, data: { isDefault: false } });
+      }
+      if (!keep) {
+        const candidate = await this.prisma.binaryRelease.findFirst({ where: { kind, status: 'ACTIVE' }, orderBy: { updatedAt: 'desc' } });
+        if (candidate) await this.prisma.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+      }
+    }
+  }
+
+  // 启动校验资产文件：缺失或 sha256 与登记不符的资产标记不可用（文件恢复后自愈回 true），
+  // 启用中资源失去全部可用资产时降级为停用并转移默认，避免列表误导与误分发。
+  private async verifyAssetsAvailability(): Promise<void> {
+    const releases = await this.prisma.binaryRelease.findMany({
+      where: { status: { in: ['ACTIVE', 'DRAFT'] } },
+      include: { assets: { include: { files: true } } }
+    });
+    for (const release of releases) {
+      let availableAssets = 0;
+      for (const asset of release.assets) {
+        const main = asset.files.find((file) => file.role === 'main') ?? asset.files[0];
+        const path = this.resolveStoredPath(main?.storageRoot ?? asset.storageRoot, main?.storagePath ?? asset.storagePath);
+        const inspected = await this.inspectFile(path);
+        const expectedSha256 = (main?.sha256 ?? asset.sha256).toLowerCase();
+        const valid = inspected ? inspected.sha256.toLowerCase() === expectedSha256 : false;
+        if (valid !== asset.available) {
+          await this.prisma.binaryAsset.update({ where: { id: asset.id }, data: { available: valid } });
+          if (!valid) {
+            this.logger.warn(`资产文件校验失败，已标记不可用：${release.kind} ${release.upstreamVersion}-r${release.revision} target=${asset.target}`);
+          }
+        }
+        if (valid) availableAssets += 1;
+      }
+      if (release.status === 'ACTIVE' && release.assets.length > 0 && availableAssets === 0) {
+        const { defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
+          const updated = await tx.binaryRelease.update({ where: { id: release.id }, data: { status: 'DISABLED', isDefault: false } });
+          const transferredTo = await this.transferDefault(tx, release);
+          return { updated, defaultTransferredTo: transferredTo };
+        });
+        await this.audit('RESOURCE_DISABLED', {
+          releaseId: release.id,
+          metadataJson: JSON.stringify({ reason: 'asset-missing', defaultTransferredTo: defaultTransferredTo ?? null })
+        });
+        this.logger.warn(`资源已无可用资产文件，自动停用：${release.kind} ${release.upstreamVersion}-r${release.revision}`);
       }
     }
   }

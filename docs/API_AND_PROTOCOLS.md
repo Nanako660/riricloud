@@ -471,7 +471,7 @@ Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、
 
 导入/上传字段包括 `kind`、`upstreamVersion`、可选 `revision`、`target`、`sha256`、可选 `filename`、`builtFromAppVersion`、`compatibilityJson` 和 `notes`；远程导入另需 `url`。`kind` 为 `AGENT` 或 `SINGBOX`，`target` 必须取自服务端平台枚举（agent/singbox × linux/macos/windows × amd64/arm64，与 `scripts/build-agent.sh --all` 发布矩阵一致）。服务端先完整下载到内存并计算 SHA-256，再以临时文件 + 原子 rename 写入资源目录，校验失败不会产生可用资产。
 
-资源状态机：`DRAFT → ACTIVE ⇄ DISABLED → RETIRED`；`RETIRED` 只能经 `restore` 回到 `DISABLED`。停用或归档默认资源时，服务端在同一事务内把默认标记自动转移到同类型最新的 ACTIVE 资源（无候选则置空），并记录在审计元数据 `defaultTransferredTo` 中。每次导入/编辑/启停/归档/恢复/删除/切换默认均写入 `BinaryAuditLog`。
+资源状态机：`DRAFT → ACTIVE ⇄ DISABLED → RETIRED`；`RETIRED` 只能经 `restore` 回到 `DISABLED`。停用或归档默认资源时，服务端在同一事务内把默认标记自动转移到同类型最新的 ACTIVE 资源（无候选则置空），并记录在审计元数据 `defaultTransferredTo` 中。Master 启动时自动收敛资源生命周期：镜像/发行包自带的主 `manifest.json` 解析成功时，不在当前 manifest 中的 `BUILTIN` 资源自动归档（审计元数据 `reason=builtin-superseded`，可经 `restore` 恢复）；磁盘文件缺失或 SHA-256 与登记不符的资产标记 `available=false`（文件恢复后自愈回填），无任何可用资产的 ACTIVE 资源自动停用（审计元数据 `reason=asset-missing`）；每类型同时至多一个 ACTIVE 默认版本，历史脏数据在启动时收敛为最新一条。每次导入/编辑/启停/归档/恢复/删除/切换默认均写入 `BinaryAuditLog`。
 
 节点升级 `POST /api/v1/admin/nodes/:id/upgrade` 新增可选 `resourceId`。服务端根据节点 OS/架构选择资源的 `assetId`，下发响应包含 `resourceId`、`assetId`、主文件 URL/SHA-256 与 `files[]`；`files[]` 可包含 Sing-box 主文件及 `libcronet.so` 辅助文件。旧版 `target`、`version`、`url`、`sha256` 参数继续支持，旧 Agent 仍可执行只有单文件 URL/SHA-256 的 `upgrade_task`。
 
