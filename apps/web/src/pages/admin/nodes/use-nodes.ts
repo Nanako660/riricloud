@@ -199,6 +199,7 @@ export interface AdminNode {
   agentProtocolVersion?: number | null;
   currentAgentAssetId?: string | null;
   currentSingboxAssetId?: string | null;
+  pendingVersionConfirm?: { taskId: string; expectedVersion: string; completedAt: string } | null;
   lines: NodeLine[];
   entryLines: NodeLine[];
   landingLines: NodeLine[];
