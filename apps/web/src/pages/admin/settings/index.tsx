@@ -99,6 +99,8 @@ interface SystemSettings {
   configSyncDebounceMs: number;
   defaultPollIntervalSecs: number;
   binaryDownloadBaseUrl: string;
+  githubRepoUrl: string;
+  githubMirrorUrls: string[];
   probePresetTargets: ProbePresetTarget[];
   jwtSessionDays: number;
   customCss: string;
@@ -155,6 +157,8 @@ const settingsSchema = z.object({
   configSyncDebounceMs: z.coerce.number().int().min(0).max(10000),
   defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
   binaryDownloadBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的二进制分发 URL'),
+  githubRepoUrl: z.string().refine(isBlankOrUrl, '请输入有效的 GitHub 仓库 URL'),
+  githubMirrorUrlsText: z.string().max(16000),
   probePresetTargets: probePresetTargetsSchema,
   jwtSessionDays: z.coerce.number().int().min(1).max(30),
   customCss: z.string().max(50000),
@@ -200,7 +204,7 @@ export default function AdminSettingsPage() {
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
       emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
-      configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', probePresetTargets: [],
+      configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: 'https://github.com/Nanako660/riricloud', githubMirrorUrls: [], probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
       lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000,
@@ -349,6 +353,10 @@ export default function AdminSettingsPage() {
               <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
               <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL（覆盖项，可选）" placeholder="https://downloads.example.com/riricloud" description="供节点下载 riri-agent 及 sing-box 内核的专用存储/CDN 地址。留空时自动继承「全站访问 URL」。" />
+              <SettingsInput name="githubRepoUrl" label="项目 GitHub 仓库地址" placeholder="https://github.com/Nanako660/riricloud" description="节点安装脚本从该仓库的 Release（agent-v* Tag）优先下载二进制。" />
+              <div className="md:col-span-2 min-w-0">
+                <SettingsTextarea name="githubMirrorUrlsText" label="GitHub 加速镜像列表" rows={4} className="md:col-span-2" description="每行一个前缀代理地址（如 https://ghfast.top/），安装时对直连与镜像自动测速择优；全部失败回退主控内置下载。留空使用内置默认镜像。" />
+              </div>
               <div className="rounded-lg border bg-muted/20 p-4 md:col-span-2 space-y-4 min-w-0">
                 <div className="space-y-1">
                   <h4 className="text-sm font-semibold">线路自动测速</h4>
@@ -540,6 +548,8 @@ function toForm(settings: SystemSettings): SettingsForm {
     configSyncDebounceMs: settings.configSyncDebounceMs,
     defaultPollIntervalSecs: settings.defaultPollIntervalSecs,
     binaryDownloadBaseUrl: settings.binaryDownloadBaseUrl,
+    githubRepoUrl: settings.githubRepoUrl,
+    githubMirrorUrlsText: settings.githubMirrorUrls.join('\n'),
     probePresetTargets: settings.probePresetTargets.map(toProbePresetFormValue),
     jwtSessionDays: settings.jwtSessionDays,
     customCss: settings.customCss,
@@ -598,6 +608,8 @@ function toPayload(values: SettingsForm) {
     configSyncDebounceMs: values.configSyncDebounceMs,
     defaultPollIntervalSecs: values.defaultPollIntervalSecs,
     binaryDownloadBaseUrl: values.binaryDownloadBaseUrl,
+    githubRepoUrl: values.githubRepoUrl,
+    githubMirrorUrls: values.githubMirrorUrlsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     probePresetTargets: values.probePresetTargets.map(toProbePresetTarget),
     jwtSessionDays: values.jwtSessionDays,
     customCss: values.customCss,
