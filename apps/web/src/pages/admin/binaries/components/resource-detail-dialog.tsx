@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateTime } from '@/lib/utils';
 import {
+  ASSET_UNAVAILABLE_LABEL,
   BINARY_COMPATIBILITY_LABELS,
   BINARY_DEPLOYMENT_STATUS_LABELS,
   BINARY_STATUS_LABELS,
@@ -102,7 +103,14 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
               {data.assets.map((asset) => (
                 <div key={asset.id} className="min-w-0 overflow-hidden rounded-md border p-3">
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <span className="min-w-0 break-words font-medium">{asset.target}</span>
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words font-medium">
+                      {asset.target}
+                      {asset.available === false ? (
+                        <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
+                          <AlertTriangle className="mr-1 size-3" />{ASSET_UNAVAILABLE_LABEL}
+                        </Badge>
+                      ) : null}
+                    </span>
                     <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{bytes(asset.size)}</span>
                   </div>
                   <p className="mt-1 break-all font-mono text-[11px] leading-4 text-muted-foreground" title={asset.sha256}>{asset.sha256}</p>

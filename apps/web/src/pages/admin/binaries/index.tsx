@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Archive, Eye, FileUp, History, MoreHorizontal, PackageOpen, Pencil, Power, RotateCcw, Search, Star, Trash2, XCircle } from 'lucide-react';
+import { Archive, AlertTriangle, Eye, FileUp, History, MoreHorizontal, PackageOpen, Pencil, Power, RotateCcw, Search, Star, Trash2, XCircle } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { bytes, BINARY_STATUS_LABELS, formatTargetBadge, sourceLabel, totalAssetBytes } from './binary-labels';
+import { ASSET_UNAVAILABLE_LABEL, bytes, BINARY_STATUS_LABELS, formatTargetBadge, sourceLabel, totalAssetBytes } from './binary-labels';
 import { ResourceFormDialog } from './components/resource-form-dialog';
 import { ResourceEditDialog } from './components/resource-edit-dialog';
 import { ResourceDetailDialog } from './components/resource-detail-dialog';
@@ -267,9 +267,20 @@ export default function BinariesPage() {
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1">
                         {item.assets.slice(0, 3).map((asset) => (
-                          <Badge key={asset.id} variant="outline" className="text-[11px] font-mono">
-                            {formatTargetBadge(asset.target)}
-                          </Badge>
+                          <Tooltip key={asset.id}>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className={asset.available === false
+                                  ? 'border-amber-500/40 bg-amber-500/10 font-mono text-[11px] text-amber-700 dark:text-amber-400'
+                                  : 'text-[11px] font-mono'}
+                              >
+                                {asset.available === false ? <AlertTriangle className="mr-1 size-3" /> : null}
+                                {formatTargetBadge(asset.target)}
+                              </Badge>
+                            </TooltipTrigger>
+                            {asset.available === false ? <TooltipContent>文件缺失或校验不符，已不可分发</TooltipContent> : null}
+                          </Tooltip>
                         ))}
                         {item.assets.length > 3 ? (
                           <Tooltip>
@@ -282,7 +293,7 @@ export default function BinariesPage() {
                               <div className="font-medium text-foreground">支持平台及体积：</div>
                               {item.assets.map((asset) => (
                                 <div key={asset.id} className="flex justify-between gap-3 text-muted-foreground">
-                                  <span>{asset.target}</span>
+                                  <span>{asset.target}{asset.available === false ? `（${ASSET_UNAVAILABLE_LABEL}）` : ''}</span>
                                   <span className="font-mono">{bytes(asset.size)}</span>
                                 </div>
                               ))}
