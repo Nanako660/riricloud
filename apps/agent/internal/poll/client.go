@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
+	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
 	"github.com/Nanako660/riricloud/apps/agent/internal/security"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
@@ -143,6 +143,7 @@ type Client struct {
 	version    string
 	osArch     string
 	log        *logrus.Entry
+	restart    *restart.Manager
 
 	resultMu         sync.Mutex
 	resultSeq        uint64
@@ -154,7 +155,7 @@ type Client struct {
 	tasks            sync.WaitGroup
 }
 
-func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager) *Client {
 	return &Client{
 		masterURL:      masterURL,
 		token:          token,
@@ -165,6 +166,7 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		version:        version,
 		osArch:         osArch,
 		log:            log,
+		restart:        restarter,
 		runningTasks:   make(map[string]struct{}),
 		completedTasks: make(map[string]struct{}),
 		traffic:        trafficstats.NewCollector(log),
@@ -462,20 +464,12 @@ func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {
 	return upgrade.AtomicReplace(temp, target)
 }
 
+// restartSelf 终止当前进程并以新二进制接管：系统服务重启优先，自拉起兜底。
+// 轮询模式无 log_report 通道，两路均失败时仅本地日志，由主控升级版本对账兜底。
 func (c *Client) restartSelf() {
-	time.Sleep(250 * time.Millisecond)
-	target, err := os.Executable()
-	if err != nil {
-		c.log.WithError(err).Error("resolve agent executable for restart failed")
-		return
+	if err := c.restart.RestartAndExit(); err != nil {
+		c.log.WithError(err).Error("agent restart failed")
 	}
-	cmd := exec.Command(target, os.Args[1:]...)
-	cmd.Env = os.Environ()
-	if err := cmd.Start(); err != nil {
-		c.log.WithError(err).Error("restart agent failed")
-		return
-	}
-	os.Exit(0)
 }
 
 func (c *Client) consumeRestartRequest() bool {

@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/mirror"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
+	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
@@ -195,13 +195,14 @@ type Client struct {
 	osArch        string
 	log           *logrus.Entry
 	traffic       *trafficstats.Collector
+	restart       *restart.Manager
 	writeMu       sync.Mutex
 	mirrorExec    *mirror.Executor
 	mirrorMu      sync.Mutex
 	mirrorCancels map[string]context.CancelFunc
 }
 
-func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry) *Client {
+func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager) *Client {
 	return &Client{
 		masterURL:     masterURL,
 		token:         token,
@@ -212,6 +213,7 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		osArch:        osArch,
 		log:           log,
 		traffic:       trafficstats.NewCollector(log),
+		restart:       restarter,
 		mirrorExec:    mirror.NewExecutor(),
 		mirrorCancels: make(map[string]context.CancelFunc),
 	}
@@ -485,7 +487,7 @@ func (c *Client) handleUpgrade(parent context.Context, conn *websocket.Conn, tas
 		Message: fmt.Sprintf("Upgrade %s to %s succeeded", task.Target, task.Version),
 	}})
 	if task.Target == "agent" {
-		go c.restartSelf()
+		go c.restartSelf(conn)
 	}
 }
 
@@ -506,20 +508,18 @@ func (c *Client) upgradeSelf(ctx context.Context, task upgradeTask) error {
 	return upgrade.AtomicReplace(temp, target)
 }
 
-func (c *Client) restartSelf() {
-	time.Sleep(250 * time.Millisecond)
-	target, err := os.Executable()
-	if err != nil {
-		c.log.WithError(err).Error("resolve agent executable for restart failed")
-		return
+// restartSelf 终止当前进程并以新二进制接管：系统服务重启优先，自拉起兜底。
+// 两路均失败时旧进程继续运行，向主控上报错误日志并依赖升级版本对账兜底。
+func (c *Client) restartSelf(conn *websocket.Conn) {
+	if err := c.restart.RestartAndExit(); err != nil {
+		c.log.WithError(err).Error("agent restart failed")
+		c.sendLogReport(conn, []agentLogItem{{
+			Level:   "ERROR",
+			Module:  "Upgrade",
+			Source:  "AGENT",
+			Message: fmt.Sprintf("Agent restart failed after upgrade: %v", err),
+		}})
 	}
-	cmd := exec.Command(target, os.Args[1:]...)
-	cmd.Env = os.Environ()
-	if err := cmd.Start(); err != nil {
-		c.log.WithError(err).Error("restart agent failed")
-		return
-	}
-	os.Exit(0)
 }
 
 func (c *Client) handleProbe(ctx context.Context, conn *websocket.Conn, task probeTask) {
@@ -542,7 +542,7 @@ func (c *Client) handleProbe(ctx context.Context, conn *websocket.Conn, task pro
 
 func (c *Client) handleRestart(conn *websocket.Conn, task restartAgentTask) {
 	c.sendRestartResult(conn, task.TaskID, true, "ok")
-	go c.restartSelf()
+	go c.restartSelf(conn)
 }
 
 // heartbeatLoop 周期上报系统指标；goroutine 随 ctx 退出
