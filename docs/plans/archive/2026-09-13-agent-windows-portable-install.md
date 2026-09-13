@@ -1,12 +1,12 @@
 ---
 title: "agent-windows-portable-install"
 type: plan
-status: active
-target_version: "v0.8.9"
+status: completed
+target_version: v0.8.9
 created_at: "2026-09-13"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-13"
 ---
-
 # agent-windows-portable-install
 
 ## 🎯 目标与背景
