@@ -3,7 +3,7 @@ import { CopyButton } from '@/components/shared/copy-button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { NodeInstallCommandPair, NodeInstallCommands } from '../use-nodes';
+import { useAdminBinaryInfo, type NodeInstallCommandPair, type NodeInstallCommands } from '../use-nodes';
 
 type DeployType = 'native' | 'portable' | 'docker';
 type TargetOs = 'linux' | 'macos' | 'windows';
@@ -14,6 +14,8 @@ interface InstallCommandsPickerProps {
   // 旧版主控响应兜底：创建结果中的 installCommand（bash / WS 模式）
   fallbackCommand?: string;
   defaultMode?: InstallMode;
+  // 节点已上报的运行平台（linux/amd64 等），用于匹配主控二进制可用性
+  nodeOsArch?: string | null;
 }
 
 const deployHint: Record<DeployType, Record<'posix' | 'windows', string>> = {
@@ -31,10 +33,22 @@ const deployHint: Record<DeployType, Record<'posix' | 'windows', string>> = {
   }
 };
 
-export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode = 'ws' }: InstallCommandsPickerProps) {
+export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode = 'ws', nodeOsArch }: InstallCommandsPickerProps) {
   const [deployType, setDeployType] = useState<DeployType>('native');
   const [targetOs, setTargetOs] = useState<TargetOs>('linux');
   const [mode, setMode] = useState<InstallMode>(defaultMode);
+  const { data: binaryInfo } = useAdminBinaryInfo();
+
+  // 平台可用性：节点上报架构仅在 OS 匹配时复用（与服务端 resolveTargetPlatform 口径一致），否则回退 amd64
+  const platformAvailability = useMemo(() => {
+    if (deployType === 'docker') return null;
+    const reported = nodeOsArch?.split('/')[1];
+    const arch = reported ?? 'amd64';
+    const target = `agent-${targetOs}-${arch}`;
+    const info = binaryInfo?.targets.find((item) => item.target === target);
+    if (!info) return null;
+    return { target, available: info.available };
+  }, [binaryInfo, deployType, targetOs, nodeOsArch]);
 
   const currentCommand = useMemo(() => {
     if (!commands) return fallbackCommand ?? '';
@@ -84,6 +98,13 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
         </div>
       </div>
       <p className="text-xs text-muted-foreground">{hint} 安装命令会在终端中隐藏提示输入 AgentToken。</p>
+      {platformAvailability ? (
+        platformAvailability.available ? (
+          <p className="text-xs text-emerald-600 dark:text-emerald-400">主控已内置 {platformAvailability.target} 二进制，可直接从主控下载安装。</p>
+        ) : (
+          <p className="text-xs text-amber-600 dark:text-amber-400">主控未内置 {platformAvailability.target} 二进制，原生安装将由脚本自动从 GitHub Release（或加速镜像）下载；免安装模式请先自行获取二进制。</p>
+        )
+      ) : null}
     </div>
   );
 }

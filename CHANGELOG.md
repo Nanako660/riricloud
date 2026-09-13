@@ -16,6 +16,7 @@
 - **节点安装脚本化与三级下载回退**：原生安装命令改为从主控拉取按平台渲染的安装脚本（`GET /api/v1/downloads/agent-installer`，POSIX sh 与 PowerShell 双模板）。脚本优先从项目 GitHub Release（`agent-v*` Tag）下载 Agent 二进制并强制 `checksums.txt` SHA-256 校验，对「直连 + 系统配置的加速镜像」自动 128KB Range GET 测速择优，全部失败回退主控内置二进制（嵌入预期 SHA-256 校验）；镜像经 `GITHUB_MIRRORS` 环境变量传递，兼容旧版 Agent。
 
 ### Changed
+- **安装命令平台可用性预警**：安装命令选择器与节点创建/轮换 Token 弹窗接入主控二进制清单（`/admin/binaries/info`），当前 OS/架构平台缺失时提前提示"将从 GitHub Release（或加速镜像）下载"，可用时展示内置可用的绿色提示。
 - **GitHub Release 安装源与镜像设置**：系统设置新增「项目 GitHub 仓库地址」与「GitHub 加速镜像列表」（内置默认公共镜像，可增删改），为节点安装脚本提供 GitHub Release 优先下载与镜像测速数据源。
 - **Agent 资源版本展示口径统一**：Agent 类资源 revision=1 时资源版本/升级任务目标/部署历史不再追加 `-rN` 后缀（与二进制编译版本一致）；revision>1 保留后缀区分重构建，Sing-box 资源口径不变。升级版本对账比较同时做归一化（剥离 `-rN` 后缀），修复"内置资源升级成功后仍误报 Agent 重启可能失败"的问题。
 
