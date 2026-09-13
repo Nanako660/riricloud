@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.9] - 2026-09-13
+
+### Added
 - **节点安装命令按目标操作系统生成与免安装运行模式**：主控为节点创建、详情与 Token 轮换返回的 `installCommands` 新增 `native.{linux,macos,windows}` 与 `portable.{linux,macos,windows}` 命令对（每项 `{ ws, http }`），并新增 `windowsUninstallCommand`；面板安装命令弹窗升级为「原生安装 / 免安装运行 / Docker」× 目标系统（Linux / macOS / Windows）× 通信模式选择，Windows 命令为 PowerShell 语法并提示管理员身份执行。免安装模式仅凭 `AGENT_TOKEN` 等环境变量前台运行 `riri-agent run`：sing-box 内核缺失时由 Agent 后台自动下载（`--singbox-source auto|master|github|none`，显式设置 `SINGBOX_BINARY_PATH` 视为自管内核），数据目录通过 `RIRICLOUD_DATA_DIR` 指定，适合临时验证与无法注册服务的受限环境。
 - **Agent 日志目录错误提示**：日志目录创建或打开失败时，错误信息附带 `RIRICLOUD_DATA_DIR` / `RIRICLOUD_LOG_PATH` 可写目录设置提示。
 
@@ -24,6 +33,7 @@
 ### Fixed
 - **修复 Agent 无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。
 - **修复 Windows 服务模式下 agent.log 恒为空**：日志 MultiWriter 原以 stdout 在前，Windows 服务进程 stdout 句柄失效导致写入短路、文件永远收不到日志；现改为文件优先，并仅在 stdout 可用上下文附加 stdout 镜像。
+
 
 
 ## [0.8.8] - 2026-09-13

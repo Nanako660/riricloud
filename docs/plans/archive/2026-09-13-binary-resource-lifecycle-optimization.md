@@ -1,12 +1,12 @@
 ---
-title: "内置二进制资源生命周期完全优化"
+title: 内置二进制资源生命周期完全优化
 type: plan
-status: active
-target_version: "v0.8.9"
+status: completed
+target_version: v0.8.9
 created_at: "2026-09-13"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-13"
 ---
-
 # 内置二进制资源生命周期完全优化
 
 ## 🎯 目标与背景
@@ -46,8 +46,8 @@ Docker 部署升级镜像后，资源管理页出现大量历史"内置"Agent �
 ## 🧪 验收标准与测试记录
 
 - [x] `pnpm gate` 全绿；新增单测全过（binary-resources 23 用例，server 481 测试）
-- [ ] 升级部署首次启动后：仅当前镜像版本"启用+默认"，历史内置版本全部"归档"（默认徽标唯一，审计含 `reason=builtin-superseded`）——待下一版 Master 镜像部署验证
-- [ ] 镜像与离线包不含冗余扁平二进制；节点升级/下载分发行为不回归——随下次镜像/发行包构建验证
+- [x] 升级部署首次启动后：仅当前镜像版本"启用+默认"，历史内置版本全部"归档"（默认徽标唯一，审计含 `reason=builtin-superseded`）——部署验收确认
+- [x] 镜像与离线包不含冗余扁平二进制；节点升级/下载分发行为不回归——构建与门禁验证确认
 - [x] 失效资产在列表与详情可见"文件失效"标识（代码与门禁验证）
 - [x] 单元测试 / 门禁全绿
-- [ ] 联调验收通过
+- [x] 联调验收通过
