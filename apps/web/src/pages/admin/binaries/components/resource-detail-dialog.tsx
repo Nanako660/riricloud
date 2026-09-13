@@ -124,15 +124,19 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                     </span>
                     <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{bytes(asset.size)}</span>
                   </div>
-                  <p className="mt-1 break-all font-mono text-[11px] leading-4 text-muted-foreground" title={asset.sha256}>{asset.sha256}</p>
-                  <div className="mt-2 min-w-0 space-y-1 text-xs text-muted-foreground">
-                    {(asset.files ?? []).map((file) => (
-                      <div key={file.id} className="flex min-w-0 flex-wrap justify-between gap-x-2 gap-y-1">
-                        <span className="min-w-0 break-words">{file.role === 'auxiliary' ? '辅助' : '主文件'} · {file.name}</span>
-                        <span className="break-all font-mono text-right">{file.sha256}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* 资产 sha256 恒等于主文件摘要，文件明细已逐项列出哈希，仅在无明细时兜底展示避免重复 */}
+                  {(asset.files ?? []).length ? (
+                    <div className="mt-2 min-w-0 space-y-1 text-xs text-muted-foreground">
+                      {(asset.files ?? []).map((file) => (
+                        <div key={file.id} className="flex min-w-0 flex-wrap justify-between gap-x-2 gap-y-1">
+                          <span className="min-w-0 break-words">{file.role === 'auxiliary' ? '辅助' : '主文件'} · {file.name}</span>
+                          <span className="break-all font-mono text-right">{file.sha256}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 break-all font-mono text-[11px] leading-4 text-muted-foreground" title={asset.sha256}>{asset.sha256}</p>
+                  )}
                 </div>
               ))}
             </div>
