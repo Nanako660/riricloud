@@ -223,7 +223,7 @@ else
 fi
 
 mkdir -p /usr/local/bin
-install -m 0755 "$BIN" /usr/local/bin/riri-agent
+install -m 0755 "$BIN" /usr/local/bin/riri-agent || { echo "[riri-agent] 写入 /usr/local/bin 失败，请以 root 身份执行安装脚本" >&2; exit 1; }
 
 echo "[riri-agent] 开始注册系统服务..."
 GITHUB_MIRRORS="$RIRI_MIRRORS" /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master="$RIRI_MASTER"
