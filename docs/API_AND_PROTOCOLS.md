@@ -332,13 +332,13 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "singboxConfig": { ... },
     "tunnelConfigs": [
       {
-        "nodeId": "target-node-uuid",
+        "id": "tunnel-39001",
         "role": "SERVER",
-        "targetHost": "entry.vps.example.com",
-        "targetPort": 39001,
+        "listenPort": 39001,
+        "serverAddr": "entry.vps.example.com:39001",
         "secret": "high-entropy-tunnel-secret",
         "mappings": [
-          { "remotePort": 30001, "localPort": 30001 }
+          { "lineId": "line-uuid", "localPort": 30001, "targetPort": 30001 }
         ]
       }
     ]
@@ -347,6 +347,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 ```
 
 - **拓扑聚合机制 (Node-to-Node Aggregated Mux)**：同一对 `(entryNode, landingNode)` 之间无论承载多少条中继线路，均复用单一底层 TLS 长连接与单一 `tunnelPort`。多条线路的端口映射在 `mappings` 中统一聚合分发，由底层 Yamux 虚拟 Stream 进行数据解复用，极大节省系统 Socket 与 NAT 连接池资源。
+- **统一隧道鉴权标识与地址解析**：隧道标识在入口端与落地端统一采用 `tunnel-<port>`，握手时支持版本归一化校验；落地客户端拨号地址（`serverAddr`）优先读取线路开启的端点覆盖域名（`line.endpointOverrideEnabled && line.serverHost`），若未开启则回退使用入口节点的 `serverHost`，支持配置合法域名并携带 SNI 建立安全 TLS 1.3 连接。
 - **角色协作机制**：
   - **入口节点 (`role: "SERVER"`)**：在 `targetPort` 上开启 TLS 监听服务；当收到落地 NAT 客户端的主动反向拨号并验证预共享密钥（`secret`）后，升级为 Yamux Session；同时在本地 `127.0.0.1:<remotePort>` 启动监听转发器，将进入该端口的流量通过 Yamux Stream 穿透转发给对端。
   - **落地 NAT 节点 (`role: "CLIENT"`)**：作为客户端主动向公网入口节点的 `targetHost:targetPort` 发起 TLS 拨号；握手并认证后保持 Yamux Session（集成 25s 心跳保活与指数退避断线重连，自愈家宽 PPPoE 重拨）；当对端发起新 Stream 时，主动连接落地主机本地的 `127.0.0.1:<localPort>`（落地 Sing-box 入站）。

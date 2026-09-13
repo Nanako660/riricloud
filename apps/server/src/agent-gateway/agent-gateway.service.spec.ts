@@ -271,7 +271,7 @@ describe('AgentGatewayService', () => {
     ]));
     expect(entrySync.tunnelConfigs).toEqual([
       {
-        id: 'tunnel-server-40001',
+        id: 'tunnel-40001',
         role: 'SERVER',
         listenPort: 40001,
         secret: 'secret-xyz',
@@ -315,9 +315,35 @@ describe('AgentGatewayService', () => {
     ]));
     expect(landingSync.tunnelConfigs).toEqual([
       {
-        id: 'tunnel-client-40001',
+        id: 'tunnel-40001',
         role: 'CLIENT',
         serverAddr: 'entry.example.com:40001',
+        secret: 'secret-xyz',
+        mappings: [{ lineId: 'nat-line', localPort: 26002, targetPort: 26002 }]
+      }
+    ]);
+
+    // 3. 当线路开启端点覆盖且提供自定义 serverHost 时，隧道客户端优先使用覆盖域名
+    prisma.node.findUnique.mockResolvedValueOnce({
+      id: 'nat-node',
+      serverHost: '192.168.1.50',
+      reachability: 'NAT',
+      status: 'ONLINE',
+      configOverride: null,
+      entryLines: [],
+      landingLines: [{
+        ...natRelay,
+        endpointOverrideEnabled: true,
+        serverHost: 'tunnel.override.example.com',
+        entryNode: { serverHost: 'entry.example.com', status: 'ONLINE', reachability: 'PUBLIC' }
+      }]
+    });
+    const overrideSync = await service.buildConfigSync('nat-node');
+    expect(overrideSync.tunnelConfigs).toEqual([
+      {
+        id: 'tunnel-40001',
+        role: 'CLIENT',
+        serverAddr: 'tunnel.override.example.com:40001',
         secret: 'secret-xyz',
         mappings: [{ lineId: 'nat-line', localPort: 26002, targetPort: 26002 }]
       }
