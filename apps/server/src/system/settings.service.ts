@@ -14,6 +14,9 @@ export interface ProbePresetTarget {
 }
 
 // SystemSetting 键定义（键名与取值格式见 docs/DATA_MODELS.md §SystemSetting）
+// 内置默认 GitHub 加速镜像（前缀代理，可被系统设置覆盖；公共镜像可用性不保证，安装脚本测速后择优）。
+export const DEFAULT_GITHUB_MIRRORS = ['https://ghfast.top/', 'https://gh-proxy.com/'] as const;
+
 export const SETTING_KEYS = {
   SITE_NAME: 'siteName',
   SITE_DESCRIPTION: 'siteDescription',
@@ -47,6 +50,8 @@ export const SETTING_KEYS = {
   CONFIG_SYNC_DEBOUNCE_MS: 'configSyncDebounceMs',
   DEFAULT_POLL_INTERVAL_SECS: 'defaultPollIntervalSecs',
   BINARY_DOWNLOAD_BASE_URL: 'binaryDownloadBaseUrl',
+  GITHUB_REPO_URL: 'githubRepoUrl',
+  GITHUB_MIRROR_URLS: 'githubMirrorUrls',
   PROBE_PRESET_TARGETS: 'probePresetTargets',
   JWT_SESSION_DAYS: 'jwtSessionDays',
   CUSTOM_CSS: 'customCss',
@@ -105,6 +110,8 @@ export interface SystemSettings {
   configSyncDebounceMs: number;
   defaultPollIntervalSecs: number;
   binaryDownloadBaseUrl: string;
+  githubRepoUrl: string;
+  githubMirrorUrls: string[];
   probePresetTargets: ProbePresetTarget[];
   jwtSessionDays: number;
   customCss: string;
@@ -198,6 +205,8 @@ export const DEFAULTS: SystemSettings = {
   configSyncDebounceMs: 250,
   defaultPollIntervalSecs: 15,
   binaryDownloadBaseUrl: '',
+  githubRepoUrl: 'https://github.com/Nanako660/riricloud',
+  githubMirrorUrls: [...DEFAULT_GITHUB_MIRRORS],
   probePresetTargets: [
     { type: 'tcp', target: 'www.apple.com', port: 443, timeoutMs: 5000 },
     { type: 'dns', target: 'cloudflare.com', timeoutMs: 5000 }
@@ -259,6 +268,8 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   configSyncDebounceMs: '配置同步防抖延迟（毫秒）',
   defaultPollIntervalSecs: 'Agent 默认 HTTP 轮询周期（秒）',
   binaryDownloadBaseUrl: '二进制分发基准地址',
+  githubRepoUrl: '项目 GitHub 仓库地址（Agent 安装脚本 Release 下载源）',
+  githubMirrorUrls: 'GitHub 加速镜像列表（前缀代理，节点安装时自动测速择优）',
   probePresetTargets: '默认网络探针目标列表',
   jwtSessionDays: 'JWT 会话有效天数',
   customCss: '自定义 CSS 样式',
@@ -346,6 +357,8 @@ export class SettingsService {
       configSyncDebounceMs: this.readInteger(map, 'configSyncDebounceMs', 0, 10000),
       defaultPollIntervalSecs: this.readInteger(map, 'defaultPollIntervalSecs', 5, 300),
       binaryDownloadBaseUrl: this.readString(map, 'binaryDownloadBaseUrl'),
+      githubRepoUrl: this.readString(map, 'githubRepoUrl'),
+      githubMirrorUrls: this.readStringArray(map, 'githubMirrorUrls'),
       probePresetTargets: this.readProbePresets(map),
       jwtSessionDays: this.readInteger(map, 'jwtSessionDays', 1, 30),
       customCss: this.readString(map, 'customCss'),

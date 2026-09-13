@@ -606,6 +606,8 @@ model SystemSetting {
 | `configSyncDebounceMs` | 十进制整数（0~10000） | `"250"` | 全量配置推送防抖延迟 |
 | `defaultPollIntervalSecs` | 十进制整数（5~300） | `"15"` | 新节点与 HTTP 轮询的默认周期 |
 | `binaryDownloadBaseUrl` | URL 或空字符串 | `""` | 内置 Agent/内核二进制下载基准地址（覆盖项；留空时自动回退继承 `publicBaseUrl`） |
+| `githubRepoUrl` | URL | `https://github.com/Nanako660/riricloud` | 项目 GitHub 仓库地址，节点安装脚本从该仓库 Release（agent-v* Tag）优先下载二进制 |
+| `githubMirrorUrls` | URL JSON 数组 | 内置默认公共镜像 | GitHub 加速镜像列表（前缀代理），节点安装时对直连与镜像自动测速择优，全部失败回退主控内置下载 |
 | `probePresetTargets` | 探针目标 JSON 数组 | TCP Apple 443 + DNS Cloudflare | 管理端探针预设目标 |
 | `jwtSessionDays` | 十进制整数（1~30） | `"1"` | 新签发 JWT 的会话有效天数 |
 | `customCss` | CSS 文本 | `""` | 面板运行时自定义样式 |

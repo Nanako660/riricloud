@@ -246,6 +246,19 @@ export class UpdateSettingsDto {
   @IsOptional()
   binaryDownloadBaseUrl?: string | null;
 
+  @ApiPropertyOptional({ example: 'https://github.com/Nanako660/riricloud', nullable: true })
+  @ValidateIf((o) => o.githubRepoUrl !== undefined && o.githubRepoUrl !== null && o.githubRepoUrl !== '')
+  @IsUrl({ require_protocol: true })
+  @IsOptional()
+  githubRepoUrl?: string | null;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @ArrayMaxSize(32)
+  @IsUrl({ require_protocol: true }, { each: true })
+  @IsOptional()
+  githubMirrorUrls?: string[] | null;
+
   @ApiPropertyOptional({ type: [ProbePresetTargetDto] })
   @IsArray()
   @ArrayMaxSize(32)
