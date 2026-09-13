@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import {
   INTERNAL_RELAY_TRANSIT_EMAIL,
   INTERNAL_RELAY_TRANSIT_SECRET,
@@ -13,6 +14,7 @@ import type { HeartbeatData } from './agent-message';
 
 describe('AgentGatewayService', () => {
   let service: AgentGatewayService;
+  const systemLogEnqueue = jest.fn();
   const txUserFindMany = jest.fn();
   const txTrafficCreateMany = jest.fn(async () => undefined);
   const txUserUpdate = jest.fn(async () => undefined);
@@ -59,7 +61,13 @@ describe('AgentGatewayService', () => {
   };
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ providers: [AgentGatewayService, { provide: PrismaService, useValue: prisma }] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        AgentGatewayService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SystemLogsService, useValue: { enqueue: systemLogEnqueue } }
+      ]
+    }).compile();
     service = moduleRef.get(AgentGatewayService);
   });
 
@@ -1120,4 +1128,94 @@ describe('AgentGatewayService', () => {
       expect(txProxyKeyUpdate).not.toHaveBeenCalled();
     });
   });
+  describe('升级版本对账', () => {
+    const heartbeat = (agentVersion?: string) => ({
+      protocolVersion: 2,
+      cpuUsage: 1,
+      memoryUsage: 2,
+      bandwidthRate: 3,
+      trafficSnapshots: [],
+      ...(agentVersion !== undefined ? { agentVersion } : {})
+    });
+    const upgradePayload = (taskId: string, version: string) => JSON.stringify({ taskId, target: 'agent', version, url: `https://example.com/${taskId}`, sha256: 'a'.repeat(64) });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('升级成功后心跳上报旧版本超过告警阈值时产生一次性 WARN 系统日志', async () => {
+      await service.handleUpgradeResult('reconcile-node', { taskId: 'task-reconcile-1', target: 'agent', version: '0.7.3', success: true, message: 'ok' });
+      expect(service.getPendingVersionConfirmation('reconcile-node')).toEqual(expect.objectContaining({ taskId: 'task-reconcile-1', expectedVersion: '0.7.3' }));
+
+      // 清掉升级回执自身的 INFO 日志，专注对账行为断言
+      systemLogEnqueue.mockClear();
+      await service.handleHeartbeat('reconcile-node', heartbeat('0.7.2'));
+      expect(systemLogEnqueue).not.toHaveBeenCalled();
+
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * 60 * 1000);
+      await service.handleHeartbeat('reconcile-node', heartbeat('0.7.2'));
+      expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+        nodeId: 'reconcile-node',
+        level: 'WARN',
+        module: 'UpgradeTask',
+        message: expect.stringContaining('重启可能失败')
+      }));
+
+      // warned 标记生效：继续旧版本心跳不重复告警
+      systemLogEnqueue.mockClear();
+      await service.handleHeartbeat('reconcile-node', heartbeat('0.7.2'));
+      expect(systemLogEnqueue).not.toHaveBeenCalled();
+      nowSpy.mockRestore();
+
+      // 目标版本上报后确认并清除待确认状态
+      await service.handleHeartbeat('reconcile-node', heartbeat('0.7.3'));
+      expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+        nodeId: 'reconcile-node',
+        level: 'INFO',
+        message: expect.stringContaining('升级版本已确认上报')
+      }));
+      expect(service.getPendingVersionConfirmation('reconcile-node')).toBeNull();
+    });
+
+    it('onModuleInit 恢复窗口内已完成任务的对账状态，已达版本节点不恢复', async () => {
+      deploymentFindMany.mockResolvedValue([
+        {
+          id: 'task-hydrate-1', nodeId: 'reconcile-node-hy', kind: 'AGENT', status: 'COMPLETED',
+          completedAt: new Date(Date.now() - 2 * 60 * 1000), payloadJson: upgradePayload('task-hydrate-1', '0.7.3')
+        },
+        {
+          id: 'task-hydrate-2', nodeId: 'reconcile-node-hy2', kind: 'AGENT', status: 'COMPLETED',
+          completedAt: new Date(Date.now() - 2 * 60 * 1000), payloadJson: upgradePayload('task-hydrate-2', '0.7.4')
+        }
+      ]);
+      prisma.node.findMany.mockResolvedValue([
+        { id: 'reconcile-node-hy', agentVersion: '0.7.2' },
+        { id: 'reconcile-node-hy2', agentVersion: '0.7.4' }
+      ]);
+      await service.onModuleInit();
+      expect(service.getPendingVersionConfirmation('reconcile-node-hy')).toEqual(expect.objectContaining({ expectedVersion: '0.7.3' }));
+      expect(service.getPendingVersionConfirmation('reconcile-node-hy2')).toBeNull();
+    });
+
+    it('dispatchQueuedUpgradeTasks 跳过 60 秒内已派发任务', async () => {
+      const fakeSocket = { send: jest.fn(), close: jest.fn() };
+      await service.register('reconcile-node-dispatch', fakeSocket);
+      deploymentFindMany.mockResolvedValue([
+        {
+          id: 'task-fresh', nodeId: 'reconcile-node-dispatch', kind: 'AGENT', status: 'DISPATCHED',
+          dispatchedAt: new Date(), requestedAt: new Date(), payloadJson: upgradePayload('task-fresh', '0.7.3')
+        },
+        {
+          id: 'task-stale', nodeId: 'reconcile-node-dispatch', kind: 'AGENT', status: 'DISPATCHED',
+          dispatchedAt: new Date(Date.now() - 2 * 60 * 1000), requestedAt: new Date(), payloadJson: upgradePayload('task-stale', '0.7.3')
+        }
+      ]);
+      await (service as unknown as { dispatchQueuedUpgradeTasks: (nodeId: string) => Promise<void> }).dispatchQueuedUpgradeTasks('reconcile-node-dispatch');
+      expect(fakeSocket.send).toHaveBeenCalledTimes(1);
+      const frame = JSON.parse(fakeSocket.send.mock.calls[0][0] as string);
+      expect(frame).toEqual(expect.objectContaining({ type: 'upgrade_task' }));
+      expect(frame.data).toEqual(expect.objectContaining({ taskId: 'task-stale' }));
+    });
+  });
 });
+

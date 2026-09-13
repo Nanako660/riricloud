@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, Optional, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -212,6 +212,17 @@ const RATE_METRIC_FLUSH_INTERVAL_MS = 5_000;
 const AGENT_WRITE_RETRY_DELAY_MS = 250;
 const AGENT_WRITE_MAX_ATTEMPTS = 3;
 
+// 升级版本对账窗口：超过告警阈值未确认说明新进程可能未接管（重启失败）；超过保留窗口放弃追踪。
+const UPGRADE_VERSION_CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+const UPGRADE_VERSION_CONFIRM_RETENTION_MS = 15 * 60 * 1000;
+
+type VersionConfirmation = {
+  taskId: string;
+  expectedVersion: string;
+  completedAt: number;
+  warned: boolean;
+};
+
 // 单节点注入的直连代理池凭据上限：约束入站用户列表与白名单路由规则的配置体量
 const PROXY_POOL_KEYS_PER_NODE_LIMIT = 512;
 
@@ -239,7 +250,7 @@ type RateMetricAggregate = {
 };
 
 @Injectable()
-export class AgentService implements OnModuleDestroy {
+export class AgentService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
   private readonly sockets = new Map<string, AgentSocket>();
   private readonly pendingTasks = new Map<string, PendingTask[]>();
@@ -248,6 +259,7 @@ export class AgentService implements OnModuleDestroy {
   private readonly mirrorSessions = new Map<string, MirrorSession>();
   private readonly pendingHeartbeats = new Map<string, PendingHeartbeat>();
   private readonly heartbeatRetryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly versionConfirmations = new Map<string, VersionConfirmation>();
   private writeTail: Promise<void> = Promise.resolve();
   private writeQueueDepth = 0;
   private readonly rateMetricBuckets = new Map<string, RateMetricAggregate>();
@@ -420,6 +432,85 @@ export class AgentService implements OnModuleDestroy {
       const outcome = await this.persistTrafficSnapshots(nodeId, trafficSnapshots, resolvedLine, heartbeatAt);
       // 流量周期重置（重新发凭据）与超额熔断（吊销凭据）都需要立即重下发节点配置
       if (outcome.reset || outcome.exhausted) void this.pushConfigToAll();
+    }
+    this.reconcileUpgradeVersion(nodeId, data.agentVersion);
+  }
+
+  // 升级版本对账：心跳上报版本达到升级目标即确认；超时未确认发出一次性 WARN，说明 Agent 重启可能失败。
+  private reconcileUpgradeVersion(nodeId: string, reportedVersion: string | undefined): void {
+    const entry = this.versionConfirmations.get(nodeId);
+    if (!entry) return;
+    if (reportedVersion !== undefined && reportedVersion === entry.expectedVersion) {
+      this.versionConfirmations.delete(nodeId);
+      this.systemLogsService?.enqueue({
+        nodeId,
+        source: 'SERVER',
+        level: 'INFO',
+        module: 'UpgradeTask',
+        message: `升级版本已确认上报 (${entry.expectedVersion})`,
+        metadata: { taskId: entry.taskId, expectedVersion: entry.expectedVersion }
+      });
+      return;
+    }
+    const ageMs = Date.now() - entry.completedAt;
+    if (ageMs > UPGRADE_VERSION_CONFIRM_RETENTION_MS) {
+      this.versionConfirmations.delete(nodeId);
+      return;
+    }
+    if (ageMs > UPGRADE_VERSION_CONFIRM_TIMEOUT_MS && !entry.warned) {
+      entry.warned = true;
+      this.systemLogsService?.enqueue({
+        nodeId,
+        source: 'SERVER',
+        level: 'WARN',
+        module: 'UpgradeTask',
+        message: `升级任务已完成但 Agent 心跳仍上报 ${reportedVersion ?? '未上报'}（目标 ${entry.expectedVersion}），Agent 重启可能失败`,
+        metadata: { taskId: entry.taskId, expectedVersion: entry.expectedVersion, reportedVersion: reportedVersion ?? null }
+      });
+    }
+  }
+
+  // 详情接口消费：升级任务已完成但心跳版本尚未确认时返回待确认信息，驱动前端警示横幅。
+  getPendingVersionConfirmation(nodeId: string): { taskId: string; expectedVersion: string; completedAt: string } | null {
+    const entry = this.versionConfirmations.get(nodeId);
+    if (!entry) return null;
+    return { taskId: entry.taskId, expectedVersion: entry.expectedVersion, completedAt: new Date(entry.completedAt).toISOString() };
+  }
+
+  // 主控重启后恢复升级版本对账窗口；节点已在重启前上报目标版本的条目不恢复。
+  async onModuleInit(): Promise<void> {
+    const delegate = this.deploymentTasks();
+    if (!delegate) return;
+    const since = new Date(Date.now() - UPGRADE_VERSION_CONFIRM_RETENTION_MS);
+    const tasks = await delegate.findMany({
+      where: { kind: 'AGENT', status: 'COMPLETED', completedAt: { gte: since } },
+      orderBy: { completedAt: 'desc' }
+    });
+    const latestByNode = new Map<string, DeploymentTaskRecord>();
+    for (const task of tasks) {
+      if (!latestByNode.has(task.nodeId)) latestByNode.set(task.nodeId, task);
+    }
+    if (!latestByNode.size) return;
+    const nodes = await this.prisma.node.findMany({
+      where: { id: { in: [...latestByNode.keys()] } },
+      select: { id: true, agentVersion: true }
+    });
+    const reportedByNode = new Map(nodes.map((node) => [node.id, node.agentVersion]));
+    for (const [nodeId, task] of latestByNode) {
+      let expectedVersion: string;
+      try {
+        expectedVersion = this.parseUpgradePayload(task.payloadJson).version;
+      } catch {
+        continue;
+      }
+      if (reportedByNode.get(nodeId) === expectedVersion) continue;
+      const completedAt = task.completedAt?.getTime() ?? Date.now();
+      this.versionConfirmations.set(nodeId, {
+        taskId: task.id,
+        expectedVersion,
+        completedAt,
+        warned: Date.now() - completedAt > UPGRADE_VERSION_CONFIRM_TIMEOUT_MS
+      });
     }
   }
 
@@ -1006,6 +1097,16 @@ export class AgentService implements OnModuleDestroy {
       completedAt: new Date().toISOString()
     } satisfies TaskResult;
     this.acknowledgeTask(nodeId, data.taskId, result);
+    // 回执只代表二进制已替换、进程尚未重启：记录目标版本等待心跳对账，
+    // 超时未确认说明新进程接管失败（升级后画像版本不更新的根因兜底）。
+    if (data.success && data.target === 'agent') {
+      this.versionConfirmations.set(nodeId, {
+        taskId: data.taskId,
+        expectedVersion: data.version,
+        completedAt: Date.now(),
+        warned: false
+      });
+    }
     const delegate = this.deploymentTasks();
     if (delegate) {
       const task = await delegate.findFirst({ where: { id: data.taskId, nodeId } });
@@ -2005,8 +2106,11 @@ export class AgentService implements OnModuleDestroy {
   private async dispatchQueuedUpgradeTasks(nodeId: string): Promise<void> {
     const delegate = this.deploymentTasks();
     if (!delegate || !this.sockets.has(nodeId)) return;
+    const now = Date.now();
     const tasks = await delegate.findMany({ where: { nodeId, status: { in: ['QUEUED', 'DISPATCHED'] } }, orderBy: { requestedAt: 'asc' }, take: 8 });
     for (const task of tasks) {
+      // 与 takePendingTasks 对齐：刚派发的任务不立即重发，避免重连顶替时触发重复升级重启
+      if (task.status === 'DISPATCHED' && task.dispatchedAt && now - task.dispatchedAt.getTime() < 60_000) continue;
       try {
         await this.dispatchUpgradeTask(nodeId, this.parseUpgradePayload(task.payloadJson));
       } catch (err) {
@@ -2121,6 +2225,7 @@ export class AgentService implements OnModuleDestroy {
     this.configCache.clear();
     this.mirrorSessions.clear();
     this.pendingHeartbeats.clear();
+    this.versionConfirmations.clear();
     for (const timer of this.heartbeatRetryTimers.values()) clearTimeout(timer);
     this.heartbeatRetryTimers.clear();
     this.rateMetricBuckets.clear();

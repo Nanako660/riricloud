@@ -13,7 +13,7 @@ describe('NodesService', () => {
     node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
     systemLog: { create: jest.fn() }
   };
-  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn() };
+  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
   const binaries = { resolveForNode: jest.fn() };
 
   beforeAll(async () => {
@@ -81,6 +81,14 @@ describe('NodesService', () => {
     const result = await service.detail(baseNode.id, 'https://panel.example.com');
     expect(result.node.installCommands.ws).toContain('https://panel.example.com/api/v1/downloads/agent');
     expect(result.node.installCommands.ws).toContain('--master=wss://panel.example.com/ws/agent');
+    expect(result.node.pendingVersionConfirm).toBeNull();
+  });
+
+  it('节点详情透出升级版本待确认信息', async () => {
+    prisma.node.findUnique.mockResolvedValue(nodeWithLines);
+    gateway.getPendingVersionConfirmation.mockReturnValue({ taskId: 'task-1', expectedVersion: '0.7.3', completedAt: '2026-09-14T00:00:00.000Z' });
+    const result = await service.detail(baseNode.id, 'https://panel.example.com');
+    expect(result.node.pendingVersionConfirm).toEqual({ taskId: 'task-1', expectedVersion: '0.7.3', completedAt: '2026-09-14T00:00:00.000Z' });
   });
 
   it('轮换远程节点 AgentToken 并返回一次性安装命令', async () => {
