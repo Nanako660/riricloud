@@ -29,10 +29,12 @@ function statusVariant(status: NodeDeploymentTask['status']) {
   return 'secondary' as const;
 }
 
+// 与服务端 formatBinaryVersion 口径一致：AGENT revision=1 不追加 -rN
 function taskVersion(task: NodeDeploymentTask) {
   if (task.version) return task.version;
   const release = task.asset?.release;
-  return release ? `${release.upstreamVersion}-r${release.revision}` : null;
+  if (!release) return null;
+  return release.kind.toUpperCase() === 'AGENT' && release.revision === 1 ? release.upstreamVersion : `${release.upstreamVersion}-r${release.revision}`;
 }
 
 export function NodeDeploymentHistory({ nodeId }: { nodeId: string }) {
