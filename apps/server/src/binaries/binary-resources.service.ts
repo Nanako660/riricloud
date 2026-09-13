@@ -103,7 +103,7 @@ export class BinaryResourcesService implements OnModuleInit {
         : {}),
       ...(query.platform ? { assets: { some: { target: { endsWith: `-${query.platform}` } } } } : {})
     };
-    const [rows, total] = await Promise.all([
+    const [rows, total, matching] = await Promise.all([
       this.prisma.binaryRelease.findMany({
         where,
         include: {
@@ -114,14 +114,31 @@ export class BinaryResourcesService implements OnModuleInit {
         skip: (page - 1) * pageSize,
         take: pageSize
       }),
-      this.prisma.binaryRelease.count({ where })
+      this.prisma.binaryRelease.count({ where }),
+      // 空间统计需覆盖全部匹配行而非当前页；STATIC 为发行包共享文件，
+      // 删除资源不会释放磁盘，只有 RUNTIME 独占文件计入可释放。
+      this.prisma.binaryRelease.findMany({
+        where,
+        select: { assets: { select: { size: true, storageRoot: true } } }
+      })
     ]);
+    const summary = matching.reduce(
+      (acc, release) => {
+        for (const asset of release.assets ?? []) {
+          acc.totalBytes += asset.size;
+          if (asset.storageRoot === 'RUNTIME') acc.reclaimableBytes += asset.size;
+        }
+        return acc;
+      },
+      { totalBytes: 0, reclaimableBytes: 0 }
+    );
     return {
       data: rows.map((release) => this.serializeRelease(release)),
       total,
       page,
       pageSize,
-      supportedTargets: BINARY_TARGET_VALUES
+      supportedTargets: BINARY_TARGET_VALUES,
+      summary
     };
   }
 
@@ -249,7 +266,10 @@ export class BinaryResourcesService implements OnModuleInit {
       include: { assets: true, _count: { select: { deploymentTasks: true } } }
     });
     if (!release) throw new NotFoundException('二进制资源不存在');
-    if (release.source === 'BUILTIN') throw new ConflictException('内置资源不可删除');
+    // 内置资源的生命周期终点是归档；已归档且无分发历史的内置资源允许物理删除。
+    if (release.source === 'BUILTIN' && release.status !== 'RETIRED') {
+      throw new ConflictException('内置资源不可直接删除，请先归档');
+    }
     if (release.status === 'ACTIVE') throw new ConflictException('启用中的资源不可删除，请先停用');
     if (release._count.deploymentTasks > 0) {
       throw new ConflictException('资源已有分发历史，为保证审计可追溯请使用归档');
@@ -259,9 +279,10 @@ export class BinaryResourcesService implements OnModuleInit {
       await tx.binaryAsset.deleteMany({ where: { releaseId: id } });
       await tx.binaryRelease.delete({ where: { id } });
     });
-    // 上传/远程导入的文件固定位于 RUNTIME 下 resources/<releaseId>/，可整目录清理；
-    // STATIC 资产与内置/旧目录认领文件共享静态目录，只删 DB 行不动磁盘。
-    if (release.assets.every((asset) => asset.storageRoot === 'RUNTIME')) {
+    // 上传/远程导入的文件固定位于 RUNTIME 下 resources/<releaseId>/，该目录为资源独占，
+    // 含任一 RUNTIME 资产即可整目录清理；STATIC 资产与内置/旧目录认领文件共享静态目录，
+    // 只删 DB 行不动磁盘。
+    if (release.assets.some((asset) => asset.storageRoot === 'RUNTIME')) {
       await rm(join(this.runtimeDir, 'resources', release.id), { recursive: true, force: true }).catch((error) => {
         this.logger.warn(`清理资源文件失败 release=${release.id}: ${error instanceof Error ? error.message : error}`);
       });
@@ -272,7 +293,7 @@ export class BinaryResourcesService implements OnModuleInit {
         kind: release.kind,
         version: this.versionOf(release),
         targets: release.assets.map((asset) => asset.target),
-        freedBytes: release.assets.reduce((sum, asset) => sum + asset.size, 0)
+        freedBytes: release.assets.reduce((sum, asset) => (asset.storageRoot === 'RUNTIME' ? sum + asset.size : sum), 0)
       })
     });
     await this.binaries.refresh();
