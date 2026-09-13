@@ -26,28 +26,28 @@ Docker 部署升级镜像后，资源管理页出现大量历史"内置"Agent �
 ## 📋 里程碑与任务清单
 
 ### 里程碑 1：服务端生命周期修复（apps/server）
-- [ ] 任务 1.1: `syncManifests()` 解析失败补 warn 日志，返回成功解析的资源键集合
-- [ ] 任务 1.2: 新增 `retireSupersededBuiltins()`——staticDir manifest 成功解析时，归档不在当前 manifest 中的 BUILTIN 资源并转移默认（幂等，不触碰 UPLOAD/REMOTE）
-- [ ] 任务 1.3: 新增 `normalizeDefaults()`——每类型 ACTIVE 默认唯一化（保留最新，零条时补设）
-- [ ] 任务 1.4: 新增 `verifyAssetsAvailability()`——启动时校验 ACTIVE/DRAFT 资产文件存在性与 sha256，失效标 `available=false`，无可用资产的 ACTIVE 降级 DISABLED
-- [ ] 任务 1.5: 单元测试覆盖上述场景（归档/幂等/默认收敛/失效校验/无 manifest 跳过）
+- [x] 任务 1.1: `syncManifests()` 解析失败补 warn 日志，返回成功解析的资源键集合
+- [x] 任务 1.2: 新增 `retireSupersededBuiltins()`——staticDir manifest 成功解析时，归档不在当前 manifest 中的 BUILTIN 资源并转移默认（幂等，不触碰 UPLOAD/REMOTE）
+- [x] 任务 1.3: 新增 `normalizeDefaults()`——每类型 ACTIVE 默认唯一化（保留最新，零条时补设）
+- [x] 任务 1.4: 新增 `verifyAssetsAvailability()`——启动时校验 ACTIVE/DRAFT 资产文件存在性与 sha256，失效标 `available=false`，无可用资产的 ACTIVE 降级 DISABLED
+- [x] 任务 1.5: 单元测试覆盖上述场景（归档/幂等/默认收敛/失效校验/无 manifest 跳过）
 
 ### 里程碑 2：产物瘦身与前端标识
-- [ ] 任务 2.1: Dockerfile 移除扁平 `singbox-linux-<arch>`、顶层 `libcronet.so`、`/app/binaries/mihomo-linux-*` 冗余副本（保留版本化布局、AGENT_VERSION、/usr/local/bin 三件套）
-- [ ] 任务 2.2: `scripts/bundle-master.sh` 同步移除 agent/singbox/libcronet 扁平副本，修正 `scripts/master-bundle/README.md` 过时描述
-- [ ] 任务 2.3: 前端资源列表/详情基于 `asset.available` 展示"文件失效"标识，总体积仅累计可用资产
+- [x] 任务 2.1: Dockerfile 移除扁平 `singbox-linux-<arch>`、顶层 `libcronet.so`、`/app/binaries/mihomo-linux-*` 冗余副本（保留版本化布局、AGENT_VERSION、/usr/local/bin 三件套）
+- [x] 任务 2.2: `scripts/bundle-master.sh` 同步移除 agent/singbox/libcronet 扁平副本，修正 `scripts/master-bundle/README.md` 过时描述
+- [x] 任务 2.3: 前端资源列表/详情基于 `asset.available` 展示"文件失效"标识，总体积仅累计可用资产
 
 ### 里程碑 3：文档与质量门禁
-- [ ] 任务 3.1: 同步更新 ARCHITECTURE / API_AND_PROTOCOLS / DATA_MODELS / DEPLOYMENT_GUIDE / VISUAL_VERIFICATION 与 CHANGELOG `[Unreleased]`
-- [ ] 任务 3.2: `pnpm gate` 五门禁全绿，提 PR 合并后归档本规划
+- [x] 任务 3.1: 同步更新 ARCHITECTURE / API_AND_PROTOCOLS / DATA_MODELS / DEPLOYMENT_GUIDE / VISUAL_VERIFICATION 与 CHANGELOG `[Unreleased]`
+- [x] 任务 3.2: `pnpm gate` 五门禁全绿，提 PR 合并后归档本规划（#137 已合并；部署联调确认后执行 `pnpm plan:archive` 归档）
 
 ---
 
 ## 🧪 验收标准与测试记录
 
-- [ ] `pnpm gate` 全绿；新增单测全过
-- [ ] 升级部署首次启动后：仅当前镜像版本"启用+默认"，历史内置版本全部"归档"（默认徽标唯一，审计含 `reason=builtin-superseded`）
-- [ ] 镜像与离线包不含冗余扁平二进制；节点升级/下载分发行为不回归
-- [ ] 失效资产在列表与详情可见"文件失效"标识
-- [ ] 单元测试 / 门禁全绿
+- [x] `pnpm gate` 全绿；新增单测全过（binary-resources 23 用例，server 481 测试）
+- [ ] 升级部署首次启动后：仅当前镜像版本"启用+默认"，历史内置版本全部"归档"（默认徽标唯一，审计含 `reason=builtin-superseded`）——待下一版 Master 镜像部署验证
+- [ ] 镜像与离线包不含冗余扁平二进制；节点升级/下载分发行为不回归——随下次镜像/发行包构建验证
+- [x] 失效资产在列表与详情可见"文件失效"标识（代码与门禁验证）
+- [x] 单元测试 / 门禁全绿
 - [ ] 联调验收通过
