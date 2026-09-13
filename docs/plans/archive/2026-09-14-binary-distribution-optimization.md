@@ -1,12 +1,12 @@
 ---
 title: "binary-distribution-optimization"
 type: plan
-status: active
-target_version: "v0.8.12"
+status: completed
+target_version: v0.8.12
 created_at: "2026-09-14"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-14"
 ---
-
 # binary-distribution-optimization
 
 ## 🎯 目标与背景
