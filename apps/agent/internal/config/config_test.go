@@ -149,3 +149,13 @@ func TestNormalizeMasterURL(t *testing.T) {
 		t.Fatalf("unexpected HTTP URL: %s (%v)", httpURL, err)
 	}
 }
+
+func TestParseMirrorList(t *testing.T) {
+	got := parseMirrorList("https://a.example/,https://b.example, https://c.example")
+	if len(got) != 3 {
+		t.Fatalf("unexpected length: got %v", got)
+	}
+	if got[0] != "https://a.example/" || got[1] != "https://b.example" || got[2] != "https://c.example" {
+		t.Fatalf("unexpected mirrors: %v", got)
+	}
+}

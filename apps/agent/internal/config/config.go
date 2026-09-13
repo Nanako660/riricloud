@@ -27,14 +27,15 @@ const (
 
 // Config 是落盘保存的 Agent 运行配置，环境变量仍可作为兼容与容器覆盖层。
 type Config struct {
-	MasterURL        string `yaml:"masterUrl"`
-	Mode             Mode   `yaml:"mode"`
-	AgentToken       string `yaml:"agentToken"`
-	SingboxConfPath  string `yaml:"singboxConfPath"`
-	SingboxBinPath   string `yaml:"singboxBinPath"`
-	HeartbeatSecs    int    `yaml:"heartbeatSecs"`
-	PollIntervalSecs int    `yaml:"pollIntervalSecs"`
-	LogPath          string `yaml:"logPath"`
+	MasterURL        string   `yaml:"masterUrl"`
+	Mode             Mode     `yaml:"mode"`
+	AgentToken       string   `yaml:"agentToken"`
+	SingboxConfPath  string   `yaml:"singboxConfPath"`
+	SingboxBinPath   string   `yaml:"singboxBinPath"`
+	HeartbeatSecs    int      `yaml:"heartbeatSecs"`
+	PollIntervalSecs int      `yaml:"pollIntervalSecs"`
+	LogPath          string   `yaml:"logPath"`
+	GitHubMirrors    []string `yaml:"githubMirrors,omitempty"`
 
 	// MasterWsURL 为旧调用方保留，不会持久化。
 	MasterWsURL string `yaml:"-"`
@@ -255,6 +256,10 @@ func applyEnvironment(c *Config) {
 			c.PollIntervalSecs = -1
 		}
 	}
+	// GitHub 加速镜像（前缀代理）：安装脚本经环境变量注入，逗号或空白分隔
+	if value := strings.TrimSpace(os.Getenv("GITHUB_MIRRORS")); value != "" {
+		c.GitHubMirrors = parseMirrorList(value)
+	}
 	if value := os.Getenv("HEARTBEAT_SECS"); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {
 			c.HeartbeatSecs = seconds
@@ -262,6 +267,11 @@ func applyEnvironment(c *Config) {
 			c.HeartbeatSecs = -1
 		}
 	}
+}
+
+// parseMirrorList 解析 GITHUB_MIRRORS 环境变量（逗号或空白分隔，逐项 trim 去空）。
+func parseMirrorList(raw string) []string {
+	return strings.Fields(strings.ReplaceAll(raw, ",", " "))
 }
 
 func resolveMode(rawURL, explicit string) (Mode, error) {
