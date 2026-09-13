@@ -355,18 +355,32 @@ export class NodesService {
 
   // 旧版键：POSIX 语法 + 随节点 osArch 变化的下载 UA（保持历史行为不变）。
   private buildInstallCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
-    return this.renderPosixInstallCommand(mode, normalizeOsArch(osArch) ?? 'linux-amd64', publicBaseUrl);
+    return this.renderLegacyPosixCommand(mode, normalizeOsArch(osArch) ?? 'linux-amd64', publicBaseUrl);
   }
 
+  // POSIX 原生安装：拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
   private buildPosixInstallCommand(mode: 'WS' | 'HTTP', targetOs: 'linux' | 'macos', osArch?: string | null, publicBaseUrl?: string) {
-    return this.renderPosixInstallCommand(mode, this.resolveTargetPlatform(targetOs, osArch), publicBaseUrl);
+    const { master } = this.resolveModeUrls(mode, publicBaseUrl);
+    const platform = this.resolveTargetPlatform(targetOs, osArch);
+    const scriptUrl = this.buildInstallerScriptUrl(publicBaseUrl);
+    const modeParam = mode === 'HTTP' ? 'http' : 'ws';
+    const temp = '/tmp/riri-agent-install.sh';
+    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; export RIRI_AGENT_TOKEN; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${scriptUrl}?mode=${modeParam}' -o ${temp} && sh ${temp} --master='${master}' && rm -f ${temp}`;
   }
 
+  // Windows 原生安装：拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
   private buildWindowsInstallCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
-    const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
+    const { master } = this.resolveModeUrls(mode, publicBaseUrl);
     const platform = this.resolveTargetPlatform('windows', osArch);
-    const exe = '$env:ProgramFiles\\RiriCloud\\riri-agent.exe';
-    return `$Token = Read-Host 'AgentToken'; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${downloadUrl}' -o "$env:TEMP\\riri-agent.exe"; New-Item -ItemType Directory -Force "$env:ProgramFiles\\RiriCloud" | Out-Null; Move-Item -Force "$env:TEMP\\riri-agent.exe" "${exe}"; & "${exe}" install --token="$Token" --master=${master}`;
+    const scriptUrl = this.buildInstallerScriptUrl(publicBaseUrl);
+    const modeParam = mode === 'HTTP' ? 'http' : 'ws';
+    return `$Token = Read-Host 'AgentToken'; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${scriptUrl}?mode=${modeParam}' -o "$env:TEMP\\riri-install.ps1"; & "$env:TEMP\\riri-install.ps1" -MasterUrl '${master}' -AgentToken $Token; Remove-Item "$env:TEMP\\riri-install.ps1" -ErrorAction SilentlyContinue`;
+  }
+
+  // 安装脚本下载地址（脚本由主控按镜像设置与 UA 平台渲染，下载顺序 GitHub Release/镜像测速 → 主控兜底）
+  private buildInstallerScriptUrl(publicBaseUrl?: string) {
+    const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
+    return appendPublicPath(baseUrl, 'api/v1/downloads/agent-installer');
   }
 
   private buildPosixPortableCommand(mode: 'WS' | 'HTTP', targetOs: 'linux' | 'macos', osArch?: string | null, publicBaseUrl?: string) {
@@ -399,7 +413,8 @@ export class NodesService {
     };
   }
 
-  private renderPosixInstallCommand(mode: 'WS' | 'HTTP', platform: string, publicBaseUrl?: string) {
+  // 旧版 ws/http 键专用：直接下载主控裸二进制的原始内联命令（保持历史行为不变）。
+  private renderLegacyPosixCommand(mode: 'WS' | 'HTTP', platform: string, publicBaseUrl?: string) {
     const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
     const temp = '/tmp/riri-agent-download';
     return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=${master}`;

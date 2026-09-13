@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **节点安装脚本化与三级下载回退**：原生安装命令改为从主控拉取按平台渲染的安装脚本（`GET /api/v1/downloads/agent-installer`，POSIX sh 与 PowerShell 双模板）。脚本优先从项目 GitHub Release（`agent-v*` Tag）下载 Agent 二进制并强制 `checksums.txt` SHA-256 校验，对「直连 + 系统配置的加速镜像」自动 128KB Range GET 测速择优，全部失败回退主控内置二进制（嵌入预期 SHA-256 校验）；镜像经 `GITHUB_MIRRORS` 环境变量传递，兼容旧版 Agent。
 
 ### Changed
 - **GitHub Release 安装源与镜像设置**：系统设置新增「项目 GitHub 仓库地址」与「GitHub 加速镜像列表」（内置默认公共镜像，可增删改），为节点安装脚本提供 GitHub Release 优先下载与镜像测速数据源。

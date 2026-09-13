@@ -1,16 +1,18 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
+import { BinariesInstallerService } from './installer.service';
 import { BinaryResourcesService } from './binary-resources.service';
 import { BinaryResourceImportDto, BinaryResourceUploadDto } from './dto/binary-resource.dto';
 import { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
+import { getRequestBaseUrl } from '../common/public-url';
 import { QueryBinaryAuditLogDto, QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
 import { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
 
@@ -19,8 +21,30 @@ import { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
 export class BinariesController {
   constructor(
     private readonly binaries: BinariesService,
+    private readonly installer?: BinariesInstallerService,
     private readonly resources?: BinaryResourcesService
   ) {}
+
+  // 节点安装脚本：按下载 UA 的平台渲染（POSIX sh / PowerShell），内嵌镜像测速与主控兜底逻辑
+  @Public()
+  @Get('downloads/agent-installer')
+  async agentInstaller(
+    @Headers('user-agent') userAgent: string | undefined,
+    @Headers('x-agent-token') headerToken: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    await this.binaries.authorizeDownload(headerToken);
+    const target = this.binaries.resolveAgentTarget(userAgent);
+    const platform = target.replace(/^agent-/, '');
+    const script = target.startsWith('agent-windows')
+      ? await this.installer!.renderPowershellScript(platform, getRequestBaseUrl(request))
+      : await this.installer!.renderShellScript(platform, getRequestBaseUrl(request));
+    response.setHeader('Content-Type', target.startsWith('agent-windows') ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    return script;
+  }
 
   @Public()
   @Get('downloads/agent')
