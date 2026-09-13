@@ -13,10 +13,13 @@
 ## [Unreleased]
 
 ### Added
+- **节点安装命令按目标操作系统生成与免安装运行模式**：主控为节点创建、详情与 Token 轮换返回的 `installCommands` 新增 `native.{linux,macos,windows}` 与 `portable.{linux,macos,windows}` 命令对（每项 `{ ws, http }`），并新增 `windowsUninstallCommand`；面板安装命令弹窗升级为「原生安装 / 免安装运行 / Docker」× 目标系统（Linux / macOS / Windows）× 通信模式选择，Windows 命令为 PowerShell 语法并提示管理员身份执行。免安装模式仅凭 `AGENT_TOKEN` 等环境变量前台运行 `riri-agent run`：sing-box 内核缺失时由 Agent 后台自动下载（`--singbox-source auto|master|github|none`，显式设置 `SINGBOX_BINARY_PATH` 视为自管内核），数据目录通过 `RIRICLOUD_DATA_DIR` 指定，适合临时验证与无法注册服务的受限环境。
+- **Agent 日志目录错误提示**：日志目录创建或打开失败时，错误信息附带 `RIRICLOUD_DATA_DIR` / `RIRICLOUD_LOG_PATH` 可写目录设置提示。
 
 ### Changed
 
 ### Fixed
+- **修复 Agent 无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。
 
 
 ## [0.8.8] - 2026-09-13

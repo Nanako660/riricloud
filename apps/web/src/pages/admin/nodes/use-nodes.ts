@@ -206,8 +206,14 @@ export interface AdminNode {
   installCommands?: NodeInstallCommands;
   agentImage?: string;
   uninstallCommand?: string;
+  windowsUninstallCommand?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NodeInstallCommandPair {
+  ws: string;
+  http: string;
 }
 
 export interface NodeInstallCommands {
@@ -215,6 +221,9 @@ export interface NodeInstallCommands {
   http: string;
   dockerWs?: string;
   dockerHttp?: string;
+  // native/portable 按目标操作系统区分；旧版主控可能不返回，需兜底到 ws/http 旧键
+  native?: Partial<Record<'linux' | 'macos' | 'windows', NodeInstallCommandPair>>;
+  portable?: Partial<Record<'linux' | 'macos' | 'windows', NodeInstallCommandPair>>;
 }
 
 export interface CreateNodeResult {
@@ -224,6 +233,7 @@ export interface CreateNodeResult {
   installCommands?: NodeInstallCommands;
   agentImage?: string;
   uninstallCommand?: string;
+  windowsUninstallCommand?: string;
 }
 
 export interface RotateNodeTokenResult {
@@ -233,6 +243,7 @@ export interface RotateNodeTokenResult {
   installCommands: NodeInstallCommands;
   agentImage?: string;
   uninstallCommand: string;
+  windowsUninstallCommand?: string;
 }
 
 export interface NodeTaskStatus {

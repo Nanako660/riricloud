@@ -50,14 +50,10 @@ export class NodesService {
     return {
       node: {
         ...this.sanitize(node),
-        installCommands: {
-          ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-          http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
-          dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
-          dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
-        },
+        installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl),
         agentImage,
-        uninstallCommand: this.buildUninstallCommand()
+        uninstallCommand: this.buildUninstallCommand(),
+        windowsUninstallCommand: this.buildWindowsUninstallCommand()
       }
     };
   }
@@ -91,14 +87,10 @@ export class NodesService {
       // Token 只在创建成功响应中返回一次；数据库字段保存的是加密密文。
       agentToken,
       installCommand: this.buildInstallCommand(communicationMode, node.osArch, publicBaseUrl),
-      installCommands: {
-        ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-        http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
-        dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
-        dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
-      },
+      installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl),
       agentImage,
-      uninstallCommand: this.buildUninstallCommand()
+      uninstallCommand: this.buildUninstallCommand(),
+      windowsUninstallCommand: this.buildWindowsUninstallCommand()
     };
   }
 
@@ -118,19 +110,15 @@ export class NodesService {
       await systemLog.create({ data: { source: 'SERVER', level: 'WARN', module: 'Nodes', message: 'AgentToken rotated', metadata: JSON.stringify({ nodeId: id, operatorId: operatorId ?? null }), nodeId: id } });
     }
     const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
-    const installCommands = {
-      ws: this.buildInstallCommand('WS', node.osArch, publicBaseUrl),
-      http: this.buildInstallCommand('HTTP', node.osArch, publicBaseUrl),
-      dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
-      dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl)
-    };
+    const installCommands = this.buildInstallCommands(node.osArch, publicBaseUrl);
     return {
       nodeId: id,
       agentToken: token,
       installCommand: installCommands[node.communicationMode === 'HTTP' ? 'http' : 'ws'],
       installCommands,
       agentImage,
-      uninstallCommand: this.buildUninstallCommand()
+      uninstallCommand: this.buildUninstallCommand(),
+      windowsUninstallCommand: this.buildWindowsUninstallCommand()
     };
   }
 
@@ -330,13 +318,77 @@ export class NodesService {
     return raw;
   }
 
+  /**
+   * 组装节点安装命令全集：ws/http/dockerWs/dockerHttp 为兼容保留的旧键，
+   * native/portable 按目标操作系统区分（native=注册系统服务，portable=免安装直接运行）。
+   */
+  private buildInstallCommands(osArch?: string | null, publicBaseUrl?: string) {
+    return {
+      ws: this.buildInstallCommand('WS', osArch, publicBaseUrl),
+      http: this.buildInstallCommand('HTTP', osArch, publicBaseUrl),
+      dockerWs: this.buildDockerCommand('WS', publicBaseUrl),
+      dockerHttp: this.buildDockerCommand('HTTP', publicBaseUrl),
+      native: {
+        linux: { ws: this.buildPosixInstallCommand('WS', 'linux', osArch, publicBaseUrl), http: this.buildPosixInstallCommand('HTTP', 'linux', osArch, publicBaseUrl) },
+        macos: { ws: this.buildPosixInstallCommand('WS', 'macos', osArch, publicBaseUrl), http: this.buildPosixInstallCommand('HTTP', 'macos', osArch, publicBaseUrl) },
+        windows: { ws: this.buildWindowsInstallCommand('WS', osArch, publicBaseUrl), http: this.buildWindowsInstallCommand('HTTP', osArch, publicBaseUrl) }
+      },
+      portable: {
+        linux: { ws: this.buildPosixPortableCommand('WS', 'linux', osArch, publicBaseUrl), http: this.buildPosixPortableCommand('HTTP', 'linux', osArch, publicBaseUrl) },
+        macos: { ws: this.buildPosixPortableCommand('WS', 'macos', osArch, publicBaseUrl), http: this.buildPosixPortableCommand('HTTP', 'macos', osArch, publicBaseUrl) },
+        windows: { ws: this.buildWindowsPortableCommand('WS', osArch, publicBaseUrl), http: this.buildWindowsPortableCommand('HTTP', osArch, publicBaseUrl) }
+      }
+    };
+  }
+
+  // 旧版键：POSIX 语法 + 随节点 osArch 变化的下载 UA（保持历史行为不变）。
   private buildInstallCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
-    const platform = normalizeOsArch(osArch) ?? 'linux-amd64';
+    return this.renderPosixInstallCommand(mode, normalizeOsArch(osArch) ?? 'linux-amd64', publicBaseUrl);
+  }
+
+  private buildPosixInstallCommand(mode: 'WS' | 'HTTP', targetOs: 'linux' | 'macos', osArch?: string | null, publicBaseUrl?: string) {
+    return this.renderPosixInstallCommand(mode, this.resolveTargetPlatform(targetOs, osArch), publicBaseUrl);
+  }
+
+  private buildWindowsInstallCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
+    const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
+    const platform = this.resolveTargetPlatform('windows', osArch);
+    const exe = '$env:ProgramFiles\\RiriCloud\\riri-agent.exe';
+    return `$Token = Read-Host 'AgentToken'; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${downloadUrl}' -o "$env:TEMP\\riri-agent.exe"; New-Item -ItemType Directory -Force "$env:ProgramFiles\\RiriCloud" | Out-Null; Move-Item -Force "$env:TEMP\\riri-agent.exe" "${exe}"; & "${exe}" install --token="$Token" --master=${master}`;
+  }
+
+  private buildPosixPortableCommand(mode: 'WS' | 'HTTP', targetOs: 'linux' | 'macos', osArch?: string | null, publicBaseUrl?: string) {
+    const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
+    const platform = this.resolveTargetPlatform(targetOs, osArch);
+    const temp = '/tmp/riri-agent-download';
+    return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${downloadUrl}' -o ${temp} && chmod +x ${temp} && RIRICLOUD_DATA_DIR="$HOME/.riri-cloud" AGENT_TOKEN="$RIRI_AGENT_TOKEN" MASTER_URL='${master}' ${temp} run`;
+  }
+
+  private buildWindowsPortableCommand(mode: 'WS' | 'HTTP', osArch?: string | null, publicBaseUrl?: string) {
+    const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
+    const platform = this.resolveTargetPlatform('windows', osArch);
+    const dir = '$env:LOCALAPPDATA\\RiriCloud';
+    const exe = `${dir}\\riri-agent.exe`;
+    return `$Token = Read-Host 'AgentToken'; New-Item -ItemType Directory -Force "${dir}" | Out-Null; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${downloadUrl}' -o "${exe}"; $env:RIRICLOUD_DATA_DIR = "${dir}"; $env:AGENT_TOKEN = "$Token"; $env:MASTER_URL = '${master}'; & "${exe}" run`;
+  }
+
+  // 下载 UA 按目标 OS 归一；节点已上报的 arch 仅在 OS 匹配时复用，否则回退 amd64。
+  private resolveTargetPlatform(targetOs: 'linux' | 'macos' | 'windows', osArch?: string | null): string {
+    const normalized = normalizeOsArch(osArch);
+    if (normalized?.startsWith(`${targetOs}-`)) return normalized;
+    return `${targetOs}-amd64`;
+  }
+
+  private resolveModeUrls(mode: 'WS' | 'HTTP', publicBaseUrl?: string) {
     const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
-    const master = mode === 'HTTP'
-      ? baseUrl
-      : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent');
-    const downloadUrl = appendPublicPath(baseUrl, 'api/v1/downloads/agent');
+    return {
+      master: mode === 'HTTP' ? baseUrl : appendPublicPath(toWebSocketBaseUrl(baseUrl), 'ws/agent'),
+      downloadUrl: appendPublicPath(baseUrl, 'api/v1/downloads/agent')
+    };
+  }
+
+  private renderPosixInstallCommand(mode: 'WS' | 'HTTP', platform: string, publicBaseUrl?: string) {
+    const { master, downloadUrl } = this.resolveModeUrls(mode, publicBaseUrl);
     const temp = '/tmp/riri-agent-download';
     return `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${downloadUrl}' -o ${temp} && install -m 0755 ${temp} /usr/local/bin/riri-agent && rm -f ${temp} && /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=${master}`;
   }
@@ -353,6 +405,10 @@ export class NodesService {
 
   private buildUninstallCommand() {
     return 'sudo /usr/local/bin/riri-agent uninstall --purge --yes';
+  }
+
+  private buildWindowsUninstallCommand() {
+    return '& "$env:ProgramFiles\\RiriCloud\\riri-agent.exe" uninstall --purge --yes';
   }
 
   private sanitize(node: NodeWithLines): Record<string, unknown> {
