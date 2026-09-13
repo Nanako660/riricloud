@@ -20,6 +20,7 @@
 
 ### Fixed
 - **修复 Agent 无法以 Windows 服务方式启动/停止（错误 1053）**：Agent 二进制此前缺少 Windows SCM 服务端入口，SCM 拉起 `riri-agent run` 后从未上报 `SERVICE_RUNNING`，导致服务启动/停止/安装一律以 "The service did not respond to the start or control request in a timely fashion" 超时失败。现检测 Windows 服务上下文并接入 `kardianos/service` 生命周期（`Start` 非阻塞拉起守护进程、`Stop` 取消上下文并限时等待优雅退出），Linux/macOS 前台行为不变。
+- **修复 Windows 服务模式下 agent.log 恒为空**：日志 MultiWriter 原以 stdout 在前，Windows 服务进程 stdout 句柄失效导致写入短路、文件永远收不到日志；现改为文件优先，并仅在 stdout 可用上下文附加 stdout 镜像。
 
 
 ## [0.8.8] - 2026-09-13
