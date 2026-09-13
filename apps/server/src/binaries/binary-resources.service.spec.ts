@@ -315,15 +315,54 @@ describe('BinaryResourcesService', () => {
     await expect(service.update('release-singbox-1', { compatibility: { minAgentProtocolVersion: '2' } })).rejects.toThrow(BadRequestException);
   });
 
-  it('删除资源校验内置、启用状态与分发历史', async () => {
+  it('删除资源校验内置归档状态、启用状态与分发历史', async () => {
     prisma.binaryRelease.findUnique
-      .mockResolvedValueOnce(release({ source: 'BUILTIN', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
+      .mockResolvedValueOnce(release({ source: 'BUILTIN', status: 'ACTIVE', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
       .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'ACTIVE', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
       .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'DISABLED', isDefault: false, assets: [], _count: { deploymentTasks: 2 } }));
 
-    await expect(service.remove('release-singbox-1')).rejects.toThrow('内置资源不可删除');
+    await expect(service.remove('release-singbox-1')).rejects.toThrow('内置资源不可直接删除');
     await expect(service.remove('release-singbox-1')).rejects.toThrow('启用中的资源不可删除');
     await expect(service.remove('release-singbox-1')).rejects.toThrow('分发历史');
+  });
+
+  it('已归档且无分发历史的内置资源可删除且不触碰共享静态文件', async () => {
+    prisma.binaryRelease.findUnique.mockResolvedValue({
+      ...release({ source: 'BUILTIN', status: 'RETIRED', isDefault: false }),
+      assets: [{ storageRoot: 'STATIC', size: 100 }],
+      _count: { deploymentTasks: 0 }
+    });
+
+    const result = await service.remove('release-singbox-1', 'admin-1');
+
+    expect(result).toEqual({ id: 'release-singbox-1', deleted: true });
+    expect(prisma.binaryRelease.delete).toHaveBeenCalledWith({ where: { id: 'release-singbox-1' } });
+    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'RESOURCE_DELETED',
+        metadataJson: expect.stringContaining('"freedBytes":0')
+      })
+    }));
+  });
+
+  it('删除含 RUNTIME 资源时按独占文件统计释放字节', async () => {
+    prisma.binaryRelease.findUnique.mockResolvedValue({
+      ...release({ source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
+      assets: [
+        { storageRoot: 'RUNTIME', size: 120 },
+        { storageRoot: 'STATIC', size: 80 }
+      ],
+      _count: { deploymentTasks: 0 }
+    });
+
+    await service.remove('release-singbox-1', 'admin-1');
+
+    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'RESOURCE_DELETED',
+        metadataJson: expect.stringContaining('"freedBytes":120')
+      })
+    }));
   });
 
   it('删除无引用资源会清理运行时目录并写审计', async () => {
@@ -365,7 +404,28 @@ describe('BinaryResourcesService', () => {
     expect(result.failed).toBe(1);
     expect(result.results[0]).toEqual({ id: 'release-ok', ok: true });
     expect(result.results[1].ok).toBe(false);
-    expect(result.results[1].error).toContain('内置资源不可删除');
+    expect(result.results[1].error).toContain('内置资源不可直接删除');
+  });
+
+  it('列表返回全部匹配行的登记体积与可释放空间汇总', async () => {
+    prisma.binaryRelease.count.mockResolvedValue(2);
+    prisma.binaryRelease.findMany
+      .mockResolvedValueOnce([
+        {
+          ...release({ isDefault: false }),
+          assets: [{ target: 'singbox-linux-amd64', size: 100, storageRoot: 'STATIC', available: true }],
+          _count: { deploymentTasks: 0 }
+        }
+      ])
+      .mockResolvedValueOnce([
+        { assets: [{ size: 100, storageRoot: 'STATIC' }, { size: 50, storageRoot: 'RUNTIME' }] },
+        { assets: [{ size: 30, storageRoot: 'RUNTIME' }] }
+      ]);
+
+    const result = await service.list({});
+
+    expect(result.summary).toEqual({ totalBytes: 180, reclaimableBytes: 80 });
+    expect(result.supportedTargets).toBeDefined();
   });
 
   it('审计日志分页返回并补全操作者信息', async () => {

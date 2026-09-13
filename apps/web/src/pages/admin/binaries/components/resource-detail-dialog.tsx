@@ -19,7 +19,9 @@ import {
   compatibilityEntries,
   deploymentBadgeVariant,
   operationLabel,
-  sourceLabel
+  reclaimableAssetBytes,
+  sourceLabel,
+  totalAssetBytes
 } from '../binary-labels';
 import {
   useAdminBinaryResource,
@@ -53,7 +55,7 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
           </div>
         ) : data ? (
           <div className="min-w-0 space-y-5">
-            <div className="grid gap-3 text-sm sm:grid-cols-4">
+            <div className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
               <div>
                 <p className="text-muted-foreground">来源</p>
                 <p className="font-medium">{sourceLabel(data.source)}</p>
@@ -71,6 +73,14 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
               <div>
                 <p className="text-muted-foreground">分发任务</p>
                 <p className="font-medium">{data.deploymentCount ?? data.deploymentTasks?.length ?? 0} 次</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">登记体积</p>
+                <p className="font-medium tabular-nums">{totalAssetBytes(data.assets)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">删除可释放</p>
+                <p className="font-medium tabular-nums">{reclaimableAssetBytes(data.assets)}</p>
               </div>
             </div>
 
@@ -105,6 +115,7 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words font-medium">
                       {asset.target}
+                      <Badge variant="outline" className="text-[10px]">{asset.storageRoot === 'RUNTIME' ? '独占文件' : '共享静态'}</Badge>
                       {asset.available === false ? (
                         <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
                           <AlertTriangle className="mr-1 size-3" />{ASSET_UNAVAILABLE_LABEL}

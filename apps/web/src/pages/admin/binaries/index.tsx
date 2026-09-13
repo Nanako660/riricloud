@@ -113,7 +113,7 @@ export default function BinariesPage() {
     ? `${confirmRequest.action === 'delete' ? '删除' : '归档'} ${confirmRequest.ids.length} 项资源？`
     : '';
   const confirmDescription = confirmRequest?.action === 'delete'
-    ? '仅无分发历史的非内置资源会被删除；删除会同时清理服务端文件且不可恢复。有分发历史或启用中的资源将被跳过并提示原因。'
+    ? '将物理删除所选资源并清理其独占文件，不可恢复。仅已停用/已归档且无分发历史的资源会被删除（内置资源需先归档）；有分发历史或启用中的资源将被跳过并提示原因。'
     : '归档后不会再被选择用于新的升级任务，历史分发记录会保留。';
 
   return (
@@ -177,6 +177,25 @@ export default function BinariesPage() {
           </Button>
         </div>
       </div>
+
+      {data?.summary ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-xs text-muted-foreground">登记体积（当前筛选）</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{bytes(data.summary.totalBytes)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">全部匹配资源及其平台资产的体积合计。</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-xs text-muted-foreground">删除可释放空间</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{bytes(data.summary.reclaimableBytes)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">仅统计上传/导入的独占运行时文件；与发行包共享的静态文件不计入。</p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
@@ -366,7 +385,7 @@ export default function BinariesPage() {
                                 归档资源
                               </DropdownMenuItem>
                             ) : null}
-                            {item.status !== 'ACTIVE' && item.source !== 'BUILTIN' ? (
+                            {item.status !== 'ACTIVE' && (item.source !== 'BUILTIN' || item.status === 'RETIRED') ? (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRequest({ action: 'delete', ids: [item.id] })}>
