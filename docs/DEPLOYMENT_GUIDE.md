@@ -170,36 +170,26 @@ sudo systemctl reload nginx
 ## 2. 节点端 (Edge Node Agent) 部署
 
 ### 2.1 方式一：原生 CLI 一键安装（推荐）
-在主控面板点击“添加节点”后，复制对应的原生 CLI 命令，登录节点 VPS 终端以 root 身份执行。命令先从主控下载匹配平台的 Agent，再由 Agent 自己完成安装：
+在主控面板点击“添加节点”后，复制对应的原生 CLI 命令，登录节点 VPS 终端以 root 身份执行。命令从主控拉取按平台与镜像设置渲染的安装脚本，由脚本完成下载与安装。
+
+**下载顺序（三级回退）**：GitHub Release 直连 → GitHub 加速镜像（`系统设置 → Agent 运维 → GitHub 加速镜像列表`，内置默认公共镜像）→ 主控内置二进制。安装脚本对直连与镜像逐个做 128KB Range GET 测速（单源 6 秒超时），选择最快可用源；发布资产附带 `checksums.txt`，下载后强制 SHA-256 校验。
+
+Linux / macOS（POSIX）：
 
 ```bash
-read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
-curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
-  'https://<master-domain>/api/v1/downloads/agent' \
-  -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
-  rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=wss://<master-domain>/ws/agent
+read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; export RIRI_AGENT_TOKEN
+curl -fsSL --location -A 'riri-agent-installer/linux-amd64'   -H "X-Agent-Token: $RIRI_AGENT_TOKEN"   'https://<master-domain>/api/v1/downloads/agent-installer?mode=ws'   -o /tmp/riri-agent-install.sh && sh /tmp/riri-agent-install.sh --master='wss://<master-domain>/ws/agent' &&   rm -f /tmp/riri-agent-install.sh
 ```
 
-如果节点所在网络不支持 WebSocket Upgrade，可在安装向导切换为 HTTP 模式：
-
-```bash
-read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo
-curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
-  -H "X-Agent-Token: $RIRI_AGENT_TOKEN" \
-  'https://<master-domain>/api/v1/downloads/agent' \
-  -o /tmp/riri-agent && install -m 0755 /tmp/riri-agent /usr/local/bin/riri-agent && \
-  rm -f /tmp/riri-agent && \
-  /usr/local/bin/riri-agent install --token="$RIRI_AGENT_TOKEN" --master=https://<master-domain>
-```
+如果节点所在网络不支持 WebSocket Upgrade，可在安装向导切换为 HTTP 模式（`?mode=http` 且 `--master='https://<master-domain>'`）。
 
 #### CLI 安装步骤：
 1. 主控面板的安装命令弹窗支持选择目标操作系统（Linux / macOS / Windows）与部署方式（原生安装 / 免安装运行 / Docker），命令由主控按选择动态生成；也可参考下方示例手工执行。
-2. User-Agent 使用 `riri-agent-installer/<os>-<arch>` 声明目标平台，例如 `linux-amd64`、`linux-arm64`、`macos-arm64` 或 `windows-amd64`；主控的 `GET /api/v1/downloads/agent` 据此 302 到 Agent 二进制。
-3. `riri-agent install` 将 Sing-box 优先从主控 `GET /api/v1/downloads/binaries/singbox-<os>-<arch>` 下载；主控没有该资产时，`--singbox-source auto` 回退到 GitHub Release。
-4. 默认写入 `/etc/riri-agent/config.yaml`（权限 `0600`）与 `/var/lib/riri-agent/`，配置包含 Token、Master 地址、通信模式、内核路径和日志路径；Windows 写入 `%ProgramData%\RiriCloud\`。
-5. 基于 `kardianos/service` 注册并启动开机服务：Linux 使用 systemd/OpenRC/SysVinit，macOS 使用 Launchd；Windows 注册 Windows Service。Agent 二进制内置 Windows 服务入口（检测到 SCM 上下文时自动接入服务控制管理器的启动/停止生命周期），因此 Windows 服务的启动、停止与重启均由 SCM 正常驱动。
+2. User-Agent 使用 `riri-agent-installer/<os>-<arch>` 声明目标平台，例如 `linux-amd64`、`linux-arm64`、`macos-arm64` 或 `windows-amd64`；安装脚本端点 `GET /api/v1/downloads/agent-installer` 据此渲染脚本。
+3. 安装脚本从 GitHub Release（`agent-v<AGENT_VERSION>` Tag）下载 `riri-agent_<ver>_<os>_<arch>.tar.gz`（Windows 为 zip）并用 `checksums.txt` 校验；镜像列表与仓库地址取自系统设置。主控缺该平台内置二进制时前端会提示“将从 GitHub Release 下载”。
+4. `riri-agent install` 将 Sing-box 优先从主控 `GET /api/v1/downloads/binaries/singbox-<os>-<arch>` 下载；主控没有该资产时，`--singbox-source auto` 回退到 GitHub Release（安装脚本注入的 `GITHUB_MIRRORS` 环境变量同样作用于该回退路径）。
+5. 默认写入 `/etc/riri-agent/config.yaml`（权限 `0600`）与 `/var/lib/riri-agent/`，配置包含 Token、Master 地址、通信模式、内核路径和日志路径；Windows 写入 `%ProgramData%\RiriCloud\`。
+6. 基于 `kardianos/service` 注册并启动开机服务：Linux 使用 systemd/OpenRC/SysVinit，macOS 使用 Launchd；Windows 注册 Windows Service。Agent 二进制内置 Windows 服务入口（检测到 SCM 上下文时自动接入服务控制管理器的启动/停止生命周期），因此 Windows 服务的启动、停止与重启均由 SCM 正常驱动。
 
 **Windows 原生安装示例**（以管理员身份运行 PowerShell）：
 
@@ -207,11 +197,10 @@ curl -fsSL --location -A 'riri-agent-installer/linux-amd64' \
 $Token = Read-Host 'AgentToken'
 curl.exe -fsSL --location -A 'riri-agent-installer/windows-amd64' `
   -H "X-Agent-Token: $Token" `
-  'https://<master-domain>/api/v1/downloads/agent' `
-  -o "$env:TEMP\riri-agent.exe"
-New-Item -ItemType Directory -Force "$env:ProgramFiles\RiriCloud" | Out-Null
-Move-Item -Force "$env:TEMP\riri-agent.exe" "$env:ProgramFiles\RiriCloud\riri-agent.exe"
-& "$env:ProgramFiles\RiriCloud\riri-agent.exe" install --token="$Token" --master=wss://<master-domain>/ws/agent
+  'https://<master-domain>/api/v1/downloads/agent-installer?mode=ws' `
+  -o "$env:TEMPiri-install.ps1"
+& "$env:TEMPiri-install.ps1" -MasterUrl 'wss://<master-domain>/ws/agent' -AgentToken $Token
+Remove-Item "$env:TEMPiri-install.ps1" -ErrorAction SilentlyContinue
 ```
 
 #### 免安装直接运行（便携模式）

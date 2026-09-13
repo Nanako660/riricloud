@@ -38,11 +38,15 @@ describe('NodesService', () => {
     const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
     expect(result.installCommands.native.windows.ws).toContain('riri-agent-installer/windows-amd64');
     expect(result.installCommands.native.windows.ws).toContain('curl.exe');
-    expect(result.installCommands.native.windows.ws).toContain('& "$env:ProgramFiles\\RiriCloud\\riri-agent.exe" install');
-    expect(result.installCommands.native.windows.ws).toContain('--master=wss://panel.example.com/ws/agent');
+    // 原生安装改为拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
+    expect(result.installCommands.native.windows.ws).toContain('downloads/agent-installer?mode=ws');
+    expect(result.installCommands.native.windows.ws).toContain('riri-install.ps1" -MasterUrl');
+    expect(result.installCommands.native.windows.ws).toContain("-MasterUrl 'wss://panel.example.com/ws/agent'");
     expect(result.installCommands.native.macos.ws).toContain('riri-agent-installer/macos-amd64');
-    expect(result.installCommands.native.macos.ws).toContain('/usr/local/bin/riri-agent');
+    // 原生安装改为拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
+    expect(result.installCommands.native.macos.ws).toContain('downloads/agent-installer?mode=ws');
     expect(result.installCommands.native.linux.ws).toContain('riri-agent-installer/linux-amd64');
+    expect(result.installCommands.native.linux.ws).toContain('sh /tmp/riri-agent-install.sh --master=');
     expect(result.installCommands.portable.linux.ws).toContain('RIRICLOUD_DATA_DIR="$HOME/.riri-cloud"');
     expect(result.installCommands.portable.linux.ws).toContain("MASTER_URL='wss://panel.example.com/ws/agent'");
     expect(result.installCommands.portable.linux.ws).toMatch(/\/tmp\/riri-agent-download run$/);

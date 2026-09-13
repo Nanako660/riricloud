@@ -96,6 +96,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 二进制分发中心
 - `GET /downloads/agent`：公开返回 Agent 二进制流。⭐ 安装器通过 `User-Agent: riri-agent-installer/<os>-<arch>` 声明目标平台，并通过 `X-Agent-Token: <AGENT_TOKEN>` 鉴权；缺省目标为 `linux-amd64`。该端点无需 JWT，但必须提供 Header 凭据，不接受 query token；响应设置 `Cache-Control: no-store` 与 `Referrer-Policy: no-referrer`。
+- `GET /downloads/agent-installer`：公开返回按平台渲染的 Agent 安装脚本。⭐ 与 `/downloads/agent` 同款 `User-Agent: riri-agent-installer/<os>-<arch>` 平台声明与 `X-Agent-Token` 鉴权；Windows 平台返回 PowerShell 脚本（`text/plain`），其余返回 POSIX sh 脚本（`text/x-shellscript`），响应 `Cache-Control: no-store`。脚本内嵌：Agent 版本（主控捆绑 `AGENT_VERSION`）、GitHub 仓库与加速镜像列表（系统设置 `githubRepoUrl`/`githubMirrorUrls`）、主控兜底下载地址与预期 SHA-256；执行顺序为 GitHub Release 直连/镜像 Range GET 测速择优 → `checksums.txt` 强制校验 → 解压安装 → 全部失败时回退主控内置二进制。镜像经 `GITHUB_MIRRORS` 环境变量传递给 `riri-agent install`（旧版 Agent 二进制自动忽略）。
 - `GET /admin/binaries/info`：管理员查询主控版本及各 OS/架构内置 Agent、Sing-box 二进制的版本、大小、SHA-256 和可用状态。⭐
 - `POST /admin/binaries/import`：管理员把自定义 Sing-box URL 下载到主控托管目录。⭐ 请求 `{ target: "singbox-linux-amd64"|"singbox-linux-arm64"|"singbox-macos-amd64"|"singbox-macos-arm64"|"singbox-windows-amd64", version, url, sha256 }`；服务端限制 100 MiB，并在落盘前完成 SHA-256 校验。
 - `GET /downloads/binaries/:target`：Agent 内部下载端点。⭐ 仅接受 `X-Agent-Token: <AGENT_TOKEN>` 且节点有效、未禁用的请求，响应为二进制流；禁止匿名访问，不接受 query token。
