@@ -38,42 +38,51 @@ type Manager struct {
 }
 
 // NewManager 构建重启管理器；service/selfSpawn 均可注入以便单测。
+// 默认实现依赖启动时传入的 executable，均为空时两条路径都会失败并返回聚合错误。
 func NewManager(service ServiceFactory, selfSpawn func() error, log *logrus.Entry) *Manager {
 	if service == nil {
-		service = NewSystemServiceFactory("")
+		service = NewSystemServiceFactory("", "")
 	}
 	if selfSpawn == nil {
-		selfSpawn = DefaultSelfSpawn
+		selfSpawn = NewSelfSpawn("")
 	}
 	return &Manager{service: service, selfSpawn: selfSpawn, delay: restartDelayMs * time.Millisecond, log: log}
 }
 
 // NewSystemServiceFactory 返回基于 system.Manager 的服务重启工厂。
+// executable 应传入启动时解析的进程路径：升级原子替换后 /proc/self/exe 会反映改名后的
+// .riri-old 陈旧路径，重启时再解析会得到已删除的备份文件。传空时退化为即时解析。
 // 已知边界：若存在手动前台运行的 Agent 与系统服务实例并存，服务路径会重启服务实例而非
 // 当前前台进程；该进程随后落入自拉起兜底，短暂双实例由主控同节点连接顶替逻辑收敛。
-func NewSystemServiceFactory(configPath string) ServiceFactory {
+func NewSystemServiceFactory(executable, configPath string) ServiceFactory {
 	return func() (Restarter, error) {
-		executable, err := os.Executable()
-		if err != nil {
-			return nil, fmt.Errorf("resolve agent executable: %w", err)
+		exe := executable
+		if exe == "" {
+			resolved, err := os.Executable()
+			if err != nil {
+				return nil, fmt.Errorf("resolve agent executable: %w", err)
+			}
+			exe = resolved
 		}
-		return system.NewServiceManager(executable, configPath), nil
+		return system.NewServiceManager(exe, configPath), nil
 	}
 }
 
-// DefaultSelfSpawn 真实自拉起实现：spawn 新进程成功后当前进程退出，函数正常不返回。
-func DefaultSelfSpawn() error {
-	target, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve agent executable: %w", err)
+// NewSelfSpawn 返回自拉起实现：以启动时解析的可执行路径 spawn 新进程并退出当前进程。
+// 同 NewSystemServiceFactory，路径必须在二进制替换前解析，避免 exec 已删除的 .riri-old。
+func NewSelfSpawn(executable string) func() error {
+	return func() error {
+		if executable == "" {
+			return errors.New("agent executable path unavailable")
+		}
+		cmd := exec.Command(executable, os.Args[1:]...)
+		cmd.Env = os.Environ()
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("spawn replacement process: %w", err)
+		}
+		os.Exit(0)
+		return nil
 	}
-	cmd := exec.Command(target, os.Args[1:]...)
-	cmd.Env = os.Environ()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("spawn replacement process: %w", err)
-	}
-	os.Exit(0)
-	return nil
 }
 
 // RestartAndExit 执行进程接管，成功路径函数不返回（进程被服务管理器终止或 os.Exit）。

@@ -68,8 +68,18 @@ func runForeground(ctx context.Context, options Options) error {
 	tunnelMgr := tunnel.NewManager(ctx, entry)
 	defer tunnelMgr.Shutdown()
 
-	// 升级后进程接管：系统服务重启优先（systemd/SCM 立即从新二进制拉起），自拉起兜底
-	restarter := restart.NewManager(restart.NewSystemServiceFactory(cfg.ConfigPath), restart.DefaultSelfSpawn, entry)
+	// 升级后进程接管：系统服务重启优先（systemd/SCM 立即从新二进制拉起），自拉起兜底。
+	// 可执行路径必须在启动时解析：升级原子替换后 /proc/self/exe 会变成已删除的 .riri-old。
+	executable, err := os.Executable()
+	if err != nil {
+		entry.WithError(err).Warn("resolve agent executable for restart failed")
+		executable = ""
+	}
+	restarter := restart.NewManager(
+		restart.NewSystemServiceFactory(executable, cfg.ConfigPath),
+		restart.NewSelfSpawn(executable),
+		entry,
+	)
 
 	if cfg.Mode == config.ModeHTTP {
 		client := poll.NewClient(

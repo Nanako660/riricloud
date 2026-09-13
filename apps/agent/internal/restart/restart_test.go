@@ -120,3 +120,15 @@ func TestRestartAndExitReturnsErrorWhenBothPathsFail(t *testing.T) {
 		t.Fatalf("expected aggregated error to contain both failures, got %v", err)
 	}
 }
+
+func TestNewSelfSpawnRejectsMissingExecutable(t *testing.T) {
+	// 升级替换二进制后 /proc/self/exe 会变成已删除的 .riri-old，自拉起必须使用
+	// 启动时缓存的可执行路径；路径缺失时直接报错，绝不能 exec 备份文件。
+	err := NewSelfSpawn("")()
+	if err == nil {
+		t.Fatal("expected error when executable path is unavailable")
+	}
+	if !strings.Contains(err.Error(), "executable path unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
