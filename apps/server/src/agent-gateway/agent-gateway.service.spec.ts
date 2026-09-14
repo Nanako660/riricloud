@@ -852,7 +852,7 @@ describe('AgentGatewayService', () => {
           { id: 'http-stale', status: 'ONLINE', lastSeenAt: httpLastSeenAt }
         ]
       },
-      data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
+      data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null, kernelRunning: null, cpuUsage: null, memoryUsage: null }
     }));
   });
 

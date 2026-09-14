@@ -8,6 +8,7 @@ export interface LineLatencyChipProps {
   message?: string | null;
   testedAt?: string | Date | null;
   className?: string;
+  onClick?: () => void;
 }
 
 function formatRelativeTime(dateInput?: string | Date | null): string {
@@ -30,18 +31,30 @@ export function LineLatencyChip({
   status,
   message,
   testedAt,
-  className
+  className,
+  onClick
 }: LineLatencyChipProps) {
+  const interactiveClass = onClick ? 'cursor-pointer hover:border-primary/50 hover:bg-muted/80 transition-colors' : 'cursor-help';
+
   // 未测速
   if (!status && (latencyMs === null || latencyMs === undefined)) {
     return (
-      <Badge
-        variant="outline"
-        className={cn('inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground select-none', className)}
-      >
-        <span className="size-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-        <span>— 未测速</span>
-      </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            onClick={onClick}
+            className={cn('inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground select-none', interactiveClass, className)}
+          >
+            <span className="size-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
+            <span>— 未测速</span>
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs space-y-1 text-xs">
+          <p className="font-semibold">尚未测速</p>
+          {onClick && <p className="text-primary text-[11px]">点击发起即时测速并查看链路流程</p>}
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
@@ -52,8 +65,10 @@ export function LineLatencyChip({
         <TooltipTrigger asChild>
           <Badge
             variant="outline"
+            onClick={onClick}
             className={cn(
-              'inline-flex items-center gap-1.5 font-mono text-xs border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 cursor-help select-none',
+              'inline-flex items-center gap-1.5 font-mono text-xs border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 select-none',
+              interactiveClass,
               className
             )}
           >
@@ -65,6 +80,7 @@ export function LineLatencyChip({
           <p className="font-semibold text-rose-400">测速连接超时</p>
           <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
           {message && <p className="text-xs break-words opacity-80">{message}</p>}
+          {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路诊断详情</p>}
         </TooltipContent>
       </Tooltip>
     );
@@ -77,8 +93,10 @@ export function LineLatencyChip({
         <TooltipTrigger asChild>
           <Badge
             variant="outline"
+            onClick={onClick}
             className={cn(
-              'inline-flex items-center gap-1.5 font-mono text-xs border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 cursor-help select-none',
+              'inline-flex items-center gap-1.5 font-mono text-xs border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 select-none',
+              interactiveClass,
               className
             )}
           >
@@ -90,6 +108,7 @@ export function LineLatencyChip({
           <p className="font-semibold text-rose-400">测速异常</p>
           <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
           {message && <p className="text-xs break-words opacity-80">{message}</p>}
+          {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路诊断详情</p>}
         </TooltipContent>
       </Tooltip>
     );
@@ -117,9 +136,11 @@ export function LineLatencyChip({
       <TooltipTrigger asChild>
         <Badge
           variant="outline"
+          onClick={onClick}
           className={cn(
-            'inline-flex items-center gap-1.5 font-mono text-xs cursor-help select-none',
+            'inline-flex items-center gap-1.5 font-mono text-xs select-none',
             colorClass,
+            interactiveClass,
             className
           )}
         >
@@ -134,6 +155,7 @@ export function LineLatencyChip({
         </div>
         <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
         {message && <p className="text-xs break-words opacity-80">{message}</p>}
+        {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路详情与即时测速</p>}
       </TooltipContent>
     </Tooltip>
   );

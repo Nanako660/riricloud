@@ -53,8 +53,9 @@ export default function AdminNodesPage() {
         if (status === 'OFFLINE' && (node.status === 'ONLINE' || node.status === 'DISABLED')) return false;
       }
       if (kernel !== 'ALL') {
-        if (kernel === 'RUNNING' && !node.kernelRunning) return false;
-        if (kernel === 'STOPPED' && node.kernelRunning !== false) return false;
+        const isOnline = node.status === 'ONLINE';
+        if (kernel === 'RUNNING' && (!isOnline || !node.kernelRunning)) return false;
+        if (kernel === 'STOPPED' && (!isOnline || node.kernelRunning !== false)) return false;
       }
       return true;
     });
@@ -177,7 +178,16 @@ export default function AdminNodesPage() {
                         : '—'}
                     </TableCell>
                     <TableCell>
-                      {node.kernelRunning == null ? (
+                      {node.status !== 'ONLINE' ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-xs text-muted-foreground cursor-help select-none">—</span>
+                          </TooltipTrigger>
+                          <TooltipContent className="text-xs">
+                            节点{node.status === 'DISABLED' ? '已禁用' : '离线'}，内核状态未知
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : node.kernelRunning == null ? (
                         <span className="text-xs text-muted-foreground">—</span>
                       ) : node.kernelRunning ? (
                         <Badge>运行</Badge>
@@ -192,10 +202,10 @@ export default function AdminNodesPage() {
                       </div>
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}
+                      {node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}
+                      {node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}
                     </TableCell>
                     <TableCell className="tabular-nums">
                       <NodeRate node={node} />

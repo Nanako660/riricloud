@@ -38,6 +38,35 @@ export interface LineQuery {
   tag?: string;
 }
 
+export interface SpeedTestStage {
+  id: 'master_ready' | 'entry_handshake' | 'relay_transit' | 'target_http';
+  name: string;
+  target: string;
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  latencyMs?: number | null;
+  message?: string;
+}
+
+export interface SpeedTestExecutionResult {
+  lineId: string;
+  lineName: string;
+  latencyMs: number | null;
+  status: 'SUCCESS' | 'TIMEOUT' | 'ERROR';
+  message: string;
+  testedAt: string;
+  mode: 'END_TO_END' | 'TCP_HANDSHAKE';
+  targetUrl: string;
+  protocolType: string;
+  topology: {
+    isRelay: boolean;
+    relayMode?: string | null;
+    masterHost: string;
+    entryNode: { id: string; name: string; host: string; port: number };
+    landingNode?: { id: string; name: string; host: string; port?: number | null } | null;
+  };
+  stages: SpeedTestStage[];
+}
+
 export function useAdminLines(query: LineQuery = {}) {
   return useQuery({
     queryKey: ['admin', 'lines', query],
@@ -90,13 +119,7 @@ export function useLineMutations() {
     onError: (error: unknown) => onError(error, '调整顺序失败')
   });
   const speedtest = useMutation({
-    mutationFn: async (id: string) => (await api.post<{
-      lineId: string;
-      lineName: string;
-      latencyMs: number | null;
-      status: 'SUCCESS' | 'TIMEOUT' | 'ERROR';
-      message: string;
-    }>(`/admin/lines/${id}/speedtest`)).data,
+    mutationFn: async (id: string) => (await api.post<SpeedTestExecutionResult>(`/admin/lines/${id}/speedtest`)).data,
     onSuccess: (data) => {
       if (data.status === 'SUCCESS') {
         toast.success(`测速完成：${data.latencyMs ?? '—'} ms`);

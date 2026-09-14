@@ -13,6 +13,15 @@ import {
 } from '../common/constants';
 import { buildSingboxOutbound, type SubEntry, type SubLine, type SubUser } from '../subscription/builders';
 
+export interface SpeedTestStage {
+  id: 'master_ready' | 'entry_handshake' | 'relay_transit' | 'target_http';
+  name: string;
+  target: string;
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  latencyMs?: number | null;
+  message?: string;
+}
+
 export interface SpeedTestExecutionResult {
   lineId: string;
   lineName: string;
@@ -21,6 +30,16 @@ export interface SpeedTestExecutionResult {
   message: string;
   testedAt: Date;
   mode: 'END_TO_END' | 'TCP_HANDSHAKE';
+  targetUrl: string;
+  protocolType: string;
+  topology: {
+    isRelay: boolean;
+    relayMode?: string | null;
+    masterHost: string;
+    entryNode: { id: string; name: string; host: string; port: number };
+    landingNode?: { id: string; name: string; host: string; port?: number | null } | null;
+  };
+  stages: SpeedTestStage[];
 }
 
 @Injectable()
@@ -65,7 +84,7 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
 
       const intervalMs = Math.max(1, settings.lineSpeedtestIntervalMins) * 60 * 1000;
       if (Date.now() - this.lastAutoSpeedtestAt >= intervalMs) {
-        this.logger.log('触发后台定时线路测速任务...');
+        this.logger.log('触发线路定时自动测速...');
         await this.testAllActiveLines();
       }
     } catch (err) {
@@ -93,15 +112,131 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
     const serverHost = (line.endpointOverrideEnabled && line.serverHost ? line.serverHost : line.entryNode.serverHost).trim();
     const serverPort = line.endpointOverrideEnabled && line.serverPort ? line.serverPort : line.entryPort;
 
+    const isRelay = line.type === 'RELAY';
+    const topology = {
+      isRelay,
+      relayMode: line.relayMode,
+      masterHost: 'Master 主控',
+      entryNode: {
+        id: line.entryNode.id,
+        name: line.entryNode.name,
+        host: serverHost,
+        port: serverPort
+      },
+      landingNode: isRelay
+        ? (line.relayMode === 'TARGET_LINE' && line.targetLine
+            ? {
+                id: line.targetLine.entryNode.id,
+                name: line.targetLine.entryNode.name,
+                host: line.targetLine.serverHost || line.targetLine.entryNode.serverHost,
+                port: line.targetLine.entryPort
+              }
+            : line.landingNode
+              ? {
+                  id: line.landingNode.id,
+                  name: line.landingNode.name,
+                  host: line.landingNode.serverHost,
+                  port: line.landingPort
+                }
+              : null)
+        : null
+    };
+
+    const stages: SpeedTestStage[] = [];
     let latencyMs: number | null = null;
     let status: 'SUCCESS' | 'TIMEOUT' | 'ERROR' = 'ERROR';
     let message = '';
     let mode: 'END_TO_END' | 'TCP_HANDSHAKE' = 'TCP_HANDSHAKE';
 
-    // 优先尝试端到端代理探测（若内核可用）
+    // 阶段一：主控探测引擎准备
     const singboxBin = await this.resolveSingboxBinary();
-    const isUdpOnly = this.isUdpOnlyProtocol(line.protocolType);
+    stages.push({
+      id: 'master_ready',
+      name: '主控探测引擎',
+      target: 'Master 服务端',
+      status: 'SUCCESS',
+      message: singboxBin ? 'Sing-box 探针引擎就绪' : '未检测到 Sing-box 内核，将采用 TCP 握手探测'
+    });
 
+    // 阶段二：入口节点网络握手（TCP / UDP）
+    const isUdpOnly = this.isUdpOnlyProtocol(line.protocolType);
+    let tcpLatency: number | null = null;
+    let tcpErr: unknown = null;
+
+    if (isUdpOnly) {
+      stages.push({
+        id: 'entry_handshake',
+        name: '入口网络联通',
+        target: `${serverHost}:${serverPort}`,
+        status: 'SKIPPED',
+        message: `纯 UDP 协议（${line.protocolType}）不建立 TCP 握手`
+      });
+    } else {
+      try {
+        tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
+        stages.push({
+          id: 'entry_handshake',
+          name: '入口网络握手',
+          target: `${serverHost}:${serverPort}`,
+          status: 'SUCCESS',
+          latencyMs: tcpLatency,
+          message: `TCP 握手成功 (${tcpLatency}ms)`
+        });
+      } catch (err) {
+        tcpErr = err;
+        stages.push({
+          id: 'entry_handshake',
+          name: '入口网络握手',
+          target: `${serverHost}:${serverPort}`,
+          status: 'FAILED',
+          message: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
+    // 阶段三：中继链路状态判定（若为中继线路）
+    if (isRelay) {
+      if (line.relayMode === 'TARGET_LINE') {
+        if (line.targetLine) {
+          stages.push({
+            id: 'relay_transit',
+            name: '中继桥接目标',
+            target: `${line.targetLine.entryNode.name} (${line.targetLine.protocolType}:${line.targetLine.entryPort})`,
+            status: 'SUCCESS',
+            message: `桥接目标: [${line.targetLine.entryNode.name}] ${line.targetLine.name}`
+          });
+        } else {
+          stages.push({
+            id: 'relay_transit',
+            name: '中继桥接目标',
+            target: '未绑定目标线路',
+            status: 'FAILED',
+            message: '未配置或找不到目标桥接线路'
+          });
+        }
+      } else if (line.landingNode) {
+        const isNat = (line.landingNode as { reachability?: string }).reachability === 'NAT';
+        stages.push({
+          id: 'relay_transit',
+          name: '中继落地转发',
+          target: `${line.landingNode.name} (${line.landingNode.serverHost}:${line.landingPort ?? '—'})`,
+          status: 'SUCCESS',
+          message: isNat
+            ? `反向隧道穿透落地（模式: ${line.relayMode === 'BLIND_FORWARD' ? '盲转发' : '协议代理'}）`
+            : `公网中继转发（模式: ${line.relayMode === 'BLIND_FORWARD' ? '盲转发' : '协议代理'}）`
+        });
+      } else {
+        stages.push({
+          id: 'relay_transit',
+          name: '中继落地转发',
+          target: '未绑定落地节点',
+          status: 'FAILED',
+          message: '未配置或找不到落地节点'
+        });
+      }
+    }
+
+    // 阶段四：测试目标端到端请求
     if (singboxBin) {
       try {
         const e2eResult = await this.runSingboxProbe(singboxBin, line, targetUrl, timeoutMs);
@@ -109,7 +244,23 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
         status = 'SUCCESS';
         message = `204 OK (端到端 ${latencyMs}ms)`;
         mode = 'END_TO_END';
+        stages.push({
+          id: 'target_http',
+          name: '端到端请求',
+          target: targetUrl,
+          status: 'SUCCESS',
+          latencyMs: e2eResult,
+          message: `HTTP 204 No Content (往返 ${e2eResult}ms)`
+        });
       } catch (e2eErr) {
+        stages.push({
+          id: 'target_http',
+          name: '端到端请求',
+          target: targetUrl,
+          status: 'FAILED',
+          message: `代理请求失败: ${e2eErr instanceof Error ? e2eErr.message : String(e2eErr)}`
+        });
+
         if (isUdpOnly) {
           // 纯 UDP 协议无法通过 TCP 握手探测，直接如实反映端到端探测失败诊断，避免误报 ECONNREFUSED
           status = this.isTimeoutError(e2eErr) ? 'TIMEOUT' : 'ERROR';
@@ -117,15 +268,15 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
           mode = 'END_TO_END';
         } else {
           // 端到端失败后，TCP 协议尝试 TCP 握手降级测试以区分为完全失联还是仅端到端异常
-          try {
-            const tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
+          if (tcpLatency !== null) {
             latencyMs = tcpLatency;
             status = 'SUCCESS';
             message = `TCP 握手 (${tcpLatency}ms, 端到端未就绪: ${e2eErr instanceof Error ? e2eErr.message : String(e2eErr)})`;
             mode = 'TCP_HANDSHAKE';
-          } catch (tcpErr) {
-            status = this.isTimeoutError(tcpErr) ? 'TIMEOUT' : 'ERROR';
-            message = tcpErr instanceof Error ? tcpErr.message : String(tcpErr);
+          } else {
+            status = this.isTimeoutError(tcpErr || e2eErr) ? 'TIMEOUT' : 'ERROR';
+            const finalErr = tcpErr || e2eErr;
+            message = finalErr instanceof Error ? finalErr.message : String(finalErr);
           }
         }
       }
@@ -134,18 +285,30 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
         status = 'ERROR';
         message = '未检测到 sing-box 内核，且协议为纯 UDP（Hysteria 2/TUIC），不支持 TCP 握手降级探测';
         mode = 'END_TO_END';
+        stages.push({
+          id: 'target_http',
+          name: '端到端请求',
+          target: targetUrl,
+          status: 'SKIPPED',
+          message: '未配置 Sing-box 内核，纯 UDP 协议跳过端到端探测'
+        });
       } else {
-        // 无 sing-box 内核直接执行入口 TCP 握手延时探测
-        try {
-          const tcpLatency = await this.tcpPing(serverHost, serverPort, timeoutMs);
+        if (tcpLatency !== null) {
           latencyMs = tcpLatency;
           status = 'SUCCESS';
           message = `TCP 握手 (${tcpLatency}ms)`;
           mode = 'TCP_HANDSHAKE';
-        } catch (err) {
-          status = this.isTimeoutError(err) ? 'TIMEOUT' : 'ERROR';
-          message = err instanceof Error ? err.message : String(err);
+        } else {
+          status = this.isTimeoutError(tcpErr) ? 'TIMEOUT' : 'ERROR';
+          message = tcpErr instanceof Error ? tcpErr.message : String(tcpErr);
         }
+        stages.push({
+          id: 'target_http',
+          name: '端到端请求',
+          target: targetUrl,
+          status: 'SKIPPED',
+          message: '未检测到 Sing-box 内核，跳过端到端探测（采用入口 TCP 握手延时）'
+        });
       }
     }
 
@@ -173,7 +336,11 @@ export class LineSpeedtestService implements OnModuleInit, OnModuleDestroy {
       status,
       message,
       testedAt,
-      mode
+      mode,
+      targetUrl,
+      protocolType: line.protocolType,
+      topology,
+      stages
     };
   }
 
