@@ -55,9 +55,13 @@ func Ensure(ctx context.Context, options Options) (bool, error) {
 		}
 	}
 
-	// 2. 优先尝试从内嵌归档自愈释放
+	// 2. 优先尝试从内嵌归档自愈释放（未显式指定 github/master 或自定义 URL 时）
 	destDir := filepath.Dir(options.Destination)
-	if embedded.HasEmbeddedKernel() {
+	source := strings.ToLower(strings.TrimSpace(options.Source))
+	if source == "" {
+		source = "auto"
+	}
+	if embedded.HasEmbeddedKernel() && source == "auto" && strings.TrimSpace(options.URL) == "" {
 		mainTarget := filepath.Join(destDir, embedded.MainExecutableName())
 		beforeStat, beforeErr := os.Stat(mainTarget)
 		_, _, err := embedded.Ensure(destDir)

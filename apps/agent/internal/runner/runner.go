@@ -130,7 +130,11 @@ func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Optio
 	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
 		return
 	}
-	if embedded.HasEmbeddedKernel() {
+	source := strings.ToLower(strings.TrimSpace(options.SingboxSource))
+	if source == "" {
+		source = "auto"
+	}
+	if embedded.HasEmbeddedKernel() && source == "auto" && strings.TrimSpace(options.SingboxURL) == "" {
 		downloaded, err := kernel.Ensure(ctx, kernel.Options{
 			Destination: cfg.SingboxBinPath,
 		})
