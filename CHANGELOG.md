@@ -21,6 +21,7 @@
 - **Agent 资源版本展示口径统一**：Agent 类资源 revision=1 时资源版本/升级任务目标/部署历史不再追加 `-rN` 后缀（与二进制编译版本一致）；revision>1 保留后缀区分重构建，Sing-box 资源口径不变。升级版本对账比较同时做归一化（剥离 `-rN` 后缀），修复"内置资源升级成功后仍误报 Agent 重启可能失败"的问题。
 
 ### Fixed
+- **Windows 安装脚本编码兼容**：`/downloads/agent-installer` 的 Windows 平台脚本响应附加 UTF-8 BOM，修复 Windows PowerShell 5.1 按 ANSI 读取无 BOM 脚本时中文注释破坏 `param` 块解析的问题（实机安装冒烟发现）。
 
 
 ## [0.8.11] - 2026-09-14
