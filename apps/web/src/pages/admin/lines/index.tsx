@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Activity, ArrowDown, ArrowUp, Copy, GitBranch, Pencil, Plus, Search, Trash2, Zap } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Copy, GitBranch, HelpCircle, Pencil, Plus, Search, Trash2, Zap } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -10,11 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { type LineStatus, type LineType, type RelayMode } from '@/lib/api';
 import { useAdminNodes } from '../nodes/use-nodes';
 import { useAdminCertificates } from '../certificates/use-certificates';
 import { LineFormDialog } from './components/line-form-dialog';
+import { LineSpeedtestDialog } from './components/line-speedtest-dialog';
 import { LineLatencyChip } from '@/components/shared/line-latency-chip';
 import { useAdminLines, useLineMutations, type AdminLine } from './use-lines';
 
@@ -37,6 +39,7 @@ export default function AdminLinesPage() {
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<AdminLine | null>(null);
   const [deleting, setDeleting] = React.useState<AdminLine | null>(null);
+  const [speedtestingLine, setSpeedtestingLine] = React.useState<AdminLine | null>(null);
   const query = React.useMemo(() => ({
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(type !== 'ALL' ? { type } : {}),
@@ -109,7 +112,33 @@ export default function AdminLinesPage() {
       <Card>
         <CardContent className="p-0">
           {lines.length ? <Table className="min-w-[980px]">
-            <TableHeader><TableRow><TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead><TableHead>线路</TableHead><TableHead>类型</TableHead><TableHead>接入端点</TableHead><TableHead>节点拓扑</TableHead><TableHead>标签 / 倍率</TableHead><TableHead>延迟</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead>
+                <TableHead>线路</TableHead>
+                <TableHead>类型</TableHead>
+                <TableHead>接入端点</TableHead>
+                <TableHead>节点拓扑</TableHead>
+                <TableHead>标签 / 倍率</TableHead>
+                <TableHead>
+                  <div className="flex items-center gap-1">
+                    <span>延迟</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="size-3.5 text-muted-foreground/70 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs space-y-1 text-xs">
+                        <p className="font-semibold">线路延迟测试原理</p>
+                        <p>由 Master 主控服务器直接发起探测，优先经 Sing-box 端到端代理访问 Cloudflare 204 资源测量完整耗时；未就绪时降级为入口 TCP 握手延时。</p>
+                        <p className="text-primary text-[11px]">点击延迟徽章或操作栏测速按钮可打开链路流程图与分段诊断。</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>{lines.map((line, index) => <TableRow key={line.id}>
               <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>
               <TableCell><div className="font-medium">{line.name}</div><div className="text-xs text-muted-foreground">Lv.{line.level}</div></TableCell>
@@ -146,16 +175,34 @@ export default function AdminLinesPage() {
                 )}
               </TableCell>
               <TableCell><div className="flex max-w-40 flex-wrap gap-1">{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
-              <TableCell><LineLatencyChip latencyMs={line.lastLatencyMs} status={line.lastTestStatus} message={line.lastTestMessage} testedAt={line.lastTestedAt} /></TableCell>
+              <TableCell>
+                <LineLatencyChip
+                  latencyMs={line.lastLatencyMs}
+                  status={line.lastTestStatus}
+                  message={line.lastTestMessage}
+                  testedAt={line.lastTestedAt}
+                  onClick={() => setSpeedtestingLine(line)}
+                />
+              </TableCell>
               <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge>{!line.isPublic && <span className="text-xs text-muted-foreground">不公开</span>}</div></TableCell>
-              <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label="上移" disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></Button><Button variant="ghost" size="icon" aria-label="下移" disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></Button><Button variant="ghost" size="icon" aria-label="即时测速" title="即时测速" disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => speedtest.mutate(line.id)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></Button><Button variant="ghost" size="icon" aria-label="测试解析" disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></Button><Button variant="ghost" size="icon" aria-label="复制线路" disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></Button><Button variant="ghost" size="icon" aria-label="编辑线路" onClick={() => openEdit(line)}><Pencil /></Button><Button variant="ghost" size="icon" aria-label="删除线路" onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></Button></div></TableCell>
+              <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label="上移" disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></Button><Button variant="ghost" size="icon" aria-label="下移" disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></Button><Button variant="ghost" size="icon" aria-label="即时测速" title="即时测速与链路流程" disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => setSpeedtestingLine(line)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></Button><Button variant="ghost" size="icon" aria-label="测试解析" disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></Button><Button variant="ghost" size="icon" aria-label="复制线路" disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></Button><Button variant="ghost" size="icon" aria-label="编辑线路" onClick={() => openEdit(line)}><Pencil /></Button><Button variant="ghost" size="icon" aria-label="删除线路" onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></Button></div></TableCell>
             </TableRow>)}</TableBody>
           </Table> : <EmptyState title="暂无线路" description="创建直连线路或中继线路后，套餐即可按线路匹配。" className="border-0" />}
         </CardContent>
       </Card>
       <LineFormDialog open={formOpen} onOpenChange={setFormOpen} line={editing} nodes={nodes ?? []} lines={lines} certificates={certificates?.data ?? []} pending={busy} onSubmit={(payload) => editing ? update.mutate({ id: editing.id, ...payload }, { onSuccess: () => setFormOpen(false) }) : create.mutate(payload, { onSuccess: () => setFormOpen(false) })} />
+      <LineSpeedtestDialog open={!!speedtestingLine} onOpenChange={(open) => !open && setSpeedtestingLine(null)} line={speedtestingLine} />
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除线路「{deleting?.name}」？</AlertDialogTitle><AlertDialogDescription>删除后该线路不会再参与套餐匹配，已导入的订阅将在下次刷新时移除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleting && remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground"><GitBranch className="h-3.5 w-3.5" />直连线路直接连接单节点入站；中继线路由入口节点承接用户连接后转发至落地节点。</div>
+      <div className="flex flex-col gap-1.5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <GitBranch className="h-3.5 w-3.5 shrink-0" />
+          <span>直连线路直接连接单节点入站；中继线路由入口节点承接用户连接后转发至落地节点。</span>
+        </div>
+        <div className="flex items-center gap-1.5 opacity-85">
+          <Activity className="h-3.5 w-3.5 shrink-0" />
+          <span>延迟测试由 Master 向 Cloudflare 204 发起，支持端到端代理与 TCP 握手降级双模探测。</span>
+        </div>
+      </div>
     </PageContainer>
   );
 }

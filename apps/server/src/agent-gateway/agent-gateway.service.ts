@@ -2218,7 +2218,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
             lastSeenAt: node.lastSeenAt
           }))
         },
-        data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null }
+        data: { status: 'OFFLINE', bandwidthRate: null, uploadRate: null, downloadRate: null, kernelRunning: null, cpuUsage: null, memoryUsage: null }
       }));
     }
   }

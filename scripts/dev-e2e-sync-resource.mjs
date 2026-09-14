@@ -72,8 +72,7 @@ async function main() {
     return payload;
   };
 
-  const resources = await request('/api/v1/admin/binary-resources');
-  if (!Array.isArray(resources)) throw new Error('资源列表响应格式无效');
+  const resources = extractResourceList(await request('/api/v1/admin/binary-resources?page=1&pageSize=100'));
   const sameVersion = resources.filter((resource) => resource.kind === kind && resource.upstreamVersion === version);
   const current = sameVersion.find((resource) => resource.assets?.some((asset) => (
     asset.target === target && asset.available && asset.sha256?.toLowerCase() === sha256
@@ -130,6 +129,12 @@ export function parseCookieJar(contents) {
     if (fields[5] === 'riricloud_access' && fields[6]) return `riricloud_access=${fields[6]}`;
   }
   return null;
+}
+
+export function extractResourceList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object' && Array.isArray(payload.data)) return payload.data;
+  throw new Error('资源列表响应格式无效');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

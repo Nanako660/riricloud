@@ -62,9 +62,10 @@ riricloud/
 7. **安全红线**：密钥不入 git/日志；生产强制 HTTPS/WSS；密码 bcrypt；服务端默认拒绝鉴权（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §4）。
 8. **语言约定**：标识符与日志英文，注释/commit/文档中文（[docs/PROJECT_CONSTRAINTS.md](docs/PROJECT_CONSTRAINTS.md) §6）。
 9. **质量门禁**：合入 main 前本 §常用命令 全绿；修 bug 先写复现测试。
-10. **不越权**：架构级决策（换框架、加外部服务、突破资源上限）不得自行实施——先提 RFC 改文档，获批准后再动代码。
-11. **视觉验证约束**：前端 UI 视觉验证为**按需执行**且**仅在 Antigravity 代理环境下执行**；严禁在自动化 CI / Git hook 中挂接视觉测试，严禁私自引入重型测试框架。UI 改动需核对并维护 [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md) 索引台账。
-12. **任务规划与归档机械约束**：所有中短期任务规划必须存放于 `docs/plans/`；严禁在 `docs/` 根目录散落 TODO/计划文档；规划任务 100% 完成后必须使用 `pnpm plan:archive <file>` 归档至 `docs/plans/archive/`，未归档将触发 `pnpm gate:docs` 门禁阻断。
+10. **接口与启动流程变更必须联动核对 E2E**：修改 REST/WS 接口、鉴权方式、响应结构、节点/Agent 生命周期或联调启动流程时，必须在同一 PR 检索并评估 `scripts/dev-e2e*`、E2E 测试与 fixture 是否需要同步更新；需要更新时必须补回归用例，不需要时须在 PR 自查记录中说明。
+11. **不越权**：架构级决策（换框架、加外部服务、突破资源上限）不得自行实施——先提 RFC 改文档，获批准后再动代码。
+12. **视觉验证约束**：前端 UI 视觉验证为**按需执行**且**仅在 Antigravity 代理环境下执行**；严禁在自动化 CI / Git hook 中挂接视觉测试，严禁私自引入重型测试框架。UI 改动需核对并维护 [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md) 索引台账。
+13. **任务规划与归档机械约束**：所有中短期任务规划必须存放于 `docs/plans/`；严禁在 `docs/` 根目录散落 TODO/计划文档；规划任务 100% 完成后必须使用 `pnpm plan:archive <file>` 归档至 `docs/plans/archive/`，未归档将触发 `pnpm gate:docs` 门禁阻断。
 
 ---
 

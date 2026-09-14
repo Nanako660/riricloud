@@ -88,19 +88,29 @@ describe('LineSpeedtestService', () => {
     await expect(service.testLine('non-existent')).rejects.toThrow(NotFoundException);
   });
 
-  it('测试线路成功时更新 Line 记录的延迟与状态', async () => {
+  it('测试线路成功时更新 Line 记录的延迟与状态（TCP 握手降级）', async () => {
     prisma.line.findUnique.mockResolvedValue(rawLine);
     prisma.line.update.mockResolvedValue({ ...rawLine, lastLatencyMs: 45, lastTestStatus: 'SUCCESS' });
 
-    // Mock tcpPing 避免真实网络拨号
-    const tcpPingSpy = jest.spyOn(service as unknown as { tcpPing: (...args: unknown[]) => Promise<number> }, 'tcpPing')
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+      tcpPing: (...args: unknown[]) => Promise<number>;
+    };
+
+    const resolveSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary')
+      .mockResolvedValue(null);
+    const tcpPingSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'tcpPing')
       .mockResolvedValue(45);
 
     const result = await service.testLine(rawLine.id);
 
     expect(result.status).toBe('SUCCESS');
     expect(result.latencyMs).toBe(45);
+    expect(result.mode).toBe('TCP_HANDSHAKE');
     expect(result.lineId).toBe(rawLine.id);
+    expect(result.targetUrl).toBe('http://cp.cloudflare.com/generate_204');
+    expect(result.topology.entryNode.host).toBe('1.2.3.4');
+    expect(result.stages.length).toBeGreaterThan(0);
     expect(prisma.line.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: rawLine.id },
@@ -111,14 +121,52 @@ describe('LineSpeedtestService', () => {
       })
     );
 
+    resolveSpy.mockRestore();
     tcpPingSpy.mockRestore();
+  });
+
+  it('测试线路端到端探测成功时记录 END_TO_END 模式与各阶段状态', async () => {
+    prisma.line.findUnique.mockResolvedValue(rawLine);
+    prisma.line.update.mockResolvedValue({ ...rawLine, lastLatencyMs: 38, lastTestStatus: 'SUCCESS' });
+
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+      runSingboxProbe: (...args: unknown[]) => Promise<number>;
+      tcpPing: (...args: unknown[]) => Promise<number>;
+    };
+
+    const resolveSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary')
+      .mockResolvedValue('/usr/local/bin/sing-box');
+    const tcpPingSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'tcpPing')
+      .mockResolvedValue(20);
+    const runSingboxSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'runSingboxProbe')
+      .mockResolvedValue(38);
+
+    const result = await service.testLine(rawLine.id);
+
+    expect(result.status).toBe('SUCCESS');
+    expect(result.mode).toBe('END_TO_END');
+    expect(result.latencyMs).toBe(38);
+    expect(result.stages.find((s) => s.id === 'entry_handshake')?.status).toBe('SUCCESS');
+    expect(result.stages.find((s) => s.id === 'target_http')?.status).toBe('SUCCESS');
+
+    resolveSpy.mockRestore();
+    tcpPingSpy.mockRestore();
+    runSingboxSpy.mockRestore();
   });
 
   it('测试超时或网络错误时正确持久化 TIMEOUT 状态并清空 latency', async () => {
     prisma.line.findUnique.mockResolvedValue(rawLine);
     prisma.line.update.mockResolvedValue({ ...rawLine, lastLatencyMs: null, lastTestStatus: 'TIMEOUT' });
 
-    const tcpPingSpy = jest.spyOn(service as unknown as { tcpPing: (...args: unknown[]) => Promise<number> }, 'tcpPing')
+    type MockableSpeedtest = {
+      resolveSingboxBinary: () => Promise<string | null>;
+      tcpPing: (...args: unknown[]) => Promise<number>;
+    };
+
+    const resolveSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'resolveSingboxBinary')
+      .mockResolvedValue(null);
+    const tcpPingSpy = jest.spyOn(service as unknown as MockableSpeedtest, 'tcpPing')
       .mockRejectedValue(new Error('连接超时（3000ms）'));
 
     const result = await service.testLine(rawLine.id);
@@ -135,6 +183,7 @@ describe('LineSpeedtestService', () => {
       })
     );
 
+    resolveSpy.mockRestore();
     tcpPingSpy.mockRestore();
   });
 
@@ -152,7 +201,17 @@ describe('LineSpeedtestService', () => {
       status: 'SUCCESS',
       message: 'TCP 握手 (60ms)',
       testedAt: new Date(),
-      mode: 'TCP_HANDSHAKE'
+      mode: 'TCP_HANDSHAKE',
+      targetUrl: 'http://cp.cloudflare.com/generate_204',
+      protocolType: 'VLESS',
+      topology: {
+        isRelay: false,
+        relayMode: null,
+        masterHost: 'Master 主控',
+        entryNode: { id: 'node-1', name: 'Node 1', host: '1.2.3.4', port: 20001 },
+        landingNode: null
+      },
+      stages: []
     });
 
     const summary = await service.testAllActiveLines();

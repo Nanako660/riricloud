@@ -114,7 +114,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
 - `POST /admin/lines/:id/test`：解析并返回最终对外端点、入口/落地节点与端口，不建立真实连接。⭐
-- `POST /admin/lines/:id/speedtest`：对单条线路执行即时测速（优先端到端 204 探测，不可用时针对 TCP 类协议降级为入口 TCP 握手，纯 UDP 类协议直接透传真实代理探测诊断，避免误报拒连；使用内部专用探针凭据且不计入账单），响应 `{ lineId, lineName, latencyMs, status, message, testedAt, mode }`，并持久化到 Line 最新快照。⭐
+- `POST /admin/lines/:id/speedtest`：对单条线路执行即时测速（优先端到端 204 探测，不可用时针对 TCP 类协议降级为入口 TCP 握手，纯 UDP 类协议直接透传真实代理探测诊断，避免误报拒连；使用内部专用探针凭据且不计入账单），响应 `{ lineId, lineName, latencyMs, status, message, testedAt, mode, topology, stages }`，并持久化到 Line 最新快照；其中 `stages` 包含多阶段耗时与状态（`PREPARE` 主控探针准备、`ENTRY_HANDSHAKE` 入口 TCP 握手、`RELAY_FORWARD` 中继转发准备、`PROXY_TARGET` 目标端到端 HTTP 204 探测），支持在管理前端以弹窗展示完整的链路测试流程与异常诊断。⭐
 - `POST /admin/lines/speedtest-all`：受控并发（限制并发度 4）批量测试所有已启用的线路，响应 `{ total, success, failed }`。⭐
 - `POST /admin/lines/batch-status`：批量启用/禁用线路。⭐ 请求 `{ ids: UUID[], status: "ACTIVE"|"DISABLED" }`。
 - `PATCH /admin/lines/reorder`：批量调整排序。⭐ 请求 `{ items: [{ id, sortOrder }] }`。
@@ -388,6 +388,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > **落库约束**：Master 对同一节点的心跳按顺序处理，积压时仅保留最新遥测和累计快照；累计值相等不生成流水，计数器下降则按重启/重置处理并记录告警。未知凭证只建立游标基线，不计费。`TrafficLog.upload/download` 始终记录物理增量，用户与订阅配额按归属线路的 `trafficRate` 折算值批量扣减；没有归属线路时倍率按 `1.0` 处理。协议代理/异构桥接的内部凭证只更新 `TrafficCursor`，不生成流水或扣费。Master 写入流水时优先关联 ACTIVE 入口线路；没有入口线路时回退到 ACTIVE `RELAY + BLIND_FORWARD` 出口承载线路。`TrafficLog`、`Subscription.trafficUsedBytes`、`User.trafficUsedBytes` 与 `TrafficCursor` 在同一短事务内提交。节点遥测、速率聚合与流量账务分开落库，速率历史保留 30 天并由低频巡检清理。
 >
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串或省略表示无错误）、`agentVersion`、`osArch`、`kernelVersion`（内核未拉起或探测中可省略或上报空串，Master 网关自适应放行并保留最新有效值）。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
+>
+> **离线状态收敛机制**：当节点连接断开或因心跳超时被后台巡检标记为 `OFFLINE` 时，Master 自动将瞬态遥测字段清空（`kernelRunning = null`, `cpuUsage = null`, `memoryUsage = null`, `bandwidthRate = 0`, `uploadRate = 0`, `downloadRate = 0`），前端与管理 API 统一对离线节点的内核状态呈现为未确定状态破折号（`—`），杜绝失联节点历史内核存活状态遗留误导。
 
 #### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
 Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：
