@@ -38,7 +38,8 @@ export class BinariesController {
     const target = this.binaries.resolveAgentTarget(userAgent);
     const platform = target.replace(/^agent-/, '');
     const script = target.startsWith('agent-windows')
-      ? await this.installer!.renderPowershellScript(platform, getRequestBaseUrl(request))
+      // UTF-8 BOM：Windows PowerShell 5.1 对无 BOM 脚本按 ANSI 读取，中文注释会破坏解析
+      ? '﻿' + await this.installer!.renderPowershellScript(platform, getRequestBaseUrl(request))
       : await this.installer!.renderShellScript(platform, getRequestBaseUrl(request));
     response.setHeader('Content-Type', target.startsWith('agent-windows') ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
