@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.14] - 2026-09-14
+
+### Added
 - **预编排免交互节点安装脚本与 Windows CMD/PowerShell 跨终端兼容**：
   - 主控端新增自包含预编排免交互安装脚本渲染与分发：`GET /downloads/agent-installer` 升级支持 `?token=` 查询参数鉴权、`format=bat|sh|ps1` 与 `?download=1` 附件下载；主控节点管理新增端点 `GET /admin/nodes/:id/install-script` 支持管理员一键导出内嵌节点凭据与主控地址的专属安装脚本。
   - Windows 跨终端双重兼容：主控为 Windows 生成自包含 `.bat` 批处理文件（集成 `chcp 65001` UTF-8 编码、管理员自提权检测与内嵌 PowerShell 4 阶段执行引擎，强制输出 CRLF 换行规避 CMD 语法解析陷阱），支持直接双击执行；原生安装命令通过 `powershell -NoProfile -ExecutionPolicy Bypass -Command "..."` 包装，在 CMD、PowerShell 5.1 与 PowerShell 7 终端均可直接粘贴回车免交互运行。
@@ -33,6 +42,7 @@
   - Web 端节点列表与节点详情中，将非 `ONLINE`（离线/禁用）状态节点的内核运行状态统一置灰展示为未确定状态破折号 `—`（Tooltip 提示“节点离线，内核状态未知”），修复“离线节点内核状态永远显示为运行”的问题。
   - 节点列表筛选器中「运行中」与「已停止」筛选条件联动 `node.status === 'ONLINE'`，确保离线节点不被误归入运行或停止态；CPU/内存遥测列在离线时统一优雅回退为 `—`。
 - **修复本地 E2E 资源同步**：兼容二进制资源分页接口 `{ data, ... }` 响应，避免 Agent 资源同步阶段误报“资源列表响应格式无效”。
+
 
 
 ## [0.8.13] - 2026-09-14
