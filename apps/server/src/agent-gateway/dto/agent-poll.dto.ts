@@ -148,6 +148,24 @@ export class PollRestartAgentResultDto {
   message!: string;
 }
 
+export class PollLogItemDto {
+  @IsIn(['DEBUG', 'INFO', 'WARN', 'ERROR'])
+  level!: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+  @IsString()
+  module!: string;
+
+  @IsOptional()
+  @IsIn(['AGENT', 'SINGBOX'])
+  source?: 'AGENT' | 'SINGBOX';
+
+  @IsString()
+  message!: string;
+
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+}
+
 export class AgentPollDto {
   @IsInt()
   @Equals(AGENT_PROTOCOL_VERSION)
@@ -235,4 +253,11 @@ export class AgentPollDto {
   @ValidateNested({ each: true })
   @Type(() => PollRestartAgentResultDto)
   restartAgentResults?: PollRestartAgentResultDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => PollLogItemDto)
+  logs?: PollLogItemDto[];
 }

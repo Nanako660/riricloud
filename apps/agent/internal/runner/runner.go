@@ -16,6 +16,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
 	"github.com/Nanako660/riricloud/apps/agent/internal/embedded"
 	"github.com/Nanako660/riricloud/apps/agent/internal/kernel"
+	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
@@ -56,6 +57,9 @@ func runForeground(ctx context.Context, options Options) error {
 	defer closeLog()
 	log.Infof("riri-agent starting, version=%s", options.Version)
 
+	collector := logging.NewCollector(500)
+	log.AddHook(logging.NewHook(collector))
+
 	entry := logrus.NewEntry(log)
 	startKernelBootstrap(ctx, cfg, options, entry)
 
@@ -93,6 +97,7 @@ func runForeground(ctx context.Context, options Options) error {
 			runtime.GOOS+"/"+runtime.GOARCH,
 			entry,
 			restarter,
+			collector,
 		)
 		client.Run(ctx)
 	} else {
@@ -106,6 +111,7 @@ func runForeground(ctx context.Context, options Options) error {
 			runtime.GOOS+"/"+runtime.GOARCH,
 			entry,
 			restarter,
+			collector,
 		)
 		client.Run(ctx)
 	}

@@ -65,6 +65,8 @@ Linux 开发机使用系统环境安装 Node.js、pnpm 与 Go，不在仓库内�
   - 通过成熟的 Node.js SMTP 客户端发送注册与换绑邮箱验证码，并复用同一 Transporter 执行管理员测试邮件；连接参数来自 `SystemSetting`，不新增外部邮件服务或队列。
 - **本地 CAPTCHA（`svg-captcha`）**：
   - 生成纯 SVG 图形/算术验证码，答案、令牌和客户端 IP 仅以 HMAC 保存于 SQLite，令牌一次性消费并带过期、失败次数和并发保护；无需浏览器插件、原生编译或额外基础设施。Cloudflare Turnstile 作为可选在线模式，通过官方校验接口核对 success、action、hostname 和时间窗口。
+- **流式离线打包（`archiver` & `adm-zip`）**：
+  - 用于主控端动态打包 Agent 边缘端离线安装包（Windows `.zip` 与 Linux/macOS `.tar.gz`），将预填凭据的 `config.yaml`、平台二进制与 4 阶段自动化安装/卸载脚本内嵌打包；选用纯 JS 实现的 `archiver@7.0.1`（CommonJS 兼容，流式低内存开销）配合 `adm-zip` 处理解压提取，零原生编译依赖。
 
 ### 3.2 安全依赖审计说明
 

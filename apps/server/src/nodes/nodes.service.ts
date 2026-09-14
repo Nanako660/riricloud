@@ -15,7 +15,8 @@ import { UpdateNodeDto } from './dto/update-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
 import { SettingsService } from '../system/settings.service';
 import { appendPublicPath, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../common/public-url';
-import { encryptSecret } from '../common/secret-crypto';
+import { decryptSecret, encryptSecret } from '../common/secret-crypto';
+import { OfflinePackageService } from '../binaries/offline-package.service';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
@@ -31,7 +32,8 @@ export class NodesService {
     private readonly agentGateway: AgentService,
     @Optional() private readonly binaries?: BinariesService,
     @Optional() private readonly resources?: BinaryResourcesService,
-    @Optional() private readonly settingsService?: SettingsService
+    @Optional() private readonly settingsService?: SettingsService,
+    @Optional() private readonly offlinePackage?: OfflinePackageService
   ) {}
 
   async list() {
@@ -53,7 +55,7 @@ export class NodesService {
         ...this.sanitize(node),
         // 升级任务已完成但心跳版本尚未确认（Agent 重启可能失败）时的待确认信息
         pendingVersionConfirm: this.agentGateway.getPendingVersionConfirmation(id),
-        installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl),
+        installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl, node.id),
         agentImage,
         uninstallCommand: this.buildUninstallCommand(),
         windowsUninstallCommand: this.buildWindowsUninstallCommand()
@@ -90,7 +92,7 @@ export class NodesService {
       // Token 只在创建成功响应中返回一次；数据库字段保存的是加密密文。
       agentToken,
       installCommand: this.buildInstallCommand(communicationMode, node.osArch, publicBaseUrl),
-      installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl),
+      installCommands: this.buildInstallCommands(node.osArch, publicBaseUrl, node.id),
       agentImage,
       uninstallCommand: this.buildUninstallCommand(),
       windowsUninstallCommand: this.buildWindowsUninstallCommand()
@@ -331,11 +333,41 @@ export class NodesService {
     return raw;
   }
 
+  async generateOfflinePackage(id: string, rawPlatform?: string, requestBaseUrl?: string) {
+    const node = await this.requireNode(id);
+    if (!this.offlinePackage) {
+      throw new BadRequestException('离线安装包服务未启用');
+    }
+    const settings = await this.settingsService?.getSettings();
+    const publicBaseUrl = resolvePublicBaseUrl({
+      configuredBaseUrl: settings?.publicBaseUrl,
+      requestBaseUrl
+    });
+    const decryptedToken = decryptSecret(node.agentToken);
+    return this.offlinePackage.generateOfflinePackageStream(
+      {
+        id: node.id,
+        name: node.name,
+        agentToken: decryptedToken,
+        communicationMode: node.communicationMode,
+        pollIntervalSecs: node.pollIntervalSecs,
+        reachability: node.reachability,
+        serverHost: node.serverHost,
+        osArch: node.osArch
+      },
+      rawPlatform,
+      publicBaseUrl
+    );
+  }
+
   /**
    * 组装节点安装命令全集：ws/http/dockerWs/dockerHttp 为兼容保留的旧键，
    * native/portable 按目标操作系统区分（native=注册系统服务，portable=免安装直接运行）。
    */
-  private buildInstallCommands(osArch?: string | null, publicBaseUrl?: string) {
+  private buildInstallCommands(osArch?: string | null, publicBaseUrl?: string, nodeId?: string) {
+    const baseUrl = publicBaseUrl ?? resolvePublicBaseUrl();
+    const offlineDownloadUrl = appendPublicPath(baseUrl, 'api/v1/downloads/agent-offline-package');
+    const adminPackageUrl = nodeId ? appendPublicPath(baseUrl, `api/v1/admin/nodes/${nodeId}/offline-package`) : undefined;
     return {
       ws: this.buildInstallCommand('WS', osArch, publicBaseUrl),
       http: this.buildInstallCommand('HTTP', osArch, publicBaseUrl),
@@ -350,6 +382,12 @@ export class NodesService {
         linux: { ws: this.buildPosixPortableCommand('WS', 'linux', osArch, publicBaseUrl), http: this.buildPosixPortableCommand('HTTP', 'linux', osArch, publicBaseUrl) },
         macos: { ws: this.buildPosixPortableCommand('WS', 'macos', osArch, publicBaseUrl), http: this.buildPosixPortableCommand('HTTP', 'macos', osArch, publicBaseUrl) },
         windows: { ws: this.buildWindowsPortableCommand('WS', osArch, publicBaseUrl), http: this.buildWindowsPortableCommand('HTTP', osArch, publicBaseUrl) }
+      },
+      offline: {
+        packageDownloadUrl: offlineDownloadUrl,
+        adminPackageUrl,
+        windows: `curl -fsSL --progress-bar -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${offlineDownloadUrl}?platform=windows-amd64' -o riri-agent-offline.zip; tar -xf riri-agent-offline.zip; cd riri-agent-offline; .\\install.bat`,
+        linux: `read -r -s -p 'AgentToken: ' RIRI_AGENT_TOKEN; echo; curl -fsSL --progress-bar -H "X-Agent-Token: $RIRI_AGENT_TOKEN" '${offlineDownloadUrl}?platform=linux-amd64' -o riri-agent-offline.tar.gz && tar -xzf riri-agent-offline.tar.gz && cd riri-agent-offline && sudo sh install.sh`
       }
     };
   }

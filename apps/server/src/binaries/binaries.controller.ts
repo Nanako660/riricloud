@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, NotFoundException, Param, Patch, Post, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'node:fs';
@@ -10,9 +10,11 @@ import { ImportBinaryDto } from './dto/import-binary.dto';
 import { BinariesService } from './binaries.service';
 import { BinariesInstallerService } from './installer.service';
 import { BinaryResourcesService } from './binary-resources.service';
+import { OfflinePackageService } from './offline-package.service';
 import { BinaryResourceImportDto, BinaryResourceUploadDto } from './dto/binary-resource.dto';
 import { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
 import { getRequestBaseUrl } from '../common/public-url';
+import { decryptSecret } from '../common/secret-crypto';
 import { QueryBinaryAuditLogDto, QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
 import { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
 
@@ -22,8 +24,43 @@ export class BinariesController {
   constructor(
     private readonly binaries: BinariesService,
     private readonly installer?: BinariesInstallerService,
-    private readonly resources?: BinaryResourcesService
+    private readonly resources?: BinaryResourcesService,
+    private readonly offlinePackage?: OfflinePackageService
   ) {}
+
+  // 节点离线安装包下载：支持 X-Agent-Token 鉴权，根据 UA 或 query 参数 platform 组装流式包
+  @Public()
+  @Get('downloads/agent-offline-package')
+  async downloadOfflinePackage(
+    @Headers('user-agent') userAgent: string | undefined,
+    @Headers('x-agent-token') headerToken: string | undefined,
+    @Query('platform') platformQuery: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const node = await this.binaries.findNodeByToken(headerToken);
+    if (!this.offlinePackage) throw new NotFoundException('离线安装包服务未启用');
+    const platform = platformQuery || (userAgent ? this.binaries.resolveAgentTarget(userAgent).replace(/^agent-/, '') : 'linux-amd64');
+    const decryptedToken = decryptSecret(node.agentToken);
+    const result = await this.offlinePackage.generateOfflinePackageStream(
+      {
+        id: node.id,
+        name: node.name,
+        agentToken: decryptedToken,
+        communicationMode: node.communicationMode,
+        pollIntervalSecs: node.pollIntervalSecs,
+        reachability: node.reachability,
+        serverHost: node.serverHost,
+        osArch: node.osArch
+      },
+      platform,
+      getRequestBaseUrl(request)
+    );
+    response.setHeader('Content-Type', result.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(result.stream);
+  }
 
   // 节点安装脚本：按下载 UA 的平台渲染（POSIX sh / PowerShell），内嵌镜像测速与主控兜底逻辑
   @Public()

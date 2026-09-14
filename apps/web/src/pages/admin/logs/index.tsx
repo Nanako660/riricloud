@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { api } from '@/lib/api';
@@ -25,16 +26,34 @@ const DEFAULT_FILTER: LogsFilter = {
 };
 
 export default function AdminLogsPage() {
-  const [filter, setFilter] = React.useState<LogsFilter>(DEFAULT_FILTER);
+  const [searchParams] = useSearchParams();
+  const initialNodeId = searchParams.get('nodeId') || 'ALL';
+  const initialLive = searchParams.get('live') === 'true';
+
+  const [filter, setFilter] = React.useState<LogsFilter>(() => ({
+    ...DEFAULT_FILTER,
+    nodeId: initialNodeId
+  }));
   const [selectedLog, setSelectedLog] = React.useState<SystemLogItem | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [isCleanupOpen, setIsCleanupOpen] = React.useState(false);
 
   // Live Tail 实时推流状态
-  const [isLiveTail, setIsLiveTail] = React.useState(false);
+  const [isLiveTail, setIsLiveTail] = React.useState(initialLive);
   const [isPaused, setIsPaused] = React.useState(false);
   const [autoScroll, setAutoScroll] = React.useState(true);
   const [liveTailBuffer, setLiveTailBuffer] = React.useState<SystemLogItem[]>([]);
+
+  React.useEffect(() => {
+    const qNodeId = searchParams.get('nodeId');
+    const qLive = searchParams.get('live');
+    if (qNodeId) {
+      setFilter((prev) => ({ ...prev, nodeId: qNodeId, page: 1 }));
+    }
+    if (qLive === 'true') {
+      setIsLiveTail(true);
+    }
+  }, [searchParams]);
 
   const { logsQuery, metricsQuery, cleanMutation, exportLogs } = useLogs(filter);
 

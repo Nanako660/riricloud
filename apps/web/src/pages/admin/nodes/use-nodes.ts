@@ -225,6 +225,12 @@ export interface NodeInstallCommands {
   // native/portable 按目标操作系统区分；旧版主控可能不返回，需兜底到 ws/http 旧键
   native?: Partial<Record<'linux' | 'macos' | 'windows', NodeInstallCommandPair>>;
   portable?: Partial<Record<'linux' | 'macos' | 'windows', NodeInstallCommandPair>>;
+  offline?: {
+    packageDownloadUrl: string;
+    adminPackageUrl?: string;
+    windows: string;
+    linux: string;
+  };
 }
 
 export interface CreateNodeResult {

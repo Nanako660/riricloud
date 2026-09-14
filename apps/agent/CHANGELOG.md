@@ -13,6 +13,11 @@
 ## [Unreleased]
 
 ### Added
+- **环形有界日志收集器与 Logrus 全局挂钩**：新增 `apps/agent/internal/logging/collector.go`，构建具备容量上限（默认 500 条）与并发读写锁的环形日志收集器 `Collector`；通过 Logrus Hook 自动分级拦截过滤 Agent 自身的 INFO/WARN/ERROR 日志，支持单向消耗式 Drain。
+- **Sing-box 托管内核标准输出/错误流捕获**：在 `singbox/manager.go` 中实现行缓冲 `lineLogWriter`，实时捕获托管内核 stdout/stderr，智能提取分级日志并聚合至全局日志收集器，支持 WARN/ERROR 等级告警主动收集。
+- **WebSocket 与 HTTP 轮询双通道增量日志上报**：
+  - WebSocket 长连接活跃时启动 `logFlushLoop` 定时协同循环，每 2 秒或累积 50 条批量推送 `log_report` 消息帧，遇 ERROR 立即主动冲刷。
+  - HTTP 轮询模式下，在心跳 `pollPayload` 中新增 `Logs` 数组字段，每次轮询原子打包并清空暂存的日志数据增量上报给主控。
 
 ### Changed
 
