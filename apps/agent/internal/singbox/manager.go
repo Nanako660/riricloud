@@ -541,18 +541,19 @@ func (m *Manager) pendingBackoff() time.Duration {
 	return time.Until(m.nextStartAt)
 }
 
-// spawn 拉起内核子进程；stdout 接入日志，stderr 同时采样尾部（退出原因上报），
-// 退出通知交给 waiter goroutine。
+// spawn 拉起内核子进程；stdout 与 stderr 按行结构化接入日志与 Collector，
+// stderr 同步采样尾部用于崩溃原因上报，退出通知交给 waiter goroutine。
 func (m *Manager) spawn(conf []byte, version int64) error {
 	dir := filepath.Dir(m.confPath)
 	cmd := exec.Command(m.binPath, "run", "-c", m.confPath, "-D", dir)
-	stdout := m.log.WriterLevel(logrus.InfoLevel)
-	stderr := newTailWriter(stderrTailLimit)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	stdoutWriter := newLineLogWriter(m, false)
+	stderrWriter := newLineLogWriter(m, true)
+	stderrTail := newTailWriter(stderrTailLimit)
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = io.MultiWriter(stderrWriter, stderrTail)
 	if err := cmd.Start(); err != nil {
-		stdout.Close()
-		stderr.Close()
+		stdoutWriter.Flush()
+		stderrWriter.Flush()
 		return fmt.Errorf("start sing-box: %w", err)
 	}
 	exitC := make(chan struct{})
@@ -567,14 +568,16 @@ func (m *Manager) spawn(conf []byte, version int64) error {
 	m.lastError = ""
 	m.mu.Unlock()
 	m.log.WithField("pid", cmd.Process.Pid).Info("sing-box started")
-	go m.awaitChild(cmd, exitC, time.Now(), stdout, stderr)
+	go m.awaitChild(cmd, exitC, time.Now(), stdoutWriter, stderrWriter, stderrTail)
 	return nil
 }
 
 // awaitChild 等待子进程退出并回收资源。主动停止（配置变更重启/Shutdown）的退出属预期：
 // 不写 lastError、不计退避；仅非预期退出（崩溃）按存活时长进入退避（G6）并采样 stderr 尾部。
-func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.Time, stdout io.Closer, stderr *tailWriter) {
+func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.Time, stdoutWriter, stderrWriter *lineLogWriter, stderrTail *tailWriter) {
 	err := cmd.Wait()
+	stdoutWriter.Flush()
+	stderrWriter.Flush()
 	uptime := time.Since(startedAt)
 	m.mu.Lock()
 	expected := m.stoppingChild == cmd
@@ -590,15 +593,13 @@ func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.
 	// 异常退出（非 nil Wait 错误）记录 stderr 尾部作为 lastError，供心跳上报；
 	// 预期停止（Windows 下 Kill 兜底退出码非 0）不视为失败
 	if err != nil && !expected {
-		m.lastError = tailString(stderr.String(), stderrTailLimit)
+		m.lastError = tailString(stderrTail.String(), stderrTailLimit)
 	}
 	if m.child == cmd {
 		m.child = nil
 		m.childExit = nil
 	}
 	m.mu.Unlock()
-	stdout.Close()
-	stderr.Close()
 	close(exitC) // 通知 supervisor：当前子进程已退出，可重新收敛
 	m.log.WithError(err).WithField("uptime", uptime.String()).Warn("sing-box exited")
 }
@@ -712,4 +713,69 @@ func nextBackoff(current time.Duration) time.Duration {
 		return maxBackoff
 	}
 	return current * 2
+}
+
+type lineLogWriter struct {
+	mu       sync.Mutex
+	buf      []byte
+	isStderr bool
+	manager  *Manager
+}
+
+func newLineLogWriter(manager *Manager, isStderr bool) *lineLogWriter {
+	return &lineLogWriter{
+		manager:  manager,
+		isStderr: isStderr,
+	}
+}
+
+func (w *lineLogWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		idx := bytes.IndexByte(w.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimRight(string(w.buf[:idx]), "\r")
+		w.buf = w.buf[idx+1:]
+		w.manager.logSingboxOutput(line, w.isStderr)
+	}
+	const maxBufferedBytes = 64 * 1024
+	if len(w.buf) > maxBufferedBytes {
+		line := strings.TrimRight(string(w.buf), "\r")
+		w.buf = nil
+		w.manager.logSingboxOutput(line, w.isStderr)
+	}
+	return len(p), nil
+}
+
+func (w *lineLogWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.buf) > 0 {
+		line := strings.TrimRight(string(w.buf), "\r")
+		w.buf = nil
+		w.manager.logSingboxOutput(line, w.isStderr)
+	}
+}
+
+func (m *Manager) logSingboxOutput(line string, isStderr bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+	upper := strings.ToUpper(line)
+	entry := m.log.WithFields(logrus.Fields{
+		"source": "SINGBOX",
+		"module": "Singbox",
+	})
+	if strings.Contains(upper, "FATAL") || strings.Contains(upper, "PANIC") || strings.Contains(upper, "ERROR") {
+		entry.Error(line)
+	} else if strings.Contains(upper, "WARN") || isStderr {
+		entry.Warn(line)
+	} else {
+		entry.Info(line)
+	}
 }

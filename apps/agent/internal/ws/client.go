@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
 	"github.com/Nanako660/riricloud/apps/agent/internal/mirror"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
@@ -172,13 +173,7 @@ type restartAgentResult struct {
 	Message string `json:"message"`
 }
 
-type agentLogItem struct {
-	Level    string                 `json:"level"`
-	Module   string                 `json:"module"`
-	Source   string                 `json:"source,omitempty"`
-	Message  string                 `json:"message"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-}
+type agentLogItem = logging.LogItem
 
 type logReportData struct {
 	Logs []agentLogItem `json:"logs"`
@@ -200,9 +195,10 @@ type Client struct {
 	mirrorExec    *mirror.Executor
 	mirrorMu      sync.Mutex
 	mirrorCancels map[string]context.CancelFunc
+	logCollector  *logging.Collector
 }
 
-func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager) *Client {
+func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector) *Client {
 	return &Client{
 		masterURL:     masterURL,
 		token:         token,
@@ -216,6 +212,7 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		restart:       restarter,
 		mirrorExec:    mirror.NewExecutor(),
 		mirrorCancels: make(map[string]context.CancelFunc),
+		logCollector:  logCollector,
 	}
 }
 
@@ -277,13 +274,16 @@ func (c *Client) runOnce(ctx context.Context) error {
 	authed = true
 	c.log.WithField("nodeId", auth.NodeID).Info("authenticated")
 
-	// 读取循环（含 config_sync）；心跳独立 goroutine，ctx 退出
-	errCh := make(chan error, 2)
+	// 读取循环（含 config_sync）；心跳与日志上报独立 goroutine，ctx 退出
+	errCh := make(chan error, 3)
 	go func() {
 		errCh <- c.readLoop(ctx, conn)
 	}()
 	go func() {
 		errCh <- c.heartbeatLoop(ctx, conn)
+	}()
+	go func() {
+		errCh <- c.logFlushLoop(ctx, conn)
 	}()
 
 	select {
@@ -603,6 +603,34 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				"cpu": fmt.Sprintf("%.1f%%", payload.CPUUsage),
 				"mem": fmt.Sprintf("%.1f%%", payload.MemoryUsage),
 			}).Debug("heartbeat sent")
+		}
+	}
+}
+
+// logFlushLoop 周期性（2s）或 ERROR 触发时批量上报缓冲日志到 Master
+func (c *Client) logFlushLoop(ctx context.Context, conn *websocket.Conn) error {
+	if c.logCollector == nil {
+		<-ctx.Done()
+		return nil
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if remaining := c.logCollector.Drain(50); len(remaining) > 0 {
+				c.sendLogReport(conn, remaining)
+			}
+			return nil
+		case <-ticker.C:
+			if logs := c.logCollector.Drain(50); len(logs) > 0 {
+				c.sendLogReport(conn, logs)
+			}
+		case <-c.logCollector.NotifyError():
+			if logs := c.logCollector.Drain(50); len(logs) > 0 {
+				c.sendLogReport(conn, logs)
+			}
 		}
 	}
 }

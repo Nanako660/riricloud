@@ -13,6 +13,28 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.13] - 2026-09-14
+
+### Added
+- **Agent 离线安装包自动构建与极速分发**：主控端新增 `OfflinePackageService`，支持即时动态构建节点专属离线安装包（`riri-agent-offline-<node>-<os>-<arch>.zip` / `.tar.gz`）：
+  - 资源自愈：优先提取本地静态二进制；缺失时自动并发从 GitHub Release（支持加速镜像）抓取对应架构 Agent 二进制落盘缓存并注入主控资源库。
+  - 预置配置：自动生成内嵌 `serverUrl`、`token`、`nodeId` 等参数的 `config.yaml`。
+  - 零交互安装器：集成预配置的一键离线安装脚本（Windows 提供双击即跑的 `install.bat` 与 `install.ps1`，Linux/macOS 提供 `install.sh`），支持免交互执行 UAC/sudo 提权、二进制部署、自启系统服务注册并输出就绪状态。
+  - Web UI 在添加节点、轮换 Token 及节点安装命令弹窗中新增「离线安装包」独立 Tab，支持选择目标平台（Linux / macOS / Windows）一键下载打包好的离线压缩文件与复制终端安装命令。
+- **节点网络可达性（公网 VPS vs 内网 NAT）显式选择与无损动态切换**：
+  - 添加节点与节点详情编辑页支持显式选择节点类型（公网 VPS vs NAT 落地），表单校验针对 NAT 落地免除公网 IP/域名强校验，自动兜底提供 `127.0.0.1` 占位并在详情页突出显示「内网反向穿透」拓扑提示。
+  - 节点详情页支持在无需重新部署/重新注册 Agent 的前提下平滑切换网络可达性属性，服务层与线路拓扑引擎根据最新属性即时调整入站与反向穿透派发。
+- **Agent 与托管内核端到端分级日志采集与实时上报**：
+  - 边缘端（Go Agent）实现环形有界日志收集器 `Collector`（默认容量 500 条），接入 Logrus 全局 Hook 分级过滤采集 Agent 运行时事件（INFO/WARN/ERROR）。
+  - 内核日志实时捕获：重构 Sing-box 进程托管标准输出与标准错误流管道，通过行缓冲过滤提取内核启动与运行诊断，对 WARN/ERROR 等级进行关键告警归集入环形缓冲区。
+  - 双通道批处理上报：WebSocket 长连接就绪时每 2 秒或累积 50 条批量推送 `log_report` 帧，遇 ERROR 立即主动冲刷；长连接不可用时在 HTTP 轮询（`POST /api/v1/agent/poll`）心跳包中增量携带缓冲日志。
+  - Web 日志大盘联动：节点详情页右上角新增「实时日志」直达入口，携带 `nodeId` 与 `live=true` 参数联动打开全站日志大盘并自动激活该节点实时 Live Tail 推流模式。
 - **跨平台 Agent 安装脚本 4 阶段标准化与 UAC/sudo 智能提权**：重构 POSIX 与 PowerShell 安装脚本模板，建立标准 4 阶段执行模型：
   1. `[1/4] 环境检查`：Windows 智能检测管理员权限，非管理员交互环境下自动拉起 UAC 提权独立窗口并由父进程等待，提权取消或无桌面环境友好阻断并提示；Linux/macOS 自动转接 sudo 提权；前置检查系统与安装包架构一致性及基础工具依赖（curl、tar 等）。
   2. `[2/4] 镜像测速与下载`：在 Range GET 测速择优基础上，下载阶段引入 `curl --progress-bar` 可视化进度条，消除长时间静默下载的假死感。
@@ -21,6 +43,7 @@
 
 ### Fixed
 - **Windows 原生安装命令执行策略规避**：主控生成的 Windows 安装命令显式通过 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...` 执行下载的安装脚本，规避系统默认 `Restricted` 策略拦截脚本执行。
+
 
 
 ## [0.8.12] - 2026-09-14

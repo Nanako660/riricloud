@@ -1037,6 +1037,9 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     // 同一节点切换到 HTTP 后，旧 WS 连接不得继续接收任务或覆盖通信模式。
     this.supersedeSocket(auth.nodeId);
     await this.handleHeartbeat(auth.nodeId, data, 'HTTP');
+    if (data.logs && data.logs.length > 0) {
+      this.handleLogReport(auth.nodeId, { logs: data.logs });
+    }
     for (const result of data.configApplyResults ?? []) {
       await this.handleConfigApplyResult(auth.nodeId, result);
     }

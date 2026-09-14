@@ -109,6 +109,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                 commands={created.installCommands}
                 fallbackCommand={created.installCommand}
                 defaultMode={created.node.communicationMode === 'HTTP' ? 'http' : 'ws'}
+                nodeId={created.node.id}
               />
             </div>
             <DialogFooter>

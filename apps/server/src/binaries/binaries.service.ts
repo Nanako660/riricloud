@@ -125,9 +125,27 @@ export class BinariesService implements OnModuleInit {
   }
 
   async authorizeDownload(token: string | undefined): Promise<void> {
+    await this.findNodeByToken(token);
+  }
+
+  async findNodeByToken(token: string | undefined) {
     if (!token) throw new UnauthorizedException('缺少 AgentToken');
-    const node = await this.prisma.node.findFirst({ where: { OR: [{ agentTokenHash: hashAgentToken(token) }, { agentToken: token }], }, select: { status: true } });
+    const node = await this.prisma.node.findFirst({
+      where: { OR: [{ agentTokenHash: hashAgentToken(token) }, { agentToken: token }] },
+      select: {
+        id: true,
+        name: true,
+        agentToken: true,
+        communicationMode: true,
+        pollIntervalSecs: true,
+        reachability: true,
+        serverHost: true,
+        osArch: true,
+        status: true
+      }
+    });
     if (!node || node.status === 'DISABLED') throw new UnauthorizedException('无效的 AgentToken');
+    return node;
   }
 
   buildDownloadUrl(target: BinaryTarget, _token: string, requestBaseUrl?: string): string {

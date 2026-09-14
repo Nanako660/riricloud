@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, StreamableFile } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
 import { getRequestBaseUrl } from '../common/public-url';
@@ -27,6 +27,20 @@ export class NodesController {
   @Post('reality-keypair')
   generateRealityKeypair() {
     return this.nodesService.realityKeypair();
+  }
+
+  @Get(':id/offline-package')
+  async downloadOfflinePackage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('platform') platform: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const result = await this.nodesService.generateOfflinePackage(id, platform, getRequestBaseUrl(request));
+    response.setHeader('Content-Type', result.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(result.stream);
   }
 
   @Get(':id')

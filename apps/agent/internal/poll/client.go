@@ -16,6 +16,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
 	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
@@ -114,6 +115,7 @@ type pollPayload struct {
 	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`
 	ProbeResults        []json.RawMessage   `json:"probeResults,omitempty"`
 	RestartAgentResults []json.RawMessage   `json:"restartAgentResults,omitempty"`
+	Logs                []logging.LogItem   `json:"logs,omitempty"`
 }
 
 type pollResponse struct {
@@ -153,9 +155,10 @@ type Client struct {
 	restartRequested bool
 	traffic          *trafficstats.Collector
 	tasks            sync.WaitGroup
+	logCollector     *logging.Collector
 }
 
-func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager) *Client {
+func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector) *Client {
 	return &Client{
 		masterURL:      masterURL,
 		token:          token,
@@ -170,6 +173,7 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		runningTasks:   make(map[string]struct{}),
 		completedTasks: make(map[string]struct{}),
 		traffic:        trafficstats.NewCollector(log),
+		logCollector:   logCollector,
 	}
 }
 
@@ -230,6 +234,9 @@ func (c *Client) pollOnce(ctx context.Context) error {
 			UploadTotal:   record.UploadTotal,
 			DownloadTotal: record.DownloadTotal,
 		})
+	}
+	if c.logCollector != nil {
+		payload.Logs = c.logCollector.Drain(50)
 	}
 	sentResults := c.appendPendingResults(&payload)
 	body, err := json.Marshal(payload)
