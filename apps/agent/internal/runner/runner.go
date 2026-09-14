@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
+	"github.com/Nanako660/riricloud/apps/agent/internal/embedded"
 	"github.com/Nanako660/riricloud/apps/agent/internal/kernel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/poll"
 	"github.com/Nanako660/riricloud/apps/agent/internal/restart"
@@ -128,6 +129,18 @@ func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Optio
 	}
 	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
 		return
+	}
+	if embedded.HasEmbeddedKernel() {
+		downloaded, err := kernel.Ensure(ctx, kernel.Options{
+			Destination: cfg.SingboxBinPath,
+		})
+		if err == nil {
+			if downloaded {
+				log.Info("sing-box kernel extracted from embedded assets")
+			}
+			return
+		}
+		log.WithError(err).Warn("extract embedded sing-box failed, falling back to background download")
 	}
 	go bootstrapKernelLoop(ctx, kernel.Options{
 		Source:        options.SingboxSource,

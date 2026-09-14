@@ -105,10 +105,10 @@ type pollPayload struct {
 	DownloadRate        float64             `json:"downloadRate"`
 	KernelRunning       bool                `json:"kernelRunning"`
 	AppliedVersion      int64               `json:"appliedConfigVersion"`
-	LastError           string              `json:"lastError"`
-	AgentVersion        string              `json:"agentVersion"`
-	OSArch              string              `json:"osArch"`
-	KernelVersion       string              `json:"kernelVersion"`
+	LastError           string              `json:"lastError,omitempty"`
+	AgentVersion        string              `json:"agentVersion,omitempty"`
+	OSArch              string              `json:"osArch,omitempty"`
+	KernelVersion       string              `json:"kernelVersion,omitempty"`
 	TrafficSnapshots    []pollTrafficRecord `json:"trafficSnapshots"`
 	ConfigApplyResults  []json.RawMessage   `json:"configApplyResults,omitempty"`
 	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`

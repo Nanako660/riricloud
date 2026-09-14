@@ -13,11 +13,14 @@
 ## [Unreleased]
 
 ### Added
+- **Agent 内嵌 Sing-box 内核直接交付与自愈释放**：新增 `apps/agent/internal/embedded/` 模块，通过 Go `//go:embed` 将定制 Sing-box 内核及依赖库打包于 Agent 二进制中；启动与安装时自动完成 SHA-256 校验与自愈解压释放，无需再向 Master 或 GitHub 二次下载内核。
 - **Sing-box 内核 GitHub 下载支持加速镜像**：新增 `GITHUB_MIRRORS` 环境变量 / `--github-mirrors` 安装旗标 / 配置项 `githubMirrors`（前缀代理列表，安装脚本自动注入并持久化）；内核 GitHub 回退路径按「直连 → 镜像」顺序尝试，免安装运行的后台内核自举同样生效。
 
 ### Changed
+- **内核自愈与启动时序优化**：Agent 启动初期同步自愈释放内嵌内核，确保 Sing-box 管理器与监管子进程初始化前内核文件已就绪；优化惰性版本识别与心跳字段序列化，避免空值导致校验失败。
 
 ### Fixed
+- **修复主控心跳网关空版本强校验拦截**：修复内核未就绪上报空版本时被主控网关判定为非法有效负载并标记离线的异常。
 
 
 ## [0.7.3] - 2026-09-14

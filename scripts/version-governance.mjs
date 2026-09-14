@@ -375,7 +375,7 @@ function getGitBaseRef() {
 function getChangedFiles(baseRef) {
   try {
     const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
-    const output = execSync(`git diff --name-only ${diffTarget} HEAD`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    const output = execSync(`git diff --name-only ${diffTarget}`, { encoding: 'utf-8', cwd: ROOT_DIR });
     return output
       .split(/\r?\n/)
       .map(s => s.trim())
@@ -404,7 +404,7 @@ function getBasePackageVersion(baseRef) {
 function hasChangelogAdditions(baseRef, changelogRelativePath = 'CHANGELOG.md') {
   try {
     const diffTarget = typeof baseRef === 'object' ? baseRef.mergeBase : baseRef;
-    const diffOutput = execSync(`git diff ${diffTarget} HEAD -- ${changelogRelativePath}`, { encoding: 'utf-8', cwd: ROOT_DIR });
+    const diffOutput = execSync(`git diff ${diffTarget} -- ${changelogRelativePath}`, { encoding: 'utf-8', cwd: ROOT_DIR });
     const addedLines = diffOutput
       .split(/\r?\n/)
       .filter(line => line.startsWith('+') && !line.startsWith('+++'))

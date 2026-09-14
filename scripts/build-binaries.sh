@@ -141,7 +141,8 @@ fi
 
 restore_placeholder() {
   if [ -f "$PLACEHOLDER_BAK" ]; then
-    cp "$PLACEHOLDER_BAK" "$EMBEDDED_ASSET"
+    cp -f "$PLACEHOLDER_BAK" "$EMBEDDED_ASSET" || true
+    rm -f "$PLACEHOLDER_BAK" || true
   fi
 }
 trap restore_placeholder EXIT

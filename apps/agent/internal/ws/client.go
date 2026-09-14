@@ -67,10 +67,10 @@ type heartbeatData struct {
 	DownloadRate     float64            `json:"downloadRate"`
 	KernelRunning    bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
 	AppliedVersion   int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
-	LastError        string             `json:"lastError"`            // 最近一次失败原因（可选字段，空串省略）
-	AgentVersion     string             `json:"agentVersion"`
-	OSArch           string             `json:"osArch"`
-	KernelVersion    string             `json:"kernelVersion"`
+	LastError        string             `json:"lastError,omitempty"`  // 最近一次失败原因（可选字段，空串省略）
+	AgentVersion     string             `json:"agentVersion,omitempty"`
+	OSArch           string             `json:"osArch,omitempty"`
+	KernelVersion    string             `json:"kernelVersion,omitempty"`
 	TrafficSnapshots []heartbeatTraffic `json:"trafficSnapshots"`
 	Capabilities     []string           `json:"capabilities,omitempty"`
 }

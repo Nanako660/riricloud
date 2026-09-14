@@ -385,7 +385,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 >
 > **落库约束**：Master 对同一节点的心跳按顺序处理，积压时仅保留最新遥测和累计快照；累计值相等不生成流水，计数器下降则按重启/重置处理并记录告警。未知凭证只建立游标基线，不计费。`TrafficLog.upload/download` 始终记录物理增量，用户与订阅配额按归属线路的 `trafficRate` 折算值批量扣减；没有归属线路时倍率按 `1.0` 处理。协议代理/异构桥接的内部凭证只更新 `TrafficCursor`，不生成流水或扣费。Master 写入流水时优先关联 ACTIVE 入口线路；没有入口线路时回退到 ACTIVE `RELAY + BLIND_FORWARD` 出口承载线路。`TrafficLog`、`Subscription.trafficUsedBytes`、`User.trafficUsedBytes` 与 `TrafficCursor` 在同一短事务内提交。节点遥测、速率聚合与流量账务分开落库，速率历史保留 30 天并由低频巡检清理。
 >
-> **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串表示无错误）、`agentVersion`、`osArch`、`kernelVersion`。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
+> **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串或省略表示无错误）、`agentVersion`、`osArch`、`kernelVersion`（内核未拉起或探测中可省略或上报空串，Master 网关自适应放行并保留最新有效值）。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 
 #### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
 Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：

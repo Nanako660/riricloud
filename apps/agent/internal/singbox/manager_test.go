@@ -52,6 +52,10 @@ func readConf() []byte {
 
 func main() {
 	for _, a := range os.Args {
+		if a == "version" {
+			fmt.Println("sing-box version 1.14.0")
+			os.Exit(0)
+		}
 		if a == "check" {
 			b := readConf()
 			if b != nil {
