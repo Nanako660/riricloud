@@ -518,11 +518,11 @@ artifacts/binaries/
 
 Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_VERSION` build args，并把资源版本写入镜像 label、容器内 `/app/binaries/manifest.json` 或 Agent 的 `/var/lib/riri-agent/binaries/manifest.json`。`pnpm docker:export` 生成镜像归档、SHA-256 校验文件和带应用/镜像/Sing-box 元数据的 manifest。SQLite 和 `data/binaries` 必须使用持久化卷，以保留导入资源、任务历史和逻辑状态。
 
-### 8.3 运行时资源管理
+### 8.3 运行时资源管理与内核内嵌
 
-管理员从 `/admin/binaries` 管理内置、上传和远程导入资源。资源激活后才可分发；服务端会校验节点 OS/架构、Agent 协议兼容性和资产 SHA-256。升级失败时应从节点详情重试或选择上一资源回滚，回滚会重新发送完整平台资产包。
+自编译 Sing-box 内核（以及 Linux 下的 `libcronet.so`）现已深度封装内嵌于各平台 `riri-agent` 二进制中。节点 VPS 执行安装命令下载 Agent 后，启动时直接在本地自愈解压内核并拉起，不再需要向外网或 Master 请求二次下载，实现 100% 离线自闭环。节点升级流程统一收敛为「升级 Agent」单一动作，升级 Agent 落地启动后自动自愈更新内置内核。
 
-升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
+管理员仍可从 `/admin/binaries` 维护各平台 Agent 发行包与内置资源；服务端会校验节点 OS/架构、协议兼容性和资产 SHA-256。升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
 
 ## 9. 实时节点镜像站部署
 

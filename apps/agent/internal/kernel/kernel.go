@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/embedded"
 	"github.com/Nanako660/riricloud/apps/agent/internal/security"
 )
 
@@ -40,16 +41,50 @@ type Options struct {
 	GitHubMirrors []string
 }
 
-// Ensure 确保 Destination 存在 sing-box 内核；已存在时直接返回 false 不重复下载。
+// Ensure 确保 Destination 存在 sing-box 内核。
+// 优先通过内嵌资源包自动自愈释放；在内嵌未启用或占位时，回退到历史下载或复用已有文件。
 func Ensure(ctx context.Context, options Options) (bool, error) {
 	if strings.TrimSpace(options.Destination) == "" {
 		return false, fmt.Errorf("kernel destination is required")
 	}
+
+	// 1. 若显式指定了外置内核环境变量，跳过内嵌释放与远端拉取
+	if custom := strings.TrimSpace(os.Getenv("SINGBOX_BINARY_PATH")); custom != "" {
+		if _, err := os.Stat(custom); err == nil {
+			return false, nil
+		}
+	}
+
+	// 2. 优先尝试从内嵌归档自愈释放（未显式指定 github/master 或自定义 URL 时）
+	destDir := filepath.Dir(options.Destination)
+	source := strings.ToLower(strings.TrimSpace(options.Source))
+	if source == "" {
+		source = "auto"
+	}
+	if embedded.HasEmbeddedKernel() && source == "auto" && strings.TrimSpace(options.URL) == "" {
+		mainTarget := filepath.Join(destDir, embedded.MainExecutableName())
+		beforeStat, beforeErr := os.Stat(mainTarget)
+		_, _, err := embedded.Ensure(destDir)
+		if err != nil {
+			return false, fmt.Errorf("extract embedded kernel: %w", err)
+		}
+		if beforeErr != nil {
+			return true, nil
+		}
+		if afterStat, statErr := os.Stat(mainTarget); statErr == nil && (afterStat.ModTime() != beforeStat.ModTime() || afterStat.Size() != beforeStat.Size()) {
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// 3. 内嵌不可用（占位模式）：若目标文件已存在，直接复用
 	if _, err := os.Stat(options.Destination); err == nil {
 		return false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("stat sing-box kernel: %w", err)
 	}
+
+	// 4. 目标文件不存在，回退到远端拉取
 	if err := Download(ctx, options); err != nil {
 		return false, err
 	}

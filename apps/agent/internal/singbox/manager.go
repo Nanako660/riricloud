@@ -161,6 +161,9 @@ func (m *Manager) Running() bool {
 func (m *Manager) Status() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.binaryVersion == "" {
+		m.binaryVersion = detectBinaryVersion(m.binPath)
+	}
 	return Status{
 		Running:              m.child != nil,
 		AppliedConfigVersion: m.appliedVer,

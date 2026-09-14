@@ -2,9 +2,10 @@ import { IsIn, IsOptional, IsString, IsUrl, IsUUID, Matches, MinLength } from 'c
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpgradeNodeDto {
-  @ApiProperty({ enum: ['singbox', 'agent'] })
+  @ApiProperty({ enum: ['singbox', 'agent'], required: false, default: 'agent', description: '升级目标，Sing-box 内核已内嵌至 Agent，默认统一升级 Agent' })
   @IsIn(['singbox', 'agent'])
-  target!: 'singbox' | 'agent';
+  @IsOptional()
+  target: 'singbox' | 'agent' = 'agent';
 
   @ApiProperty({ required: false, format: 'uuid', description: '主控资源版本 ID；与自定义 URL 二选一' })
   @IsUUID()

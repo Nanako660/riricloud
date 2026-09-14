@@ -276,9 +276,9 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (value.lastError !== undefined && (typeof value.lastError !== 'string' || value.lastError.length > 8192)) {
     return false;
   }
-  if (value.agentVersion !== undefined && !isNonEmptyString(value.agentVersion, 128)) return false;
-  if (value.osArch !== undefined && !isNonEmptyString(value.osArch, 128)) return false;
-  if (value.kernelVersion !== undefined && !isNonEmptyString(value.kernelVersion, 128)) return false;
+  if (value.agentVersion !== undefined && value.agentVersion !== '' && !isNonEmptyString(value.agentVersion, 128)) return false;
+  if (value.osArch !== undefined && value.osArch !== '' && !isNonEmptyString(value.osArch, 128)) return false;
+  if (value.kernelVersion !== undefined && value.kernelVersion !== '' && !isNonEmptyString(value.kernelVersion, 128)) return false;
   if (value.capabilities !== undefined && (!Array.isArray(value.capabilities) || value.capabilities.length > 32 || !value.capabilities.every((item) => isNonEmptyString(item, 64)))) return false;
   return value.trafficSnapshots.every((record) => {
     if (!isJsonObject(record)) return false;

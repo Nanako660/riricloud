@@ -105,3 +105,30 @@ func TestNormalizeMirrors(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureUsesCustomURLWhenSpecified(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("custom-sing-box-bin"))
+	}))
+	defer server.Close()
+
+	destination := filepath.Join(t.TempDir(), executableName("sing-box"))
+	downloaded, err := Ensure(context.Background(), Options{
+		Destination: destination,
+		URL:         server.URL,
+	})
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if !downloaded {
+		t.Fatal("expected downloaded to be true")
+	}
+	content, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "custom-sing-box-bin" {
+		t.Fatalf("unexpected content: %s", string(content))
+	}
+}

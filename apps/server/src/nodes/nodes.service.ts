@@ -141,12 +141,13 @@ export class NodesService {
       let version = dto.version?.trim() ?? '';
       let url = dto.url?.trim() ?? '';
       let sha256 = dto.sha256?.trim().toLowerCase() ?? '';
+      const target = dto.target ?? 'agent';
       let managed: Awaited<ReturnType<BinaryResourcesService['resolveForNode']>> | undefined;
       if (!hasCustomUrl) {
         if (this.resources) {
-          managed = await this.resources.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl, dto.resourceId, node);
+          managed = await this.resources.resolveForNode(target, node.osArch, node.agentToken, requestBaseUrl, dto.resourceId, node);
         } else if (this.binaries) {
-          managed = await this.binaries.resolveForNode(dto.target, node.osArch, node.agentToken, requestBaseUrl) as Awaited<ReturnType<BinaryResourcesService['resolveForNode']>>;
+          managed = await this.binaries.resolveForNode(target, node.osArch, node.agentToken, requestBaseUrl) as Awaited<ReturnType<BinaryResourcesService['resolveForNode']>>;
         } else {
           throw new Error('二进制资源服务不可用');
         }
@@ -159,7 +160,7 @@ export class NodesService {
         resourceId: managed?.resourceId,
         assetId: managed?.assetId,
         releaseId: managed?.resourceId,
-        previousAssetId: dto.target === 'agent' ? node.currentAgentAssetId : node.currentSingboxAssetId,
+        previousAssetId: target === 'agent' ? node.currentAgentAssetId : node.currentSingboxAssetId,
         operation,
         files: managed && 'files' in managed
           ? managed.files.map((file) => ({ ...file, role: file.role === 'auxiliary' ? 'auxiliary' as const : 'main' as const }))
@@ -168,9 +169,9 @@ export class NodesService {
       };
       if (!options.resourceId && !options.assetId && !options.files?.length) {
         // 自定义 URL 升级：无关联资产，仅保留任务时间线与操作人
-        return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256, { previousAssetId: options.previousAssetId, operation, requestedById: operatorId });
+        return await this.agentGateway.requestUpgrade(id, target, version, url, sha256, { previousAssetId: options.previousAssetId, operation, requestedById: operatorId });
       }
-      return await this.agentGateway.requestUpgrade(id, dto.target, version, url, sha256, options);
+      return await this.agentGateway.requestUpgrade(id, target, version, url, sha256, options);
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : '升级任务参数无效');
     }
