@@ -29,6 +29,15 @@ to_os_path() {
   fi
 }
 
+to_node_path() {
+  local p="$1"
+  if [[ "${NODE_BIN:-node}" == *".exe" ]]; then
+    to_os_path "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 remove_dir_safe() {
   local dir="$1"
   [ -d "$dir" ] || return 0
@@ -40,6 +49,11 @@ DRY_RUN=0
 SKIP_BUILD=0
 TAG_PARAM=""
 RELEASE_TARGET="master"
+
+NO_WORKTREE=0
+if [ -n "${WINDIR:-}" ] || [ -n "${MSYSTEM:-}" ] || command -v cygpath >/dev/null 2>&1 || command -v wslpath >/dev/null 2>&1; then
+  NO_WORKTREE=1
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,6 +73,14 @@ while [ $# -gt 0 ]; do
       SKIP_BUILD=1
       shift
       ;;
+    --no-worktree)
+      NO_WORKTREE=1
+      shift
+      ;;
+    --with-worktree)
+      NO_WORKTREE=0
+      shift
+      ;;
     -h|--help)
       cat <<'EOF'
 用法：bash scripts/release.sh [选项] [tag]
@@ -68,6 +90,8 @@ while [ $# -gt 0 ]; do
   --agent         发布 Agent 边缘程序（Tag 为 agent-vA.B.C，产物输出至 artifacts/packages/agent）
   --dry-run       演练模式：完整执行构建、打包与校验，不上推 Tag、不发布 GitHub Release
   --skip-build    复用已有 artifacts/packages/<target> 产物直接执行发布
+  --no-worktree   直接复用当前工作区构建（Windows 默认）
+  --with-worktree 强制使用独立 git worktree 构建（非 Windows 默认）
   -h, --help      显示帮助
 EOF
       exit 0
@@ -155,10 +179,14 @@ fi
 ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 BINARIES_DIR="$ARTIFACT_ROOT/binaries"
 PACKAGE_DIR="$ARTIFACT_ROOT/packages/$RELEASE_TARGET"
-WORKTREE="$RIRI_ROOT/.cache/release-worktree"
+if [ "$NO_WORKTREE" = "1" ]; then
+  WORKTREE="$RIRI_ROOT"
+else
+  WORKTREE="$RIRI_ROOT/.cache/release-worktree"
+fi
 
 cleanup() {
-  if [ -d "$WORKTREE" ]; then
+  if [ -d "$WORKTREE" ] && [ "$WORKTREE" != "$RIRI_ROOT" ]; then
     echo "清理临时 release-worktree..."
     git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
     git -C "$RIRI_ROOT" worktree prune >/dev/null 2>&1 || true
@@ -175,17 +203,23 @@ if [ "$SKIP_BUILD" = "0" ]; then
   mkdir -p "$PACKAGE_DIR"
 
   # ---------- Worktree 隔离 ----------
-  echo "[2/7] 准备独立构建工作区（git worktree）"
-  git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
-  git -C "$RIRI_ROOT" worktree prune >/dev/null 2>&1 || true
-  remove_dir_safe "$WORKTREE"
-  git worktree add --detach "$WORKTREE" HEAD >/dev/null
+  if [ "$NO_WORKTREE" = "0" ]; then
+    echo "[2/7] 准备独立构建工作区（git worktree）"
+    git -C "$RIRI_ROOT" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+    git -C "$RIRI_ROOT" worktree prune >/dev/null 2>&1 || true
+    remove_dir_safe "$WORKTREE"
+    git worktree add --detach "$WORKTREE" HEAD >/dev/null
+  else
+    echo "[2/7] 复用当前干净工作区构建（NO_WORKTREE 模式）"
+  fi
 
   if [ "$RELEASE_TARGET" = "master" ]; then
     echo "[3/7] 在工作区中执行三端全量质量门禁"
     (
       cd "$WORKTREE"
-      pnpm install --frozen-lockfile
+      if [ "$NO_WORKTREE" = "0" ]; then
+        pnpm install --frozen-lockfile
+      fi
       pnpm --filter @riricloud/server exec tsc --noEmit
       pnpm --filter @riricloud/server lint
       pnpm --filter @riricloud/server test
@@ -215,10 +249,9 @@ if [ "$SKIP_BUILD" = "0" ]; then
       sha256sum "riri-master_${VERSION}_linux_amd64.tar.gz" > "$PACKAGE_DIR/checksums.txt"
     )
   else
-    echo "[3/7] 在工作区中执行 Agent 质量门禁"
+    echo "[3/7] 执行 Agent 质量门禁"
     (
       cd "$WORKTREE"
-      pnpm install --frozen-lockfile
       bash scripts/gate-agent.sh
     )
 
@@ -234,9 +267,13 @@ if [ "$SKIP_BUILD" = "0" ]; then
     if command -v zip >/dev/null 2>&1; then
       (cd "$BINARIES_DIR/agent/windows-amd64" && zip -q "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip" riri-agent.exe)
     else
+      POWERSHELL_BIN="powershell"
+      if ! command -v powershell >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+        POWERSHELL_BIN="powershell.exe"
+      fi
       WIN_SRC="$(to_os_path "$BINARIES_DIR/agent/windows-amd64/riri-agent.exe")"
       WIN_DEST="$(to_os_path "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_windows_amd64.zip")"
-      powershell -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
+      "$POWERSHELL_BIN" -NoProfile -Command "Compress-Archive -Force -Path '$WIN_SRC' -DestinationPath '$WIN_DEST'"
     fi
 
     echo "[6/7] 生成 Agent 归档包校验和"
@@ -266,7 +303,7 @@ echo "  -> 提取版本发布说明（${NOTES_VERSION}）..."
   let end = md.indexOf("\n## [", start + 1);
   if (end < 0) end = md.length;
   fs.writeFileSync(process.argv[2], md.slice(start, end).trim() + "\n");
-' "$NOTES_VERSION" "$(to_os_path "$PACKAGE_DIR/release-notes.md")" "$(to_os_path "$CHANGELOG_FILE")"
+' "$NOTES_VERSION" "$(to_node_path "$PACKAGE_DIR/release-notes.md")" "$(to_node_path "$CHANGELOG_FILE")"
 
 if [ "$DRY_RUN" = "1" ]; then
   echo ""

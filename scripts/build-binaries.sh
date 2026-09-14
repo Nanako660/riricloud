@@ -102,6 +102,9 @@ while [ $# -gt 0 ]; do
 done
 
 resolve_go() {
+  if ! command -v go >/dev/null 2>&1 && ! command -v go.exe >/dev/null 2>&1 && [ -d "$RIRI_ROOT/.tools/go/bin" ]; then
+    export PATH="$RIRI_ROOT/.tools/go/bin:$PATH"
+  fi
   GO_BIN="${GO_BIN:-go}"
   if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then
     GO_BIN="go.exe"
@@ -144,6 +147,7 @@ restore_placeholder() {
     cp -f "$PLACEHOLDER_BAK" "$EMBEDDED_ASSET" || true
     rm -f "$PLACEHOLDER_BAK" || true
   fi
+  git -C "$RIRI_ROOT" checkout -- "$EMBEDDED_ASSET" >/dev/null 2>&1 || true
 }
 trap restore_placeholder EXIT
 
