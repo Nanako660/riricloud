@@ -45,6 +45,25 @@ to_os_path() {
   fi
 }
 
+to_node_path() {
+  local p="$1"
+  if [[ "${NODE_BIN:-node}" == *".exe" ]]; then
+    to_os_path "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+to_pnpm_path() {
+  local p="$1"
+  local pnpm_cmd="${PNPM_BIN:-pnpm}"
+  if [[ "$pnpm_cmd" == *".cmd" || "$pnpm_cmd" == *".exe" ]]; then
+    to_os_path "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
 TARGET="linux-amd64"
 VERSION=""
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
@@ -117,7 +136,7 @@ resolve_node() {
 resolve_node
 
 if [ -z "$VERSION" ]; then
-  PACKAGE_JSON_OS="$(to_os_path "$WORKTREE_DIR/package.json")"
+  PACKAGE_JSON_OS="$(to_node_path "$WORKTREE_DIR/package.json")"
   VERSION="$($NODE_BIN -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).version)" "$PACKAGE_JSON_OS")"
 fi
 
@@ -135,13 +154,13 @@ mkdir -p "$MASTER_DIR"
 echo "  -> 部署主控服务端生产依赖..."
 (
   cd "$WORKTREE_DIR"
-  pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_os_path "$MASTER_DIR")"
+  pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
 )
 rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules"
 
 # 2. 规范化符号链接为相对路径
 echo "  -> 改写符号链接为包内相对路径..."
-"$NODE_BIN" - "$(to_os_path "$MASTER_DIR")" <<'NODE'
+"$NODE_BIN" - "$(to_node_path "$MASTER_DIR")" <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
@@ -254,7 +273,7 @@ echo "  -> 生成内置二进制资源 manifest..."
 
 # 6. 固化 package.json 并生成 Prisma 引擎
 echo "  -> 固化 package.json 并生成 Prisma Client..."
-"$NODE_BIN" -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$(to_os_path "$MASTER_DIR/package.json")" "$VERSION"
+"$NODE_BIN" -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$(to_node_path "$MASTER_DIR/package.json")" "$VERSION"
 (cd "$MASTER_DIR" && "$NODE_BIN" node_modules/prisma/build/index.js generate >/dev/null)
 
 # 7. 打包为 tar.gz
