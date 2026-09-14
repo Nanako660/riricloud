@@ -13,10 +13,14 @@
 ## [Unreleased]
 
 ### Added
-
-### Changed
+- **跨平台 Agent 安装脚本 4 阶段标准化与 UAC/sudo 智能提权**：重构 POSIX 与 PowerShell 安装脚本模板，建立标准 4 阶段执行模型：
+  1. `[1/4] 环境检查`：Windows 智能检测管理员权限，非管理员交互环境下自动拉起 UAC 提权独立窗口并由父进程等待，提权取消或无桌面环境友好阻断并提示；Linux/macOS 自动转接 sudo 提权；前置检查系统与安装包架构一致性及基础工具依赖（curl、tar 等）。
+  2. `[2/4] 镜像测速与下载`：在 Range GET 测速择优基础上，下载阶段引入 `curl --progress-bar` 可视化进度条，消除长时间静默下载的假死感。
+  3. `[3/4] 二进制校验与部署`：SHA-256 哈希强校验；部署前平滑停止既有运行服务，彻底消除 Windows 下运行中可执行文件被进程锁定（`Access is denied` / `file in use`）导致的覆盖写冲突。
+  4. `[4/4] 服务注册与健康检查`：执行系统服务注册后等待 2~3 秒服务初始化，主动拉取运行状态并输出格式化就绪卡片（包含版本、服务运行状态、配置路径、日志路径及 status / doctor / logs / restart / uninstall 运维快捷命令）。
 
 ### Fixed
+- **Windows 原生安装命令执行策略规避**：主控生成的 Windows 安装命令显式通过 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...` 执行下载的安装脚本，规避系统默认 `Restricted` 策略拦截脚本执行。
 
 
 ## [0.8.12] - 2026-09-14
