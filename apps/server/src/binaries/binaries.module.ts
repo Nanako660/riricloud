@@ -10,6 +10,6 @@ import { SystemModule } from '../system/system.module';
   imports: [SystemModule],
   controllers: [BinariesController],
   providers: [BinariesService, BinaryResourcesService, BinariesInstallerService, OfflinePackageService],
-  exports: [BinariesService, BinaryResourcesService, OfflinePackageService]
+  exports: [BinariesService, BinaryResourcesService, BinariesInstallerService, OfflinePackageService]
 })
 export class BinariesModule {}

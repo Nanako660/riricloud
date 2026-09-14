@@ -231,6 +231,7 @@ export interface NodeInstallCommands {
     windows: string;
     linux: string;
   };
+  adminScriptUrl?: string;
 }
 
 export interface CreateNodeResult {

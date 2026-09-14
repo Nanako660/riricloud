@@ -25,8 +25,8 @@ interface InstallCommandsPickerProps {
 
 const deployHint: Record<DeployType, Record<'posix' | 'windows', string>> = {
   native: {
-    posix: '以 root 身份执行；命令会注册并启动 riri-agent 系统服务（Linux systemd / macOS launchd），开机自启。',
-    windows: '以管理员身份运行 PowerShell 执行；命令会下载 Agent、下载 sing-box 内核并注册 riri-agent 系统服务。'
+    posix: '以 root 身份执行；自动拉取预编排安装脚本并注册启动 riri-agent 系统服务（Linux systemd / macOS launchd），开机自启。',
+    windows: '在 CMD 或 PowerShell 中均可直接粘贴执行；或下载 .bat 脚本直接以管理员身份运行。命令会自动提权并注册 riri-agent 系统服务。'
   },
   portable: {
     posix: '免安装直接运行：数据目录为 ~/.riri-cloud，Ctrl+C 停止，sing-box 内核由 Agent 自动下载，不注册开机自启服务。',
@@ -47,6 +47,7 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
   const [targetOs, setTargetOs] = useState<TargetOs>('linux');
   const [mode, setMode] = useState<InstallMode>(defaultMode);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingScript, setDownloadingScript] = useState(false);
   const { data: binaryInfo } = useAdminBinaryInfo();
 
   // 平台可用性：节点上报架构仅在 OS 匹配时复用（与服务端 resolveTargetPlatform 口径一致），否则回退 amd64
@@ -105,6 +106,34 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
     }
   };
 
+  const handleDownloadInstallScript = async () => {
+    if (!nodeId) return;
+    const reported = nodeOsArch?.split('/')[1] ?? 'amd64';
+    const platform = `${targetOs}-${reported}`;
+    const format = targetOs === 'windows' ? 'bat' : 'sh';
+    try {
+      setDownloadingScript(true);
+      const res = await api.get<Blob>(`/admin/nodes/${nodeId}/install-script`, {
+        params: { platform, format },
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `riri-install.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('专属安装脚本已开始下载');
+    } catch {
+      toast.error('下载专属安装脚本失败');
+    } finally {
+      setDownloadingScript(false);
+    }
+  };
+
   const hint = deployType === 'docker' ? deployHint.docker.posix : deployHint[deployType][targetOs === 'windows' ? 'windows' : 'posix'];
 
   return (
@@ -137,6 +166,24 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
           </Tabs>
         ) : null}
       </div>
+      {deployType === 'native' && nodeId ? (
+        <div className="flex items-center gap-2 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={downloadingScript}
+            onClick={handleDownloadInstallScript}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            {downloadingScript ? '正在下载...' : `下载专属安装脚本 (${targetOs === 'windows' ? 'riri-install.bat' : 'riri-install.sh'})`}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {targetOs === 'windows' ? '内嵌凭据与自提权，双击或在 CMD / PowerShell 中直接执行' : '内嵌凭据与自动提权，传输至目标机器后直接运行'}
+          </span>
+        </div>
+      ) : null}
       {deployType === 'offline' && nodeId ? (
         <div className="flex items-center gap-2 pt-1">
           <Button
@@ -159,7 +206,7 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
           <CopyButton value={currentCommand} />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{hint} 安装命令会在终端中隐藏提示输入 AgentToken。</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
       {platformAvailability ? (
         platformAvailability.available ? (
           <p className="text-xs text-emerald-600 dark:text-emerald-400">主控已内置 {platformAvailability.target} 二进制，可直接从主控下载安装。</p>

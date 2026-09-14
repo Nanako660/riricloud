@@ -3,6 +3,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { BinariesService } from '../binaries/binaries.service';
+import { BinariesInstallerService } from '../binaries/installer.service';
 import { NodesService } from './nodes.service';
 
 describe('NodesService', () => {
@@ -16,9 +17,22 @@ describe('NodesService', () => {
   };
   const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
   const binaries = { resolveForNode: jest.fn() };
+  const installer = {
+    renderShellScript: jest.fn().mockResolvedValue('#!/bin/sh\n# shell'),
+    renderPowershellScript: jest.fn().mockResolvedValue('# powershell'),
+    renderWindowsInstallBat: jest.fn().mockResolvedValue('@echo off\r\n# bat')
+  };
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ providers: [NodesService, { provide: PrismaService, useValue: prisma }, { provide: AgentGatewayService, useValue: gateway }, { provide: BinariesService, useValue: binaries }] }).compile();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NodesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AgentGatewayService, useValue: gateway },
+        { provide: BinariesService, useValue: binaries },
+        { provide: BinariesInstallerService, useValue: installer }
+      ]
+    }).compile();
     service = moduleRef.get(NodesService);
   });
 
@@ -38,20 +52,20 @@ describe('NodesService', () => {
     const result = await service.create({ name: '新节点', serverHost: '203.0.113.10' }, 'admin', 'https://panel.example.com');
     expect(result.installCommands.native.windows.ws).toContain('riri-agent-installer/windows-amd64');
     expect(result.installCommands.native.windows.ws).toContain('curl.exe');
-    // 原生安装改为拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
-    expect(result.installCommands.native.windows.ws).toContain('downloads/agent-installer?mode=ws');
-    expect(result.installCommands.native.windows.ws).toContain('riri-install.ps1" -MasterUrl');
-    expect(result.installCommands.native.windows.ws).toContain("-MasterUrl 'wss://panel.example.com/ws/agent'");
+    // 原生安装改为拉取主控渲染的安装脚本（CMD 与 PowerShell 通用执行命令，拉取 .bat 执行）
+    expect(result.installCommands.native.windows.ws).toContain('downloads/agent-installer?token=');
+    expect(result.installCommands.native.windows.ws).toContain('format=bat');
+    expect(result.installCommands.native.windows.ws).toContain('powershell -NoProfile -ExecutionPolicy Bypass -Command');
+    expect(result.installCommands.native.windows.ws).toContain('riri-install.bat');
     expect(result.installCommands.native.macos.ws).toContain('riri-agent-installer/macos-amd64');
-    // 原生安装改为拉取主控渲染的安装脚本（GitHub Release/镜像测速优先，主控内置兜底）
-    expect(result.installCommands.native.macos.ws).toContain('downloads/agent-installer?mode=ws');
+    expect(result.installCommands.native.macos.ws).toContain('downloads/agent-installer?token=');
     expect(result.installCommands.native.linux.ws).toContain('riri-agent-installer/linux-amd64');
-    expect(result.installCommands.native.linux.ws).toContain('sh /tmp/riri-agent-install.sh --master=');
+    expect(result.installCommands.native.linux.ws).toContain('sudo sh /tmp/riri-agent-install.sh');
     expect(result.installCommands.portable.linux.ws).toContain('RIRICLOUD_DATA_DIR="$HOME/.riri-cloud"');
     expect(result.installCommands.portable.linux.ws).toContain("MASTER_URL='wss://panel.example.com/ws/agent'");
     expect(result.installCommands.portable.linux.ws).toMatch(/\/tmp\/riri-agent-download run$/);
     expect(result.installCommands.portable.windows.ws).toContain('$env:LOCALAPPDATA\\RiriCloud');
-    expect(result.installCommands.portable.windows.ws).toContain('& "$env:LOCALAPPDATA\\RiriCloud\\riri-agent.exe" run');
+    expect(result.installCommands.portable.windows.ws).toContain('riri-agent.exe\' run');
     expect(result.installCommands.portable.windows.http).toContain("$env:MASTER_URL = 'https://panel.example.com'");
     expect(result.windowsUninstallCommand).toContain('uninstall --purge --yes');
   });
@@ -193,5 +207,19 @@ describe('NodesService', () => {
   it('节点不存在时抛出 NotFoundException', async () => {
     prisma.node.findUnique.mockResolvedValue(null);
     await expect(service.detail('missing')).rejects.toThrow(NotFoundException);
+  });
+
+  it('generateInstallScript 为指定平台和格式渲染带凭据的专属脚本', async () => {
+    prisma.node.findUnique.mockResolvedValue(baseNode);
+    const winResult = await service.generateInstallScript(baseNode.id, 'windows-amd64', 'bat', 'https://panel.example.com');
+    expect(winResult.filename).toBe('riri-install.bat');
+    expect(winResult.content).toContain('@echo off');
+
+    const psResult = await service.generateInstallScript(baseNode.id, 'windows-amd64', 'ps1', 'https://panel.example.com');
+    expect(psResult.filename).toBe('riri-install.ps1');
+
+    const linuxResult = await service.generateInstallScript(baseNode.id, 'linux-amd64', 'sh', 'https://panel.example.com');
+    expect(linuxResult.filename).toBe('riri-install.sh');
+    expect(linuxResult.content).toContain('#!/bin/sh');
   });
 });
