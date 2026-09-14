@@ -198,9 +198,9 @@ $Token = Read-Host 'AgentToken'
 curl.exe -fsSL --location -A 'riri-agent-installer/windows-amd64' `
   -H "X-Agent-Token: $Token" `
   'https://<master-domain>/api/v1/downloads/agent-installer?mode=ws' `
-  -o "$env:TEMPiri-install.ps1"
-& "$env:TEMPiri-install.ps1" -MasterUrl 'wss://<master-domain>/ws/agent' -AgentToken $Token
-Remove-Item "$env:TEMPiri-install.ps1" -ErrorAction SilentlyContinue
+  -o "$env:TEMP\riri-install.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\riri-install.ps1" -MasterUrl 'wss://<master-domain>/ws/agent' -AgentToken $Token
+Remove-Item "$env:TEMP\riri-install.ps1" -ErrorAction SilentlyContinue
 ```
 
 #### 免安装直接运行（便携模式）

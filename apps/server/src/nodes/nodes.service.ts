@@ -375,7 +375,7 @@ export class NodesService {
     const platform = this.resolveTargetPlatform('windows', osArch);
     const scriptUrl = this.buildInstallerScriptUrl(publicBaseUrl);
     const modeParam = mode === 'HTTP' ? 'http' : 'ws';
-    return `$Token = Read-Host 'AgentToken'; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${scriptUrl}?mode=${modeParam}' -o "$env:TEMP\\riri-install.ps1"; & "$env:TEMP\\riri-install.ps1" -MasterUrl '${master}' -AgentToken $Token; Remove-Item "$env:TEMP\\riri-install.ps1" -ErrorAction SilentlyContinue`;
+    return `$Token = Read-Host 'AgentToken'; curl.exe -fsSL --location -A 'riri-agent-installer/${platform}' -H "X-Agent-Token: $Token" '${scriptUrl}?mode=${modeParam}' -o "$env:TEMP\\riri-install.ps1"; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\riri-install.ps1" -MasterUrl '${master}' -AgentToken $Token; Remove-Item "$env:TEMP\\riri-install.ps1" -ErrorAction SilentlyContinue`;
   }
 
   // 安装脚本下载地址（脚本由主控按镜像设置与 UA 平台渲染，下载顺序 GitHub Release/镜像测速 → 主控兜底）
