@@ -79,6 +79,9 @@ export class BinariesInstallerService {
   }
 
   private async resolveRenderOptions(platform: string, requestBaseUrl?: string): Promise<RenderOptions> {
+    // 先刷新资产映射再取 SHA：dev 模式下 artifacts 产物会被后续构建替换，
+    // 使用服务器启动时的快照会导致嵌入 SHA 与实际下发文件不一致（实机冒烟发现）。
+    await this.binaries.refresh();
     const settings = await this.settingsService?.getSettings();
     const asset = this.binaries.findForNode('agent', platform);
     // GitHub Release 的 os 命名与主控目标不同名：macos → darwin

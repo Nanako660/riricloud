@@ -7,13 +7,14 @@ describe('BinariesInstallerService', () => {
   let service: BinariesInstallerService;
   const findForNode = jest.fn();
   const buildDownloadUrl = jest.fn();
+  const refresh = jest.fn();
   const getSettings = jest.fn();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         BinariesInstallerService,
-        { provide: BinariesService, useValue: { findForNode, buildDownloadUrl } },
+        { provide: BinariesService, useValue: { findForNode, buildDownloadUrl, refresh } },
         { provide: SettingsService, useValue: { getSettings } }
       ]
     }).compile();
@@ -22,6 +23,7 @@ describe('BinariesInstallerService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    refresh.mockResolvedValue(undefined);
     findForNode.mockReturnValue(undefined);
     buildDownloadUrl.mockImplementation((target: string, _token: string, base?: string) => `${base ?? 'https://panel.example.com'}/api/v1/downloads/binaries/${target}`);
     getSettings.mockResolvedValue({
@@ -41,6 +43,8 @@ describe('BinariesInstallerService', () => {
     expect(script).toContain('$mirror/$RIRI_GITHUB_URL');
     expect(script).toContain('RIRI_FALLBACK_URL="https://panel.example.com/api/v1/downloads/binaries/agent-linux-amd64"');
     expect(script).toContain('riri_sha256');
+    // 渲染前必须刷新资产映射，保证嵌入 SHA 与磁盘当前产物一致
+    expect(refresh).toHaveBeenCalled();
     expect(script).toContain('GITHUB_MIRRORS="$RIRI_MIRRORS"');
   });
 
