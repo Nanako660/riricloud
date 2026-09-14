@@ -23,7 +23,7 @@
 
 ### Fixed
 - **安装脚本 SHA 快照失配**：渲染安装脚本前先刷新主控二进制资产映射，修复开发态下 artifacts 产物被后续构建替换后，嵌入的兜底 SHA-256 与实际下发文件不一致导致安装被误拦的问题（Windows 实机冒烟发现）。
-- **Windows 安装脚本编码兼容**：`/downloads/agent-installer` 的 Windows 平台脚本响应附加 UTF-8 BOM，修复 Windows PowerShell 5.1 按 ANSI 读取无 BOM 脚本时中文注释破坏 `param` 块解析的问题（实机安装冒烟发现）。
+- **Windows 安装脚本编码兼容与下载源构建**：`/downloads/agent-installer` 的 Windows 平台脚本响应附加 UTF-8 BOM，修复 Windows PowerShell 5.1 按 ANSI 读取无 BOM 脚本时中文注释破坏 `param` 块解析的问题；修复 PowerShell 安装脚本将 GitHub 直连 URL 重复作为镜像拼接的缺陷，并支持 `-InstallDir` 与 `-NoService` 容错扩展。
 
 
 ## [0.8.11] - 2026-09-14

@@ -236,7 +236,9 @@ const POWERSHELL_INSTALLER_TEMPLATE = `
 # RiriCloud Agent 安装脚本（由主控按平台/镜像设置渲染；逻辑见 apps/server/src/binaries/installer.service.ts）
 param(
   [Parameter(Mandatory = $true)][string]$MasterUrl,
-  [Parameter(Mandatory = $true)][string]$AgentToken
+  [Parameter(Mandatory = $true)][string]$AgentToken,
+  [string]$InstallDir = $(Join-Path $env:ProgramFiles 'RiriCloud'),
+  [switch]$NoService
 )
 $ErrorActionPreference = 'Stop'
 
@@ -258,11 +260,13 @@ function Test-RiriSpeed([string]$Url) {
   return [double]$parts[1]
 }
 
-$candidates = @($RiriGithubUrl) + ($RiriMirrors.Split(',') | Where-Object { $_ })
+$candidates = @($RiriGithubUrl)
+foreach ($mirror in ($RiriMirrors.Split(',') | Where-Object { $_ })) {
+  $candidates += if ($mirror.EndsWith('/')) { $mirror + $RiriGithubUrl } else { $mirror + '/' + $RiriGithubUrl }
+}
 $bestUrl = ''
 $bestTime = $null
-foreach ($mirror in $candidates) {
-  $url = if ($mirror.EndsWith('/')) { $mirror + $RiriGithubUrl } else { $mirror + '/' + $RiriGithubUrl }
+foreach ($url in $candidates) {
   $cost = Test-RiriSpeed $url
   if ($null -ne $cost) {
     Write-Host ("[riri-agent] 测速可用：" + $cost + "s  " + $url)
@@ -303,14 +307,18 @@ try {
     }
   }
 
-  $installDir = Join-Path $env:ProgramFiles 'RiriCloud'
-  New-Item -ItemType Directory -Force $installDir | Out-Null
-  $exe = Join-Path $installDir 'riri-agent.exe'
+  $targetDir = $InstallDir
+  New-Item -ItemType Directory -Force $targetDir | Out-Null
+  $exe = Join-Path $targetDir 'riri-agent.exe'
   Move-Item -Force $binary $exe
 
-  Write-Host "[riri-agent] 开始注册系统服务..."
-  $env:GITHUB_MIRRORS = $RiriMirrors
-  & $exe install --token="$AgentToken" --master=$MasterUrl
+  if (-not $NoService) {
+    Write-Host "[riri-agent] 开始注册系统服务..."
+    $env:GITHUB_MIRRORS = $RiriMirrors
+    & $exe install --token="$AgentToken" --master=$MasterUrl
+  } else {
+    Write-Host "[riri-agent] 已部署至：$exe (跳过注册系统服务)"
+  }
 } finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
