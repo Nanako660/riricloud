@@ -120,7 +120,15 @@ resolve_node() {
   command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
 }
 
+resolve_gh() {
+  GH_BIN="${GH_BIN:-gh}"
+  if ! command -v "$GH_BIN" >/dev/null 2>&1 && command -v gh.exe >/dev/null 2>&1; then
+    GH_BIN="gh.exe"
+  fi
+}
+
 resolve_node
+resolve_gh
 
 VERSION="$($NODE_BIN -e "const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).version)")"
 if [ -f "apps/agent/VERSION" ]; then
@@ -156,10 +164,10 @@ if [ "$DRY_RUN" = "0" ]; then
   [ -z "$(git status --porcelain)" ] || die "工作区不干净，请先提交或暂存变更"
   git fetch origin main --quiet
   [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "本地 main 与 origin/main 不一致，请先 git pull"
-  command -v gh >/dev/null 2>&1 || die "缺少 gh CLI"
-  gh auth status >/dev/null 2>&1 || die "gh CLI 未登录"
-  if gh release view "$TAG" >/dev/null 2>&1; then
-    die "Release $TAG 已存在；如需重建请先执行 gh release delete $TAG --yes"
+  command -v "$GH_BIN" >/dev/null 2>&1 || die "缺少 gh CLI"
+  "$GH_BIN" auth status >/dev/null 2>&1 || die "gh CLI 未登录"
+  if "$GH_BIN" release view "$TAG" >/dev/null 2>&1; then
+    die "Release $TAG 已存在；如需重建请先执行 $GH_BIN release delete $TAG --yes"
   fi
 fi
 
@@ -323,13 +331,13 @@ if [ "$NEW_TAG" = "1" ]; then
 fi
 
 if [ "$RELEASE_TARGET" = "master" ]; then
-  gh release create "$TAG" \
+  "$GH_BIN" release create "$TAG" \
     --title "$TAG" \
     --notes-file "$PACKAGE_DIR/release-notes.md" \
     "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
     "$PACKAGE_DIR/checksums.txt"
 else
-  gh release create "$TAG" \
+  "$GH_BIN" release create "$TAG" \
     --title "$TAG" \
     --notes-file "$PACKAGE_DIR/release-notes.md" \
     "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \

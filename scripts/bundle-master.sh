@@ -154,7 +154,11 @@ mkdir -p "$MASTER_DIR"
 echo "  -> 部署主控服务端生产依赖..."
 (
   cd "$WORKTREE_DIR"
-  pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
+  if command -v cmd.exe >/dev/null 2>&1 && [ -n "${WSL_DISTRO_NAME:-}" ]; then
+    cmd.exe /c pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_os_path "$MASTER_DIR")"
+  else
+    pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
+  fi
 )
 rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules"
 
