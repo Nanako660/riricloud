@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.13] - 2026-09-14
+
+### Added
 - **Agent 离线安装包自动构建与极速分发**：主控端新增 `OfflinePackageService`，支持即时动态构建节点专属离线安装包（`riri-agent-offline-<node>-<os>-<arch>.zip` / `.tar.gz`）：
   - 资源自愈：优先提取本地静态二进制；缺失时自动并发从 GitHub Release（支持加速镜像）抓取对应架构 Agent 二进制落盘缓存并注入主控资源库。
   - 预置配置：自动生成内嵌 `serverUrl`、`token`、`nodeId` 等参数的 `config.yaml`。
@@ -34,6 +43,7 @@
 
 ### Fixed
 - **Windows 原生安装命令执行策略规避**：主控生成的 Windows 安装命令显式通过 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...` 执行下载的安装脚本，规避系统默认 `Restricted` 策略拦截脚本执行。
+
 
 
 ## [0.8.12] - 2026-09-14
