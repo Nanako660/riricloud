@@ -13,6 +13,11 @@
 ## [Unreleased]
 
 ### Added
+- **预编排免交互节点安装脚本与 Windows CMD/PowerShell 跨终端兼容**：
+  - 主控端新增自包含预编排免交互安装脚本渲染与分发：`GET /downloads/agent-installer` 升级支持 `?token=` 查询参数鉴权、`format=bat|sh|ps1` 与 `?download=1` 附件下载；主控节点管理新增端点 `GET /admin/nodes/:id/install-script` 支持管理员一键导出内嵌节点凭据与主控地址的专属安装脚本。
+  - Windows 跨终端双重兼容：主控为 Windows 生成自包含 `.bat` 批处理文件（集成 `chcp 65001` UTF-8 编码、管理员自提权检测与内嵌 PowerShell 4 阶段执行引擎，强制输出 CRLF 换行规避 CMD 语法解析陷阱），支持直接双击执行；原生安装命令通过 `powershell -NoProfile -ExecutionPolicy Bypass -Command "..."` 包装，在 CMD、PowerShell 5.1 与 PowerShell 7 终端均可直接粘贴回车免交互运行。
+  - Linux/macOS 免交互升级：原生安装命令由交互式输入 Token 升级为预编排免交互 `curl ... | sudo sh` 一行命令，并支持下载 `.sh` 脚本执行。
+  - Web 控制台体验升级：节点创建完成弹窗及节点详情「原生安装」Tab 中新增「下载专属安装脚本」按钮（Windows 下载 `.bat`，Linux/macOS 下载 `.sh`），并更新跨终端执行说明文案。
 - **线路单次测速链路流程图可视化与分阶段诊断**：
   - 线路管理列表单次测速（操作栏即时测速按钮及延迟 Chip 标签点击）新增专属弹窗（`LineSpeedtestDialog`），实时展示分阶段测量过程与耗时。
   - 链路流程图可视化：根据线路拓扑动态渲染「主控探测端 ➔ 入口节点 (TCP握手) ➔ [若中继/桥接] 落地节点/目标 ➔ 目标服务 (HTTP 204)」时序流程节点，以不同色泽（绿/红/灰/蓝脉冲）与耗时标签直观指示每一跳的握手与延迟状态。

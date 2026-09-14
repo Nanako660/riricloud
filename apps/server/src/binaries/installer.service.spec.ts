@@ -93,4 +93,27 @@ describe('BinariesInstallerService', () => {
     }
     expect(script).toContain('RIRI_GITHUB_URL="https://github.com/Nanako660/riricloud/releases/download');
   });
+
+  it('支持预编排参数：Shell 脚本内嵌预设 Master 与 Token', async () => {
+    const script = await service.renderShellScript('linux-amd64', 'https://panel.example.com', {
+      masterUrl: 'wss://panel.example.com/ws/agent',
+      agentToken: 'test-token-123'
+    });
+    expect(script).toContain('RIRI_PRESET_MASTER="wss://panel.example.com/ws/agent"');
+    expect(script).toContain('RIRI_PRESET_AGENT_TOKEN="test-token-123"');
+  });
+
+  it('renderWindowsInstallBat 输出自包含 CRLF 的 .bat 批处理脚本并集成自提权与 PowerShell 引擎', async () => {
+    const bat = await service.renderWindowsInstallBat('windows-amd64', 'https://panel.example.com', {
+      masterUrl: 'wss://panel.example.com/ws/agent',
+      agentToken: 'test-token-456'
+    });
+    expect(bat).toContain('@echo off\r\n');
+    expect(bat).toContain('chcp 65001 >nul\r\n');
+    expect(bat).toContain('net session >nul 2>&1\r\n');
+    expect(bat).toContain('Start-Process -FilePath \'%~f0\' -Verb RunAs');
+    expect(bat).toContain(':POWERSHELL_START\r\n');
+    expect(bat).toContain('$MasterUrl = \'wss://panel.example.com/ws/agent\'');
+    expect(bat).toContain('$AgentToken = \'test-token-456\'');
+  });
 });

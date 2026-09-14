@@ -43,6 +43,21 @@ export class NodesController {
     return new StreamableFile(result.stream);
   }
 
+  @Get(':id/install-script')
+  async downloadInstallScript(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('platform') platform: string | undefined,
+    @Query('format') format: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const result = await this.nodesService.generateInstallScript(id, platform, format, getRequestBaseUrl(request));
+    response.setHeader('Content-Type', result.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+    response.setHeader('Cache-Control', 'no-store');
+    return result.content;
+  }
+
   @Get(':id')
   detail(@Param('id', ParseUUIDPipe) id: string, @Req() request: Request) {
     return this.nodesService.detail(id, getRequestBaseUrl(request));

@@ -9,6 +9,12 @@ export type InstallerPlatform = {
   platform: string;
 };
 
+export type PresetInstallerOptions = {
+  agentToken?: string;
+  masterUrl?: string;
+  mode?: 'ws' | 'http';
+};
+
 type RenderOptions = {
   // GitHub Release 的 os/arch 命名（darwin 与主控 macos 目标不同名）
   releaseOs: 'linux' | 'darwin' | 'windows';
@@ -46,7 +52,7 @@ export class BinariesInstallerService {
   ) {}
 
   // 渲染 POSIX 安装脚本：GitHub Release 优先（直连 + 镜像测速择优），主控内置二进制兜底。
-  async renderShellScript(platform: string, requestBaseUrl?: string): Promise<string> {
+  async renderShellScript(platform: string, requestBaseUrl?: string, preset?: PresetInstallerOptions): Promise<string> {
     const options = await this.resolveRenderOptions(platform, requestBaseUrl);
     const assetPath = releaseAssetPath(options.agentVersion, options.releaseOs, options.releaseArch);
     const githubUrl = `${options.githubRepoUrl.replace(/\/+$/, '')}/${assetPath}`;
@@ -58,12 +64,14 @@ export class BinariesInstallerService {
       .replaceAll('__RIRI_FALLBACK_URL__', options.fallbackUrl)
       .replaceAll('__RIRI_FALLBACK_SHA256__', options.fallbackSha256)
       .replaceAll('__RIRI_ASSET__', `riri-agent_${options.agentVersion}_${options.releaseOs}_${options.releaseArch}.tar.gz`)
-      .replaceAll('__RIRI_TARGET_ARCH__', options.releaseArch);
+      .replaceAll('__RIRI_TARGET_ARCH__', options.releaseArch)
+      .replaceAll('__RIRI_PRESET_MASTER__', preset?.masterUrl ?? '')
+      .replaceAll('__RIRI_PRESET_AGENT_TOKEN__', preset?.agentToken ?? '');
     return body;
   }
 
   // 渲染 Windows PowerShell 安装脚本：逻辑与 POSIX 版一致。
-  async renderPowershellScript(platform: string, requestBaseUrl?: string): Promise<string> {
+  async renderPowershellScript(platform: string, requestBaseUrl?: string, preset?: PresetInstallerOptions): Promise<string> {
     const options = await this.resolveRenderOptions(platform, requestBaseUrl);
     const assetPath = releaseAssetPath(options.agentVersion, options.releaseOs, options.releaseArch);
     const githubUrl = `${options.githubRepoUrl.replace(/\/+$/, '')}/${assetPath}`;
@@ -76,8 +84,44 @@ export class BinariesInstallerService {
       .replaceAll('__RIRI_FALLBACK_URL__', options.fallbackUrl)
       .replaceAll('__RIRI_FALLBACK_SHA256__', options.fallbackSha256)
       .replaceAll('__RIRI_ASSET__', asset)
-      .replaceAll('__RIRI_TARGET_ARCH__', options.releaseArch);
+      .replaceAll('__RIRI_TARGET_ARCH__', options.releaseArch)
+      .replaceAll('__RIRI_PRESET_MASTER__', preset?.masterUrl ?? '')
+      .replaceAll('__RIRI_PRESET_AGENT_TOKEN__', preset?.agentToken ?? '');
     return body;
+  }
+
+  // 渲染 Windows 双击与 CMD/PowerShell 跨终端通用 .bat 安装脚本
+  async renderWindowsInstallBat(platform: string, requestBaseUrl?: string, preset?: PresetInstallerOptions): Promise<string> {
+    const psScript = await this.renderPowershellScript(platform, requestBaseUrl, preset);
+    const rawBat = `@echo off
+chcp 65001 >nul
+title RiriCloud Agent 安装向导
+echo [RiriCloud] 正在启动安装向导...
+
+:: [1] 检测管理员权限，未提权则自动唤起 UAC
+net session >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo [RiriCloud] 检测到当前非管理员权限，正在唤起 UAC 提权...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b %ERRORLEVEL%
+)
+
+:: [2] 执行内嵌 PowerShell 自动化安装引擎
+set "RIRI_BAT_FILE=%~f0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$content = [string]((Get-Content -LiteralPath $env:RIRI_BAT_FILE -Raw -Encoding UTF8) -replace '(?s)^.*?:POWERSHELL_START\\r?\\n',''); & ([ScriptBlock]::Create($content))"
+set PS_EXIT=%ERRORLEVEL%
+
+if %PS_EXIT% neq 0 (
+    echo [错误] 安装过程中出现异常，退出代码: %PS_EXIT%
+    pause
+    exit /b %PS_EXIT%
+)
+exit /b 0
+
+:POWERSHELL_START
+${psScript}
+`;
+    return rawBat.replace(/\r?\n/g, '\r\n');
   }
 
   private async resolveRenderOptions(platform: string, requestBaseUrl?: string): Promise<RenderOptions> {
@@ -147,8 +191,10 @@ RIRI_FALLBACK_URL="__RIRI_FALLBACK_URL__"
 RIRI_FALLBACK_SHA256="__RIRI_FALLBACK_SHA256__"
 RIRI_ASSET="__RIRI_ASSET__"
 RIRI_TARGET_ARCH="__RIRI_TARGET_ARCH__"
+RIRI_PRESET_MASTER="__RIRI_PRESET_MASTER__"
+RIRI_PRESET_AGENT_TOKEN="__RIRI_PRESET_AGENT_TOKEN__"
 
-RIRI_MASTER=""
+RIRI_MASTER="$RIRI_PRESET_MASTER"
 for arg in "$@"; do
   case "$arg" in
     --master=*) RIRI_MASTER="\${arg#--master=}" ;;
@@ -158,6 +204,8 @@ if [ -z "$RIRI_MASTER" ]; then
   echo "[riri-agent] 缺少 --master 参数" >&2
   exit 1
 fi
+
+RIRI_AGENT_TOKEN="\${RIRI_AGENT_TOKEN:-$RIRI_PRESET_AGENT_TOKEN}"
 if [ -z "\${RIRI_AGENT_TOKEN:-}" ]; then
   echo "[riri-agent] 缺少 AgentToken（请通过安装命令读取输入）" >&2
   exit 1
@@ -334,8 +382,8 @@ echo ""
 const POWERSHELL_INSTALLER_TEMPLATE = `
 # RiriCloud Agent 安装脚本（由主控按平台/镜像设置渲染；逻辑见 apps/server/src/binaries/installer.service.ts）
 param(
-  [Parameter(Mandatory = $true)][string]$MasterUrl,
-  [Parameter(Mandatory = $true)][string]$AgentToken,
+  [string]$MasterUrl = '__RIRI_PRESET_MASTER__',
+  [string]$AgentToken = '__RIRI_PRESET_AGENT_TOKEN__',
   [string]$InstallDir = $(Join-Path $env:ProgramFiles 'RiriCloud'),
   [switch]$NoService,
   [switch]$Elevated
