@@ -32,6 +32,7 @@
 | :--- | :--- | :--- | :--- |
 | [binary-distribution-optimization](./archive/2026-09-14-binary-distribution-optimization.md) | `v0.8.12` | 2026-09-14 | — |
 | [agent-upgrade-version-reconcile](./archive/2026-09-14-agent-upgrade-version-reconcile.md) | `v0.9.0` | 2026-09-14 | — |
+| [agent-embedded-singbox](./archive/2026-09-14-agent-embedded-singbox.md) | `v0.8.12` | 2026-09-14 | — |
 | [卡密管理功能优化（统计/搜索分页/批量操作/安全审计/数据治理）](./archive/2026-09-13-redeem-code-management-optimization.md) | `0.9.0` | 2026-09-13 | — |
 | [免费套餐重复购买限制与购买台账](./archive/2026-09-13-free-plan-purchase-limit.md) | `v0.9.0` | 2026-09-13 | — |
 | [内置二进制资源生命周期完全优化](./archive/2026-09-13-binary-resource-lifecycle-optimization.md) | `v0.8.9` | 2026-09-13 | — |

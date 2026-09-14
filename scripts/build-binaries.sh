@@ -131,7 +131,116 @@ if [ "${#TARGETS[@]}" = "0" ]; then
   TARGETS=(linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64)
 fi
 
-# ---------- 构建 Agent ----------
+# ---------- 内嵌资产占位备份与还原机制 ----------
+EMBEDDED_ASSET="$RIRI_ROOT/apps/agent/internal/embedded/assets/singbox.tar.gz"
+PLACEHOLDER_BAK="$RIRI_ROOT/apps/agent/internal/embedded/assets/.placeholder.tar.gz"
+
+if [ -f "$EMBEDDED_ASSET" ] && [ ! -f "$PLACEHOLDER_BAK" ]; then
+  cp "$EMBEDDED_ASSET" "$PLACEHOLDER_BAK"
+fi
+
+restore_placeholder() {
+  if [ -f "$PLACEHOLDER_BAK" ]; then
+    cp "$PLACEHOLDER_BAK" "$EMBEDDED_ASSET"
+  fi
+}
+trap restore_placeholder EXIT
+
+SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-1.14.0}}"
+SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
+CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-v150.0.7871.63-2}}"
+[[ "$SINGBOX_REVISION" =~ ^[0-9]+$ ]] || die "Sing-box revision 必须是正整数"
+[ "$SINGBOX_REVISION" -ge 1 ] || die "Sing-box revision 必须大于 0"
+RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
+
+# ---------- 1. 构建 / 准备 Sing-box 定制内核 ----------
+if [ "$BUILD_SINGBOX" = "1" ]; then
+  echo "==> 准备 Sing-box 定制内核（Linux 双架构）"
+  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION/r${SINGBOX_REVISION}/${CRONET_VERSION}"
+
+  for arch in amd64 arm64; do
+    # 检查是否在当前请求的目标列表中
+    match=0
+    for target in "${TARGETS[@]}"; do
+      if [ "$target" = "linux/$arch" ] || [ "$target" = "linux-$arch" ]; then
+        match=1
+        break
+      fi
+    done
+    [ "$match" = "1" ] || continue
+
+    CACHE_DIR="$DOWNLOAD_DIR/linux-${arch}"
+    mkdir -p "$CACHE_DIR"
+
+    # 1.1 确保源码存在
+    if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
+      echo "获取 Sing-box v$SINGBOX_VERSION 源码..."
+      TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
+      curl --fail --silent --show-error --location \
+        "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
+        --output "$TMP_ARCHIVE"
+      tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
+    fi
+
+    # 1.2 确保 libcronet.so 存在
+    if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
+      echo "获取 NaiveProxy purego 运行库 ($arch)..."
+      curl --fail --silent --show-error --location \
+        "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${arch}.so" \
+        --output "$CACHE_DIR/libcronet.so"
+      chmod 0755 "$CACHE_DIR/libcronet.so"
+    fi
+
+    # 1.3 确保定制二进制存在
+    if [ ! -f "$CACHE_DIR/sing-box" ]; then
+      echo "编译定制 Sing-box linux/$arch..."
+      (
+        cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
+        CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath \
+          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+          -ldflags "-s -w" \
+          -o "$CACHE_DIR/sing-box" ./cmd/sing-box
+      )
+    fi
+
+    # 1.4 复制到输出目录
+    DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/linux-${arch}"
+    mkdir -p "$DEST_DIR"
+    cp "$CACHE_DIR/sing-box" "$DEST_DIR/sing-box"
+    cp "$CACHE_DIR/libcronet.so" "$DEST_DIR/libcronet.so"
+    chmod +x "$DEST_DIR/sing-box"
+    # 旧目录继续保留，兼容旧版 bundle、开发脚本和外部安装器。
+    LEGACY_DIR="$OUTPUT_DIR/singbox/linux-${arch}"
+    mkdir -p "$LEGACY_DIR"
+    cp "$CACHE_DIR/sing-box" "$LEGACY_DIR/sing-box"
+    cp "$CACHE_DIR/libcronet.so" "$LEGACY_DIR/libcronet.so"
+    chmod +x "$LEGACY_DIR/sing-box"
+    echo "Sing-box linux/$arch 已就绪：$DEST_DIR/sing-box"
+  done
+fi
+
+pack_embedded_kernel() {
+  local target_os="$1"
+  local target_arch="$2"
+  local src_dir="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/${target_os}-${target_arch}"
+  [ -d "$src_dir" ] || src_dir="$OUTPUT_DIR/singbox/${target_os}-${target_arch}"
+
+  if [ -f "$src_dir/sing-box" ] || [ -f "$src_dir/sing-box.exe" ]; then
+    echo "    -> 内嵌 Sing-box 定制内核至 Agent ($target_os-$target_arch)..."
+    (
+      cd "$src_dir"
+      local files=()
+      [ -f "sing-box" ] && files+=("sing-box")
+      [ -f "sing-box.exe" ] && files+=("sing-box.exe")
+      [ -f "libcronet.so" ] && files+=("libcronet.so")
+      tar -czf "$EMBEDDED_ASSET" "${files[@]}"
+    )
+    return 0
+  fi
+  return 1
+}
+
+# ---------- 2. 构建 Agent（内嵌当前平台内核） ----------
 if [ "$BUILD_AGENT" = "1" ]; then
   echo "==> 构建 Agent 多平台产物（版本：v${VERSION}）"
   for target in "${TARGETS[@]}"; do
@@ -150,83 +259,18 @@ if [ "$BUILD_AGENT" = "1" ]; then
 
     OUT="$OUTPUT_DIR/agent/${GOOS_FLAG}-${GOARCH_FLAG}/$BIN"
     mkdir -p "$(dirname "$OUT")"
+
+    # 若对应平台的定制 Sing-box 已存在，打包为 gzip 注入 embed；否则使用占位
+    pack_embedded_kernel "$GOOS_FLAG" "$GOARCH_FLAG" || restore_placeholder
+
     bash "$RIRI_ROOT/scripts/build-agent.sh" \
       --target "${GOOS_FLAG}/${GOARCH_FLAG}" \
       --output "$OUT" \
       --version "$VERSION" \
       --release
-  done
-fi
 
-# ---------- 构建 / 准备 Sing-box ----------
-if [ "$BUILD_SINGBOX" = "1" ]; then
-  echo "==> 准备 Sing-box 定制内核（Linux 双架构）"
-  SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-1.14.0}}"
-  SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
-  CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-v150.0.7871.63-2}}"
-  [[ "$SINGBOX_REVISION" =~ ^[0-9]+$ ]] || die "Sing-box revision 必须是正整数"
-  [ "$SINGBOX_REVISION" -ge 1 ] || die "Sing-box revision 必须大于 0"
-  RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
-  DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION/r${SINGBOX_REVISION}/${CRONET_VERSION}"
-
-  for arch in amd64 arm64; do
-    # 检查是否在当前请求的目标列表中
-    match=0
-    for target in "${TARGETS[@]}"; do
-      if [ "$target" = "linux/$arch" ] || [ "$target" = "linux-$arch" ]; then
-        match=1
-        break
-      fi
-    done
-    [ "$match" = "1" ] || continue
-
-    CACHE_DIR="$DOWNLOAD_DIR/linux-${arch}"
-    mkdir -p "$CACHE_DIR"
-
-    # 1. 确保源码存在
-    if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
-      echo "获取 Sing-box v$SINGBOX_VERSION 源码..."
-      TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
-      curl --fail --silent --show-error --location \
-        "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
-        --output "$TMP_ARCHIVE"
-      tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
-    fi
-
-    # 2. 确保 libcronet.so 存在
-    if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
-      echo "获取 NaiveProxy purego 运行库 ($arch)..."
-      curl --fail --silent --show-error --location \
-        "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${arch}.so" \
-        --output "$CACHE_DIR/libcronet.so"
-      chmod 0755 "$CACHE_DIR/libcronet.so"
-    fi
-
-    # 3. 确保定制二进制存在
-    if [ ! -f "$CACHE_DIR/sing-box" ]; then
-      echo "编译定制 Sing-box linux/$arch..."
-      (
-        cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
-        CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath \
-          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
-          -ldflags "-s -w" \
-          -o "$CACHE_DIR/sing-box" ./cmd/sing-box
-      )
-    fi
-
-    # 4. 复制到输出目录
-    DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/linux-${arch}"
-    mkdir -p "$DEST_DIR"
-    cp "$CACHE_DIR/sing-box" "$DEST_DIR/sing-box"
-    cp "$CACHE_DIR/libcronet.so" "$DEST_DIR/libcronet.so"
-    chmod +x "$DEST_DIR/sing-box"
-    # 旧目录继续保留，兼容旧版 bundle、开发脚本和外部安装器。
-    LEGACY_DIR="$OUTPUT_DIR/singbox/linux-${arch}"
-    mkdir -p "$LEGACY_DIR"
-    cp "$CACHE_DIR/sing-box" "$LEGACY_DIR/sing-box"
-    cp "$CACHE_DIR/libcronet.so" "$LEGACY_DIR/libcronet.so"
-    chmod +x "$LEGACY_DIR/sing-box"
-    echo "Sing-box linux/$arch 已就绪：$DEST_DIR/sing-box"
+    # 构建完立即还原占位符，保持工作区代码树干净
+    restore_placeholder
   done
 fi
 

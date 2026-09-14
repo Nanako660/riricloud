@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **Agent 封装与内置 Sing-box 内核**：构建期将定制编译的 Sing-box（以及 Linux 平台的 `libcronet.so`）以 Gzip 归档形式通过 `go:embed` 内嵌编入各平台 Agent 二进制中（单二进制体积控制在 ~25MB），初装完全无需二次外部网络下载，实现 100% 离线自闭环；启动时强校验落盘文件 SHA-256 并自动解压自愈，以独立子进程托管保障崩溃隔离；Web 面板升级中心收敛为统一的「Agent 升级」单动作，升级 Agent 自动同步更新内置内核。
 - **节点安装脚本化与三级下载回退**：原生安装命令改为从主控拉取按平台渲染的安装脚本（`GET /api/v1/downloads/agent-installer`，POSIX sh 与 PowerShell 双模板）。脚本优先从项目 GitHub Release（`agent-v*` Tag）下载 Agent 二进制并强制 `checksums.txt` SHA-256 校验，对「直连 + 系统配置的加速镜像」自动 128KB Range GET 测速择优，全部失败回退主控内置二进制（嵌入预期 SHA-256 校验）；镜像经 `GITHUB_MIRRORS` 环境变量传递，兼容旧版 Agent。
 
 ### Changed

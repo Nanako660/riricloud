@@ -108,7 +108,7 @@ func Run(ctx context.Context, options Options) (*config.Config, error) {
 }
 
 func downloadSingbox(ctx context.Context, options Options, masterURL, destination string) error {
-	return kernel.Download(ctx, kernel.Options{
+	_, err := kernel.Ensure(ctx, kernel.Options{
 		Source:        options.SingboxSource,
 		URL:           options.SingboxURL,
 		Version:       options.SingboxVersion,
@@ -117,6 +117,7 @@ func downloadSingbox(ctx context.Context, options Options, masterURL, destinatio
 		Destination:   destination,
 		GitHubMirrors: options.GitHubMirrors,
 	})
+	return err
 }
 
 func executableName(name string) string {
