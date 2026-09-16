@@ -162,7 +162,9 @@ sequenceDiagram
             Master-->>Agent: 协议版本、配置差异、任务队列与 nextPollSecs
         end
         Master->>DB: 单写者队列更新节点状态
-        Master->>DB: 事务内差分 TrafficCursor、写 TrafficLog、批量扣减用户/订阅配额
+        Master->>DB: 事务内差分 TrafficCursor、实时扣减用户与订阅配额（超额即刻熔断）
+        Master->>Master: 增量时序点投递至内存 TrafficHourlyMetricBuffer（按小时/节点/用户/线路归拢）
+        Note over Master,DB: 异步每 10~15 秒定时执行微批 UPSERT 落库 TrafficHourlyMetric，停机优雅 Flush
         
         alt 发现某用户已过期或配额耗尽
             Master->>Master: 从该节点白名单中剔除该用户 UUID
@@ -172,7 +174,8 @@ sequenceDiagram
     end
 ```
 
-同一节点在写入队列中只保留最新遥测和最新累计快照；累计计数器本身支持请求重试和断线恢复，因此不依赖 ACK 作为流量正确性的基础。v2 发布需要先替换全部 Agent，再部署 Master，禁止新旧协议混合运行。
+同一节点在写入队列中只保留最新遥测和最新累计快照；累计计数器本身支持请求重试和断线恢复，因此不依赖 ACK 作为流量正确性的基础。
+流量时序看板查询直接读取 `TrafficHourlyMetric` 小时桶数据，彻底根除秒级明细插入带来的写锁竞争与百万级原始行内存遍历；后台 `TrafficCleanupService` 定期执行 90 天滑动窗口硬淘汰，保障 SQLite 体积恒定可控。
 
 ### 3.4 订阅生命周期与配置联动
 

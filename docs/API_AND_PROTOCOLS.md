@@ -180,13 +180,27 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
 
 #### 系统日志管理 (`/logs`)
-- `GET /logs?page&pageSize&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员分页多维查询系统日志。⭐ 支持日志级别（DEBUG/INFO/WARN/ERROR）、来源端（SERVER/WEB/AGENT/SINGBOX）、关联 VPS 节点 UUID、全链路 TraceId 与关键词全文模糊检索；返回统一分页结构 `{ items: SystemLog[], total, page, pageSize, totalPages }`。服务端拦截器对正常的日志自查读取请求（状态码 `< 400`）静默放行，避免产生自循环 HTTP 访问日志。
+- `GET /logs?page&pageSize&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员分页多维查询系统日志。⭐ 支持日志级别（DEBUG/INFO/WARN/ERROR）、来源端（SERVER/WEB/AGENT/SINGBOX）、关联 VPS 节点 UUID、全链路 TraceId 与关键词全文模糊检索；返回统一分页结构 `{ items: SystemLog[], total, page, pageSize, totalPages }`。服务端拦截器对常规的日志自查读取请求（状态码 `< 400`）静默放行，避免产生自循环 HTTP 访问日志。
 - `GET /logs/metrics?hours=24`：管理员获取过去指定小时内日志大盘指标与趋势统计。⭐ 响应包含 `totalLogs`、`errorCount24h`、`warnCount24h`、`avgLatencyMs` 以及按小时聚合的分级时序柱状图数据 `trend`。
 - `POST /logs/stream-ticket` 与 `GET /logs/stream-ticket`：管理员创建一次性、60 秒有效的 SSE 实时推流票据（双通道兼容）。⭐
 - `GET /logs/stream?ticket=<ONE_TIME_TICKET>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 票据只允许消费一次且不得替代长期 JWT；支持动态按级别、来源端、节点和关键词实时推流最新日志事件。
 - `POST /logs/frontend`：前端批量上报异常与关键操作日志。⭐ 无需管理员鉴权（`@Public()`）；请求 `{ logs: [{ level, module, message, traceId?, metadata? }] }`；服务端自动补齐 Client IP、User Agent 与当前登录用户 ID，深度脱敏后缓冲入库并广播至 SSE 监听端。
 - `DELETE /logs?retentionDays&maxRecords`：管理员手动或按策略触发历史日志清理。⭐ 请求可选指定天数与最大保留条数，返回 `{ deletedCount }`；后台定时巡检会自动根据系统设置中的 `logsRetentionDays` 与 `logsMaxCount` 定期清理。
 - `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员按当前过滤条件导出日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
+
+#### HTTP 请求日志智能降噪与采集门槛
+1. **高频探针与轮询降噪**：`HttpLoggingInterceptor` 对状态码 `< 400` 的常规成功请求静默跳过，不写入 `SystemLog`，包含：
+   - 存活探针：`/health`、`/ping`、`/api/v1/health`、`/api/v1/ping`
+   - Agent 轮询：`/api/v1/agent/poll`、`/agent/poll`
+   - 客户端订阅拉取：`/sub/*`、`/api/v1/sub/*`
+   - 线路测速探针：`/api/v1/admin/lines/speedtest*`、`/api/v1/lines/speedtest*`
+   - 静态忽略端点：`/api/v1/logs/stream`、`/api/v1/logs/frontend`、`/api/docs`
+   - 任何端点在状态码 `>= 400`（如 401 未鉴权、404 凭据失效、500 内部异常）时 100% 完整捕获入库供排查。
+2. **动态采集门槛（`logsMinIngestLevel`）**：支持在系统设置中配置最低采集级别（`DEBUG` / `INFO` / `WARN` / `ERROR`，默认 `INFO`），低于门槛的日志在入口即被抛弃，避免不必要的 SQLite I/O 与内存开销。
+3. **流量时序小时桶聚合与自动淘汰**：
+   - Agent 心跳上报的秒级流量数据在网关内存中经 `TrafficHourlyMetricBuffer` 聚合为小时时序桶（`TrafficHourlyMetric`），每 10~15 秒微批 Upsert 入库，彻底消除秒级 raw `TrafficLog` 插入；
+   - 核心计费与限额熔断保持 0 延迟实时生效（在心跳主事务中原子更新 `User`/`Subscription` 并实时吊销超额凭据）；
+   - `TrafficCleanupService` 后台定时自动清理超期 90 天的小时桶时序记录与超期 7 天的旧 TrafficLog 记录。
 
 ### 1.4 系统模块 (`/system`)
 - `GET /system/version`：返回主控版本、Agent 独立版本与推荐镜像（`{ version, agentVersion, agentImage }`，见 `docs/VERSIONING.md` §3）。⭐

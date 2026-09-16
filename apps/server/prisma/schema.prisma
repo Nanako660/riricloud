@@ -494,6 +494,31 @@ model TrafficLog {
   @@index([recordedAt, userId])
 }
 
+// ==============================
+// 2.5 流量小时时序聚合指标 (TrafficHourlyMetric，v0.9.1)
+// 按整点小时桶预聚合上报流量，取代秒级细碎的 TrafficLog，
+// 极大降低写入锁竞争与看板全表拉取开销，解耦外键为独立时序分库奠定基础。
+// ==============================
+model TrafficHourlyMetric {
+  id          String   @id @default(uuid())
+  bucketStart DateTime // UTC 整点小时起始时间戳
+  nodeId      String
+  userId      String
+  lineId      String   @default("") // 归属线路 ID（空串表示未分配/直连节点）
+  proxyKeyId  String   @default("") // 直连代理池凭据归属（空串表示订阅流量）
+  upload      BigInt   @default(0) // 当小时累计上行字节
+  download    BigInt   @default(0) // 当小时累计下行字节
+  billedBytes BigInt   @default(0) // 当小时累计计费字节（含线路倍率）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([bucketStart, nodeId, userId, lineId, proxyKeyId])
+  @@index([bucketStart])
+  @@index([userId, bucketStart])
+  @@index([lineId, bucketStart])
+  @@index([nodeId, bucketStart])
+}
+
 model SystemSetting {
   key         String   @id
   value       String // 站点名/默认配额/注册开关等 JSON 或文本

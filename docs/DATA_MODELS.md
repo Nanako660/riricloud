@@ -563,6 +563,30 @@ model TrafficLog {
 }
 
 // ==============================
+// 3.1 流量小时时序聚合指标 (TrafficHourlyMetric，v0.9.1)
+// 按 UTC 整点小时桶聚合，彻底替代秒级细碎的 TrafficLog，保障大盘查询亚毫秒级响应
+// ==============================
+model TrafficHourlyMetric {
+  id          String   @id @default(uuid())
+  bucketStart DateTime // UTC 整点小时起始时间戳
+  nodeId      String
+  userId      String
+  lineId      String   @default("") // 归属线路 ID（空串表示未分配/直连节点）
+  proxyKeyId  String   @default("") // 直连代理池凭据归属（空串表示订阅流量）
+  upload      BigInt   @default(0) // 当小时累计上行字节
+  download    BigInt   @default(0) // 当小时累计下行字节
+  billedBytes BigInt   @default(0) // 当小时累计计费字节（含线路倍率）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([bucketStart, nodeId, userId, lineId, proxyKeyId])
+  @@index([bucketStart])
+  @@index([userId, bucketStart])
+  @@index([lineId, bucketStart])
+  @@index([nodeId, bucketStart])
+}
+
+// ==============================
 // 4. 全局系统配置 (SystemSetting)
 // ==============================
 model SystemSetting {
@@ -870,3 +894,36 @@ model SystemLog {
 2. **注入**：`buildConfigSync` 只注入 `isActive = true` 且归属用户仍具备订阅资格（账号启用、邮箱核验通过、未超额、未过期）的凭据，单节点上限 512 条。
 3. **账务**：心跳累计快照的增量在同一 SQLite 事务内写入 `TrafficLog`、累加 `User` / `Subscription` / `ProxyKey` 用量并刷新 `lastUsedAt`；任一环节失败整批回滚。
 4. **熔断**：本批次入账后触及配额的账号触发全局 `config_sync`，凭据与订阅凭证在数秒内同步吊销；管理端启停/删除凭据同样即时重下发。
+
+---
+
+## 8. 流量小时时序聚合模型（TrafficHourlyMetric，v0.9.1）
+
+面向高频节点与高并发场景下的**时序小时聚合指标表**，彻底替代旧版秒级增量明细表（`TrafficLog`），解决 SQLite 高频写锁争用与看板大盘拉全表遍历的高开销问题。
+
+### 8.1 字段字典
+
+| 字段 | 类型 | 说明与约束 |
+| :--- | :--- | :--- |
+| `id` | String (UUID) | 记录主键 |
+| `bucketStart` | DateTime | 该统计周期的 UTC 整点小时起点（如 `2026-09-17T00:00:00.000Z`） |
+| `nodeId` | String | 关联边缘节点 ID |
+| `userId` | String | 归属用户 ID |
+| `lineId` | String | 归属接入线路 ID；空字符串 `""` 表示未分配/节点裸连接 |
+| `proxyKeyId` | String | 直连代理池凭据 ID；空字符串 `""` 表示普通用户订阅流量 |
+| `upload` | BigInt | 该小时桶内累计物理上行字节 |
+| `download` | BigInt | 该小时桶内累计物理下行字节 |
+| `billedBytes` | BigInt | 该小时桶内累计计费字节（已乘线路倍率折算） |
+| `createdAt` / `updatedAt` | DateTime | 记录创建与最后更新时间戳 |
+
+复合唯一索引：`[bucketStart, nodeId, userId, lineId, proxyKeyId]`  
+单列/组合查询索引：`bucketStart`、`(userId, bucketStart)`、`(lineId, bucketStart)`、`(nodeId, bucketStart)`。
+
+### 8.2 解耦与物理分库设计
+- **无物理外键级联**：`TrafficHourlyMetric` 中的 `nodeId`、`userId`、`lineId`、`proxyKeyId` 均设计为独立普通索引 String 字段，不与主业务表建立 Prisma `@relation` 强外键约束。
+- **物理分库准备**：为 Phase 2 物理分库（将观测数据独立为 `telemetry.db`）提供平滑平移基础，主库仅维护核心用户、订阅、线路与配置元数据。
+
+### 8.3 缓冲写入与生命周期
+1. **内存微批缓冲（10~15s）**：心跳解析的流量增量先行注入 `AgentGatewayService` 内存缓冲队列，由定时任务以原生 SQL `ON CONFLICT(...) DO UPDATE` 进行原子累加，彻底消除高频秒级写锁。
+2. **优雅停机保护**：服务销毁时触发 `onModuleDestroy` 强制清空残余缓冲，保障时序数据完整性。
+3. **90 天滑动窗口 TTL**：系统低峰期每日定时巡检，硬删除 90 天前的小时记录，确保 SQLite 数据库文件体积恒定可控。

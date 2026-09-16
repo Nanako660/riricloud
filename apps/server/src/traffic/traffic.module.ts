@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TrafficController } from './traffic.controller';
 import { TrafficService } from './traffic.service';
+import { TrafficCleanupService } from './traffic-cleanup.service';
 
 @Module({
   controllers: [TrafficController],
-  providers: [TrafficService],
-  exports: [TrafficService]
+  providers: [TrafficService, TrafficCleanupService],
+  exports: [TrafficService, TrafficCleanupService]
 })
 export class TrafficModule {}

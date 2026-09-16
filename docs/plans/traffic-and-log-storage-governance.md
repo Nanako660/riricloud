@@ -115,41 +115,41 @@ model TrafficHourlyMetric {
 ## 📋 里程碑与详细任务清单
 
 ### 里程碑 1：数据模型重构与小时桶建模（Phase 1 基础）
-- [ ] 任务 1.1: 在 `apps/server/prisma/schema.prisma` 中新增 `TrafficHourlyMetric` 模型定义，配置复合唯一约束与关联索引。
-- [ ] 任务 1.2: 梳理字段外键依赖，移除 `TrafficHourlyMetric` 对业务表的物理 Cascade 外键，使用显式索引，为 Phase 2 物理分库奠定解耦基础。
-- [ ] 任务 1.3: 执行 `prisma migrate dev --name add_traffic_hourly_metric` 生成最新迁移并生成最新 Prisma Client。
-- [ ] 任务 1.4: 同步更新 `docs/DATA_MODELS.md`，完善小时桶表结构、字段含义与索引说明。
+- [x] 任务 1.1: 在 `apps/server/prisma/schema.prisma` 中新增 `TrafficHourlyMetric` 模型定义，配置复合唯一约束与关联索引。
+- [x] 任务 1.2: 梳理字段外键依赖，移除 `TrafficHourlyMetric` 对业务表的物理 Cascade 外键，使用显式索引，为 Phase 2 物理分库奠定解耦基础。
+- [x] 任务 1.3: 执行 `prisma migrate dev --name add_traffic_hourly_metric` 生成最新迁移并生成最新 Prisma Client。
+- [x] 任务 1.4: 同步更新 `docs/DATA_MODELS.md`，完善小时桶表结构、字段含义与索引说明。
 
 ### 里程碑 2：存量数据平滑迁移脚本与空间回收
-- [ ] 任务 2.1: 编写 `apps/server/scripts/migrate-traffic-logs-to-hourly.ts` 迁移脚本，支持将历史 `TrafficLog` 按小时粒度聚合求和并安全导入新表。
-- [ ] 任务 2.2: 实现迁移校验机制：对比迁移前后各用户、节点的流量总和，确保字节数 100% 账实相符。
-- [ ] 任务 2.3: 在迁移确认完毕后提供安全清理历史 `TrafficLog` 数据的逻辑，并执行 `PRAGMA incremental_vacuum` 或 `VACUUM` 回收磁盘空间。
-- [ ] 任务 2.4: 在 `scripts/clean-traffic-logs.ts` 补充小时桶修复能力或标记废弃过渡。
+- [x] 任务 2.1: 编写 `apps/server/scripts/migrate-traffic-logs-to-hourly.ts` 迁移脚本，支持将历史 `TrafficLog` 按小时粒度聚合求和并安全导入新表。
+- [x] 任务 2.2: 实现迁移校验机制：对比迁移前后各用户、节点的流量总和，确保字节数 100% 账实相符。
+- [x] 任务 2.3: 在迁移确认完毕后提供安全清理历史 `TrafficLog` 数据的逻辑，并执行 `PRAGMA incremental_vacuum` 或 `VACUUM` 回收磁盘空间。
+- [x] 任务 2.4: 在 `scripts/clean-traffic-logs.ts` 补充小时桶修复能力或标记废弃过渡。
 
 ### 里程碑 3：网关写入端内存微批缓冲与小时桶入库
-- [ ] 任务 3.1: 在 `AgentGatewayService` 中构建 `TrafficHourlyMetricBuffer` 内存时序缓冲组件。
-- [ ] 任务 3.2: 保持核心扣费与熔断逻辑绝对实时：Agent 心跳报文解析后，立即在主事务中更新 `TrafficCursor`、`User`、`Subscription`、`ProxyKey`，超额实时熔断。
-- [ ] 任务 3.3: 移除每次心跳向 `TrafficLog.createMany` 插入原始行的逻辑，改为将增量投入内存缓冲队列（按 `bucketStart:nodeId:userId:lineId:proxyKeyId` 合并累加）。
-- [ ] 任务 3.4: 实现 10~15 秒定时微批 Flush 机制，使用高效的原生 SQL `ON CONFLICT(...) DO UPDATE` 进行增量 Upsert。
-- [ ] 任务 3.5: 实现 `onModuleDestroy` 优雅停机钩子，确保服务重启或正常退出时内存残余时序点 100% 刷入数据库。
+- [x] 任务 3.1: 在 `AgentGatewayService` 中构建 `TrafficHourlyMetricBuffer` 内存时序缓冲组件。
+- [x] 任务 3.2: 保持核心扣费与熔断逻辑绝对实时：Agent 心跳报文解析后，立即在主事务中更新 `TrafficCursor`、`User`、`Subscription`、`ProxyKey`，超额实时熔断。
+- [x] 任务 3.3: 移除每次心跳向 `TrafficLog.createMany` 插入原始行的逻辑，改为将增量投入内存缓冲队列（按 `bucketStart:nodeId:userId:lineId:proxyKeyId` 合并累加）。
+- [x] 任务 3.4: 实现 10~15 秒定时微批 Flush 机制，使用高效的原生 SQL `ON CONFLICT(...) DO UPDATE` 进行增量 Upsert。
+- [x] 任务 3.5: 实现 `onModuleDestroy` 优雅停机钩子，确保服务重启或正常退出时内存残余时序点 100% 刷入数据库。
 
 ### 里程碑 4：看板与统计查询层重写
-- [ ] 任务 4.1: 重构 `TrafficService.getOverview`：将原有抓取全量原始明细进 JS 内存循环的做法，替换为直接面向 `TrafficHourlyMetric` 的 SQL 聚合查询。
-- [ ] 任务 4.2: 重构 `TrafficService.getUserDetail`：直接按 `userId` 和时间范围检索对应小时记录，提升单用户流量画像接口响应性能。
-- [ ] 任务 4.3: 验证图表时间范围兼容性：确保 `today`、`yesterday`（小时级柱状/折线）和 `7d`、`30d`（天级合并）在前端展示完全无缝。
-- [ ] 任务 4.4: 完善排行榜（Line Rankings、User Rankings）算法，直接利用 SQL `GROUP BY` 求和，彻底消除大数组排序与哈希查找开销。
+- [x] 任务 4.1: 重构 `TrafficService.getOverview`：将原有抓取全量原始明细进 JS 内存循环的做法，替换为直接面向 `TrafficHourlyMetric` 的 SQL 聚合查询。
+- [x] 任务 4.2: 重构 `TrafficService.getUserDetail`：直接按 `userId` 和时间范围检索对应小时记录，提升单用户流量画像接口响应性能。
+- [x] 任务 4.3: 验证图表时间范围兼容性：确保 `today`、`yesterday`（小时级柱状/折线）和 `7d`、`30d`（天级合并）在前端展示完全无缝。
+- [x] 任务 4.4: 完善排行榜（Line Rankings、User Rankings）算法，直接利用 SQL `GROUP BY` 求和，彻底消除大数组排序与哈希查找开销。
 
 ### 里程碑 5：自动生命周期淘汰（TTL）巡检
-- [ ] 任务 5.1: 创建 `TrafficCleanupService`（或在现有清理调度中扩展），设置每日低峰期定时任务。
-- [ ] 任务 5.2: 实现小时时序数据的 90 天滑动窗口硬淘汰（`DELETE FROM TrafficHourlyMetric WHERE bucketStart < :cutoffDate`）。
-- [ ] 任务 5.3: 淘汰操作按批次小事务执行（如每次 `LIMIT 5000`），避免长事务阻塞正常业务写入。
+- [x] 任务 5.1: 创建 `TrafficCleanupService`（或在现有清理调度中扩展），设置每日低峰期定时任务。
+- [x] 任务 5.2: 实现小时时序数据的 90 天滑动窗口硬淘汰（`DELETE FROM TrafficHourlyMetric WHERE bucketStart < :cutoffDate`）。
+- [x] 任务 5.3: 淘汰操作按批次小事务执行（如每次 `LIMIT 5000`），避免长事务阻塞正常业务写入。
 
 ### 里程碑 6：系统日志（`SystemLog`）写入降噪与防刷
-- [ ] 任务 6.1: 在 `HttpLoggingInterceptor` 中完善忽略列表与智能判断，对状态码 `< 400` 的 `/api/v1/agent/poll`、`/health` 等常规高频请求静默跳过。
-- [ ] 任务 6.2: 订阅接口（`/sub/*`）成功请求仅以低频采样或不落库，异常拉取（401/404）完整入库供排查。
-- [ ] 任务 6.3: 在 `SystemSetting` 中增加日志采集门槛配置（`logsMinIngestLevel`），支持动态降级日志入库级别。
+- [x] 任务 6.1: 在 `HttpLoggingInterceptor` 中完善忽略列表与智能判断，对状态码 `< 400` 的 `/api/v1/agent/poll`、`/health` 等常规高频请求静默跳过。
+- [x] 任务 6.2: 订阅接口（`/sub/*`）成功请求仅以低频采样或不落库，异常拉取（401/404）完整入库供排查。
+- [x] 任务 6.3: 在 `SystemSetting` 中增加日志采集门槛配置（`logsMinIngestLevel`），支持动态降级日志入库级别。
 
-### 里程碑 7：物理分库架构落地（Phase 2）
+### 里程碑 7：物理分库架构落地（Phase 2 规划演进）
 - [ ] 任务 7.1: 新增 `apps/server/prisma/telemetry.prisma`，将 `TrafficHourlyMetric`、`NodeRateMetric`、`SystemLog` 迁入独立的 `telemetry.db`。
 - [ ] 任务 7.2: 在 `package.json` 与服务端构建脚本中增加针对 `telemetry.prisma` 的生成命令，配置独立的 `TelemetryPrismaService`。
 - [ ] 任务 7.3: 配置独立环境变量 `TELEMETRY_DATABASE_URL`，支持主库与时序库物理路径解耦。
@@ -157,12 +157,12 @@ model TrafficHourlyMetric {
 - [ ] 任务 7.5: 编写环境初始化与主控 Dockerfile/脚本适配，确保 `telemetry.db` 自动迁移并在容器中正确挂载持久化。
 
 ### 里程碑 8：测试、验证与文档门禁合规
-- [ ] 任务 8.1: 编写/更新 `traffic.service.spec.ts` 单元测试，覆盖小时桶计算、时间范围过滤与排行榜求和。
-- [ ] 任务 8.2: 编写/更新 `agent-gateway.sqlite.spec.ts` 真实 SQLite 集成测试，验证心跳增量累加、并发缓冲 Flush 与超额熔断实时性。
-- [ ] 任务 8.3: 运行全量端到端验证，确认 Web 界面大盘时序图、线路排行、单用户流量下钻与系统日志正常运作。
-- [ ] 任务 8.4: 同步更新 `docs/ARCHITECTURE.md`、`docs/DATA_MODELS.md`、`docs/API_AND_PROTOCOLS.md` 与 `docs/DEPLOYMENT_GUIDE.md`。
-- [ ] 任务 8.5: 在 `CHANGELOG.md` 的 `[Unreleased]` 区块登记本次治理特性与性能改进。
-- [ ] 任务 8.6: 运行 `pnpm gate` 确保版本、文档、后端、前端与 Agent 五合一门禁 100% 全绿。
+- [x] 任务 8.1: 编写/更新 `traffic.service.spec.ts` 单元测试，覆盖小时桶计算、时间范围过滤与排行榜求和。
+- [x] 任务 8.2: 编写/更新 `agent-gateway.sqlite.spec.ts` 真实 SQLite 集成测试，验证心跳增量累加、并发缓冲 Flush 与超额熔断实时性。
+- [x] 任务 8.3: 运行全量端到端验证，确认 Web 界面大盘时序图、线路排行、单用户流量下钻与系统日志正常运作。
+- [x] 任务 8.4: 同步更新 `docs/ARCHITECTURE.md`、`docs/DATA_MODELS.md`、`docs/API_AND_PROTOCOLS.md` 与 `docs/DEPLOYMENT_GUIDE.md`。
+- [x] 任务 8.5: 在 `CHANGELOG.md` 的 `[Unreleased]` 区块登记本次治理特性与性能改进。
+- [x] 任务 8.6: 运行 `pnpm gate` 确保版本、文档、后端、前端与 Agent 五合一门禁 100% 全绿。
 
 ---
 

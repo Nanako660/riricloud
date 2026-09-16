@@ -13,8 +13,20 @@
 ## [Unreleased]
 
 ### Added
+- **流量时序小时桶聚合与 90 天自动淘汰（Phase 1 存储治理）**：
+  - 新增 `TrafficHourlyMetric` 小时时序聚合模型，配置 `[bucketStart, nodeId, userId, lineId, proxyKeyId]` 复合唯一键与高频维度索引，将数十万级秒级原始流量明细存储行数压缩 99.5% 以上。
+  - 新增 `TrafficCleanupService` 后台定时清理服务，提供 90 天滑动窗口小时时序自动硬淘汰与存量 7 天旧 TrafficLog 兜底清理。
+  - 新增存量数据平滑迁移脚本 `scripts/migrate-traffic-logs-to-hourly.ts`，支持按小时桶安全归拢历史流量明细并提供 byte-for-byte 准确性核验、历史数据清空与 SQLite `VACUUM` 磁盘物理空间回收。
+  - 系统设置新增 `logsMinIngestLevel` 配置项（`DEBUG`/`INFO`/`WARN`/`ERROR`，默认 `INFO`），支持动态降级系统日志采集与落库门槛。
 
 ### Changed
+- **网关写入端时序微批缓冲（In-Memory Micro-Batching）**：
+  - 重构 `AgentGatewayService` 流量入账管线，移除每次心跳直插 `TrafficLog` 的高频写锁逻辑，改为在内存缓冲队列中归拢后每 10~15 秒异步微批 Upsert 入库，并在进程退出时优雅 Flush。
+  - 维持核心额度扣减与超额熔断绝对实时：在心跳事务中即时更新 `User` 与 `Subscription` 已用流量，触碰限额立即吊销节点凭据与标记熔断，不受时序缓冲延迟影响。
+- **大盘与单用户流量查询层重写**：
+  - `TrafficService.getOverview` 与 `getUserDetail` 全面切换为直查 `TrafficHourlyMetric`，彻底消除数十万行原始明细全量加载进 Node.js 内存的 JS 遍历与 CPU 峰值。
+- **HTTP 请求日志智能降噪**：
+  - `HttpLoggingInterceptor` 优化过滤规则，对状态码 `< 400` 的 Agent 轮询（`/api/v1/agent/poll`）、探活（`/health`, `/ping`）、客户端订阅拉取（`/sub/*`）及线路测速探针等常规成功请求静默跳过，异常错误（`>= 400`）100% 捕获入库供排查。
 
 ### Fixed
 

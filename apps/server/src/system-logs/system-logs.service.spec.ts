@@ -122,4 +122,37 @@ describe('SystemLogsService', () => {
     expect(prisma.systemLog.deleteMany).toHaveBeenCalled();
     expect(result.deletedCount).toBe(5);
   });
+
+  it('should filter logs below minIngestLevel', () => {
+    const publishSpy = jest.spyOn(sseHub, 'publish');
+
+    service.setMinIngestLevel('WARN');
+
+    // INFO 应该被过滤掉，不广播也不入库
+    service.enqueue({
+      source: 'SERVER',
+      level: 'INFO',
+      module: 'Http',
+      message: 'Routine health check'
+    });
+    expect(publishSpy).not.toHaveBeenCalled();
+
+    // WARN 达到阈值，正常入库与广播
+    service.enqueue({
+      source: 'SERVER',
+      level: 'WARN',
+      module: 'Http',
+      message: 'Slow query warning'
+    });
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+
+    // ERROR 超过阈值，正常入库与广播
+    service.enqueue({
+      source: 'SERVER',
+      level: 'ERROR',
+      module: 'Database',
+      message: 'Disk write failure'
+    });
+    expect(publishSpy).toHaveBeenCalledTimes(2);
+  });
 });

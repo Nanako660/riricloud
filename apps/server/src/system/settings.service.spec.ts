@@ -40,7 +40,8 @@ describe('SettingsService', () => {
       { key: SETTING_KEYS.EMAIL_DOMAIN_LIST, value: JSON.stringify(['@Example.COM', 'company.org']) },
       { key: SETTING_KEYS.PROBE_PRESET_TARGETS, value: JSON.stringify([{ type: 'tcp', target: 'example.com', port: 443 }]) },
       { key: SETTING_KEYS.CONFIG_SYNC_DEBOUNCE_MS, value: '-1' },
-      { key: SETTING_KEYS.SYSTEM_TIMEZONE, value: 'America/New_York' }
+      { key: SETTING_KEYS.SYSTEM_TIMEZONE, value: 'America/New_York' },
+      { key: SETTING_KEYS.LOGS_MIN_INGEST_LEVEL, value: 'WARN' }
     ]);
     const settings = await service.getSettings();
     expect(settings.siteName).toBe('我的面板');
@@ -52,6 +53,7 @@ describe('SettingsService', () => {
     expect(settings.probePresetTargets).toEqual([{ type: 'tcp', target: 'example.com', port: 443 }]);
     expect(settings.configSyncDebounceMs).toBe(DEFAULTS.configSyncDebounceMs);
     expect(settings.systemTimezone).toBe('America/New_York');
+    expect(settings.logsMinIngestLevel).toBe('WARN');
   });
 
   it('无效时区自动回退为默认时区', async () => {

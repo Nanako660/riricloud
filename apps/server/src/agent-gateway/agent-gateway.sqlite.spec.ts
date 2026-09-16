@@ -155,6 +155,20 @@ describe('AgentService SQLite traffic accounting', () => {
         FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE,
         FOREIGN KEY ("lineId") REFERENCES "Line" ("id") ON DELETE SET NULL
       )`,
+      `CREATE TABLE "TrafficHourlyMetric" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "bucketStart" DATETIME NOT NULL,
+        "nodeId" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "lineId" TEXT NOT NULL DEFAULT '',
+        "proxyKeyId" TEXT NOT NULL DEFAULT '',
+        "upload" BIGINT NOT NULL DEFAULT 0,
+        "download" BIGINT NOT NULL DEFAULT 0,
+        "billedBytes" BIGINT NOT NULL DEFAULT 0,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE UNIQUE INDEX "TrafficHourlyMetric_bucketStart_nodeId_userId_lineId_proxyKeyId_key" ON "TrafficHourlyMetric" ("bucketStart", "nodeId", "userId", "lineId", "proxyKeyId")`,
       `CREATE TABLE "TrafficCursor" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "nodeId" TEXT NOT NULL,
@@ -172,7 +186,7 @@ describe('AgentService SQLite traffic accounting', () => {
   }
 
   afterAll(async () => {
-    service?.onModuleDestroy();
+    await service?.onModuleDestroy();
     await prisma?.$disconnect();
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
   });
@@ -206,19 +220,19 @@ describe('AgentService SQLite traffic accounting', () => {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: 'user-1' } });
     const cursor = await prisma.trafficCursor.findUniqueOrThrow({ where: { nodeId_credential: { nodeId: 'node-1', credential: 'user-uuid-1' } } });
-    const logs = await prisma.trafficLog.findMany({ where: { nodeId: 'node-1', userId: 'user-1' }, orderBy: { recordedAt: 'asc' } });
+    await service.flushTrafficHourlyMetrics();
+    const metrics = await prisma.trafficHourlyMetric.findMany({ where: { nodeId: 'node-1', userId: 'user-1' } });
 
     expect(user.trafficUsedBytes).toBe(firstUpload + firstDownload + 12n + 200n);
     expect(cursor.uploadTotal).toBe(firstUpload + 105n);
     expect(cursor.downloadTotal).toBe(firstDownload + 107n);
-    expect(logs.map((log) => [log.upload, log.download])).toEqual([
-      [firstUpload, firstDownload],
-      [5n, 7n],
-      [100n, 100n]
-    ]);
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0].upload).toBe(firstUpload + 5n + 100n);
+    expect(metrics[0].download).toBe(firstDownload + 7n + 100n);
+    expect(metrics[0].billedBytes).toBe(firstUpload + firstDownload + 12n + 200n);
   });
 
-  it('账务事务失败时 TrafficLog、配额和游标全部回滚', async () => {
+  it('账务事务失败时 TrafficHourlyMetric、配额和游标全部回滚', async () => {
     await expect(service.handleHeartbeat('node-1', {
       protocolVersion: 2,
       cpuUsage: 1,
@@ -229,11 +243,12 @@ describe('AgentService SQLite traffic accounting', () => {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: 'rollback-user' } });
     const cursor = await prisma.trafficCursor.findUnique({ where: { nodeId_credential: { nodeId: 'node-1', credential: 'rollback-credential' } } });
-    const logs = await prisma.trafficLog.findMany({ where: { nodeId: 'node-1', userId: 'rollback-user' } });
+    await service.flushTrafficHourlyMetrics();
+    const metrics = await prisma.trafficHourlyMetric.findMany({ where: { nodeId: 'node-1', userId: 'rollback-user' } });
 
     expect(user.trafficUsedBytes).toBe(0n);
     expect(cursor).toBeNull();
-    expect(logs).toHaveLength(0);
-    service.onModuleDestroy();
+    expect(metrics).toHaveLength(0);
+    await service.onModuleDestroy();
   });
 });

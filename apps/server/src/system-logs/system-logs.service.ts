@@ -1,11 +1,19 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../system/settings.service';
 import type { LogMetricsDto, TrendBucket } from './dto/log-metrics.dto';
 import type { QueryLogsDto } from './dto/query-logs.dto';
 import { maskSensitiveString, sanitizeLogMetadata } from './masking.util';
 import { SSEHubService } from './sse-hub.service';
+
+export const LOG_LEVEL_SEVERITY: Record<'DEBUG' | 'INFO' | 'WARN' | 'ERROR', number> = {
+  DEBUG: 10,
+  INFO: 20,
+  WARN: 30,
+  ERROR: 40
+};
 
 export interface EnqueueLogInput {
   id?: string;
@@ -29,17 +37,43 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
   private bufferBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
   private isFlushing = false;
+  private minIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO';
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sseHub: SSEHubService
+    private readonly sseHub: SSEHubService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     // 启动 1000ms 定时刷新队列，批量落库 SQLite
     this.flushTimer = setInterval(() => {
       void this.flush();
     }, 1000);
+
+    if (this.settingsService) {
+      try {
+        const settings = await this.settingsService.getSettings();
+        if (settings.logsMinIngestLevel) {
+          this.minIngestLevel = settings.logsMinIngestLevel;
+        }
+      } catch {
+        // use default
+      }
+      this.settingsService.onSettingsChange((patch) => {
+        if (patch.logsMinIngestLevel) {
+          this.minIngestLevel = patch.logsMinIngestLevel;
+        }
+      });
+    }
+  }
+
+  getMinIngestLevel(): 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' {
+    return this.minIngestLevel;
+  }
+
+  setMinIngestLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
+    this.minIngestLevel = level;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -54,6 +88,10 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
    * 写入单条或批量日志到内存环形缓冲队列
    */
   enqueue(input: EnqueueLogInput): void {
+    if (LOG_LEVEL_SEVERITY[input.level] < LOG_LEVEL_SEVERITY[this.minIngestLevel]) {
+      return;
+    }
+
     const id = input.id || randomUUID();
     const createdAt = input.createdAt || new Date();
     const maskedMessage = maskSensitiveString(input.message).slice(0, 8192);
