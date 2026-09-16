@@ -19,7 +19,7 @@
 ### Fixed
 
 ### Security
-- **依赖漏洞修复**：升级 `google.golang.org/grpc` 至 `v1.83.1`，修复 GO-2026-6348（HTTP/2 DATA 帧碎片化导致的堆内存耗尽 OOM 漏洞）。
+- **依赖漏洞修复**：升级 `google.golang.org/grpc` 至 `v1.83.1`，修复 GO-2026-6348（HTTP/2 DATA 帧碎片化漏洞）；升级 `golang.org/x/text` 至 `v0.42.0`，修复 GO-2026-5970（非法输入导致的死循环漏洞）。
 
 
 ## [0.7.5] - 2026-09-14
