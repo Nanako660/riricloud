@@ -22,8 +22,8 @@
 | [无公网 IP 主机（NAT/家宽）作为落地节点与反向穿透隧道全链路实现](./nat-landing-node-reverse-tunnel.md) | `v0.10.0` | 2026-09-13 | 34/36 (94%) |
 | [实时节点镜像站与 Agent 流式代理](./node-mirror-site-proxy.md) | `v0.7.2+` | 2026-09-09 | 93/123 (76%) |
 | [公开线路与中继落地凭据安全整改 TODO（2026-09-08）](./security-audit-public-relay-credentials.md) | `v0.7.2+` | 2026-09-08 | 0/58 (0%) |
+| [时序遥测与日志物理分库隔离（Phase 2 架构演进）](./telemetry-db-physical-separation.md) | `v0.9.2` | 2026-09-17 | 0/16 (0%) |
 | [流量账务与 SQLite 写入链路优化](./traffic-accounting-sqlite-optimization.md) | `0.5.0` | 2026-09-03 | 19/20 (95%) |
-| [流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）](./traffic-and-log-storage-governance.md) | `v0.9.1` | 2026-09-16 | 29/34 (85%) |
 
 ---
 
@@ -31,6 +31,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）](./archive/2026-09-17-traffic-and-log-storage-governance.md) | `v0.9.1` | 2026-09-17 | — |
 | [binary-distribution-optimization](./archive/2026-09-14-binary-distribution-optimization.md) | `v0.8.12` | 2026-09-14 | — |
 | [agent-upgrade-version-reconcile](./archive/2026-09-14-agent-upgrade-version-reconcile.md) | `v0.9.0` | 2026-09-14 | — |
 | [agent-embedded-singbox](./archive/2026-09-14-agent-embedded-singbox.md) | `v0.8.12` | 2026-09-14 | — |

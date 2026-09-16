@@ -1,12 +1,12 @@
 ---
-title: "流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）"
+title: 流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）
 type: plan
-status: active
-target_version: "v0.9.1"
+status: completed
+target_version: v0.9.1
 created_at: "2026-09-16"
 author: "Antigravity & Maintainers"
+archived_at: "2026-09-17"
 ---
-
 # 流量与系统日志存储治理规划
 
 ## 🎯 目标与背景
@@ -149,14 +149,9 @@ model TrafficHourlyMetric {
 - [x] 任务 6.2: 订阅接口（`/sub/*`）成功请求仅以低频采样或不落库，异常拉取（401/404）完整入库供排查。
 - [x] 任务 6.3: 在 `SystemSetting` 中增加日志采集门槛配置（`logsMinIngestLevel`），支持动态降级日志入库级别。
 
-### 里程碑 7：物理分库架构落地（Phase 2 规划演进）
-- [ ] 任务 7.1: 新增 `apps/server/prisma/telemetry.prisma`，将 `TrafficHourlyMetric`、`NodeRateMetric`、`SystemLog` 迁入独立的 `telemetry.db`。
-- [ ] 任务 7.2: 在 `package.json` 与服务端构建脚本中增加针对 `telemetry.prisma` 的生成命令，配置独立的 `TelemetryPrismaService`。
-- [ ] 任务 7.3: 配置独立环境变量 `TELEMETRY_DATABASE_URL`，支持主库与时序库物理路径解耦。
-- [ ] 任务 7.4: 更新服务端模块依赖注入，`TrafficService`、`NodeRateMetric`、`SystemLogsService` 统一切换至 `TelemetryPrismaService`。
-- [ ] 任务 7.5: 编写环境初始化与主控 Dockerfile/脚本适配，确保 `telemetry.db` 自动迁移并在容器中正确挂载持久化。
+> **说明**：原计划中的「里程碑 7：物理分库架构落地（Phase 2）」已按架构渐进演进路线剥离为独立规划文档 [telemetry-db-physical-separation.md](./telemetry-db-physical-separation.md)，留待后续版本专项推进。本篇规划聚焦的 Phase 1 流量时序小时桶、自动淘汰、日志降噪与全自动迁移已 100% 达成。
 
-### 里程碑 8：测试、验证与文档门禁合规
+### 里程碑 7：测试、验证与文档门禁合规
 - [x] 任务 8.1: 编写/更新 `traffic.service.spec.ts` 单元测试，覆盖小时桶计算、时间范围过滤与排行榜求和。
 - [x] 任务 8.2: 编写/更新 `agent-gateway.sqlite.spec.ts` 真实 SQLite 集成测试，验证心跳增量累加、并发缓冲 Flush 与超额熔断实时性。
 - [x] 任务 8.3: 运行全量端到端验证，确认 Web 界面大盘时序图、线路排行、单用户流量下钻与系统日志正常运作。
