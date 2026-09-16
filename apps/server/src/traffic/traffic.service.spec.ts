@@ -1,15 +1,18 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { createDateInTimezone } from '../common/traffic-reset';
 import { TrafficService } from './traffic.service';
 
 describe('TrafficService', () => {
   const prisma = {
-    trafficHourlyMetric: { findMany: jest.fn() },
     trafficLog: { findMany: jest.fn() },
     line: { findMany: jest.fn(), count: jest.fn() },
     user: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    node: { findMany: jest.fn() },
+    node: { findMany: jest.fn() }
+  };
+  const telemetryPrisma = {
+    trafficHourlyMetric: { findMany: jest.fn() },
     nodeRateMetric: { findMany: jest.fn() }
   };
   let service: TrafficService;
@@ -17,14 +20,17 @@ describe('TrafficService', () => {
   beforeAll(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-09-02T12:34:00Z'));
-    service = new TrafficService(prisma as unknown as PrismaService);
+    service = new TrafficService(
+      prisma as unknown as PrismaService,
+      telemetryPrisma as unknown as TelemetryPrismaService
+    );
   });
 
   afterAll(() => jest.useRealTimers());
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma.trafficHourlyMetric.findMany.mockResolvedValue([]);
+    telemetryPrisma.trafficHourlyMetric.findMany.mockResolvedValue([]);
     prisma.trafficLog.findMany.mockResolvedValue([]);
     prisma.line.findMany.mockResolvedValue([]);
     prisma.line.count.mockResolvedValue(0);
@@ -32,7 +38,7 @@ describe('TrafficService', () => {
     prisma.user.findMany.mockResolvedValue([]);
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.node.findMany.mockResolvedValue([]);
-    prisma.nodeRateMetric.findMany.mockResolvedValue([]);
+    telemetryPrisma.nodeRateMetric.findMany.mockResolvedValue([]);
   });
 
   const line = (overrides: Record<string, unknown> = {}) => ({
@@ -74,14 +80,14 @@ describe('TrafficService', () => {
       line(),
       line({ id: 'line-2', name: '日本 CN2', trafficRate: 2 })
     ]);
-    prisma.trafficHourlyMetric.findMany.mockResolvedValue([
+    telemetryPrisma.trafficHourlyMetric.findMany.mockResolvedValue([
       { nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: 200n, download: 600n, billedBytes: 1200n, bucketStart: localDay(1, 0) },
       { nodeId: 'node-1', userId: 'user-2', lineId: 'line-2', upload: 100n, download: 100n, billedBytes: 400n, bucketStart: localDay(3, 0) }
     ]);
 
     const result = await service.getOverview('today');
 
-    expect(prisma.trafficHourlyMetric.findMany).toHaveBeenCalled();
+    expect(telemetryPrisma.trafficHourlyMetric.findMany).toHaveBeenCalled();
     expect(prisma.trafficLog.findMany).not.toHaveBeenCalled();
     expect(result.bucketType).toBe('hour');
     expect(result.timeSeries).toHaveLength(24);
@@ -154,7 +160,7 @@ describe('TrafficService', () => {
       { status: 'ONLINE', lastSeenAt: new Date('2026-09-02T12:33:59Z'), uploadRate: 1000, downloadRate: 2000 },
       { status: 'ONLINE', lastSeenAt: new Date('2026-09-02T12:30:00Z'), uploadRate: 9000, downloadRate: 9000 }
     ]);
-    prisma.nodeRateMetric.findMany.mockResolvedValue([
+    telemetryPrisma.nodeRateMetric.findMany.mockResolvedValue([
       { nodeId: 'node-1', bucketStart: new Date('2026-09-02T12:25:00Z'), sampleCount: 1, uploadRateSum: 100, downloadRateSum: 200, uploadRatePeak: 100, downloadRatePeak: 200 },
       { nodeId: 'node-1', bucketStart: new Date('2026-09-02T12:30:00Z'), sampleCount: 2, uploadRateSum: 200, downloadRateSum: 600, uploadRatePeak: 150, downloadRatePeak: 400 },
       { nodeId: 'node-2', bucketStart: new Date('2026-09-02T12:30:00Z'), sampleCount: 1, uploadRateSum: 300, downloadRateSum: 100, uploadRatePeak: 300, downloadRatePeak: 120 }

@@ -6,11 +6,15 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "prisma migrate deploy && node prisma/bootstrap-admin.js && node dist/main",
+    "start:prod": "pnpm prisma:deploy && node prisma/bootstrap-admin.js && node dist/main",
     "lint": "eslint .",
     "test": "jest",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && prisma generate --schema=prisma/telemetry/schema.prisma",
+    "prisma:generate": "prisma generate && prisma generate --schema=prisma/telemetry/schema.prisma",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:telemetry:migrate": "prisma migrate dev --schema=prisma/telemetry/schema.prisma",
+    "prisma:telemetry:deploy": "prisma migrate deploy --schema=prisma/telemetry/schema.prisma",
+    "prisma:deploy": "node prisma/deploy-databases.js",
     "prisma:seed": "prisma db seed"
   },
   "prisma": {

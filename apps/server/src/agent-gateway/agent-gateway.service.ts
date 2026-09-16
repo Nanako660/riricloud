@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestr
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
 import {
   buildClientTls,
@@ -291,7 +292,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly settingsService?: SettingsService,
-    @Optional() private readonly systemLogsService?: SystemLogsService
+    @Optional() private readonly systemLogsService?: SystemLogsService,
+    @Optional() private readonly telemetryPrisma?: TelemetryPrismaService
   ) {
     if (this.settingsService) {
       this.settingsService.onSettingsChange((patch) => {
@@ -866,9 +868,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (!this.rateMetricBuckets.size) return;
     const batches = [...this.rateMetricBuckets.values()];
     this.rateMetricBuckets.clear();
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
     try {
       await this.enqueueAgentWrite('rate-metrics', async () => {
-        await this.prisma.$transaction(async (tx) => {
+        await telemetryClient.$transaction(async (tx) => {
           const delegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
           if (!delegate) return;
           for (const item of batches) {
@@ -937,9 +940,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (!this.trafficHourlyBuckets.size) return;
     const batches = [...this.trafficHourlyBuckets.values()];
     this.trafficHourlyBuckets.clear();
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
     try {
       await this.enqueueAgentWrite('traffic-hourly-metrics', async () => {
-        await this.prisma.$transaction(async (tx) => {
+        await telemetryClient.$transaction(async (tx) => {
           for (const item of batches) {
             await tx.$executeRawUnsafe(
               `INSERT INTO "TrafficHourlyMetric" (
@@ -1130,7 +1134,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
 
   // 低频清理历史速率桶，避免每个心跳都在写事务中扫描和删除历史数据。
   async cleanupOldRateMetrics(): Promise<void> {
-    const delegate = (this.prisma as unknown as { nodeRateMetric?: NodeRateMetricRootDelegate }).nodeRateMetric;
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
+    const delegate = (telemetryClient as unknown as { nodeRateMetric?: NodeRateMetricRootDelegate }).nodeRateMetric;
     if (!delegate) return;
     const now = Date.now();
     if (now < this.nextRateMetricCleanupAt) return;

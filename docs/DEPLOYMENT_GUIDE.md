@@ -357,7 +357,22 @@ artifacts/packages/
 5. 启动新 Master，确认 WAL、写入队列和数据库迁移日志正常，再启动全部 v0.5.0 Agent。
 6. 观察 `traffic counter reset detected`、`agent write queue delayed`、`agent write slow` 和 Prisma 错误；重点核对 `TrafficCursor` 是否持续更新、重复快照是否没有产生重复流水。
 
-回滚时必须同时回滚 Master 和 Agent，并恢复发布前的 SQLite 备份。禁止仅回滚其中一端，也禁止让 v0.4.x Agent 与 v0.5.0 Master 混合运行。协议 v2 使用累计计数器，不需要 ACK 作为流量正确性的基础；HTTP 请求失败或 WS 断线后，Agent 保留 Sing-box 累计值，恢复通信即可由 Master 按游标补齐差额。
+### 3.6 Phase 2 时序与日志物理分库升级与维护（v0.9.2）
+
+为彻底消除 SQLite 高频指标与海量日志写锁争用，系统采用双数据库物理隔离架构：
+- **主业务数据库** (`DATABASE_URL`)：默认 `file:/app/data/riri.db`（Docker）或 `file:./dev.db`（开发），承载核心用户、节点、套餐、线路与业务账务。
+- **时序与日志数据库** (`TELEMETRY_DATABASE_URL`)：默认 `file:/app/data/telemetry.db`（Docker）或 `file:./dev-telemetry.db`（开发），承载 `TrafficHourlyMetric`、`NodeRateMetric` 与 `SystemLog`。
+
+**自动回退机制**：若用户未在 `.env` 中显式指定 `TELEMETRY_DATABASE_URL`，系统服务与部署脚本将自动推导同目录下的 `telemetry.db` 或 `dev-telemetry.db`，确保开箱即用平滑兼容。
+
+**平滑升级与自动化数据迁移**：
+1. 部署与启动时，Master 自动通过 `node prisma/deploy-databases.js` 统一执行：
+   - 步骤 1：部署 `telemetry.db` 结构迁移（`prisma migrate deploy --schema=prisma/telemetry/schema.prisma`）。
+   - 步骤 2：执行存量数据内联迁移（`node prisma/migrate-telemetry-data.js`），利用 SQLite `ATTACH DATABASE` 在数据库引擎内零拷贝复制旧表数据至新库，亚秒级完成数万行记录无损迁移。
+   - 步骤 3：部署主库结构迁移（`prisma migrate deploy`），安全清理主库旧指标与日志表。
+2. **备份建议**：在进行数据冷备或容灾时，请同步备份主库与时序库文件，包括：
+   - `riri.db`、`riri.db-wal`、`riri.db-shm`
+   - `telemetry.db`、`telemetry.db-wal`、`telemetry.db-shm`
 
 ---
 

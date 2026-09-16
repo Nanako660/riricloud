@@ -1,12 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { SSEHubService } from './sse-hub.service';
 import { SystemLogsService } from './system-logs.service';
 
 describe('SystemLogsService', () => {
   let service: SystemLogsService;
   let sseHub: SSEHubService;
-  let prisma: {
+  let telemetryPrisma: {
     systemLog: {
       createMany: jest.Mock;
       count: jest.Mock;
@@ -14,9 +15,13 @@ describe('SystemLogsService', () => {
       deleteMany: jest.Mock;
     };
   };
+  let prisma: {
+    node: { findMany: jest.Mock };
+    user: { findMany: jest.Mock };
+  };
 
   beforeEach(async () => {
-    prisma = {
+    telemetryPrisma = {
       systemLog: {
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(10),
@@ -24,11 +29,19 @@ describe('SystemLogsService', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 5 })
       }
     };
+    prisma = {
+      node: { findMany: jest.fn().mockResolvedValue([]) },
+      user: { findMany: jest.fn().mockResolvedValue([]) }
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SystemLogsService,
         SSEHubService,
+        {
+          provide: TelemetryPrismaService,
+          useValue: telemetryPrisma
+        },
         {
           provide: PrismaService,
           useValue: prisma
@@ -79,8 +92,8 @@ describe('SystemLogsService', () => {
 
     await service.flush();
 
-    expect(prisma.systemLog.createMany).toHaveBeenCalledTimes(1);
-    expect(prisma.systemLog.createMany).toHaveBeenCalledWith({
+    expect(telemetryPrisma.systemLog.createMany).toHaveBeenCalledTimes(1);
+    expect(telemetryPrisma.systemLog.createMany).toHaveBeenCalledWith({
       data: expect.arrayContaining([
         expect.objectContaining({
           source: 'SERVER',
@@ -93,7 +106,7 @@ describe('SystemLogsService', () => {
   });
 
   it('should support pagination and filtering in query', async () => {
-    prisma.systemLog.findMany.mockResolvedValueOnce([
+    telemetryPrisma.systemLog.findMany.mockResolvedValueOnce([
       {
         id: 'log-1',
         source: 'WEB',
@@ -103,7 +116,7 @@ describe('SystemLogsService', () => {
         createdAt: new Date()
       }
     ]);
-    prisma.systemLog.count.mockResolvedValueOnce(1);
+    telemetryPrisma.systemLog.count.mockResolvedValueOnce(1);
 
     const result = await service.query({
       level: 'ERROR',
@@ -119,7 +132,7 @@ describe('SystemLogsService', () => {
 
   it('should clean expired logs by retention days', async () => {
     const result = await service.clean(7, undefined);
-    expect(prisma.systemLog.deleteMany).toHaveBeenCalled();
+    expect(telemetryPrisma.systemLog.deleteMany).toHaveBeenCalled();
     expect(result.deletedCount).toBe(5);
   });
 

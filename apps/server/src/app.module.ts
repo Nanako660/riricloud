@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
+import { TelemetryPrismaModule } from './prisma/telemetry-prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { SystemModule } from './system/system.module';
 import { UsersModule } from './users/users.module';
@@ -24,6 +25,7 @@ import { ProxyPoolModule } from './proxy-pool/proxy-pool.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    TelemetryPrismaModule,
     AuthModule,
     SystemModule,
     UsersModule,

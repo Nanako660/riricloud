@@ -19,6 +19,7 @@ services:
     environment:
       PORT: ${MASTER_PORT:-3000}
       DATABASE_URL: file:/app/data/riri.db
+      TELEMETRY_DATABASE_URL: file:/app/data/telemetry.db
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env.image}
       AUTO_SEED: ${AUTO_SEED:-false}
       MASTER_LOCAL_HOST: ${MASTER_LOCAL_HOST:-}

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { createDateInTimezone, getTimeZoneParts } from '../common/traffic-reset';
 import {
@@ -120,6 +121,7 @@ type RateBucketAggregate = {
 export class TrafficService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly telemetryPrisma: TelemetryPrismaService,
     @Optional() private readonly settingsService?: SettingsService
   ) {}
 
@@ -237,10 +239,7 @@ export class TrafficService {
   }
 
   private async findRateMetrics(config: RateRangeConfig): Promise<RateMetricRow[]> {
-    const delegate = (this.prisma as unknown as {
-      nodeRateMetric?: { findMany: (args: Record<string, unknown>) => Promise<RateMetricRow[]> };
-    }).nodeRateMetric;
-    if (!delegate) return [];
+    const delegate = this.telemetryPrisma.nodeRateMetric;
     return delegate.findMany({
       where: { bucketStart: { gte: config.bucketStart, lt: config.periodEnd } },
       select: {
@@ -348,19 +347,7 @@ export class TrafficService {
   }
 
   private async findTrafficRows(config: RangeConfig, userId?: string): Promise<TrafficRow[]> {
-    const hourlyDelegate = (this.prisma as unknown as {
-      trafficHourlyMetric?: {
-        findMany: (args: Record<string, unknown>) => Promise<Array<{
-          nodeId: string;
-          userId: string;
-          lineId: string;
-          upload: bigint;
-          download: bigint;
-          billedBytes: bigint;
-          bucketStart: Date;
-        }>>;
-      };
-    }).trafficHourlyMetric;
+    const hourlyDelegate = this.telemetryPrisma.trafficHourlyMetric;
 
     if (hourlyDelegate) {
       const hourlyMetrics = await hourlyDelegate.findMany({

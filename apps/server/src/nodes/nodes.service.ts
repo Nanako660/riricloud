@@ -18,6 +18,7 @@ import { appendPublicPath, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../c
 import { decryptSecret, encryptSecret } from '../common/secret-crypto';
 import { OfflinePackageService } from '../binaries/offline-package.service';
 import { BinariesInstallerService } from '../binaries/installer.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 
 const nodeSummary = { select: { id: true, name: true, serverHost: true, status: true, isLocal: true } } as const;
 const nodeLinesInclude = {
@@ -35,7 +36,8 @@ export class NodesService {
     @Optional() private readonly resources?: BinaryResourcesService,
     @Optional() private readonly settingsService?: SettingsService,
     @Optional() private readonly offlinePackage?: OfflinePackageService,
-    @Optional() private readonly installer?: BinariesInstallerService
+    @Optional() private readonly installer?: BinariesInstallerService,
+    @Optional() private readonly systemLogsService?: SystemLogsService
   ) {}
 
   async list() {
@@ -113,10 +115,14 @@ export class NodesService {
     const token = generateAgentToken();
     await this.prisma.node.update({ where: { id }, data: { agentToken: encryptSecret(token), agentTokenHash: hashAgentToken(token), status: 'OFFLINE' } });
     this.agentGateway.disconnectNode(id);
-    const systemLog = (this.prisma as unknown as { systemLog?: { create: (args: Record<string, unknown>) => Promise<unknown> } }).systemLog;
-    if (systemLog) {
-      await systemLog.create({ data: { source: 'SERVER', level: 'WARN', module: 'Nodes', message: 'AgentToken rotated', metadata: JSON.stringify({ nodeId: id, operatorId: operatorId ?? null }), nodeId: id } });
-    }
+    this.systemLogsService?.enqueue({
+      source: 'SERVER',
+      level: 'WARN',
+      module: 'Nodes',
+      message: 'AgentToken rotated',
+      metadata: { nodeId: id, operatorId: operatorId ?? null },
+      nodeId: id
+    });
     const agentImage = process.env.AGENT_IMAGE || 'riricloud/agent:latest';
     const installCommands = this.buildInstallCommands(node.osArch, publicBaseUrl, id, token, node.communicationMode);
     return {

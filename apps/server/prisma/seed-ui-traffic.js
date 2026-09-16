@@ -4,10 +4,12 @@
 const { createHash, randomBytes, randomInt } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
+const { PrismaClient: TelemetryPrismaClient } = require('@prisma/telemetry-client');
 const { encryptSecret } = require('./secret-crypto');
 const { ensurePlanPurchaseForSubscription } = require('./plan-purchase-bootstrap');
 
 const prisma = new PrismaClient();
+const telemetryPrisma = new TelemetryPrismaClient();
 const MIB = 1024n ** 2n;
 const GIB = 1024n ** 3n;
 const HOUR_MS = 60 * 60 * 1000;
@@ -98,7 +100,7 @@ async function clearPreviousUiRateMetrics() {
   });
   const nodeIds = uiNodes.map(({ id }) => id);
   if (nodeIds.length === 0) return 0;
-  const result = await prisma.nodeRateMetric.deleteMany({ where: { nodeId: { in: nodeIds } } });
+  const result = await telemetryPrisma.nodeRateMetric.deleteMany({ where: { nodeId: { in: nodeIds } } });
   return result.count;
 }
 
@@ -127,7 +129,7 @@ function createRateRows(node, profile) {
 
 async function createRateMetrics(rows) {
   for (let index = 0; index < rows.length; index += 400) {
-    await prisma.nodeRateMetric.createMany({ data: rows.slice(index, index + 400) });
+    await telemetryPrisma.nodeRateMetric.createMany({ data: rows.slice(index, index + 400) });
   }
 }
 
@@ -397,4 +399,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await telemetryPrisma.$disconnect();
   });

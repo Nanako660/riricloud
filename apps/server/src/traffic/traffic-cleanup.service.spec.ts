@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import {
   DEFAULT_LEGACY_LOGS_RETENTION_DAYS,
   DEFAULT_TRAFFIC_RETENTION_DAYS,
@@ -6,9 +7,6 @@ import {
 } from './traffic-cleanup.service';
 
 interface MockPrisma {
-  trafficHourlyMetric: {
-    deleteMany: jest.Mock;
-  };
   trafficLog: {
     count: jest.Mock;
     findMany: jest.Mock;
@@ -21,11 +19,16 @@ interface MockPrisma {
   $transaction: jest.Mock;
 }
 
+interface MockTelemetryPrisma {
+  trafficHourlyMetric: {
+    deleteMany: jest.Mock;
+  };
+  $executeRawUnsafe: jest.Mock;
+  $transaction: jest.Mock;
+}
+
 describe('TrafficCleanupService', () => {
   const prisma: MockPrisma = {
-    trafficHourlyMetric: {
-      deleteMany: jest.fn()
-    },
     trafficLog: {
       count: jest.fn(),
       findMany: jest.fn(),
@@ -38,6 +41,14 @@ describe('TrafficCleanupService', () => {
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma))
   };
 
+  const telemetryPrisma: MockTelemetryPrisma = {
+    trafficHourlyMetric: {
+      deleteMany: jest.fn()
+    },
+    $executeRawUnsafe: jest.fn(),
+    $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(telemetryPrisma))
+  };
+
   let service: TrafficCleanupService;
 
   beforeEach(() => {
@@ -45,7 +56,10 @@ describe('TrafficCleanupService', () => {
     prisma.trafficLog.count.mockResolvedValue(0);
     prisma.trafficLog.findMany.mockResolvedValue([]);
     prisma.line.findMany.mockResolvedValue([]);
-    service = new TrafficCleanupService(prisma as unknown as PrismaService);
+    service = new TrafficCleanupService(
+      prisma as unknown as PrismaService,
+      telemetryPrisma as unknown as TelemetryPrismaService
+    );
   });
 
   afterEach(() => {
@@ -53,7 +67,7 @@ describe('TrafficCleanupService', () => {
   });
 
   it('runCleanup 能够正确按 90 天清理小时时序并按 7 天清理旧 TrafficLog', async () => {
-    prisma.trafficHourlyMetric.deleteMany.mockResolvedValue({ count: 42 });
+    telemetryPrisma.trafficHourlyMetric.deleteMany.mockResolvedValue({ count: 42 });
     prisma.trafficLog.deleteMany.mockResolvedValue({ count: 15 });
 
     const fixedNow = new Date('2026-09-17T00:00:00.000Z').getTime();
@@ -66,7 +80,7 @@ describe('TrafficCleanupService', () => {
     const expectedHourlyCutoff = new Date(fixedNow - DEFAULT_TRAFFIC_RETENTION_DAYS * 24 * 3600 * 1000);
     const expectedLegacyCutoff = new Date(fixedNow - DEFAULT_LEGACY_LOGS_RETENTION_DAYS * 24 * 3600 * 1000);
 
-    expect(prisma.trafficHourlyMetric.deleteMany).toHaveBeenCalledWith({
+    expect(telemetryPrisma.trafficHourlyMetric.deleteMany).toHaveBeenCalledWith({
       where: { bucketStart: { lt: expectedHourlyCutoff } }
     });
     expect(prisma.trafficLog.deleteMany).toHaveBeenCalledWith({
@@ -75,7 +89,7 @@ describe('TrafficCleanupService', () => {
   });
 
   it('runCleanup 在 Prisma 抛出异常时能安全捕获并返回 0', async () => {
-    prisma.trafficHourlyMetric.deleteMany.mockRejectedValue(new Error('DB connection failed'));
+    telemetryPrisma.trafficHourlyMetric.deleteMany.mockRejectedValue(new Error('DB connection failed'));
 
     const result = await service.runCleanup();
 
@@ -119,13 +133,13 @@ describe('TrafficCleanupService', () => {
       .mockResolvedValueOnce([]);
 
     prisma.trafficLog.deleteMany.mockResolvedValue({ count: 2 });
-    prisma.$executeRaw.mockResolvedValue(1);
+    telemetryPrisma.$executeRawUnsafe.mockResolvedValue(1);
 
     const migrated = await service.autoMigrateLegacyTrafficLogs(100);
 
     expect(migrated).toBe(2);
-    expect(prisma.$transaction).toHaveBeenCalled();
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(telemetryPrisma.$transaction).toHaveBeenCalled();
+    expect(telemetryPrisma.$executeRawUnsafe).toHaveBeenCalled();
     expect(prisma.trafficLog.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ['log-1', 'log-2'] } }
     });

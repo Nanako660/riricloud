@@ -215,14 +215,14 @@ model Node {
   landingLines    Line[]        @relation("LineLandingNode")
   trafficLogs     TrafficLog[]
   trafficCursors  TrafficCursor[]
-  rateMetrics     NodeRateMetric[]
 
   @@index([status])
   @@index([isLocal])
 }
 
 // ==============================
-// 2.1 节点速率指标实体 (NodeRateMetric，本次迭代)
+// 2.1 节点速率指标实体 (NodeRateMetric，telemetry.db 物理分库，v0.9.2)
+// 保存在独立的 telemetry.db 数据库中，通过 TelemetryPrismaService 访问，无跨库物理外键
 // ==============================
 model NodeRateMetric {
   id               String   @id @default(uuid())
@@ -233,8 +233,6 @@ model NodeRateMetric {
   downloadRateSum  Float    @default(0)             // 桶内心跳下行速率之和
   uploadRatePeak   Float    @default(0)             // 节点桶内上行峰值
   downloadRatePeak Float    @default(0)             // 节点桶内下行峰值
-
-  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, bucketStart])
   @@index([nodeId, bucketStart])
@@ -795,6 +793,7 @@ model SystemSetting {
 ### 5.1 数据表定义
 
 ```prisma
+// 独立保存在 telemetry.db 物理库中（apps/server/prisma/telemetry/schema.prisma）
 model SystemLog {
   id        String   @id @default(uuid())
   traceId   String?  // 全链路关联 ID (X-Request-Id)
@@ -803,12 +802,9 @@ model SystemLog {
   module    String   // 产生模块/上下文（如 Auth, Lines, Nodes, Gateway, UI, Kernel）
   message   String   // 核心描述文本
   metadata  String   @default("{}") // 结构化 JSON 详情（IP、路由、耗时、状态码、堆栈等）
-  nodeId    String?  // 关联 VPS 节点 ID（可选）
-  userId    String?  // 关联用户 ID（可选）
+  nodeId    String?  // 关联 VPS 节点 ID（逻辑关联，应用层异步回填）
+  userId    String?  // 关联用户 ID（逻辑关联，应用层异步回填）
   createdAt DateTime @default(now())
-
-  node Node? @relation(fields: [nodeId], references: [id], onDelete: SetNull)
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([source, createdAt])
@@ -921,9 +917,35 @@ model SystemLog {
 
 ### 8.2 解耦与物理分库设计
 - **无物理外键级联**：`TrafficHourlyMetric` 中的 `nodeId`、`userId`、`lineId`、`proxyKeyId` 均设计为独立普通索引 String 字段，不与主业务表建立 Prisma `@relation` 强外键约束。
-- **物理分库准备**：为 Phase 2 物理分库（将观测数据独立为 `telemetry.db`）提供平滑平移基础，主库仅维护核心用户、订阅、线路与配置元数据。
+- **物理分库落地（Phase 2）**：指标数据独立持久化在 `telemetry.db`（`apps/server/prisma/telemetry/schema.prisma`），主库仅维护核心用户、订阅、线路与配置元数据。
 
 ### 8.3 缓冲写入与生命周期
 1. **内存微批缓冲（10~15s）**：心跳解析的流量增量先行注入 `AgentGatewayService` 内存缓冲队列，由定时任务以原生 SQL `ON CONFLICT(...) DO UPDATE` 进行原子累加，彻底消除高频秒级写锁。
 2. **优雅停机保护**：服务销毁时触发 `onModuleDestroy` 强制清空残余缓冲，保障时序数据完整性。
 3. **90 天滑动窗口 TTL**：系统低峰期每日定时巡检，硬删除 90 天前的小时记录，确保 SQLite 数据库文件体积恒定可控。
+
+---
+
+## 9. 双 SQLite 数据库物理分库架构（Dual-Database Architecture，v0.9.2）
+
+为彻底杜绝高频指标收集、系统日志写入与主业务交易（用户登录、套餐购买、节点管理等）对单一 SQLite 文件写锁的竞争，系统全面实施物理分库架构。
+
+### 9.1 数据库职责划分
+
+| 数据库文件 | 环境变量 | Prisma Schema 路径 | 生成 Client | 承载模型 | 调优策略 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **主业务库** (`app.db` / `riri.db` / `dev.db`) | `DATABASE_URL` | `apps/server/prisma/schema.prisma` | `@prisma/client` | `User`, `Subscription`, `Plan`, `Line`, `Node`, `ProxyKey`, `TrafficCursor`, `SystemSetting`, `BalanceTransaction` 等 | WAL 模式，`busy_timeout = 10000ms`，单写队列调度 |
+| **时序与日志库** (`telemetry.db` / `dev-telemetry.db`) | `TELEMETRY_DATABASE_URL` | `apps/server/prisma/telemetry/schema.prisma` | `@prisma/telemetry-client` | `TrafficHourlyMetric`, `NodeRateMetric`, `SystemLog` | 独立 WAL 模式与 `busy_timeout`，内存批量合并写入与定期滑动窗口清理 |
+
+### 9.2 跨库数据关联与 Hydration 模式
+
+时序与日志库中包含 `nodeId`、`userId`、`lineId`、`proxyKeyId` 等逻辑关联标识，但两库物理隔离，不建立跨数据库 Foreign Key 约束：
+1. **日志查询动态组装（Application-level Hydration）**：`SystemLogsService.query()` 分页获取 `telemetry.db` 中的 `SystemLog` 行后，提取唯一的 `nodeId` 和 `userId` 集合，并发通过 `PrismaService` 批量读取主库中的 `Node` 与 `User`，在应用层反序列化并挂载关联对象，对外 API 契约与前端响应数据结构 100% 保持向后兼容。
+2. **流量与速率时序展示**：`TrafficService` 查询 `telemetry.db` 中的聚合指标，结合主库线路与用户基础资料进行倍率与名称匹配计算。
+
+### 9.3 存量数据平滑迁移机制（SQLite ATTACH DATABASE）
+
+从旧版单库升级至双库时，`apps/server/prisma/deploy-databases.js` 自动调度执行 `apps/server/prisma/migrate-telemetry-data.js`：
+- 使用 SQLite 内核级 `ATTACH DATABASE "${telemetryDbPath}" AS telemetry` 引擎指令。
+- 直接在数据库引擎内部执行 `INSERT OR IGNORE INTO telemetry.TrafficHourlyMetric SELECT ... FROM main.TrafficHourlyMetric`，无需经由 Node.js 内存周转，可在亚秒级完成数万条存量记录的零拷贝迁移。
+- 迁移脚本具备完全幂等性，主库表结构迁移在数据迁移完成后安全移除废弃表。

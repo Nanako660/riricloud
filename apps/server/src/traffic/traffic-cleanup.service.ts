@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 
 export const DEFAULT_TRAFFIC_RETENTION_DAYS = 90;
 export const DEFAULT_LEGACY_LOGS_RETENTION_DAYS = 7;
@@ -10,7 +11,10 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TrafficCleanupService.name);
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telemetryPrisma: TelemetryPrismaService
+  ) {}
 
   onModuleInit(): void {
     // 延迟 15 秒后执行首次存量数据自动平滑迁移与常规清理，避免拖慢应用启动
@@ -44,7 +48,7 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
     try {
       // 1. 清理 90 天前的小时桶时序记录
       const hourlyCutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
-      const hourlyResult = await this.prisma.trafficHourlyMetric.deleteMany({
+      const hourlyResult = await this.telemetryPrisma.trafficHourlyMetric.deleteMany({
         where: { bucketStart: { lt: hourlyCutoff } }
       });
       deletedHourlyCount = hourlyResult.count;
@@ -138,23 +142,32 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
           }
         }
 
-        await this.prisma.$transaction(async (tx) => {
+        await this.telemetryPrisma.$transaction(async (tx) => {
           for (const item of buckets.values()) {
-            await tx.$executeRaw`
-              INSERT INTO "TrafficHourlyMetric" ("id", "bucketStart", "nodeId", "userId", "lineId", "proxyKeyId", "upload", "download", "billedBytes", "createdAt", "updatedAt")
-              VALUES (${randomUUID()}, ${item.bucketStart.toISOString()}, ${item.nodeId}, ${item.userId}, ${item.lineId}, ${item.proxyKeyId}, ${item.upload}, ${item.download}, ${item.billedBytes}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "TrafficHourlyMetric" ("id", "bucketStart", "nodeId", "userId", "lineId", "proxyKeyId", "upload", "download", "billedBytes", "createdAt", "updatedAt")
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
               ON CONFLICT("bucketStart", "nodeId", "userId", "lineId", "proxyKeyId")
               DO UPDATE SET
                 "upload" = "upload" + excluded."upload",
                 "download" = "download" + excluded."download",
                 "billedBytes" = "billedBytes" + excluded."billedBytes",
-                "updatedAt" = CURRENT_TIMESTAMP;
-            `;
+                "updatedAt" = CURRENT_TIMESTAMP`,
+              randomUUID(),
+              item.bucketStart.toISOString(),
+              item.nodeId,
+              item.userId,
+              item.lineId,
+              item.proxyKeyId,
+              item.upload.toString(),
+              item.download.toString(),
+              item.billedBytes.toString()
+            );
           }
+        });
 
-          await tx.trafficLog.deleteMany({
-            where: { id: { in: logIds } }
-          });
+        await this.prisma.trafficLog.deleteMany({
+          where: { id: { in: logIds } }
         });
 
         migratedCount += rawLogs.length;
