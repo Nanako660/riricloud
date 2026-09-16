@@ -98,6 +98,8 @@ describe('AgentGatewayService', () => {
     deploymentCreate.mockResolvedValue(undefined);
     deploymentUpdate.mockResolvedValue(undefined);
     (service as unknown as { nextRateMetricCleanupAt: number }).nextRateMetricCleanupAt = 0;
+    (service as unknown as { trafficHourlyBuckets: Map<string, unknown> }).trafficHourlyBuckets?.clear();
+    (service as unknown as { rateMetricBuckets: Map<string, unknown> }).rateMetricBuckets?.clear();
   });
 
   const user = { uuid: 'uuid-1', email: 'user@example.com', password: 'secret', isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) };
@@ -432,9 +434,9 @@ describe('AgentGatewayService', () => {
       where: { id: 'node-1' },
       data: expect.objectContaining({ cpuUsage: 12, memoryUsage: 30, bandwidthRate: 512 })
     }));
-    expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: BigInt(100), download: BigInt(200), recordedAt: expect.any(Date) })]
-    });
+    expect(service.getBufferedTrafficHourlyMetrics()).toEqual([
+      expect.objectContaining({ nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: 100n, download: 200n })
+    ]);
     expect(txUserUpdate).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { trafficUsedBytes: { increment: BigInt(300) } } });
     expect(txSubscriptionUpdate).not.toHaveBeenCalled();
   });
@@ -504,9 +506,9 @@ describe('AgentGatewayService', () => {
       trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '50' }]
     });
 
-    expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ nodeId: 'node-2', lineId: 'blind-line', upload: 100n, download: 50n })]
-    });
+    expect(service.getBufferedTrafficHourlyMetrics()).toEqual([
+      expect.objectContaining({ nodeId: 'node-2', lineId: 'blind-line', upload: 100n, download: 50n })
+    ]);
     expect(txUserUpdate).toHaveBeenCalledWith({
       where: { id: 'user-1' },
       data: { trafficUsedBytes: { increment: 225n } }
@@ -635,9 +637,9 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 3,
       trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '25', downloadTotal: '2500' }]
     });
-    expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ upload: 25n, download: 500n })]
-    });
+    expect(service.getBufferedTrafficHourlyMetrics()).toEqual([
+      expect.objectContaining({ upload: 25n, download: 500n })
+    ]);
   });
 
   it('未知凭证只建立游标基线，之后只计入新增流量', async () => {
@@ -655,7 +657,7 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 3,
       trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '200' }]
     });
-    expect(txTrafficCreateMany).not.toHaveBeenCalled();
+    expect(service.getBufferedTrafficHourlyMetrics()).toHaveLength(0);
 
     await service.handleHeartbeat('node-1', {
       protocolVersion: 2,
@@ -664,9 +666,9 @@ describe('AgentGatewayService', () => {
       bandwidthRate: 3,
       trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '150', downloadTotal: '250' }]
     });
-    expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ upload: 50n, download: 50n })]
-    });
+    expect(service.getBufferedTrafficHourlyMetrics()).toEqual([
+      expect.objectContaining({ upload: 50n, download: 50n })
+    ]);
   });
 
   it('不同节点的累计游标相互隔离', async () => {
@@ -688,7 +690,7 @@ describe('AgentGatewayService', () => {
         trafficSnapshots: [{ userUuid: user.uuid, uploadTotal: '100', downloadTotal: '0' }]
       })
     ]);
-    expect(txTrafficCreateMany).toHaveBeenCalledTimes(2);
+    expect(service.getBufferedTrafficHourlyMetrics()).toHaveLength(2);
   });
 
   it('同一节点的并发心跳按顺序执行', async () => {
@@ -1052,12 +1054,12 @@ describe('AgentGatewayService', () => {
       ]
     });
 
-    expect(txTrafficCreateMany).toHaveBeenCalledWith({
-      data: expect.arrayContaining([
+    expect(service.getBufferedTrafficHourlyMetrics()).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ lineId: 'line-direct', userId: userOne.id, upload: 50n, download: 50n }),
         expect.objectContaining({ lineId: 'line-relay', userId: userOne.id, upload: 50n, download: 50n })
       ])
-    });
+    );
 
     // 计费总量：直连 100 * 1 + 中转 100 * 2 = 300
     expect(txUserUpdate).toHaveBeenCalledWith(
@@ -1162,9 +1164,9 @@ describe('AgentGatewayService', () => {
       expect(txProxyKeyFindMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { username: { in: ['pk_0123456789abcdef01234567'] } }
       }));
-      expect(txTrafficCreateMany).toHaveBeenCalledWith({
-        data: [expect.objectContaining({ userId: 'user-1', proxyKeyId: 'key-1', upload: 500n, download: 1500n })]
-      });
+      expect(service.getBufferedTrafficHourlyMetrics()).toEqual([
+        expect.objectContaining({ userId: 'user-1', proxyKeyId: 'key-1', upload: 500n, download: 1500n })
+      ]);
       expect(txUserUpdate).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: { trafficUsedBytes: { increment: 2000n } }

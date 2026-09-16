@@ -219,8 +219,6 @@ cp .env.example .env   # 编辑 JWT_SECRET、ADMIN_EMAIL、ADMIN_PASSWORD、MAST
 ```bash
 pnpm install
 pnpm build
-pnpm --filter @riricloud/server exec prisma migrate deploy
-pnpm --filter @riricloud/server exec node prisma/bootstrap-admin.js
 pnpm --filter @riricloud/server start:prod
 ```
 

@@ -73,6 +73,10 @@ async function main() {
 
   fs.mkdirSync('/app/data', { recursive: true });
 
+  process.env.TELEMETRY_DATABASE_URL = process.env.TELEMETRY_DATABASE_URL || 'file:/app/data/telemetry.db';
+
+  runPrisma('migrate', 'deploy', '--schema=/app/prisma/telemetry/schema.prisma');
+  runNodeScript('/app/prisma/migrate-telemetry-data.js');
   runPrisma('migrate', 'deploy');
   runNodeScript('/app/prisma/bootstrap-admin.js');
 

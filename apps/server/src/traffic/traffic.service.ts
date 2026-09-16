@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { SettingsService } from '../system/settings.service';
 import { createDateInTimezone, getTimeZoneParts } from '../common/traffic-reset';
 import {
@@ -120,6 +121,7 @@ type RateBucketAggregate = {
 export class TrafficService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly telemetryPrisma: TelemetryPrismaService,
     @Optional() private readonly settingsService?: SettingsService
   ) {}
 
@@ -237,10 +239,7 @@ export class TrafficService {
   }
 
   private async findRateMetrics(config: RateRangeConfig): Promise<RateMetricRow[]> {
-    const delegate = (this.prisma as unknown as {
-      nodeRateMetric?: { findMany: (args: Record<string, unknown>) => Promise<RateMetricRow[]> };
-    }).nodeRateMetric;
-    if (!delegate) return [];
+    const delegate = this.telemetryPrisma.nodeRateMetric;
     return delegate.findMany({
       where: { bucketStart: { gte: config.bucketStart, lt: config.periodEnd } },
       select: {
@@ -348,21 +347,72 @@ export class TrafficService {
   }
 
   private async findTrafficRows(config: RangeConfig, userId?: string): Promise<TrafficRow[]> {
-    return this.prisma.trafficLog.findMany({
-      where: {
-        ...(userId ? { userId } : {}),
-        recordedAt: { gte: config.bucketStart, lt: config.periodEnd }
-      },
-      select: {
-        nodeId: true,
-        userId: true,
-        upload: true,
-        download: true,
-        recordedAt: true,
-        line: { select: { id: true, name: true, protocolType: true, type: true, trafficRate: true } }
-      },
-      orderBy: { recordedAt: 'asc' }
-    }) as unknown as Promise<TrafficRow[]>;
+    const hourlyDelegate = this.telemetryPrisma.trafficHourlyMetric;
+
+    if (hourlyDelegate) {
+      const hourlyMetrics = await hourlyDelegate.findMany({
+        where: {
+          ...(userId ? { userId } : {}),
+          bucketStart: { gte: config.bucketStart, lt: config.periodEnd }
+        },
+        select: {
+          nodeId: true,
+          userId: true,
+          lineId: true,
+          upload: true,
+          download: true,
+          billedBytes: true,
+          bucketStart: true
+        },
+        orderBy: { bucketStart: 'asc' }
+      });
+
+      if (hourlyMetrics.length > 0) {
+        const referencedLineIds = [...new Set(hourlyMetrics.map((m) => m.lineId).filter((id) => Boolean(id)))];
+        const lines = referencedLineIds.length
+          ? await this.prisma.line.findMany({
+              where: { id: { in: referencedLineIds } },
+              select: { id: true, name: true, protocolType: true, type: true, trafficRate: true }
+            })
+          : [];
+        const lineMap = new Map(lines.map((l) => [l.id, l]));
+
+        return hourlyMetrics.map((m) => ({
+          nodeId: m.nodeId,
+          userId: m.userId,
+          upload: m.upload,
+          download: m.download,
+          recordedAt: m.bucketStart,
+          line: m.lineId ? (lineMap.get(m.lineId) as TrafficLine | null) ?? null : null
+        }));
+      }
+    }
+
+    const legacyDelegate = (this.prisma as unknown as {
+      trafficLog?: {
+        findMany: (args: Record<string, unknown>) => Promise<TrafficRow[]>;
+      };
+    }).trafficLog;
+
+    if (legacyDelegate) {
+      return legacyDelegate.findMany({
+        where: {
+          ...(userId ? { userId } : {}),
+          recordedAt: { gte: config.bucketStart, lt: config.periodEnd }
+        },
+        select: {
+          nodeId: true,
+          userId: true,
+          upload: true,
+          download: true,
+          recordedAt: true,
+          line: { select: { id: true, name: true, protocolType: true, type: true, trafficRate: true } }
+        },
+        orderBy: { recordedAt: 'asc' }
+      });
+    }
+
+    return [];
   }
 
   private async findFallbackLines(): Promise<FallbackTrafficLine[]> {

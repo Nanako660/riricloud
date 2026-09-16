@@ -1,11 +1,20 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/telemetry-client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
+import { SettingsService } from '../system/settings.service';
 import type { LogMetricsDto, TrendBucket } from './dto/log-metrics.dto';
 import type { QueryLogsDto } from './dto/query-logs.dto';
 import { maskSensitiveString, sanitizeLogMetadata } from './masking.util';
 import { SSEHubService } from './sse-hub.service';
+
+export const LOG_LEVEL_SEVERITY: Record<'DEBUG' | 'INFO' | 'WARN' | 'ERROR', number> = {
+  DEBUG: 10,
+  INFO: 20,
+  WARN: 30,
+  ERROR: 40
+};
 
 export interface EnqueueLogInput {
   id?: string;
@@ -29,17 +38,44 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
   private bufferBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
   private isFlushing = false;
+  private minIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO';
 
   constructor(
+    private readonly telemetryPrisma: TelemetryPrismaService,
     private readonly prisma: PrismaService,
-    private readonly sseHub: SSEHubService
+    private readonly sseHub: SSEHubService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     // 启动 1000ms 定时刷新队列，批量落库 SQLite
     this.flushTimer = setInterval(() => {
       void this.flush();
     }, 1000);
+
+    if (this.settingsService) {
+      try {
+        const settings = await this.settingsService.getSettings();
+        if (settings.logsMinIngestLevel) {
+          this.minIngestLevel = settings.logsMinIngestLevel;
+        }
+      } catch {
+        // use default
+      }
+      this.settingsService.onSettingsChange((patch) => {
+        if (patch.logsMinIngestLevel) {
+          this.minIngestLevel = patch.logsMinIngestLevel;
+        }
+      });
+    }
+  }
+
+  getMinIngestLevel(): 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' {
+    return this.minIngestLevel;
+  }
+
+  setMinIngestLevel(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'): void {
+    this.minIngestLevel = level;
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -54,6 +90,10 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
    * 写入单条或批量日志到内存环形缓冲队列
    */
   enqueue(input: EnqueueLogInput): void {
+    if (LOG_LEVEL_SEVERITY[input.level] < LOG_LEVEL_SEVERITY[this.minIngestLevel]) {
+      return;
+    }
+
     const id = input.id || randomUUID();
     const createdAt = input.createdAt || new Date();
     const maskedMessage = maskSensitiveString(input.message).slice(0, 8192);
@@ -122,7 +162,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
     this.bufferBytes = 0;
 
     try {
-      await this.prisma.systemLog.createMany({
+      await this.telemetryPrisma.systemLog.createMany({
         data: toWrite
       });
     } catch (err) {
@@ -185,21 +225,45 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const [total, items] = await Promise.all([
-      this.prisma.systemLog.count({ where }),
-      this.prisma.systemLog.findMany({
+      this.telemetryPrisma.systemLog.count({ where }),
+      this.telemetryPrisma.systemLog.findMany({
         where,
         skip,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          node: { select: { id: true, name: true, serverHost: true } },
-          user: { select: { id: true, email: true, nickname: true } }
-        }
+        orderBy: { createdAt: 'desc' }
       })
     ]);
 
+    // 跨库关联数据回填（保留原返回给前端的 API 结构）
+    const nodeIds = [...new Set(items.map((i) => i.nodeId).filter((id): id is string => Boolean(id)))];
+    const userIds = [...new Set(items.map((i) => i.userId).filter((id): id is string => Boolean(id)))];
+
+    const [nodes, users] = await Promise.all([
+      nodeIds.length > 0
+        ? this.prisma.node.findMany({
+            where: { id: { in: nodeIds } },
+            select: { id: true, name: true, serverHost: true }
+          })
+        : [],
+      userIds.length > 0
+        ? this.prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, email: true, nickname: true }
+          })
+        : []
+    ]);
+
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      node: item.nodeId ? (nodeMap.get(item.nodeId) ?? null) : null,
+      user: item.userId ? (userMap.get(item.userId) ?? null) : null
+    }));
+
     return {
-      items,
+      items: enrichedItems,
       total,
       page,
       pageSize,
@@ -216,14 +280,14 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     const [totalLogs, errorCount24h, warnCount24h, recentLogs] = await Promise.all([
-      this.prisma.systemLog.count(),
-      this.prisma.systemLog.count({
+      this.telemetryPrisma.systemLog.count(),
+      this.telemetryPrisma.systemLog.count({
         where: { level: 'ERROR', createdAt: { gte: since } }
       }),
-      this.prisma.systemLog.count({
+      this.telemetryPrisma.systemLog.count({
         where: { level: 'WARN', createdAt: { gte: since } }
       }),
-      this.prisma.systemLog.findMany({
+      this.telemetryPrisma.systemLog.findMany({
         where: { createdAt: { gte: since } },
         select: { level: true, metadata: true, createdAt: true },
         orderBy: { createdAt: 'asc' }
@@ -298,7 +362,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
     // 1. 按保留天数清理
     if (retentionDays && retentionDays > 0) {
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const res = await this.prisma.systemLog.deleteMany({
+      const res = await this.telemetryPrisma.systemLog.deleteMany({
         where: { createdAt: { lt: cutoff } }
       });
       deletedCount += res.count;
@@ -306,11 +370,11 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
 
     // 2. 按最大条数上限清理
     if (maxRecords && maxRecords > 0) {
-      const currentTotal = await this.prisma.systemLog.count();
+      const currentTotal = await this.telemetryPrisma.systemLog.count();
       if (currentTotal > maxRecords) {
         const excess = currentTotal - maxRecords;
         // 查找第 excess 条日志的时间戳
-        const pivotLogs = await this.prisma.systemLog.findMany({
+        const pivotLogs = await this.telemetryPrisma.systemLog.findMany({
           select: { id: true, createdAt: true },
           orderBy: { createdAt: 'asc' },
           take: 1,
@@ -318,7 +382,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
         });
         if (pivotLogs.length > 0) {
           const pivotDate = pivotLogs[0].createdAt;
-          const res = await this.prisma.systemLog.deleteMany({
+          const res = await this.telemetryPrisma.systemLog.deleteMany({
             where: { createdAt: { lte: pivotDate } }
           });
           deletedCount += res.count;
@@ -358,7 +422,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
       ];
     }
 
-    const items = await this.prisma.systemLog.findMany({
+    const items = await this.telemetryPrisma.systemLog.findMany({
       where,
       take: 5000,
       orderBy: { createdAt: 'desc' }

@@ -124,7 +124,8 @@ RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked
     fi \
     && cd /out/server \
     && DATABASE_URL=file:/tmp/riri-build.db node node_modules/prisma/build/index.js generate \
-    && rm -f /tmp/riri-build.db \
+    && TELEMETRY_DATABASE_URL=file:/tmp/riri-telem-build.db node node_modules/prisma/build/index.js generate --schema=prisma/telemetry/schema.prisma \
+    && rm -f /tmp/riri-build.db /tmp/riri-telem-build.db \
     && rm -rf src tsconfig.json tsconfig.build.json nest-cli.json node_modules/.pnpm/node_modules \
     && rm -rf node_modules/typescript node_modules/@types/node \
     && rm -rf node_modules/.pnpm/typescript@* node_modules/.pnpm/@types+node@* \
@@ -180,6 +181,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
     DATABASE_URL=file:/app/data/riri.db \
+    TELEMETRY_DATABASE_URL=file:/app/data/telemetry.db \
     SINGBOX_BINARY_PATH=/usr/local/bin/sing-box \
     MIHOMO_BINARY_PATH=/usr/local/bin/mihomo
 

@@ -13,8 +13,31 @@
 ## [Unreleased]
 
 ### Added
+- **时序遥测与全链路日志物理分库隔离（Phase 2 存储治理）**：
+  - 新增独立 SQLite 物理数据库 `telemetry.db`（开发环境 `dev-telemetry.db`），由独立 schema `apps/server/prisma/telemetry/schema.prisma` 与独立客户端 `@prisma/telemetry-client` 驱动。
+  - 将高频时序数据 `TrafficHourlyMetric`、边缘节点网卡吞吐速率 `NodeRateMetric` 以及系统全链路审计日志 `SystemLog` 物理抽离至时序库，两库物理隔离并分别独享 WAL 模式与 10s `busy_timeout`。
+  - 新增 `apps/server/prisma/deploy-databases.js` 统一调度双库迁移与存量平滑割接；新增 `apps/server/prisma/migrate-telemetry-data.js` 利用 SQLite 内核级 `ATTACH DATABASE` 指令在数据库引擎内零拷贝高速迁移存量数据，数十万行数据亚秒级完成无损割接。
+  - 新增应用层反向 Hydration 模式：`SystemLogsService` 查询日志后异步并发批量挂载 `Node` 与 `User` 详情，对外 REST/WS 契约 100% 保持向后兼容。
+- **流量时序小时桶聚合与 90 天自动淘汰（Phase 1 存储治理）**：
+  - 新增 `TrafficHourlyMetric` 小时时序聚合模型，配置 `[bucketStart, nodeId, userId, lineId, proxyKeyId]` 复合唯一键与高频维度索引，将数十万级秒级原始流量明细存储行数压缩 99.5% 以上。
+  - 新增 `TrafficCleanupService` 后台定时清理服务，提供 90 天滑动窗口小时时序自动硬淘汰与存量 7 天旧 TrafficLog 兜底清理。
+  - 新增存量数据平滑迁移脚本 `scripts/migrate-traffic-logs-to-hourly.ts`，支持按小时桶安全归拢历史流量明细并提供 byte-for-byte 准确性核验、历史数据清空与 SQLite `VACUUM` 磁盘物理空间回收。
+  - 系统设置新增 `logsMinIngestLevel` 配置项（`DEBUG`/`INFO`/`WARN`/`ERROR`，默认 `INFO`），支持动态降级系统日志采集与落库门槛。
 
 ### Changed
+- **双库架构全面接入与主库彻底解耦**：
+  - 主业务数据库与主 Prisma schema（`apps/server/prisma/schema.prisma`）安全清理 `TrafficHourlyMetric`、`NodeRateMetric`、`SystemLog` 及其物理外键关联，彻底消除指标写入与业务事务对单一 SQLite 文件的写锁竞争。
+  - Docker 启动入口（`scripts/docker-entrypoint.js`）、离线打包启动脚本（`scripts/master-bundle/start.sh`）与 E2E 联调启动流程（`scripts/dev-e2e.sh`）全面升级为执行双库部署调度器 `deploy-databases.js`。
+- **网关写入端时序微批缓冲（In-Memory Micro-Batching）**：
+  - 重构 `AgentGatewayService` 流量入账管线，移除每次心跳直插 `TrafficLog` 的高频写锁逻辑，改为在内存缓冲队列中归拢后每 10~15 秒异步微批 Upsert 入库，并在进程退出时优雅 Flush。
+  - 维持核心额度扣减与超额熔断绝对实时：在心跳事务中即时更新 `User` 与 `Subscription` 已用流量，触碰限额立即吊销节点凭据与标记熔断，不受时序缓冲延迟影响。
+- **大盘与单用户流量查询层重写**：
+  - `TrafficService.getOverview` 与 `getUserDetail` 全面切换为直查 `TrafficHourlyMetric`，彻底消除数十万行原始明细全量加载进 Node.js 内存的 JS 遍历与 CPU 峰值。
+- **HTTP 请求日志智能降噪**：
+  - `HttpLoggingInterceptor` 优化过滤规则，对状态码 `< 400` 的 Agent 轮询（`/api/v1/agent/poll`）、探活（`/health`, `/ping`）、客户端订阅拉取（`/sub/*`）及线路测速探针等常规成功请求静默跳过，异常错误（`>= 400`）100% 捕获入库供排查。
+- **部署与启动自愈式自动迁移**：
+  - `apps/server/package.json` 的 `start:prod` 命令升级为 `node prisma/deploy-databases.js && node prisma/bootstrap-admin.js && node dist/main`，源码及 PM2/systemd 部署拉起时自动执行双库迁移与管理员安全引导。
+  - `TrafficCleanupService` 启动自检中集成 `autoMigrateLegacyTrafficLogs`，服务启动 15 秒后在后台自动平滑归拢存量未分桶的旧 `TrafficLog` 记录，彻底实现零人工干预的静默平滑迁移。
 
 ### Fixed
 

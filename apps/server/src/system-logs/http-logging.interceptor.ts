@@ -16,9 +16,33 @@ import { resolveClientIp } from '../common/auth-security';
 const IGNORED_PATHS = [
   '/api/v1/logs/stream',
   '/api/v1/logs/frontend',
-  '/api/docs',
-  '/health'
+  '/api/docs'
 ];
+
+/**
+ * 判断是否为高频低噪路径（探活、Agent 轮询、客户端订阅拉取、线路测速等）
+ * 成功请求（< 400）静默跳过，异常错误（>= 400）100% 记录以备排查
+ */
+export function isHighFrequencySilentPath(path: string): boolean {
+  return (
+    path === '/health' ||
+    path.startsWith('/health/') ||
+    path === '/ping' ||
+    path.startsWith('/ping/') ||
+    path === '/api/v1/health' ||
+    path.startsWith('/api/v1/health/') ||
+    path === '/api/v1/ping' ||
+    path.startsWith('/api/v1/ping/') ||
+    path === '/api/v1/agent/poll' ||
+    path.startsWith('/api/v1/agent/poll?') ||
+    path === '/agent/poll' ||
+    path.startsWith('/agent/poll?') ||
+    path.startsWith('/sub/') ||
+    path.startsWith('/api/v1/sub/') ||
+    path.startsWith('/api/v1/admin/lines/speedtest') ||
+    path.startsWith('/api/v1/lines/speedtest')
+  );
+}
 
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
@@ -35,7 +59,7 @@ export class HttpLoggingInterceptor implements NestInterceptor {
 
     const path = req.originalUrl || req.url;
 
-    // 忽略推流端点与高频探活，防止日志自循环死锁
+    // 忽略推流端点与文档，防止日志自循环死锁
     if (IGNORED_PATHS.some((ignored) => path.startsWith(ignored))) {
       return next.handle();
     }
@@ -59,6 +83,11 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const logRecord = (statusCode: number, err?: unknown) => {
       // 避免自查 GET /api/v1/logs* 请求在正常成功（< 400）时自我产生刷屏访问日志
       if (req.method === 'GET' && path.startsWith('/api/v1/logs') && statusCode < 400) {
+        return;
+      }
+
+      // 高频探活、轮询、订阅拉取与测速在正常成功（< 400）时静默跳过，异常（>= 400）100% 入库供排查
+      if (statusCode < 400 && isHighFrequencySilentPath(path)) {
         return;
       }
 

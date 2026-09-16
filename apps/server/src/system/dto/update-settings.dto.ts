@@ -402,6 +402,15 @@ export class UpdateSettingsDto {
   @Max(1000000)
   @IsOptional()
   logsMaxCount?: number;
+
+  @ApiPropertyOptional({
+    enum: ['DEBUG', 'INFO', 'WARN', 'ERROR'],
+    example: 'INFO',
+    description: '系统日志最低采集入库级别'
+  })
+  @IsIn(['DEBUG', 'INFO', 'WARN', 'ERROR'])
+  @IsOptional()
+  logsMinIngestLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 }
 
 export class ResetSettingsDto {

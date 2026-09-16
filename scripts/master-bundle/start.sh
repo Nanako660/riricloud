@@ -15,12 +15,13 @@ set -a
 set +a
 
 : "${DATABASE_URL:=file:./data/riri.db}"
+: "${TELEMETRY_DATABASE_URL:=file:./data/telemetry.db}"
 : "${PORT:=8080}"
 : "${AUTO_SEED:=false}"
 : "${RIRICLOUD_ENV:=production}"
 : "${RIRICLOUD_BINARY_DIR:=$PWD/binaries}"
 
-export DATABASE_URL PORT AUTO_SEED RIRICLOUD_ENV RIRICLOUD_BINARY_DIR
+export DATABASE_URL TELEMETRY_DATABASE_URL PORT AUTO_SEED RIRICLOUD_ENV RIRICLOUD_BINARY_DIR
 
 if ! node -e "require('./prisma/admin-bootstrap').validateJwtSecret(process.env.JWT_SECRET)"; then
   echo "JWT_SECRET 无效：必须提供至少 32 位的随机密钥（见 .env.example）" >&2
@@ -44,8 +45,14 @@ fi
 DATABASE_PATH="$(node -e "const value = process.argv[1].replace(/^file:/, '').split('?')[0]; console.log(value.startsWith('/') ? value : 'prisma/' + value);" "$DATABASE_URL")"
 mkdir -p "$(dirname "$DATABASE_PATH")"
 
-# 首启生成 Prisma client（目标平台引擎）并应用迁移
+TELEMETRY_PATH="$(node -e "const value = process.argv[1].replace(/^file:/, '').split('?')[0]; console.log(value.startsWith('/') ? value : 'prisma/telemetry/' + value);" "$TELEMETRY_DATABASE_URL")"
+mkdir -p "$(dirname "$TELEMETRY_PATH")"
+
+# 首启生成 Prisma client（目标平台引擎）并应用双库迁移
 node node_modules/prisma/build/index.js generate
+node node_modules/prisma/build/index.js generate --schema=prisma/telemetry/schema.prisma
+node node_modules/prisma/build/index.js migrate deploy --schema=prisma/telemetry/schema.prisma
+node prisma/migrate-telemetry-data.js
 node node_modules/prisma/build/index.js migrate deploy
 node prisma/bootstrap-admin.js
 

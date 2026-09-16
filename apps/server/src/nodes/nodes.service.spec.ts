@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgentGatewayService } from '../agent-gateway/agent-gateway.service';
 import { BinariesService } from '../binaries/binaries.service';
 import { BinariesInstallerService } from '../binaries/installer.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import { NodesService } from './nodes.service';
 
 describe('NodesService', () => {
@@ -12,9 +13,9 @@ describe('NodesService', () => {
   const nodeWithLines = { ...baseNode, entryLines: [], landingLines: [] };
   const prisma = {
     node: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), delete: jest.fn() },
-    systemLog: { create: jest.fn() },
     binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() }
   };
+  const systemLogsService = { enqueue: jest.fn() };
   const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
   const binaries = { resolveForNode: jest.fn() };
   const installer = {
@@ -28,6 +29,7 @@ describe('NodesService', () => {
       providers: [
         NodesService,
         { provide: PrismaService, useValue: prisma },
+        { provide: SystemLogsService, useValue: systemLogsService },
         { provide: AgentGatewayService, useValue: gateway },
         { provide: BinariesService, useValue: binaries },
         { provide: BinariesInstallerService, useValue: installer }
@@ -157,12 +159,12 @@ describe('NodesService', () => {
       })
     });
     expect(gateway.disconnectNode).toHaveBeenCalledWith(baseNode.id);
-    expect(prisma.systemLog.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+    expect(systemLogsService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
         nodeId: baseNode.id,
-        metadata: JSON.stringify({ nodeId: baseNode.id, operatorId: 'admin-1' })
+        metadata: { nodeId: baseNode.id, operatorId: 'admin-1' }
       })
-    });
+    );
   });
 
   it('本机节点禁止通过节点管理轮换 AgentToken', async () => {

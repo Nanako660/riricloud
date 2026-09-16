@@ -48,9 +48,10 @@ WEB_URL="${WEB_URL:-http://localhost:5173}"
 SERVER_ENV_FILE="${SERVER_ENV_FILE:-$ROOT/apps/server/.env}"
 # 不读取 apps/server/.env 中的 DATABASE_URL 作为默认值：该文件通常指向 dev.db，
 # 而手动启动的开发主控可能正持有该文件的 WAL 写锁。显式 DATABASE_URL/E2E_DATABASE_URL
-# 仍然优先，便于需要复用指定数据库的场景。
 E2E_DATABASE_URL="${E2E_DATABASE_URL:-${DATABASE_URL:-file:./dev-e2e.db}}"
 export DATABASE_URL="$E2E_DATABASE_URL"
+E2E_TELEMETRY_DATABASE_URL="${E2E_TELEMETRY_DATABASE_URL:-${TELEMETRY_DATABASE_URL:-file:./dev-e2e-telemetry.db}}"
+export TELEMETRY_DATABASE_URL="$E2E_TELEMETRY_DATABASE_URL"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" ADMIN_EMAIL)}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-${SEED_ADMIN_EMAIL:-$(read_dotenv_value "$SERVER_ENV_FILE" SEED_ADMIN_EMAIL)}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@riricloud.local}"
@@ -402,11 +403,13 @@ if [ "$SERVER_REUSE_ALLOWED" = "1" ] && server_up; then
   SERVER_ALREADY_UP=1
   say "主控端已在 $SERVER_URL 运行，跳过数据库迁移并直接复用"
 else
-  say "检查并应用数据库迁移（$E2E_DATABASE_URL）…"
+  say "检查并应用数据库迁移（$E2E_DATABASE_URL / $E2E_TELEMETRY_DATABASE_URL）…"
+  TELEMETRY_DATABASE_URL="$E2E_TELEMETRY_DATABASE_URL" pnpm --dir apps/server exec prisma migrate deploy --schema=prisma/telemetry/schema.prisma || die "观测库迁移失败"
+  DATABASE_URL="$E2E_DATABASE_URL" TELEMETRY_DATABASE_URL="$E2E_TELEMETRY_DATABASE_URL" node apps/server/prisma/migrate-telemetry-data.js || true
   DATABASE_URL="$E2E_DATABASE_URL" pnpm --dir apps/server exec prisma migrate deploy || die "数据库迁移失败；若你显式复用了 dev.db，请先停止占用该数据库的主控进程"
   if [ "$DB_WAS_PRESENT" = "0" ]; then
     say "初始化种子数据…"
-    DATABASE_URL="$E2E_DATABASE_URL" pnpm --dir apps/server exec prisma db seed || die "数据库种子失败"
+    DATABASE_URL="$E2E_DATABASE_URL" TELEMETRY_DATABASE_URL="$E2E_TELEMETRY_DATABASE_URL" pnpm --dir apps/server exec prisma db seed || die "数据库种子失败"
   fi
 fi
 
@@ -437,7 +440,7 @@ else
   for attempt in $(seq 1 "$SERVER_ATTEMPTS"); do
     rm -f apps/server/*.tsbuildinfo
     say "启动主控端（端口 $SERVER_PORT，日志：$LOG_DIR/server.log）…"
-    PORT="$SERVER_PORT" DATABASE_URL="$E2E_DATABASE_URL" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
+    PORT="$SERVER_PORT" DATABASE_URL="$E2E_DATABASE_URL" TELEMETRY_DATABASE_URL="$E2E_TELEMETRY_DATABASE_URL" STATS_API_LISTEN="${STATS_API_LISTEN:-}" pnpm dev:server >"$LOG_DIR/server.log" 2>&1 &
     SERVER_PID=$!
     SERVER_EADDRINUSE=0
     for _ in $(seq 1 60); do

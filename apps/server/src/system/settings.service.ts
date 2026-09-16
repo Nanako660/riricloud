@@ -74,7 +74,8 @@ export const SETTING_KEYS = {
   TURNSTILE_SITE_KEY: 'turnstileSiteKey',
   TURNSTILE_SECRET_KEY: 'turnstileSecretKey',
   LOGS_RETENTION_DAYS: 'logsRetentionDays',
-  LOGS_MAX_COUNT: 'logsMaxCount'
+  LOGS_MAX_COUNT: 'logsMaxCount',
+  LOGS_MIN_INGEST_LEVEL: 'logsMinIngestLevel'
 } as const;
 
 export interface SystemSettings {
@@ -135,6 +136,7 @@ export interface SystemSettings {
   turnstileSecretKey: string;
   logsRetentionDays: number;
   logsMaxCount: number;
+  logsMinIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 }
 
 export type SystemSettingsPatch = {
@@ -232,7 +234,8 @@ export const DEFAULTS: SystemSettings = {
   turnstileSiteKey: '',
   turnstileSecretKey: '',
   logsRetentionDays: 7,
-  logsMaxCount: 100000
+  logsMaxCount: 100000,
+  logsMinIngestLevel: 'INFO'
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -292,7 +295,8 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   turnstileSiteKey: 'Cloudflare Turnstile Site Key',
   turnstileSecretKey: 'Cloudflare Turnstile Secret Key',
   logsRetentionDays: '系统日志保留天数',
-  logsMaxCount: '系统日志最大保留条数'
+  logsMaxCount: '系统日志最大保留条数',
+  logsMinIngestLevel: '系统日志最低采集入库级别'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -381,7 +385,8 @@ export class SettingsService {
       turnstileSiteKey: this.readString(map, 'turnstileSiteKey'),
       turnstileSecretKey: this.readString(map, 'turnstileSecretKey'),
       logsRetentionDays: this.readInteger(map, 'logsRetentionDays', 1, 365),
-      logsMaxCount: this.readInteger(map, 'logsMaxCount', 1000, 1000000)
+      logsMaxCount: this.readInteger(map, 'logsMaxCount', 1000, 1000000),
+      logsMinIngestLevel: this.readEnum(map, 'logsMinIngestLevel', ['DEBUG', 'INFO', 'WARN', 'ERROR'])
     };
   }
 

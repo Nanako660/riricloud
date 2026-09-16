@@ -22,8 +22,9 @@
   },
   "scripts": {
     "prepare": "husky",
-    "setup": "pnpm install && pnpm --filter @riricloud/server exec prisma migrate dev && pnpm --filter @riricloud/server exec prisma db seed",
+    "setup": "pnpm install && pnpm --filter @riricloud/server prisma:telemetry:deploy && pnpm --filter @riricloud/server exec prisma migrate dev && pnpm --filter @riricloud/server exec prisma db seed",
     "dev:server": "pnpm --filter @riricloud/server start:dev",
+    "start:server": "pnpm --filter @riricloud/server start:prod",
     "dev:web": "pnpm --filter @riricloud/web dev",
     "build": "pnpm --filter @riricloud/server build && pnpm --filter @riricloud/web build && bash scripts/build-agent.sh",
     "build:agent": "bash scripts/build-agent.sh",

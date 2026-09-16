@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { createDateInTimezone } from '../common/traffic-reset';
 import { TrafficService } from './traffic.service';
 
@@ -8,7 +9,10 @@ describe('TrafficService', () => {
     trafficLog: { findMany: jest.fn() },
     line: { findMany: jest.fn(), count: jest.fn() },
     user: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    node: { findMany: jest.fn() },
+    node: { findMany: jest.fn() }
+  };
+  const telemetryPrisma = {
+    trafficHourlyMetric: { findMany: jest.fn() },
     nodeRateMetric: { findMany: jest.fn() }
   };
   let service: TrafficService;
@@ -16,13 +20,17 @@ describe('TrafficService', () => {
   beforeAll(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-09-02T12:34:00Z'));
-    service = new TrafficService(prisma as unknown as PrismaService);
+    service = new TrafficService(
+      prisma as unknown as PrismaService,
+      telemetryPrisma as unknown as TelemetryPrismaService
+    );
   });
 
   afterAll(() => jest.useRealTimers());
 
   beforeEach(() => {
     jest.clearAllMocks();
+    telemetryPrisma.trafficHourlyMetric.findMany.mockResolvedValue([]);
     prisma.trafficLog.findMany.mockResolvedValue([]);
     prisma.line.findMany.mockResolvedValue([]);
     prisma.line.count.mockResolvedValue(0);
@@ -30,7 +38,7 @@ describe('TrafficService', () => {
     prisma.user.findMany.mockResolvedValue([]);
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.node.findMany.mockResolvedValue([]);
-    prisma.nodeRateMetric.findMany.mockResolvedValue([]);
+    telemetryPrisma.nodeRateMetric.findMany.mockResolvedValue([]);
   });
 
   const line = (overrides: Record<string, unknown> = {}) => ({
@@ -63,6 +71,29 @@ describe('TrafficService', () => {
     expect(result.summary).toMatchObject({ totalUpload: 150, totalDownload: 350, totalPhysical: 500, totalBilled: 800, activeLinesCount: 2, activeUsersCount: 2 });
     expect(result.lineRankings.map((item) => item.lineName)).toEqual(['香港 Premium', '日本 CN2']);
     expect(result.lineRankings.map((item) => item.percentage)).toEqual([80, 20]);
+  });
+
+  it('优先使用 TrafficHourlyMetric 小时表进行统计与分桶', async () => {
+    prisma.line.count.mockResolvedValue(2);
+    prisma.user.count.mockResolvedValue(3);
+    prisma.line.findMany.mockResolvedValue([
+      line(),
+      line({ id: 'line-2', name: '日本 CN2', trafficRate: 2 })
+    ]);
+    telemetryPrisma.trafficHourlyMetric.findMany.mockResolvedValue([
+      { nodeId: 'node-1', userId: 'user-1', lineId: 'line-1', upload: 200n, download: 600n, billedBytes: 1200n, bucketStart: localDay(1, 0) },
+      { nodeId: 'node-1', userId: 'user-2', lineId: 'line-2', upload: 100n, download: 100n, billedBytes: 400n, bucketStart: localDay(3, 0) }
+    ]);
+
+    const result = await service.getOverview('today');
+
+    expect(telemetryPrisma.trafficHourlyMetric.findMany).toHaveBeenCalled();
+    expect(prisma.trafficLog.findMany).not.toHaveBeenCalled();
+    expect(result.bucketType).toBe('hour');
+    expect(result.timeSeries).toHaveLength(24);
+    expect(result.timeSeries[1]).toMatchObject({ upload: 200, download: 600, total: 800, billedTotal: 1200 });
+    expect(result.timeSeries[3]).toMatchObject({ total: 200, billedTotal: 400 });
+    expect(result.summary).toMatchObject({ totalUpload: 300, totalDownload: 700, totalPhysical: 1000, totalBilled: 1600, activeLinesCount: 2, activeUsersCount: 2 });
   });
 
   it('按用户聚合多条线路流量，批量回填用户资料并计算倍率与占比', async () => {
@@ -129,7 +160,7 @@ describe('TrafficService', () => {
       { status: 'ONLINE', lastSeenAt: new Date('2026-09-02T12:33:59Z'), uploadRate: 1000, downloadRate: 2000 },
       { status: 'ONLINE', lastSeenAt: new Date('2026-09-02T12:30:00Z'), uploadRate: 9000, downloadRate: 9000 }
     ]);
-    prisma.nodeRateMetric.findMany.mockResolvedValue([
+    telemetryPrisma.nodeRateMetric.findMany.mockResolvedValue([
       { nodeId: 'node-1', bucketStart: new Date('2026-09-02T12:25:00Z'), sampleCount: 1, uploadRateSum: 100, downloadRateSum: 200, uploadRatePeak: 100, downloadRatePeak: 200 },
       { nodeId: 'node-1', bucketStart: new Date('2026-09-02T12:30:00Z'), sampleCount: 2, uploadRateSum: 200, downloadRateSum: 600, uploadRatePeak: 150, downloadRatePeak: 400 },
       { nodeId: 'node-2', bucketStart: new Date('2026-09-02T12:30:00Z'), sampleCount: 1, uploadRateSum: 300, downloadRateSum: 100, uploadRatePeak: 300, downloadRatePeak: 120 }

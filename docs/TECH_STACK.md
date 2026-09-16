@@ -87,7 +87,7 @@ Linux 开发机使用系统环境安装 Node.js、pnpm 与 Go，不在仓库内�
 - `github.com/gorilla/websocket`：工业级成熟稳定的 WebSocket 客户端实现。
 - `github.com/shirou/gopsutil/v3`：跨平台采集 Linux / Darwin / Windows 的 CPU、Memory、Disk、Net IO 指标。
 - `github.com/sirupsen/logrus` 或 `go.uber.org/zap`：结构化日志输出。
-- `google.golang.org/grpc` + `google.golang.org/protobuf`：访问 Sing-box `experimental.v2ray_api` 的本地 StatsService；仅携带最小生成客户端代码，不引入 V2Ray/Sing-box Go 运行时。
+- `google.golang.org/grpc` (v1.83.1) + `google.golang.org/protobuf`：访问 Sing-box `experimental.v2ray_api` 的本地 StatsService；仅携带最小生成客户端代码，不引入 V2Ray/Sing-box Go 运行时。
 - `github.com/spf13/cobra`：扁平一级子命令（`install`、`uninstall`、`start`、`stop`、`restart`、`status`、`doctor`、`logs`、`run`、`version`）。
 - `github.com/charmbracelet/bubbletea`：提供 raw mode、方向键事件、全屏备用缓冲区和异步命令消息循环；无参数运行时的 TUI 不依赖按行输入或数字菜单。
 - `github.com/kardianos/service`：封装 Linux systemd/OpenRC/SysVinit、Windows Service 和 macOS Launchd 的注册与控制。

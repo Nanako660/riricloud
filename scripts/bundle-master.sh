@@ -278,7 +278,7 @@ echo "  -> 生成内置二进制资源 manifest..."
 # 6. 固化 package.json 并生成 Prisma 引擎
 echo "  -> 固化 package.json 并生成 Prisma Client..."
 "$NODE_BIN" -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$(to_node_path "$MASTER_DIR/package.json")" "$VERSION"
-(cd "$MASTER_DIR" && "$NODE_BIN" node_modules/prisma/build/index.js generate >/dev/null)
+(cd "$MASTER_DIR" && "$NODE_BIN" node_modules/prisma/build/index.js generate >/dev/null && "$NODE_BIN" node_modules/prisma/build/index.js generate --schema=prisma/telemetry/schema.prisma >/dev/null)
 
 # 7. 打包为 tar.gz
 if [ "$DO_ARCHIVE" = "1" ]; then

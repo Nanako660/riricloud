@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestr
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { deepMerge, isUserEntitled } from '../common/utils';
 import {
   buildClientTls,
@@ -250,6 +251,21 @@ type RateMetricAggregate = {
   downloadRatePeak: number;
 };
 
+const TRAFFIC_HOURLY_BUCKET_MS = 60 * 60 * 1000;
+const TRAFFIC_HOURLY_FLUSH_INTERVAL_MS = 10_000;
+
+type TrafficHourlyBucketItem = {
+  id: string;
+  bucketStart: Date;
+  nodeId: string;
+  userId: string;
+  lineId: string;
+  proxyKeyId: string;
+  upload: bigint;
+  download: bigint;
+  billedBytes: bigint;
+};
+
 @Injectable()
 export class AgentService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
@@ -264,9 +280,11 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   private writeTail: Promise<void> = Promise.resolve();
   private writeQueueDepth = 0;
   private readonly rateMetricBuckets = new Map<string, RateMetricAggregate>();
+  private readonly trafficHourlyBuckets = new Map<string, TrafficHourlyBucketItem>();
   private configVersion = Date.now();
   private configPushTimer?: NodeJS.Timeout;
   private rateMetricFlushTimer?: NodeJS.Timeout;
+  private trafficHourlyFlushTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
   private nextRateMetricCleanupAt = 0;
   private trafficCounterResetCount = 0;
@@ -274,7 +292,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly settingsService?: SettingsService,
-    @Optional() private readonly systemLogsService?: SystemLogsService
+    @Optional() private readonly systemLogsService?: SystemLogsService,
+    @Optional() private readonly telemetryPrisma?: TelemetryPrismaService
   ) {
     if (this.settingsService) {
       this.settingsService.onSettingsChange((patch) => {
@@ -523,6 +542,16 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   ): Promise<{ reset: boolean; exhausted: boolean }> {
     let resetCount = 0;
     let exhaustedCount = 0;
+    const hourlyDeltas: Array<{
+      nodeId: string;
+      userId: string;
+      lineId: string;
+      proxyKeyId: string;
+      observedAt: Date;
+      upload: bigint;
+      download: bigint;
+      billedBytes: bigint;
+    }> = [];
     await this.prisma.$transaction(async (tx) => {
       const snapshotsByCredential = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
       for (const record of records) {
@@ -593,15 +622,6 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       });
       const cursorByCredential = new Map(cursors.map((item) => [item.credential, item]));
 
-      const logs: Array<{
-        nodeId: string;
-        userId: string;
-        lineId?: string;
-        proxyKeyId?: string;
-        upload: bigint;
-        download: bigint;
-        recordedAt: Date;
-      }> = [];
       const totalsByUser = new Map<string, bigint>();
       const totalsByProxyKey = new Map<string, bigint>();
       const cursorUpdates = new Map<string, { uploadTotal: bigint; downloadTotal: bigint }>();
@@ -638,16 +658,17 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         const targetLineId = activeLine?.id;
         const targetTrafficRate = activeLine?.trafficRate ?? 1;
 
-        logs.push({
+        const billedBytes = this.calculateBilledBytes(total, targetTrafficRate);
+        hourlyDeltas.push({
           nodeId,
           userId: targetUserId,
-          ...(targetLineId ? { lineId: targetLineId } : {}),
-          ...(proxyKey ? { proxyKeyId: proxyKey.id } : {}),
+          lineId: targetLineId ?? '',
+          proxyKeyId: proxyKey?.id ?? '',
+          observedAt,
           upload,
           download,
-          recordedAt: observedAt
+          billedBytes
         });
-        const billedBytes = this.calculateBilledBytes(total, targetTrafficRate);
         totalsByUser.set(targetUserId, (totalsByUser.get(targetUserId) ?? 0n) + billedBytes);
         if (proxyKey) {
           totalsByProxyKey.set(proxyKey.id, (totalsByProxyKey.get(proxyKey.id) ?? 0n) + billedBytes);
@@ -698,9 +719,6 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           }
         }
       }
-      if (logs.length) {
-        await tx.trafficLog.createMany({ data: logs });
-      }
       const subscriptionTotals = new Map<string, bigint>();
       for (const [userId, total] of totalsByUser) {
         const subscriptionId = subscriptionByUser.get(userId);
@@ -720,6 +738,20 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         if (quota.used + billed >= quota.limit) exhaustedCount += 1;
       }
     });
+
+    for (const delta of hourlyDeltas) {
+      this.accumulateTrafficHourlyMetric(
+        delta.nodeId,
+        delta.userId,
+        delta.lineId,
+        delta.proxyKeyId,
+        delta.observedAt,
+        delta.upload,
+        delta.download,
+        delta.billedBytes
+      );
+    }
+
     return { reset: resetCount > 0, exhausted: exhaustedCount > 0 };
   }
 
@@ -836,9 +868,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (!this.rateMetricBuckets.size) return;
     const batches = [...this.rateMetricBuckets.values()];
     this.rateMetricBuckets.clear();
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
     try {
       await this.enqueueAgentWrite('rate-metrics', async () => {
-        await this.prisma.$transaction(async (tx) => {
+        await telemetryClient.$transaction(async (tx) => {
           const delegate = (tx as unknown as { nodeRateMetric?: NodeRateMetricDelegate }).nodeRateMetric;
           if (!delegate) return;
           for (const item of batches) {
@@ -862,6 +895,98 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       }
       throw error;
     }
+  }
+
+  private accumulateTrafficHourlyMetric(
+    nodeId: string,
+    userId: string,
+    lineId: string,
+    proxyKeyId: string,
+    observedAt: Date,
+    upload: bigint,
+    download: bigint,
+    billedBytes: bigint
+  ): void {
+    const bucketStart = new Date(Math.floor(observedAt.getTime() / TRAFFIC_HOURLY_BUCKET_MS) * TRAFFIC_HOURLY_BUCKET_MS);
+    const key = `${bucketStart.getTime()}:${nodeId}:${userId}:${lineId}:${proxyKeyId}`;
+    const existing = this.trafficHourlyBuckets.get(key);
+    if (existing) {
+      existing.upload += upload;
+      existing.download += download;
+      existing.billedBytes += billedBytes;
+    } else {
+      this.trafficHourlyBuckets.set(key, {
+        id: randomUUID(),
+        bucketStart,
+        nodeId,
+        userId,
+        lineId,
+        proxyKeyId,
+        upload,
+        download,
+        billedBytes
+      });
+    }
+    if (!this.trafficHourlyFlushTimer) {
+      this.trafficHourlyFlushTimer = setTimeout(() => {
+        this.trafficHourlyFlushTimer = undefined;
+        void this.flushTrafficHourlyMetrics().catch((err) => this.logger.warn(`traffic hourly metric flush failed: ${err}`));
+      }, TRAFFIC_HOURLY_FLUSH_INTERVAL_MS);
+      this.trafficHourlyFlushTimer.unref?.();
+    }
+  }
+
+  async flushTrafficHourlyMetrics(): Promise<void> {
+    if (!this.trafficHourlyBuckets.size) return;
+    const batches = [...this.trafficHourlyBuckets.values()];
+    this.trafficHourlyBuckets.clear();
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
+    try {
+      await this.enqueueAgentWrite('traffic-hourly-metrics', async () => {
+        await telemetryClient.$transaction(async (tx) => {
+          for (const item of batches) {
+            await tx.$executeRawUnsafe(
+              `INSERT INTO "TrafficHourlyMetric" (
+                "id", "bucketStart", "nodeId", "userId", "lineId", "proxyKeyId",
+                "upload", "download", "billedBytes", "createdAt", "updatedAt"
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              ON CONFLICT("bucketStart", "nodeId", "userId", "lineId", "proxyKeyId")
+              DO UPDATE SET
+                "upload" = "TrafficHourlyMetric"."upload" + excluded."upload",
+                "download" = "TrafficHourlyMetric"."download" + excluded."download",
+                "billedBytes" = "TrafficHourlyMetric"."billedBytes" + excluded."billedBytes",
+                "updatedAt" = CURRENT_TIMESTAMP`,
+              item.id,
+              item.bucketStart.toISOString(),
+              item.nodeId,
+              item.userId,
+              item.lineId,
+              item.proxyKeyId,
+              item.upload.toString(),
+              item.download.toString(),
+              item.billedBytes.toString()
+            );
+          }
+        });
+      });
+    } catch (error) {
+      for (const item of batches) {
+        const key = `${item.bucketStart.getTime()}:${item.nodeId}:${item.userId}:${item.lineId}:${item.proxyKeyId}`;
+        const existing = this.trafficHourlyBuckets.get(key);
+        if (!existing) {
+          this.trafficHourlyBuckets.set(key, item);
+        } else {
+          existing.upload += item.upload;
+          existing.download += item.download;
+          existing.billedBytes += item.billedBytes;
+        }
+      }
+      throw error;
+    }
+  }
+
+  getBufferedTrafficHourlyMetrics(): TrafficHourlyBucketItem[] {
+    return [...this.trafficHourlyBuckets.values()];
   }
 
   private async batchIncrement(
@@ -1009,7 +1134,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
 
   // 低频清理历史速率桶，避免每个心跳都在写事务中扫描和删除历史数据。
   async cleanupOldRateMetrics(): Promise<void> {
-    const delegate = (this.prisma as unknown as { nodeRateMetric?: NodeRateMetricRootDelegate }).nodeRateMetric;
+    const telemetryClient = this.telemetryPrisma ?? (this.prisma as unknown as TelemetryPrismaService);
+    const delegate = (telemetryClient as unknown as { nodeRateMetric?: NodeRateMetricRootDelegate }).nodeRateMetric;
     if (!delegate) return;
     const now = Date.now();
     if (now < this.nextRateMetricCleanupAt) return;
@@ -2223,7 +2349,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     }
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy(): Promise<void> {
     if (this.configPushTimer) clearTimeout(this.configPushTimer);
     this.configPushWaiters.splice(0).forEach((waiter) => waiter(0));
     for (const [, socket] of this.sockets) {
@@ -2238,8 +2364,20 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     this.versionConfirmations.clear();
     for (const timer of this.heartbeatRetryTimers.values()) clearTimeout(timer);
     this.heartbeatRetryTimers.clear();
+    if (this.rateMetricFlushTimer) {
+      clearTimeout(this.rateMetricFlushTimer);
+      this.rateMetricFlushTimer = undefined;
+    }
+    if (this.trafficHourlyFlushTimer) {
+      clearTimeout(this.trafficHourlyFlushTimer);
+      this.trafficHourlyFlushTimer = undefined;
+    }
+    await Promise.allSettled([
+      this.flushRateMetrics(),
+      this.flushTrafficHourlyMetrics()
+    ]);
     this.rateMetricBuckets.clear();
-    if (this.rateMetricFlushTimer) clearTimeout(this.rateMetricFlushTimer);
+    this.trafficHourlyBuckets.clear();
   }
 }
 
