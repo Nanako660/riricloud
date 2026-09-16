@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.15] - 2026-09-17
+
+### Added
 - **时序遥测与全链路日志物理分库隔离（Phase 2 存储治理）**：
   - 新增独立 SQLite 物理数据库 `telemetry.db`（开发环境 `dev-telemetry.db`），由独立 schema `apps/server/prisma/telemetry/schema.prisma` 与独立客户端 `@prisma/telemetry-client` 驱动。
   - 将高频时序数据 `TrafficHourlyMetric`、边缘节点网卡吞吐速率 `NodeRateMetric` 以及系统全链路审计日志 `SystemLog` 物理抽离至时序库，两库物理隔离并分别独享 WAL 模式与 10s `busy_timeout`。
@@ -39,7 +48,6 @@
   - `apps/server/package.json` 的 `start:prod` 命令升级为 `node prisma/deploy-databases.js && node prisma/bootstrap-admin.js && node dist/main`，源码及 PM2/systemd 部署拉起时自动执行双库迁移与管理员安全引导。
   - `TrafficCleanupService` 启动自检中集成 `autoMigrateLegacyTrafficLogs`，服务启动 15 秒后在后台自动平滑归拢存量未分桶的旧 `TrafficLog` 记录，彻底实现零人工干预的静默平滑迁移。
 
-### Fixed
 
 
 ## [0.8.14] - 2026-09-14
