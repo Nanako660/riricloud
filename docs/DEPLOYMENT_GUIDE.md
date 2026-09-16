@@ -37,13 +37,11 @@ pnpm --filter @riricloud/server exec prisma migrate dev
 pnpm --filter @riricloud/web build
 pnpm --filter @riricloud/server build
 
-# 4. 生产迁移后启动（web 构建产物由 server 托管）
-pnpm --filter @riricloud/server exec prisma migrate deploy
-pnpm --filter @riricloud/server exec node prisma/bootstrap-admin.js
+# 4. 生产启动（web 构建产物由 server 托管，启动时自动应用数据库迁移与管理员引导）
 pnpm --filter @riricloud/server start:prod
 ```
 
-> 源码方式下请先在当前 shell 或 `apps/server/.env` 设置强随机 `JWT_SECRET` 与首次启动所需的 `ADMIN_EMAIL`、`ADMIN_PASSWORD`；`start:prod` 会探测并托管 `apps/web/dist`（monorepo 布局自动命中）。`prisma migrate deploy` 与 `bootstrap-admin.js` 不可省略，已有管理员时 bootstrap 会安全跳过。
+> 源码方式下请先在当前 shell 或 `apps/server/.env` 设置强随机 `JWT_SECRET` 与首次启动所需的 `ADMIN_EMAIL`、`ADMIN_PASSWORD`；`start:prod` 会自动先行执行 `prisma migrate deploy` 与 `bootstrap-admin.js`，已有管理员时安全跳过；服务启动 15 秒后 `TrafficCleanupService` 还会自动在后台平滑归拢存量未聚合的历史流量明细。`start:prod` 同时会探测并托管 `apps/web/dist`（monorepo 布局自动命中）。
 
 根目录 `pnpm build` 可一次构建三端：Server 输出保留在 `apps/server/dist/`，Web 输出保留在 `apps/web/dist/`，当前平台 Agent 输出到 `artifacts/dev/agent/<os>-<arch>/riri-agent[.exe]`。其中两个 `dist/` 是框架和运行时的约定目录，不与可分发二进制产物混放。
 

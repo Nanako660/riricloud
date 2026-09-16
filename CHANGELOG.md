@@ -27,6 +27,9 @@
   - `TrafficService.getOverview` 与 `getUserDetail` 全面切换为直查 `TrafficHourlyMetric`，彻底消除数十万行原始明细全量加载进 Node.js 内存的 JS 遍历与 CPU 峰值。
 - **HTTP 请求日志智能降噪**：
   - `HttpLoggingInterceptor` 优化过滤规则，对状态码 `< 400` 的 Agent 轮询（`/api/v1/agent/poll`）、探活（`/health`, `/ping`）、客户端订阅拉取（`/sub/*`）及线路测速探针等常规成功请求静默跳过，异常错误（`>= 400`）100% 捕获入库供排查。
+- **部署与启动自愈式自动迁移**：
+  - `apps/server/package.json` 的 `start:prod` 命令升级为 `prisma migrate deploy && node prisma/bootstrap-admin.js && node dist/main`，源码及 PM2/systemd 部署拉起时自动执行结构迁移与管理员安全引导。
+  - `TrafficCleanupService` 启动自检中集成 `autoMigrateLegacyTrafficLogs`，服务启动 15 秒后在后台自动平滑归拢存量未分桶的旧 `TrafficLog` 记录，彻底实现零人工干预的静默平滑迁移。
 
 ### Fixed
 

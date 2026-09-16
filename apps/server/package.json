@@ -6,7 +6,7 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "prisma migrate deploy && node prisma/bootstrap-admin.js && node dist/main",
     "lint": "eslint .",
     "test": "jest",
     "postinstall": "prisma generate",
