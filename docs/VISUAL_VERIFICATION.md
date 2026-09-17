@@ -133,8 +133,11 @@ flowchart TD
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 | `apps/web/src/pages/admin/logs/**` | `UI-32` | **增量** |
+
 | `apps/web/src/pages/admin/mirrors/**` | `UI-34` | **增量** |
 | `apps/web/src/pages/user/proxy-pool/**` | `UI-35` | **增量** |
+
+> **2026-09-17 增量台账**：本次新增节点详情 Sing-box 诊断卡片与系统日志真实级别/重复次数展示，增量走查范围为 `UI-05`~`UI-10`、`UI-32`。需在 Antigravity 中覆盖 Light/Dark、`1440x900`、`375x812`、`768x1024`，检查开启确认弹窗、剩余时间、停止/离线/不支持/下发中/自动过期状态，以及日志表格的 `xN` 徽标和说明文案。当前实现未将视觉检查接入 CI 或 Git Hook。
 
 ---
 

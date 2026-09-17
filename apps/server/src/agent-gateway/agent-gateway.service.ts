@@ -28,7 +28,7 @@ import {
   INTERNAL_SPEEDTEST_UUID,
   type ProtocolType
 } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type TunnelConfigPayload, type TunnelPortMapping, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type SingboxLogCaptureLevel, type TunnelConfigPayload, type TunnelPortMapping, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
@@ -228,6 +228,12 @@ type VersionConfirmation = {
 // 单节点注入的直连代理池凭据上限：约束入站用户列表与白名单路由规则的配置体量
 const PROXY_POOL_KEYS_PER_NODE_LIMIT = 512;
 
+const SINGBOX_DIAGNOSTIC_DURATION_MS = 30 * 60 * 1000;
+const SINGBOX_DIAGNOSTIC_SWEEP_INTERVAL_MS = 30 * 1000;
+const SINGBOX_LOG_CAPTURE_CAPABILITY = 'singbox_log_capture';
+const SINGBOX_LOG_MODES = ['NORMAL', 'INFO', 'DEBUG'] as const;
+type SingboxLogMode = (typeof SINGBOX_LOG_MODES)[number];
+
 // 直连代理池凭据用户名前缀，用于在流量快照中快速识别并跳过无关查询
 const PROXY_KEY_USERNAME_PREFIX = 'pk_';
 
@@ -285,6 +291,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   private configPushTimer?: NodeJS.Timeout;
   private rateMetricFlushTimer?: NodeJS.Timeout;
   private trafficHourlyFlushTimer?: NodeJS.Timeout;
+  private singboxDiagnosticTimer?: NodeJS.Timeout;
   private configPushWaiters: Array<(count: number) => void> = [];
   private nextRateMetricCleanupAt = 0;
   private trafficCounterResetCount = 0;
@@ -499,6 +506,13 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
 
   // 主控重启后恢复升级版本对账窗口；节点已在重启前上报目标版本的条目不恢复。
   async onModuleInit(): Promise<void> {
+    this.singboxDiagnosticTimer = setInterval(() => {
+      void this.expireSingboxDiagnostics().catch((error) => {
+        this.logger.warn(`sing-box diagnostic expiry sweep failed: ${error}`);
+      });
+    }, SINGBOX_DIAGNOSTIC_SWEEP_INTERVAL_MS);
+    this.singboxDiagnosticTimer.unref?.();
+
     const delegate = this.deploymentTasks();
     if (!delegate) return;
     const since = new Date(Date.now() - UPGRADE_VERSION_CONFIRM_RETENTION_MS);
@@ -1164,7 +1178,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     this.supersedeSocket(auth.nodeId);
     await this.handleHeartbeat(auth.nodeId, data, 'HTTP');
     if (data.logs && data.logs.length > 0) {
-      this.handleLogReport(auth.nodeId, { logs: data.logs });
+      await this.handleLogReport(auth.nodeId, { logs: data.logs });
     }
     for (const result of data.configApplyResults ?? []) {
       await this.handleConfigApplyResult(auth.nodeId, result);
@@ -1192,6 +1206,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       needUpdate,
       version: desired.version,
       singboxConfig: needUpdate ? desired.singboxConfig : null,
+      singboxLogCaptureLevel: desired.singboxLogCaptureLevel,
       tasks: await this.takePendingTasks(auth.nodeId),
       nextPollSecs
     };
@@ -1318,18 +1333,131 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     });
   }
 
-  handleLogReport(nodeId: string, data: LogReportData): void {
-    if (!this.systemLogsService || !data?.logs) return;
+  async handleLogReport(nodeId: string, data: LogReportData): Promise<void> {
+    if (!this.systemLogsService || !data?.logs?.length) return;
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      select: { singboxLogMode: true, singboxLogModeUntil: true }
+    });
+    if (!node) return;
+    const mode = this.resolveSingboxLogMode(node.singboxLogMode, node.singboxLogModeUntil);
+    const captureLevel = this.captureLevelForMode(mode);
+    const minimumSeverity = this.logSeverity(captureLevel);
+
     for (const item of data.logs) {
+      const source = item.source === 'SINGBOX' ? 'SINGBOX' : 'AGENT';
+      const itemSeverity = this.logSeverity(item.level);
+      const isSingbox = source === 'SINGBOX';
+      const isAccess = Boolean(item.metadata && typeof item.metadata === 'object' && item.metadata.category === 'ACCESS');
+      if (isSingbox && (itemSeverity < minimumSeverity || (mode === 'NORMAL' && isAccess))) {
+        continue;
+      }
       this.systemLogsService.enqueue({
         nodeId,
-        source: item.source || 'AGENT',
+        source,
         level: item.level,
         module: item.module || 'Agent',
         message: item.message,
-        metadata: item.metadata
+        metadata: item.metadata,
+        // 诊断动作是管理员显式开启的，仅允许该节点的 Sing-box 日志绕过全局门槛。
+        bypassMinIngestLevel: isSingbox && mode !== 'NORMAL'
       });
     }
+  }
+
+  private logSeverity(level: string): number {
+    return { DEBUG: 10, INFO: 20, WARN: 30, ERROR: 40 }[level] ?? 0;
+  }
+
+  private resolveSingboxLogMode(mode: string | null | undefined, until: Date | null | undefined): SingboxLogMode {
+    if (!mode || mode === 'NORMAL') return 'NORMAL';
+    if (!until || until.getTime() <= Date.now()) return 'NORMAL';
+    return SINGBOX_LOG_MODES.includes(mode as SingboxLogMode) ? mode as SingboxLogMode : 'NORMAL';
+  }
+
+  private captureLevelForMode(mode: SingboxLogMode): SingboxLogCaptureLevel {
+    return mode === 'NORMAL' ? 'WARN' : mode;
+  }
+
+  private async expireSingboxDiagnostics(): Promise<void> {
+    const now = new Date();
+    const expired = await this.prisma.node.findMany({
+      where: {
+        singboxLogMode: { in: ['INFO', 'DEBUG'] },
+        singboxLogModeUntil: { lte: now }
+      },
+      select: { id: true, name: true }
+    });
+    if (!expired.length) return;
+    await this.enqueueAgentWrite('singbox-log-diagnostic-expire', () => this.prisma.node.updateMany({
+      where: {
+        id: { in: expired.map((node) => node.id) },
+        singboxLogMode: { in: ['INFO', 'DEBUG'] },
+        singboxLogModeUntil: { lte: now }
+      },
+      data: { singboxLogMode: 'NORMAL', singboxLogModeUntil: null }
+    }));
+    for (const node of expired) {
+      this.configCache.delete(node.id);
+      void this.pushConfig(node.id);
+      this.systemLogsService?.enqueue({
+        nodeId: node.id,
+        source: 'SERVER',
+        level: 'INFO',
+        module: 'NodeDiagnostics',
+        message: `节点 ${node.name} 的 Sing-box 诊断日志已自动过期并恢复 NORMAL`,
+        metadata: { reason: 'expired' }
+      });
+    }
+  }
+
+  async enableSingboxLogDiagnostics(nodeId: string, level: Exclude<SingboxLogMode, 'NORMAL'>, operatorId?: string) {
+    if (!['INFO', 'DEBUG'].includes(level)) throw new ConflictException('诊断日志级别无效');
+    const node = await this.prisma.node.findUnique({
+      where: { id: nodeId },
+      select: { id: true, name: true, status: true, capabilitiesJson: true }
+    });
+    if (!node) throw new NotFoundException('节点不存在');
+    if (node.status !== 'ONLINE') throw new ConflictException('仅在线节点支持临时诊断日志');
+    if (!this.parseCapabilities(node.capabilitiesJson).includes(SINGBOX_LOG_CAPTURE_CAPABILITY)) {
+      throw new ConflictException('节点 Agent 不支持诊断日志，请先升级 Agent');
+    }
+    const expiresAt = new Date(Date.now() + SINGBOX_DIAGNOSTIC_DURATION_MS);
+    await this.enqueueAgentWrite('singbox-log-diagnostic-enable', () => this.prisma.node.update({
+      where: { id: nodeId },
+      data: { singboxLogMode: level, singboxLogModeUntil: expiresAt }
+    }));
+    this.configCache.delete(nodeId);
+    const requested = await this.pushConfig(nodeId);
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'SERVER',
+      level: 'INFO',
+      module: 'NodeDiagnostics',
+      message: `节点 ${node.name} 已开启 Sing-box ${level} 诊断日志`,
+      metadata: { level, expiresAt: expiresAt.toISOString(), requested, operatorId: operatorId ?? null }
+    });
+    return { nodeId, enabled: true, level, expiresAt: expiresAt.toISOString(), requested };
+  }
+
+  async disableSingboxLogDiagnostics(nodeId: string, operatorId?: string) {
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId }, select: { id: true, name: true } });
+    if (!node) throw new NotFoundException('节点不存在');
+    await this.enqueueAgentWrite('singbox-log-diagnostic-disable', () => this.prisma.node.update({
+      where: { id: nodeId },
+      data: { singboxLogMode: 'NORMAL', singboxLogModeUntil: null }
+    }));
+    this.configCache.delete(nodeId);
+    const requested = await this.pushConfig(nodeId);
+    this.systemLogsService?.enqueue({
+      nodeId,
+      source: 'SERVER',
+      level: 'INFO',
+      module: 'NodeDiagnostics',
+      message: `节点 ${node.name} 已关闭 Sing-box 诊断日志`,
+      metadata: { requested, operatorId: operatorId ?? null }
+    });
+    return { nodeId, enabled: false, level: 'NORMAL', expiresAt: null, requested };
   }
 
   // Line 自己拥有协议与端点：同一条 Line 在出口节点生成协议入站，
@@ -1737,7 +1865,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     }
 
     let singboxConfig: Record<string, unknown> = {
-      log: { level: 'info', timestamp: true },
+      log: { level: 'warn', timestamp: true },
       inbounds,
       outbounds,
       experimental: {
@@ -1755,7 +1883,19 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (node.configOverride) {
       singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
     }
-    return { version: ++this.configVersion, singboxConfig, tunnelConfigs };
+    const logMode = this.resolveSingboxLogMode(node.singboxLogMode, node.singboxLogModeUntil);
+    if (logMode !== 'NORMAL') {
+      const logConfig = (singboxConfig.log && typeof singboxConfig.log === 'object' && !Array.isArray(singboxConfig.log))
+        ? singboxConfig.log as Record<string, unknown>
+        : {};
+      singboxConfig.log = { ...logConfig, level: logMode.toLowerCase() };
+    }
+    return {
+      version: ++this.configVersion,
+      singboxConfig,
+      singboxLogCaptureLevel: this.captureLevelForMode(logMode),
+      tunnelConfigs
+    };
   }
 
   private buildLineParams(line: {
@@ -1798,7 +1938,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       .slice(0, PROXY_POOL_KEYS_PER_NODE_LIMIT);
   }
 
-  private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {    const cached = this.configCache.get(nodeId);
+  private async getDesiredConfigSync(nodeId: string): Promise<ConfigSyncData> {
+    const cached = this.configCache.get(nodeId);
     if (cached) return cached;
     const payload = await this.buildConfigSync(nodeId);
     this.configCache.set(nodeId, payload);
@@ -2351,6 +2492,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
 
   async onModuleDestroy(): Promise<void> {
     if (this.configPushTimer) clearTimeout(this.configPushTimer);
+    if (this.singboxDiagnosticTimer) clearInterval(this.singboxDiagnosticTimer);
     this.configPushWaiters.splice(0).forEach((waiter) => waiter(0));
     for (const [, socket] of this.sockets) {
       socket.close(1001, 'server shutdown');

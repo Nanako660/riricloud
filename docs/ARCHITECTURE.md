@@ -93,6 +93,7 @@ graph TB
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)
 - **双模式通信与自愈**：Agent 根据 `MASTER_URL` 的 `ws(s)://` / `http(s)://` 前缀推导模式，也可由 `AGENT_MODE=ws|http` 显式指定；WS 模式具备指数退避重连，HTTP 模式按 `POLL_INTERVAL_SECS` 轮询并接受 Master 的 `nextPollSecs` 调整；服务端只接受通过结构校验的 Agent 上行数据。
 - **内核生命周期管理**：Agent 内置 supervisor 单协程托管 Sing-box 子进程——`config_sync` 原子落盘后拉起内核（二进制路径由 YAML 配置或 `SINGBOX_BINARY_PATH` 指定），配置字节比对变化时优雅重启（SIGTERM → 宽限 → Kill）即热应用，进程异常退出按指数退避自动拉起。Docker Master 镜像和自包含发行包直接携带 Linux Sing-box；远程 Agent 由 `install` 命令从 Master 获取内核，失败时可回退 GitHub Release。
+- **Sing-box 日志治理**：Agent 将内核 stdout/stderr 行解析为真实级别并去除 ANSI，保留 `stream` 元数据；正常模式只采集真实 WARN/ERROR，连接访问类输出标记为 ACCESS 并丢弃，异常退出由 supervisor 生成结构化 ERROR。Master 按节点诊断状态二次拦截并将 WARN/ERROR 指标与普通生命周期 INFO 分离；临时 INFO/DEBUG 诊断通过同一 `config_sync` 重启链路下发，30 分钟后自动回收。
 - **Agent 生命周期 CLI**：`riri-agent` 由 Cobra 分发一级命令；无参数且连接终端时进入 Bubble Tea + lipgloss 全屏控制台 GUI/TUI，使用 raw mode 直接消费方向键，提供菜单、安装表单、卸载确认、异步任务和结果滚动页；无 TTY 或显式子命令仍走非交互 CLI。服务注册与启停通过 `kardianos/service` 适配 systemd/OpenRC/SysVinit、Windows Service 和 macOS Launchd。标准配置为 `/etc/riri-agent/config.yaml`，运行时目录为 `/var/lib/riri-agent/`。
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
@@ -144,7 +145,36 @@ sequenceDiagram
 - **配置推送与在线门禁**：保存线路后复用 250ms 防抖，自动为承担入口或落地角色的在线节点重新编译并下发 `config_sync`。中继线路在套餐订阅中要求中转入口节点与落地节点**同时在线**才会向客户端呈现并允许连通。
 
 
-### 3.3 节点遥测心跳与流量核算
+### 3.3 Sing-box 日志诊断时序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as 管理员
+    participant Web as Web 面板
+    participant Master as Master 后端
+    participant Agent as 在线 Agent
+    participant Singbox as Sing-box 内核
+
+    Admin->>Web: 选择 INFO/DEBUG 并确认重启与隐私风险
+    Web->>Master: POST /admin/nodes/:id/log-diagnostics
+    Master->>Master: 校验 ONLINE + singbox_log_capture，写入 30 分钟策略并清理 config cache
+    alt WS
+        Master-->>Agent: config_sync(log.level=info/debug, singboxLogCaptureLevel=INFO/DEBUG)
+    else HTTP
+        Agent->>Master: 下一次 POST /api/v1/agent/poll
+        Master-->>Agent: 配置差异 + singboxLogCaptureLevel
+    end
+    Agent->>Singbox: 预检、原子落盘并重启
+    Singbox-->>Agent: stdout/stderr（解析真实级别，ACCESS 单独标记）
+    Agent-->>Master: log_report（批量；ERROR 快速冲刷）
+    Master->>Master: 按有效诊断期与来源门槛入库/实时推流并执行脱敏
+    Master->>Agent: 过期巡检后下发 NORMAL + WARN 采集配置
+```
+
+诊断结束、手动停止或节点策略过期时，Master 清理该节点配置缓存；WS 节点立即收到新配置，HTTP 节点在下一次轮询获得新配置。
+
+### 3.4 节点遥测心跳与流量核算
 
 ```mermaid
 sequenceDiagram
@@ -177,9 +207,11 @@ sequenceDiagram
 ```
 
 同一节点在写入队列中只保留最新遥测和最新累计快照；累计计数器本身支持请求重试和断线恢复，因此不依赖 ACK 作为流量正确性的基础。
+
+系统日志与流量账务严格解耦：`SystemLogsService` 只承载运维事件与异常，SINGBOX 连接访问日志默认不入库；流量计费、配额熔断和小时桶仍由 StatsService、heartbeat 与 TrafficHourlyMetric 管线完成，不从 `SystemLog` 推导连接流量。
 流量时序看板查询直接读取 `TrafficHourlyMetric` 小时桶数据，彻底根除秒级明细插入带来的写锁竞争与百万级原始行内存遍历；后台 `TrafficCleanupService` 定期执行 90 天滑动窗口硬淘汰，保障 SQLite 体积恒定可控。
 
-### 3.4 订阅生命周期与配置联动
+### 3.5 订阅生命周期与配置联动
 
 ```mermaid
 sequenceDiagram
@@ -209,7 +241,7 @@ sequenceDiagram
 
 订阅输出请求通过 Token 定位 Subscription，再按“套餐匹配线路 + UserLineGrant 额外线路”并集计算可用 Line；套餐线路要求公开且处于启用状态（`status=ACTIVE`），额外线路可绕过公开性和套餐规则但仍要求启用，若为目标线路桥接模式（`TARGET_LINE`）则要求目标直连线路亦处于启用状态，全局 `publicLinesEnabled=false` 作为总开关。控制平面与数据平面彻底解耦：订阅下发不再与节点 Agent 心跳状态强绑定，即使节点 Agent 暂时失联，只要线路本身启用均全量下发，由客户端本地测速（url-test/fallback）实现健康检查与自动切换，避免服务端单点网络抖动导致订阅节点全量失效。节点离线扫描按 `lastSeenAt` 做乐观并发校验，避免旧扫描结果覆盖扫描期间已恢复的节点。Token 重置同时更新 Subscription 与 User，旧 URL 立即失效。流量周期在订阅读取、心跳入账和每分钟后台巡检中惰性或定时推进；旧订阅首次启用策略只初始化周期起点，不修改已有用量和 TrafficLog。Nginx 只承担入口 rewrite 和代理，不参与 Token、权限或订阅格式业务判断。
 
-### 3.5 远程升级与网络探针时序
+### 3.6 远程升级与网络探针时序
 
 ```mermaid
 sequenceDiagram

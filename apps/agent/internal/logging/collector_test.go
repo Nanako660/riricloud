@@ -88,3 +88,66 @@ func TestHook_FilterStrategy(t *testing.T) {
 		t.Errorf("item 2 mismatch: %+v", items[2])
 	}
 }
+
+func TestCollector_SingboxCaptureModesAndAccessFiltering(t *testing.T) {
+	collector := NewCollector(20)
+	hook := NewHook(collector)
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	logger.SetLevel(logrus.TraceLevel)
+	logger.AddHook(hook)
+
+	logger.WithFields(logrus.Fields{"source": "SINGBOX", "module": "Singbox", "category": "ACCESS"}).Warn("accepted connection")
+	logger.WithFields(logrus.Fields{"source": "SINGBOX", "module": "Singbox"}).Info("kernel info")
+	logger.WithFields(logrus.Fields{"source": "AGENT", "module": "Agent"}).Info("agent info")
+
+	items := collector.Drain(20)
+	if len(items) != 1 || items[0].Source != "AGENT" {
+		t.Fatalf("normal mode should keep only agent info, got %+v", items)
+	}
+
+	collector.SetSingboxCaptureLevel("INFO")
+	logger.WithFields(logrus.Fields{"source": "SINGBOX", "module": "Singbox", "category": "ACCESS"}).Info("accepted connection")
+	logger.WithFields(logrus.Fields{"source": "SINGBOX", "module": "Singbox"}).Debug("debug details")
+	items = collector.Drain(20)
+	if len(items) != 1 || items[0].Level != "INFO" {
+		t.Fatalf("INFO mode should keep INFO but not DEBUG, got %+v", items)
+	}
+
+	collector.SetSingboxCaptureLevel("DEBUG")
+	logger.WithFields(logrus.Fields{"source": "SINGBOX", "module": "Singbox"}).Debug("debug details")
+	items = collector.Drain(20)
+	if len(items) != 1 || items[0].Level != "DEBUG" {
+		t.Fatalf("DEBUG mode should keep DEBUG, got %+v", items)
+	}
+}
+
+func TestCollector_SingboxWarnDedupDoesNotDropErrors(t *testing.T) {
+	collector := NewCollector(20)
+	warning := LogItem{Source: "SINGBOX", Level: "WARN", Module: "Singbox", Message: "repeated warning"}
+	collector.Push(warning)
+	collector.Push(warning)
+	collector.Push(LogItem{Source: "SINGBOX", Level: "ERROR", Module: "Singbox", Message: "same error"})
+	collector.Push(LogItem{Source: "SINGBOX", Level: "ERROR", Module: "Singbox", Message: "same error"})
+
+	items := collector.Drain(20)
+	if len(items) != 3 {
+		t.Fatalf("expected one merged warning and two errors, got %+v", items)
+	}
+	if got := items[0].Metadata["repeatCount"]; got != 2 {
+		t.Fatalf("expected repeatCount=2, got %#v", got)
+	}
+	if items[1].Level != "ERROR" || items[2].Level != "ERROR" {
+		t.Fatalf("errors must not be deduplicated: %+v", items)
+	}
+}
+
+func TestCollector_PushAppliesPolicyForDirectCalls(t *testing.T) {
+	collector := NewCollector(10)
+	collector.Push(LogItem{Source: "SINGBOX", Level: "INFO", Module: "Singbox", Message: "info"})
+	collector.Push(LogItem{Source: "SINGBOX", Level: "WARN", Module: "Singbox", Message: "warn"})
+	items := collector.Drain(10)
+	if len(items) != 1 || items[0].Message != "warn" {
+		t.Fatalf("direct Push should enforce normal Sing-box policy, got %+v", items)
+	}
+}

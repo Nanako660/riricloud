@@ -136,6 +136,16 @@ export class NodesService {
     };
   }
 
+  async enableLogDiagnostics(id: string, level: 'INFO' | 'DEBUG', operatorId?: string) {
+    await this.requireNode(id);
+    return this.agentGateway.enableSingboxLogDiagnostics(id, level, operatorId);
+  }
+
+  async disableLogDiagnostics(id: string, operatorId?: string) {
+    await this.requireNode(id);
+    return this.agentGateway.disableSingboxLogDiagnostics(id, operatorId);
+  }
+
   async requestReload(id: string) {
     await this.requireNode(id);
     const pushed = await this.agentGateway.pushConfig(id);
@@ -612,7 +622,20 @@ export class NodesService {
 
     const lines = [...linesMap.values()];
     const capabilities = this.parseStringArray(capabilitiesJson);
-    return { ...rest, capabilities, supportsMirrorProxy: capabilities.includes('mirror_proxy'), lastProbeResult: this.parseJson(lastProbeResult), lines, entryLines, landingLines, servicePorts };
+    const diagnosticActive = rest.singboxLogMode !== 'NORMAL' && Boolean(rest.singboxLogModeUntil) && new Date(rest.singboxLogModeUntil as Date).getTime() > Date.now();
+    return {
+      ...rest,
+      singboxLogMode: diagnosticActive ? rest.singboxLogMode : 'NORMAL',
+      singboxLogModeUntil: diagnosticActive && rest.singboxLogModeUntil ? new Date(rest.singboxLogModeUntil as Date).toISOString() : null,
+      capabilities,
+      supportsMirrorProxy: capabilities.includes('mirror_proxy'),
+      supportsSingboxLogCapture: capabilities.includes('singbox_log_capture'),
+      lastProbeResult: this.parseJson(lastProbeResult),
+      lines,
+      entryLines,
+      landingLines,
+      servicePorts
+    };
   }
 
   private parseTags(value: string) {

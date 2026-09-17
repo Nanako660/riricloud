@@ -16,7 +16,7 @@ describe('NodesService', () => {
     binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() }
   };
   const systemLogsService = { enqueue: jest.fn() };
-  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
+  const gateway = { pushConfig: jest.fn().mockResolvedValue(false), pushConfigToAll: jest.fn().mockResolvedValue(0), disconnectNode: jest.fn(), requestUpgrade: jest.fn(), requestProbe: jest.fn(), enableSingboxLogDiagnostics: jest.fn(), disableSingboxLogDiagnostics: jest.fn(), getPendingVersionConfirmation: jest.fn().mockReturnValue(null) };
   const binaries = { resolveForNode: jest.fn() };
   const installer = {
     renderShellScript: jest.fn().mockResolvedValue('#!/bin/sh\n# shell'),

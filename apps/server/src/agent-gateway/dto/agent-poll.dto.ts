@@ -228,6 +228,12 @@ export class AgentPollDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(32)
+  @IsString({ each: true })
+  capabilities?: string[];
+
+  @IsOptional()
+  @IsArray()
   @ArrayMaxSize(8)
   @ValidateNested({ each: true })
   @Type(() => PollConfigApplyResultDto)

@@ -32,6 +32,7 @@
 | :--- | :--- | :--- | :--- |
 | [流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）](./archive/2026-09-17-traffic-and-log-storage-governance.md) | `v0.9.1` | 2026-09-17 | — |
 | [时序遥测与日志物理分库隔离（Phase 2 架构演进）](./archive/2026-09-17-telemetry-db-physical-separation.md) | `v0.9.2` | 2026-09-17 | — |
+| [Sing-box 日志采集与系统日志降噪优化](./archive/2026-09-17-singbox-log-governance.md) | `v0.8.15+` | 2026-09-17 | — |
 | [binary-distribution-optimization](./archive/2026-09-14-binary-distribution-optimization.md) | `v0.8.12` | 2026-09-14 | — |
 | [agent-upgrade-version-reconcile](./archive/2026-09-14-agent-upgrade-version-reconcile.md) | `v0.9.0` | 2026-09-14 | — |
 | [agent-embedded-singbox](./archive/2026-09-14-agent-embedded-singbox.md) | `v0.8.12` | 2026-09-14 | — |

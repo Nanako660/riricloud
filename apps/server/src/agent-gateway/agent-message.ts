@@ -110,9 +110,13 @@ export interface TunnelConfigPayload {
   mappings: TunnelPortMapping[];
 }
 
+export type SingboxLogCaptureLevel = 'WARN' | 'INFO' | 'DEBUG';
+
 export interface ConfigSyncData {
   version: number;
   singboxConfig: Record<string, unknown>;
+  // 可选字段：旧版 Agent 忽略该字段，默认仅保留 WARN/ERROR。
+  singboxLogCaptureLevel?: SingboxLogCaptureLevel;
   tunnelConfigs?: TunnelConfigPayload[];
 }
 
@@ -196,6 +200,7 @@ export interface AgentPollResponse {
   needUpdate: boolean;
   version: number;
   singboxConfig: Record<string, unknown> | null;
+  singboxLogCaptureLevel?: SingboxLogCaptureLevel;
   tasks: AgentTaskMessage[];
   nextPollSecs: number;
 }

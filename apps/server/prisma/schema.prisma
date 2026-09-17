@@ -146,6 +146,8 @@ model Node {
   reachability          String    @default("PUBLIC") // PUBLIC | NAT (无公网 IP/家宽节点，通过反向隧道作为落地中继)
   isLocal               Boolean   @default(false) // 主控本机预置节点
   configOverride        String? // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并）
+  singboxLogMode        String    @default("NORMAL") // NORMAL | INFO | DEBUG（临时诊断日志模式）
+  singboxLogModeUntil   DateTime? // 诊断模式自动过期时间
   agentToken            String    @unique
   agentTokenHash        String?   @unique
   communicationMode     String    @default("WS") // WS | HTTP

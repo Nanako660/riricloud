@@ -66,6 +66,8 @@ describe('AgentService SQLite traffic accounting', () => {
         "reachability" TEXT NOT NULL DEFAULT 'PUBLIC',
         "isLocal" BOOLEAN NOT NULL DEFAULT 0,
         "configOverride" TEXT,
+        "singboxLogMode" TEXT NOT NULL DEFAULT 'NORMAL',
+        "singboxLogModeUntil" DATETIME,
         "agentToken" TEXT NOT NULL,
         "agentTokenHash" TEXT,
         "communicationMode" TEXT NOT NULL DEFAULT 'WS',

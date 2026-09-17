@@ -81,7 +81,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。返回字段包含网络可达性 `reachability`（`PUBLIC` | `NAT`）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
-- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 响应节点对象包含加性字段 `pendingVersionConfirm`（可选，向后兼容）：升级任务完成但心跳上报的 `agentVersion` 尚未达到目标版本时的待确认信息 `{ taskId, expectedVersion, completedAt }`，用于提示“Agent 重启可能失败”；版本对账窗口为主控侧 15 分钟，确认或超时后字段回到 `null`。WS 协议契约本身无变更。 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
+- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 响应节点对象包含加性字段 `pendingVersionConfirm`（可选，向后兼容）：升级任务完成但心跳上报的 `agentVersion` 尚未达到目标版本时的待确认信息 `{ taskId, expectedVersion, completedAt }`，用于提示“Agent 重启可能失败”；版本对账窗口为主控侧 15 分钟，确认或超时后字段回到 `null`。同时返回 `singboxLogMode`（`NORMAL`/`INFO`/`DEBUG`，已过期诊断会折算为 `NORMAL`）、`singboxLogModeUntil` 与 `supportsSingboxLogCapture`。WS 协议契约本身无变更。 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
 - `GET /admin/nodes/:id/offline-package?platform=<os-arch>`：管理员下载指定节点的完整 Agent 离线安装包（流式压缩包：Windows `.zip`，Linux/macOS `.tar.gz`）。⭐ 需管理员 JWT 鉴权；内嵌该节点预配置的 `config.yaml`、平台二进制与全自动化免交互安装/卸载脚本。
 - `GET /admin/nodes/:id/install-script?platform=<os-arch>&format=bat|sh|ps1`：管理员下载指定节点的预编排免交互安装脚本（Windows 默认为 `.bat`，Linux/macOS 为 `.sh`）。⭐ 需管理员 JWT 鉴权；内嵌固化该节点的 AgentToken 与 MasterUrl，响应附加 `Content-Disposition: attachment` 供浏览器或脚本一键下载。
 - `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与多目标安装命令）。⭐ 请求 `{ name?, serverHost?, reachability?: "PUBLIC"|"NAT", communicationMode?: "WS"|"HTTP" }`；`reachability` 默认为 `PUBLIC`，当为 `NAT` 时 `serverHost` 可选（默认回退为 `127.0.0.1`）；NAT 节点仅可作为中继落地出口节点，禁止作为直连入站或中继入口节点。线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands, uninstallCommand, windowsUninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。`installCommands` 结构：`{ ws, http, dockerWs, dockerHttp, adminScriptUrl, native: { linux, macos, windows }, portable: { linux, macos, windows }, offline: { packageDownloadUrl, adminPackageUrl, windows, linux } }`（每项均为 `{ ws, http }` 命令对，`adminScriptUrl` 为专属免交互脚本下载路径）：`ws/http` 为兼容保留的 POSIX 原生安装键；`native.windows` 为 Windows CMD 与 PowerShell 跨终端通用的免交互安装命令（拉取并执行预编排自提权 `.bat` 批处理，支持直接双击运行）；`native.linux` / `native.macos` 为预编排免交互 shell 命令（`curl | sudo sh`）；`portable.*` 为免安装直接运行命令；`offline.*` 包含各操作系统终端一键 curl/unzip/install 离线部署命令。`windowsUninstallCommand` 为 Windows 管理员 PowerShell 卸载命令。
@@ -89,6 +89,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `PATCH /admin/nodes/:id`：部分更新。⭐ 请求任意子集 `{ name?, serverHost?, reachability?: "PUBLIC"|"NAT", configOverride?(string|null) }`；若节点被现有直连线路或中继入口引用，修改为 `NAT` 将返回 `409`；`configOverride` 为高级模式完整 sing-box 配置顶层覆盖 JSON（须为合法 JSON 对象，传 `null` 清除；合并语义见 `docs/DATA_MODELS.md` §3.2）；保存成功后若节点在线即向其推送 `config_sync`。
 - `DELETE /admin/nodes/:id`：删除远程节点。⭐ 先断开该节点在线 Agent（close 4001），再硬删除；承载线路与 `TrafficLog` 级联删除；残留 Agent 重连时按无效 AgentToken 拒绝。`isLocal=true` 的 `Master-Local` 为系统保留节点，删除请求返回 `409`，只能通过禁用内置 Agent 或停止 Master 进程使其离线。
 - `POST /admin/nodes/:id/reload`：向指定节点的 Agent 发送热重载指令。⭐
+- `POST /admin/nodes/:id/log-diagnostics`：仅允许在线且能力包含 `singbox_log_capture` 的节点开启临时 Sing-box 诊断。⭐ 请求 `{ level: "INFO"|"DEBUG" }`，固定持续 30 分钟；开启会清理配置缓存并重启 Sing-box，响应 `{ nodeId, enabled: true, level, expiresAt, requested }`。诊断日志可能包含敏感连接信息，服务端仍执行脱敏。
+- `DELETE /admin/nodes/:id/log-diagnostics`：停止指定节点诊断并恢复 `NORMAL`；清理配置缓存并触发 WS `config_sync` 或等待 HTTP 下一次 poll，响应 `{ nodeId, enabled: false, level: "NORMAL", expiresAt: null, requested }`。
 - `POST /admin/nodes/:id/upgrade`：下发 Sing-box 或 Agent 远程升级任务。⭐ 请求 `{ target: "singbox"|"agent", version?, url?, sha256? }`；省略 `url/sha256` 时由 Master 按节点 `osArch` 自动选择内置版本并生成带 AgentToken 的内部下载地址，二者必须同时提供才能使用自定义来源。Agent 下载后校验 SHA-256，返回 `{ taskId, requested }`。
 - `POST /admin/nodes/:id/probe`：下发网络探针任务。⭐ 请求 `{ probes: [{ type: "tcp"|"dns"|"icmp", target, port?, timeoutMs? }] }`，最多 8 项；返回 `{ taskId, requested }`。回执会持久化到节点 `lastProbeResult`。
 - `POST /admin/nodes/:id/restart-agent`：请求 Agent 自身平滑重启。⭐ 返回 `{ taskId, requested }`，Agent 在回执后使用原始命令行参数重新启动。
@@ -264,8 +266,9 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   "type": "config_sync",
   "data": {
     "version": 1,
+    "singboxLogCaptureLevel": "WARN",
     "singboxConfig": {
-      "log": { "level": "info" },
+      "log": { "level": "warn" },
       "inbounds": [
         {
           "type": "vless",
@@ -320,6 +323,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   }
 }
 ```
+
+> 日志采集策略：`NORMAL` 为默认模式，Master 生成 `log.level=warn` 且 Agent 仅上报真实 Sing-box `WARN/ERROR`；`INFO`/`DEBUG` 是固定 30 分钟的管理员诊断模式，只临时覆盖最终配置的 `log.level`，保留 `configOverride` 的其他日志字段。`singboxLogCaptureLevel` 是可选的独立采集门槛（`WARN`/`INFO`/`DEBUG`），旧 Agent 忽略时仍按安全的 WARN/ERROR 策略工作。连接、访问、dial、connection closed 等输出标记为 `ACCESS`，NORMAL 模式不上传；stderr 不再自动升级为 WARN，无法解析级别的 stderr 按 INFO 处理。
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 
@@ -390,6 +395,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "kernelRunning": true,
     "appliedConfigVersion": 3,
     "lastError": "",
+    "capabilities": ["mirror_proxy", "singbox_log_capture"],
     "trafficSnapshots": [
       { "userUuid": "user-uuid-1", "uploadTotal": "52428800", "downloadTotal": "104857600" },
       { "userUuid": "user-uuid-2", "uploadTotal": "1024000", "downloadTotal": "2048000" }
@@ -449,7 +455,9 @@ Agent 对下载文件流式计算 SHA-256；Sing-box 升级还会使用当前配
 
 #### 7. 运行日志上报 (`log_report`) —— Agent -> Master (v0.6.12，v0.8.13 扩展)
 Agent 在运行期通过有界环形缓冲区采集自身运行日志与托管的 Sing-box 日志并批量上报，交由 Master `SystemLogsService` 统一入库与实时推流：
-- **分级过滤策略**：Agent 自身日志上报 `INFO` / `WARN` / `ERROR` 级别；托管的 Sing-box 日常普通连接与调试输出（`INFO`）由 Agent 本地消费，仅上报 `WARN` 与 `ERROR` 级别（含内核 stderr 崩溃输出），防止海量连接日志冲击主控带宽与数据库存储。
+- **真实级别解析**：Agent 去除 ANSI 控制字符，解析 Sing-box `DEBUG/TRACE -> DEBUG`、`INFO -> INFO`、`WARN -> WARN`、`ERROR/FATAL/PANIC -> ERROR`；stderr 仅作为 `metadata.stream` 元数据，不再自动升级为 WARN，未知级别默认按 INFO。进程异常退出、启动失败和配置预检失败由 Agent supervisor 生成结构化生命周期 WARN/ERROR。
+- **分级过滤策略**：Agent 自身日志继续上报 `INFO` / `WARN` / `ERROR`；Sing-box 在 `NORMAL` 模式只上报真实 `WARN/ERROR`，并丢弃 `ACCESS` 高频连接日志；管理员开启 `INFO`/`DEBUG` 诊断后按下发门槛放行，固定 30 分钟后自动恢复。Master 会再次按节点有效诊断状态拦截旧 Agent 或异常客户端发送的 Sing-box INFO/DEBUG。
+- **重复合并与安全**：相同节点、模块、标准化消息的 Sing-box WARN 在 60 秒内合并为一条并在 `metadata.repeatCount` 记录次数；ERROR 不合并。入库和实时推流沿用日志脱敏，并清洗域名、IP、Token、密码与密钥模式。系统日志不承担流量计费，流量仍来自 StatsService/heartbeat/小时桶。
 - **上报触发机制**：WS 长连接下通过独立 goroutine 每 2 秒批量上报（单次至多 50 条），当捕获到 `ERROR` 级别日志时立即触发快速刷新上报；HTTP 轮询模式下随 `POST /api/v1/agent/poll` 请求体中的可选 `logs` 数组字段批量携带上报。
 ```json
 {
@@ -548,6 +556,7 @@ Content-Type: application/json
   "agentVersion": "0.3.0",
   "osArch": "linux/amd64",
   "kernelVersion": "1.11.0",
+  "capabilities": ["mirror_proxy", "singbox_log_capture"],
   "trafficSnapshots": [],
   "configApplyResults": [
     { "version": 3, "success": true, "message": "ok" }
@@ -567,7 +576,8 @@ Content-Type: application/json
   "protocolVersion": 2,
   "needUpdate": true,
   "version": 4,
-  "singboxConfig": { "log": { "level": "info" }, "inbounds": [], "outbounds": [{ "type": "direct", "tag": "direct" }] },
+  "singboxLogCaptureLevel": "WARN",
+  "singboxConfig": { "log": { "level": "warn" }, "inbounds": [], "outbounds": [{ "type": "direct", "tag": "direct" }] },
   "tasks": [
     { "type": "probe_task", "data": { "taskId": "task-uuid", "probes": [{ "type": "dns", "target": "example.com" }] } }
   ],
@@ -677,7 +687,7 @@ Master 订阅编译引擎（`builders.ts`）支持通过 `SubscriptionTemplate` 
 
 ### 4.2 Master-Agent WS 消息
 
-Agent 心跳可携带 `capabilities: string[]`；仅能力包含 `mirror_proxy` 的在线 WS 节点接收以下任务：
+Agent 心跳可携带 `capabilities: string[]`；能力包含 `mirror_proxy` 的在线 WS 节点可承载镜像任务，能力包含 `singbox_log_capture` 的在线节点才允许管理员开启临时 Sing-box 诊断：
 
 ```json
 { "type": "mirror_request", "data": { "taskId": "...", "method": "GET", "url": "https://github.com/...", "allowedHosts": ["github.com", "objects.githubusercontent.com"], "requestHeaders": {}, "timeoutMs": 600000, "maxBytes": 268435456 } }

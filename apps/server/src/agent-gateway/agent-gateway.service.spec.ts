@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
 import {
@@ -1315,5 +1315,125 @@ describe('AgentGatewayService', () => {
       expect(frame.data).toEqual(expect.objectContaining({ taskId: 'task-stale' }));
     });
   });
+
+  it('默认配置使用 warn，并在诊断模式仅覆盖 log.level', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'node-1',
+      serverHost: '198.51.100.10',
+      status: 'ONLINE',
+      configOverride: null,
+      singboxLogMode: 'NORMAL',
+      singboxLogModeUntil: null,
+      entryLines: [],
+      landingLines: []
+    });
+    const normal = await service.buildConfigSync('node-1');
+    expect(normal.singboxConfig.log).toEqual({ level: 'warn', timestamp: true });
+    expect(normal.singboxLogCaptureLevel).toBe('WARN');
+
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'node-1',
+      serverHost: '198.51.100.10',
+      status: 'ONLINE',
+      configOverride: JSON.stringify({ log: { timestamp: false, output: 'file:/tmp/sing-box.log', level: 'error' } }),
+      singboxLogMode: 'INFO',
+      singboxLogModeUntil: new Date(Date.now() + 10 * 60 * 1000),
+      entryLines: [],
+      landingLines: []
+    });
+    const diagnostic = await service.buildConfigSync('node-1');
+    expect(diagnostic.singboxConfig.log).toEqual({ level: 'info', timestamp: false, output: 'file:/tmp/sing-box.log' });
+    expect(diagnostic.singboxLogCaptureLevel).toBe('INFO');
+  });
+
+  it('NORMAL 模式拦截 Sing-box INFO/DEBUG 与 ACCESS，保留真实 WARN/ERROR', async () => {
+    prisma.node.findUnique.mockResolvedValue({ singboxLogMode: 'NORMAL', singboxLogModeUntil: null });
+    systemLogEnqueue.mockClear();
+    await service.handleLogReport('node-1', {
+      logs: [
+        { source: 'SINGBOX', level: 'INFO', module: 'Singbox', message: 'started' },
+        { source: 'SINGBOX', level: 'DEBUG', module: 'Singbox', message: 'details' },
+        { source: 'SINGBOX', level: 'WARN', module: 'Singbox', message: 'warning' },
+        { source: 'SINGBOX', level: 'ERROR', module: 'Singbox', message: 'failure' },
+        { source: 'SINGBOX', level: 'WARN', module: 'Singbox', message: 'accepted', metadata: { category: 'ACCESS' } },
+        { source: 'AGENT', level: 'INFO', module: 'Agent', message: 'agent info' }
+      ]
+    });
+    expect(systemLogEnqueue.mock.calls.map(([item]) => `${item.source}:${item.level}:${item.message}`)).toEqual([
+      'SINGBOX:WARN:warning',
+      'SINGBOX:ERROR:failure',
+      'AGENT:INFO:agent info'
+    ]);
+  });
+
+  it('有效诊断模式按级别放行 Sing-box，并允许受控绕过全局门槛', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      singboxLogMode: 'INFO',
+      singboxLogModeUntil: new Date(Date.now() + 10 * 60 * 1000)
+    });
+    systemLogEnqueue.mockClear();
+    await service.handleLogReport('node-1', {
+      logs: [
+        { source: 'SINGBOX', level: 'DEBUG', module: 'Singbox', message: 'debug' },
+        { source: 'SINGBOX', level: 'INFO', module: 'Singbox', message: 'info' },
+        { source: 'SINGBOX', level: 'WARN', module: 'Singbox', message: 'warn' }
+      ]
+    });
+    expect(systemLogEnqueue).toHaveBeenCalledTimes(2);
+    expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({ level: 'INFO', bypassMinIngestLevel: true }));
+    expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({ level: 'WARN', bypassMinIngestLevel: true }));
+  });
+
+  it('仅允许在线且声明能力的节点开启固定 30 分钟诊断', async () => {
+    const pushSpy = jest.spyOn(service, 'pushConfig').mockResolvedValue(true);
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'node-1',
+      name: '测试节点',
+      status: 'ONLINE',
+      capabilitiesJson: JSON.stringify(['mirror_proxy', 'singbox_log_capture'])
+    });
+    prisma.node.update.mockResolvedValue({});
+    systemLogEnqueue.mockClear();
+    try {
+      const result = await service.enableSingboxLogDiagnostics('node-1', 'DEBUG', 'admin-1');
+      expect(result).toEqual(expect.objectContaining({ nodeId: 'node-1', enabled: true, level: 'DEBUG', requested: true }));
+      expect(new Date(result.expiresAt).getTime() - Date.now()).toBeGreaterThan(29 * 60 * 1000);
+      expect(prisma.node.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'node-1' },
+        data: expect.objectContaining({ singboxLogMode: 'DEBUG', singboxLogModeUntil: expect.any(Date) })
+      }));
+      expect(pushSpy).toHaveBeenCalledWith('node-1');
+    } finally {
+      pushSpy.mockRestore();
+    }
+  });
+
+  it('拒绝离线节点和旧 Agent 开启诊断', async () => {
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', name: '离线节点', status: 'OFFLINE', capabilitiesJson: '[]' });
+    await expect(service.enableSingboxLogDiagnostics('node-1', 'INFO')).rejects.toThrow(ConflictException);
+    prisma.node.findUnique.mockResolvedValue({ id: 'node-1', name: '旧节点', status: 'ONLINE', capabilitiesJson: '[]' });
+    await expect(service.enableSingboxLogDiagnostics('node-1', 'INFO')).rejects.toThrow(ConflictException);
+  });
+
+  it('诊断过期会清理配置缓存、恢复 NORMAL、推送配置并写审计日志', async () => {
+    const cache = (service as unknown as { configCache: Map<string, unknown> }).configCache;
+    cache.set('node-1', { version: 1 });
+    prisma.node.findMany.mockResolvedValue([{ id: 'node-1', name: '测试节点' }]);
+    prisma.node.updateMany.mockResolvedValue({ count: 1 });
+    const pushSpy = jest.spyOn(service, 'pushConfig').mockResolvedValue(true);
+    systemLogEnqueue.mockClear();
+    try {
+      await (service as unknown as { expireSingboxDiagnostics: () => Promise<void> }).expireSingboxDiagnostics();
+      expect(cache.has('node-1')).toBe(false);
+      expect(prisma.node.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: { singboxLogMode: 'NORMAL', singboxLogModeUntil: null }
+      }));
+      expect(pushSpy).toHaveBeenCalledWith('node-1');
+      expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({ module: 'NodeDiagnostics', metadata: { reason: 'expired' } }));
+    } finally {
+      pushSpy.mockRestore();
+    }
+  });
+
 });
 

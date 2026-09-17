@@ -197,6 +197,11 @@ func (m *Manager) StatsAddress() string {
 }
 
 var binaryVersionPattern = regexp.MustCompile(`\b\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?\b`)
+var singboxANSISequence = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+var singboxLevelPattern = regexp.MustCompile(`(?i)\b(DEBUG|TRACE|INFO|WARN(?:ING)?|ERROR|FATAL|PANIC)\b`)
+var singboxLevelRuntimePrefix = regexp.MustCompile(`(?i)^((?:DEBUG|TRACE|INFO|WARN(?:ING)?|ERROR|FATAL|PANIC))\s*\[[0-9:.+\-]+\]\s*`)
+var singboxLeadingTimestamp = regexp.MustCompile(`^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.+\-Z]+|[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?)\s+`)
+var singboxAccessPattern = regexp.MustCompile(`(?i)(accepted|inbound.*connection|outbound.*connection|connection.*closed|dial(?:ing)?|destination=|request.*(?:tcp|udp|http|https))`)
 
 func detectBinaryVersion(binaryPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -601,7 +606,15 @@ func (m *Manager) awaitChild(cmd *exec.Cmd, exitC chan struct{}, startedAt time.
 	}
 	m.mu.Unlock()
 	close(exitC) // 通知 supervisor：当前子进程已退出，可重新收敛
-	m.log.WithError(err).WithField("uptime", uptime.String()).Warn("sing-box exited")
+	entry := m.log.WithField("uptime", uptime.String())
+	if err != nil {
+		entry = entry.WithError(err)
+	}
+	if err != nil && !expected {
+		entry.Error("sing-box exited unexpectedly")
+	} else {
+		entry.Info("sing-box exited")
+	}
 }
 
 // gracefulStopCurrent 主动停止当前子进程：SIGTERM → 宽限等待 → Kill；无子进程时为 no-op。
@@ -762,20 +775,54 @@ func (w *lineLogWriter) Flush() {
 }
 
 func (m *Manager) logSingboxOutput(line string, isStderr bool) {
-	line = strings.TrimSpace(line)
-	if line == "" {
+	level, message, category, rawLevel := classifySingboxOutput(line)
+	if message == "" {
 		return
 	}
-	upper := strings.ToUpper(line)
-	entry := m.log.WithFields(logrus.Fields{
-		"source": "SINGBOX",
-		"module": "Singbox",
-	})
-	if strings.Contains(upper, "FATAL") || strings.Contains(upper, "PANIC") || strings.Contains(upper, "ERROR") {
-		entry.Error(line)
-	} else if strings.Contains(upper, "WARN") || isStderr {
-		entry.Warn(line)
-	} else {
-		entry.Info(line)
+	fields := logrus.Fields{
+		"source":   "SINGBOX",
+		"module":   "Singbox",
+		"category": category,
+		"stream":   streamName(isStderr),
 	}
+	if rawLevel != "" {
+		fields["rawLevel"] = rawLevel
+	}
+	m.log.WithFields(fields).Log(level, message)
+}
+
+func classifySingboxOutput(line string) (logrus.Level, string, string, string) {
+	message := strings.TrimSpace(singboxANSISequence.ReplaceAllString(line, ""))
+	message = singboxLeadingTimestamp.ReplaceAllString(message, "")
+	message = singboxLevelRuntimePrefix.ReplaceAllString(message, "$1 ")
+	message = strings.Join(strings.Fields(message), " ")
+	if message == "" {
+		return logrus.InfoLevel, "", "EVENT", ""
+	}
+
+	rawLevel := ""
+	if match := singboxLevelPattern.FindStringSubmatch(message); len(match) > 1 {
+		rawLevel = strings.ToUpper(match[1])
+	}
+	level := logrus.InfoLevel
+	switch rawLevel {
+	case "DEBUG", "TRACE":
+		level = logrus.DebugLevel
+	case "WARN", "WARNING":
+		level = logrus.WarnLevel
+	case "ERROR", "FATAL", "PANIC":
+		level = logrus.ErrorLevel
+	}
+	category := "EVENT"
+	if singboxAccessPattern.MatchString(message) {
+		category = "ACCESS"
+	}
+	return level, message, category, rawLevel
+}
+
+func streamName(isStderr bool) string {
+	if isStderr {
+		return "stderr"
+	}
+	return "stdout"
 }
