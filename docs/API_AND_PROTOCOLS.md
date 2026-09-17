@@ -270,6 +270,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "version": 1,
     "singboxLogCaptureLevel": "WARN",
     "agentLogRotation": { "maxSizeMb": 50, "maxFiles": 5 },
+    "portSpeedLimits": { "443": 100, "8443": 50 },
     "singboxConfig": {
       "log": { "level": "warn" },
       "inbounds": [
@@ -330,6 +331,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > 日志采集策略：`NORMAL` 为默认模式，Master 生成 `log.level=warn` 且 Agent 仅上报真实 Sing-box `WARN/ERROR`；`INFO`/`DEBUG` 是固定 30 分钟的管理员诊断模式，只临时覆盖最终配置的 `log.level`，保留 `configOverride` 的其他日志字段。`singboxLogCaptureLevel` 是可选的独立采集门槛（`WARN`/`INFO`/`DEBUG`），旧 Agent 忽略时仍按安全的 WARN/ERROR 策略工作。连接、访问、dial、connection closed 等输出标记为 `ACCESS`，NORMAL 模式不上传；stderr 不再自动升级为 WARN，无法解析级别的 stderr 按 INFO 处理。
 
 > Agent 本地日志轮转：`agentLogRotation` 是可选配置字段，`maxSizeMb` 范围为 1~1024，`maxFiles` 范围为 1~20 且包含当前日志文件。新 Agent 收到后动态应用；旧 Agent 忽略该字段并继续业务运行，Master 根据 `agent_log_rotation` 能力标记其需要升级。配置字段缺失时 Agent 使用本地 YAML/环境变量，最终回退到 50 MiB 与 5 个文件。
+
+> 物理端口限速 (`portSpeedLimits`)：可选映射 `{ [port]: limitMbps }`。Linux 边缘 Agent 收到后调用 `trafficshaper` 模块，通过 Linux `tc`（HTB 根队列与子类、u32 双向匹配）实施对应物理端口的出入双向流量整形；非 Linux 或无权限环境平滑跳过记 Warn；线路未配置限速时自动清理对应类规则。同时，入站生成支持 `tcp_fast_open`、`tcp_multi_path`、`udp_fragment`、`udp_timeout`、`proxy_protocol`，以及 `multiplex`、`masquerade`、`udp_over_tcp` 等 Sing-box 原生调优项。
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 

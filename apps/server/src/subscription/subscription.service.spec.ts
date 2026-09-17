@@ -564,4 +564,52 @@ describe('SubscriptionService', () => {
       expect(result).toBeDefined();
     });
   });
+
+  describe('限速与节点角标', () => {
+    it('按套餐与线路取最小值计算有效速率，并注入角标与 Hy2 参数', async () => {
+      settingsService.getSettings.mockResolvedValue({ appendSubscriptionSpeedBadge: true });
+      const mockSubDelegate = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sub-1',
+          userId: activeUser.id,
+          planId: 'p1',
+          status: 'ACTIVE',
+          trafficLimitBytes: 1000000000n,
+          trafficUsedBytes: 0n,
+          expireAt: new Date(Date.now() + 86400000),
+          user: { ...activeUser, isActive: true },
+          plan: {
+            id: 'p1',
+            name: '高级套餐',
+            speedLimitMbps: 100,
+            appendSpeedBadge: 'INHERIT',
+            lineMatchMode: 'ALL',
+            lineTagsJson: '[]',
+            lineIdsJson: '[]'
+          }
+        })
+      };
+      (service as unknown as { subscriptionDelegate: () => unknown }).subscriptionDelegate = () => mockSubDelegate;
+
+      linesService.getAvailableForPlan.mockResolvedValue([
+        {
+          id: 'line-1',
+          name: '香港 01',
+          type: 'DIRECT',
+          serverHost: 'hk.example.com',
+          serverPort: 8443,
+          speedLimitMbps: 50,
+          protocolType: 'HYSTERIA2',
+          params: { upMbps: 200, downMbps: 200, tls: { enabled: true, mode: 'tls', serverName: 'hk.example.com' } }
+        }
+      ]);
+
+      const res = await service.getSubscription('tok-1', { type: 'clash' });
+      const yaml = parseYaml(res.body) as { proxies: Array<Record<string, unknown>> };
+      expect(yaml.proxies[0].name).toBe('香港 01 [50M]');
+      expect(yaml.proxies[0]['bandwidth-limit']).toBe('50 Mbps');
+      expect(yaml.proxies[0].up).toBe('50 Mbps');
+      expect(yaml.proxies[0].down).toBe('50 Mbps');
+    });
+  });
 });

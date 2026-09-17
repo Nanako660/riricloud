@@ -43,6 +43,7 @@ export const SETTING_KEYS = {
   SUBSCRIPTION_SHORT_LINKS_ENABLED: 'subscriptionShortLinksEnabled',
   SUBSCRIPTION_EFFECTS_SYNC_ENABLED: 'subscriptionEffectsSyncEnabled',
   SUBSCRIPTION_UPDATE_INTERVAL_HOURS: 'subscriptionUpdateIntervalHours',
+  APPEND_SUBSCRIPTION_SPEED_BADGE: 'appendSubscriptionSpeedBadge',
   DEFAULT_TEMPLATE_ID: 'defaultTemplateId',
   PUBLIC_LINES_ENABLED: 'publicLinesEnabled',
   INCLUDE_USAGE_HEADERS: 'includeUsageHeaders',
@@ -108,6 +109,7 @@ export interface SystemSettings {
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
+  appendSubscriptionSpeedBadge: boolean;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
@@ -208,6 +210,7 @@ export const DEFAULTS: SystemSettings = {
   subscriptionShortLinksEnabled: false,
   subscriptionEffectsSyncEnabled: true,
   subscriptionUpdateIntervalHours: 24,
+  appendSubscriptionSpeedBadge: true,
   defaultTemplateId: null,
   publicLinesEnabled: true,
   includeUsageHeaders: true,
@@ -276,6 +279,7 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   subscriptionShortLinksEnabled: '是否使用 Nginx 伪静态短订阅链接',
   subscriptionEffectsSyncEnabled: '是否开启「我的订阅」卡片套餐特效同步',
   subscriptionUpdateIntervalHours: '客户端订阅更新周期（小时）',
+  appendSubscriptionSpeedBadge: '是否在订阅节点名称默认追加速率角标（如 [50M]）',
   defaultTemplateId: '全局默认订阅模板',
   publicLinesEnabled: '是否公开线路列表',
   includeUsageHeaders: '是否注入订阅用量响应头',
@@ -370,6 +374,7 @@ export class SettingsService {
       subscriptionShortLinksEnabled: this.readBoolean(map, 'subscriptionShortLinksEnabled'),
       subscriptionEffectsSyncEnabled: this.readBoolean(map, 'subscriptionEffectsSyncEnabled'),
       subscriptionUpdateIntervalHours: this.readInteger(map, 'subscriptionUpdateIntervalHours', 1, 168),
+      appendSubscriptionSpeedBadge: this.readBoolean(map, 'appendSubscriptionSpeedBadge'),
       defaultTemplateId: this.readNullableString(map, 'defaultTemplateId'),
       publicLinesEnabled: this.readBoolean(map, 'publicLinesEnabled'),
       includeUsageHeaders: this.readBoolean(map, 'includeUsageHeaders'),

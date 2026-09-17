@@ -93,6 +93,7 @@ interface SystemSettings {
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
+  appendSubscriptionSpeedBadge: boolean;
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
@@ -158,6 +159,7 @@ const settingsSchema = z.object({
   subscriptionShortLinksEnabled: z.boolean(),
   subscriptionEffectsSyncEnabled: z.boolean(),
   subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
+  appendSubscriptionSpeedBadge: z.boolean(),
   defaultTemplateId: z.string(),
   publicLinesEnabled: z.boolean(),
   includeUsageHeaders: z.boolean(),
@@ -218,7 +220,7 @@ export default function AdminSettingsPage() {
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       systemTimezone: 'Asia/Shanghai',
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
-      emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
+      emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24, appendSubscriptionSpeedBadge: true,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: 'https://github.com/Nanako660/riricloud', githubMirrorUrls: [], probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
@@ -365,6 +367,7 @@ export default function AdminSettingsPage() {
               </div>
               <SettingsSwitch name="publicLinesEnabled" label="公开线路列表" description="关闭后用户订阅和线路页不再返回公开线路。" />
               <SettingsSwitch name="includeUsageHeaders" label="注入用量响应头" description="向订阅响应附加 Subscription-Userinfo。" />
+              <SettingsSwitch name="appendSubscriptionSpeedBadge" label="默认追加节点速率角标" description="开启后，在套餐或线路配置了限速时，下发订阅的节点名称末尾自动追加例如 [50M] 速率标签（套餐可单独覆盖）。" />
             </CardContent></Card></TabsContent>
 
              <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 运维与网络探针" description="调整节点健康判定、配置推送和 HTTP 轮询行为。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
@@ -577,6 +580,7 @@ function toForm(settings: SystemSettings): SettingsForm {
     subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled ?? true,
     subscriptionUpdateIntervalHours: settings.subscriptionUpdateIntervalHours,
+    appendSubscriptionSpeedBadge: settings.appendSubscriptionSpeedBadge ?? true,
     defaultTemplateId: settings.defaultTemplateId ?? 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
     includeUsageHeaders: settings.includeUsageHeaders,
@@ -644,6 +648,7 @@ function toPayload(values: SettingsForm) {
     subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: values.subscriptionEffectsSyncEnabled,
     subscriptionUpdateIntervalHours: values.subscriptionUpdateIntervalHours,
+    appendSubscriptionSpeedBadge: values.appendSubscriptionSpeedBadge,
     defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,
     includeUsageHeaders: values.includeUsageHeaders,

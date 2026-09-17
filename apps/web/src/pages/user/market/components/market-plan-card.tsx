@@ -142,6 +142,7 @@ export function MarketPlanCard({
   // Features
   const features = plan.features && plan.features.length > 0 ? plan.features : [
     `${formatBytes(plan.trafficLimitBytes)} 流量配额`,
+    plan.speedLimitMbps ? `[zap] ${plan.speedLimitMbps} Mbps 峰值速率` : '[zap] 全速专线无上限接入',
     `流量规则：${RESET_LABELS[plan.trafficResetMode] || '自动重置'}`,
     '全格式支持 (Clash Meta / Sing-box / 通用订阅)',
     '智能授权接入所有高速节点'
@@ -366,6 +367,14 @@ export function MarketPlanCard({
 
               {/* 徽章组 */}
               <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                {Boolean(plan.speedLimitMbps) && (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-2 py-0.5 font-semibold"
+                  >
+                    ⚡ {plan.speedLimitMbps} Mbps
+                  </Badge>
+                )}
                 {isCurrent && (
                   <Badge variant="default" className="text-xs">
                     当前套餐

@@ -74,6 +74,13 @@ type LineInput = {
   tunnelType?: string | null;
   tunnelPort?: number | null;
   tunnelSecret?: string | null;
+  speedLimitMbps?: number | null;
+  tcpFastOpen?: boolean;
+  tcpMultiPath?: boolean;
+  udpFragment?: boolean | null;
+  udpTimeout?: string | null;
+  proxyProtocol?: number;
+  proxyProtocolAcceptNoHeader?: boolean;
 };
 
 const UDP_PROTOCOLS = new Set<ProtocolType>(['HYSTERIA2', 'TUIC']);
@@ -399,6 +406,13 @@ export class LinesService {
       host: optionalText(input.host, current?.host),
       trafficRate: input.trafficRate ?? current?.trafficRate ?? 1,
       tagsJson: JSON.stringify(tags),
+      speedLimitMbps: input.speedLimitMbps !== undefined ? input.speedLimitMbps : current?.speedLimitMbps ?? 0,
+      tcpFastOpen: input.tcpFastOpen ?? current?.tcpFastOpen ?? false,
+      tcpMultiPath: input.tcpMultiPath ?? current?.tcpMultiPath ?? false,
+      udpFragment: input.udpFragment !== undefined ? input.udpFragment : current?.udpFragment,
+      udpTimeout: optionalText(input.udpTimeout, current?.udpTimeout),
+      proxyProtocol: input.proxyProtocol !== undefined ? input.proxyProtocol : current?.proxyProtocol ?? 0,
+      proxyProtocolAcceptNoHeader: input.proxyProtocolAcceptNoHeader ?? current?.proxyProtocolAcceptNoHeader ?? false,
       level: input.level ?? current?.level ?? 0,
       sortOrder: input.sortOrder ?? current?.sortOrder ?? 0,
       isPublic: input.isPublic ?? current?.isPublic ?? true,

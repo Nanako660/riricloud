@@ -199,6 +199,11 @@ export class UpdateSettingsDto {
   @Max(168)
   @IsOptional()
   subscriptionUpdateIntervalHours?: number;
+ 
+  @ApiPropertyOptional({ example: true, description: '是否在订阅节点名称默认追加速率角标（如 [50M]）' })
+  @IsBoolean()
+  @IsOptional()
+  appendSubscriptionSpeedBadge?: boolean;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @ValidateIf((o) => o.defaultTemplateId !== undefined && o.defaultTemplateId !== null && o.defaultTemplateId !== '')

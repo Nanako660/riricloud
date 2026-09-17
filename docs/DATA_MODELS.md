@@ -320,6 +320,13 @@ model Line {
   tunnelType      String?  // 反向穿透隧道类型：TCP_MUX (Yamux 多路复用) | WIREGUARD (NAT 落地中继时生效)
   tunnelPort      Int?     // 入口 VPS 监听的隧道连接端口
   tunnelSecret    String?  // AES-GCM 加密存储的隧道握手鉴权凭据
+  speedLimitMbps  Int?     // 单端口物理限速（Mbps，0 或 null 为不限速，边缘 Agent 执行 tc 整形）
+  tcpFastOpen     Boolean  @default(false) // TCP Fast Open 开关
+  tcpMultiPath    Boolean  @default(false) // TCP MultiPath 开关
+  udpFragment     Boolean  @default(true)  // 允许 UDP 分片
+  udpTimeout      String?  // UDP 会话超时（如 5m、30s）
+  proxyProtocol   Int?     // PROXY Protocol 版本（1 或 2，null 为关闭）
+  proxyProtocolAcceptNoHeader Boolean @default(false) // 允许缺少 PROXY Protocol 头的连接
   tagsJson        String   @default("[]")
   level           Int      @default(0)
   sortOrder       Int      @default(0)
@@ -393,6 +400,8 @@ model Plan {
   sortOrder         Int      @default(0)
   purchaseLimitPerUser Int?  // null 表示不限购；>=1 时限制每购买身份累计次数
   allowRenewal      Boolean  @default(true)
+  speedLimitMbps    Int?     // 套餐带宽速率上限（Mbps，0 或 null 为不限速）
+  appendSpeedBadge  String   @default("INHERIT") // 节点追加速率角标策略：INHERIT | ENABLE | DISABLE
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -633,6 +642,7 @@ model SystemSetting {
 | `subscriptionShortLinksEnabled` | `"true"` / `"false"` | `"false"` | 用户端是否展示由 Nginx rewrite 提供的 UUID 伪静态订阅地址 |
 | `subscriptionEffectsSyncEnabled` | `"true"` / `"false"` | `"true"` | 是否开启「我的订阅」卡片套餐特效同步；开启后用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框，关闭后保持经典极简原生卡片 |
 | `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
+| `appendSubscriptionSpeedBadge` | `"true"` / `"false"` | `"true"` | 订阅节点名称是否默认追加如 `[50M]` 速率角标（套餐可单独覆盖） |
 | `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板；系统设置中以只读卡片展示，引导前往模板页维护 |
 | `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
 | `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |

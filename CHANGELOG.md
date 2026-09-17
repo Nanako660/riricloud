@@ -13,6 +13,8 @@
 ## [Unreleased]
 
 ### Added
+- **线路底层网络与多路复用增强配置**：对齐 Sing-box 官方规范，线路支持 TCP Fast Open (TFO)、TCP MultiPath (MPTCP)、UDP Fragment 与 UDP Timeout 超时设置；支持 PROXY Protocol v1/v2 及无头握手降级；在 VLESS / VMESS / TROJAN / SHADOWSOCKS 协议下支持多路复用 `multiplex`（smux/yamux/h2mux、最大连接数、最小/最大流数、填充 Padding、TCP Brutal 拥塞控制与速率期望）；支持 Hysteria 2 HTTP Masquerade 伪装（file/proxy/string）、Shadowsocks UDP over TCP 开关及标准 TLS 最低/最高版本与自定义密码套件。
+- **分层限速架构与速率角标自动化**：Master 向 Agent 同步下发端口物理限速表 `portSpeedLimits`；套餐与线路独立设置 `speedLimitMbps`，计算 `effectiveSpeed = min(plan, line)`，Clash Meta 注入 `bandwidth-limit`，Hysteria 2 动态协商 `up_mbps`/`down_mbps`；系统设置提供 `appendSubscriptionSpeedBadge` 开关，套餐支持 `INHERIT`/`ENABLE`/`DISABLE` 覆盖，启用时自动在订阅节点名称追加如 `[50M]` 角标；线路管理、套餐表单与前台市场卡片全面支持速率与网络调优。
 - **Sing-box 临时诊断日志控制**：节点详情支持在线且兼容 Agent 开启 INFO/DEBUG 诊断，固定 30 分钟自动恢复并保留重启与隐私风险提示。
 - **流量统计与系统日志存储治理**：新增存储与日志设置页签、统一历史观测数据预览/清理接口与共享弹窗，支持四类观测数据分表清理、逐表结果和 `CLEAR_HISTORY` 二次确认；清理完成后写入不可被本次清空删除的审计日志。
 - **Agent 本地日志轮转**：新增 50 MiB/5 文件默认策略、YAML/环境变量配置、Master `config_sync` 动态下发及 `agent_log_rotation` 能力识别，旧 Agent 保持业务兼容并提示升级。

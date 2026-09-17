@@ -6,6 +6,9 @@ import {
   buildShadowsocksClientPassword,
   buildServerInbound,
   buildServerInbounds,
+  buildServerMasquerade,
+  buildServerMultiplex,
+  buildSharedListenFields,
   generateRealityKeypair,
   normalizeShadowsocksPassword,
   normalizeInboundParams,
@@ -648,5 +651,108 @@ describe('buildProxyPoolWhitelistRules', () => {
         ]
       })
     ).toEqual([]);
+  });
+});
+
+describe('线路网络底座与协议增强', () => {
+  it('buildSharedListenFields 正确映射 TFO, MPTCP, PROXY Protocol 与 UDP 参数', () => {
+    expect(buildSharedListenFields({})).toEqual({});
+    expect(buildSharedListenFields({
+      tcpFastOpen: true,
+      tcpMultiPath: true,
+      udpFragment: true,
+      udpTimeout: '5m',
+      proxyProtocol: 2,
+      proxyProtocolAcceptNoHeader: true
+    })).toEqual({
+      tcp_fast_open: true,
+      tcp_multi_path: true,
+      udp_fragment: true,
+      udp_timeout: '5m',
+      proxy_protocol: true,
+      proxy_protocol_accept_no_header: true
+    });
+  });
+
+  it('buildServerMultiplex 正确输出 Inbound multiplex 配置', () => {
+    expect(buildServerMultiplex(undefined)).toBeUndefined();
+    expect(buildServerMultiplex({ enabled: false })).toBeUndefined();
+    expect(buildServerMultiplex({
+      enabled: true,
+      padding: true,
+      brutal: { enabled: true, upMbps: 100, downMbps: 200 }
+    })).toEqual({
+      enabled: true,
+      padding: true,
+      brutal: { enabled: true, up_mbps: 100, down_mbps: 200 }
+    });
+  });
+
+  it('buildServerMasquerade 正确支持 file, proxy 与 string 伪装', () => {
+    expect(buildServerMasquerade({ type: 'file', dir: '/var/www' })).toEqual({
+      type: 'file',
+      dir: '/var/www'
+    });
+    expect(buildServerMasquerade({ type: 'proxy', url: 'https://bing.com', rewriteHost: true })).toEqual({
+      type: 'proxy',
+      url: 'https://bing.com',
+      rewrite_host: true
+    });
+    expect(buildServerMasquerade({ type: 'string', content: 'OK', statusCode: 200 })).toEqual({
+      type: 'string',
+      content: 'OK',
+      status_code: 200
+    });
+  });
+
+  it('buildServerInbound 注入 shared listen 与 TLS 版本/套件字段', () => {
+    const baseInput = {
+      tag: 'vless-in',
+      listen: '0.0.0.0',
+      port: 443,
+      lineId: 'line-test'
+    };
+    const params = normalizeInboundParams('VLESS', {
+      tls: {
+        enabled: true,
+        mode: 'reality',
+        serverName: 'apple.com',
+        dest: 'apple.com:443',
+        minVersion: '1.2',
+        maxVersion: '1.3',
+        cipherSuites: ['TLS_AES_128_GCM_SHA256']
+      },
+      multiplex: {
+        enabled: true,
+        padding: false
+      }
+    });
+
+    const inbound = buildServerInbound({
+      type: 'VLESS',
+      ...baseInput,
+      params,
+      users: [{ uuid: 'uuid-1', email: 'u1@x.com', credential: 'c1' }],
+      listenOptions: {
+        tcpFastOpen: true,
+        proxyProtocol: 1
+      }
+    });
+
+    expect(inbound).toMatchObject({
+      type: 'vless',
+      tag: 'vless-in',
+      tcp_fast_open: true,
+      proxy_protocol: true,
+      tls: expect.objectContaining({
+        min_version: '1.2',
+        max_version: '1.3',
+        cipher_suites: ['TLS_AES_128_GCM_SHA256']
+      }),
+      multiplex: {
+        enabled: true,
+        padding: false
+      }
+    });
   });
 });

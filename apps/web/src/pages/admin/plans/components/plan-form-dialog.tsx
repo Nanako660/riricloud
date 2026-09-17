@@ -72,6 +72,11 @@ const schema = z.object({
     z.number().int().min(1).nullable()
   ),
   allowRenewal: z.boolean(),
+  speedLimitMbps: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined || val === 0 ? null : Number(val)),
+    z.number().int().min(1).max(100000).nullable().optional()
+  ),
+  appendSpeedBadge: z.enum(['INHERIT', 'ENABLE', 'DISABLE']).default('INHERIT'),
   // 视觉与营销动效配置
   cardStyle: z.enum(['fusion', 'holographic', 'neon', 'custom']).default('fusion'),
   themeColor: z.enum(['default', 'amber', 'blue', 'purple', 'emerald', 'rose', 'indigo']),
@@ -134,6 +139,8 @@ export function PlanFormDialog({
       sortOrder: 0,
       purchaseLimitPerUser: 1,
       allowRenewal: false,
+      speedLimitMbps: null,
+      appendSpeedBadge: 'INHERIT',
       cardStyle: 'fusion',
       themeColor: 'default',
       icon: 'Zap',
@@ -206,6 +213,8 @@ export function PlanFormDialog({
               sortOrder: plan.sortOrder,
               purchaseLimitPerUser: plan.purchaseLimitPerUser,
               allowRenewal: plan.allowRenewal,
+              speedLimitMbps: plan.speedLimitMbps ?? null,
+              appendSpeedBadge: (plan.appendSpeedBadge as 'INHERIT' | 'ENABLE' | 'DISABLE') ?? 'INHERIT',
               cardStyle: plan.cardConfig?.cardStyle ?? 'fusion',
               themeColor: plan.cardConfig?.themeColor ?? 'default',
               icon: plan.cardConfig?.icon ?? 'Zap',
@@ -253,6 +262,8 @@ export function PlanFormDialog({
       sortOrder: values.sortOrder,
       purchaseLimitPerUser: values.purchaseLimitPerUser,
       allowRenewal: values.allowRenewal,
+      speedLimitMbps: values.speedLimitMbps ?? null,
+      appendSpeedBadge: values.appendSpeedBadge ?? 'INHERIT',
       cardConfig: {
         cardStyle: values.cardStyle,
         themeColor: values.themeColor,
@@ -297,6 +308,7 @@ export function PlanFormDialog({
     isFeatured: watchedValues.isFeatured,
     purchaseLimitPerUser: watchedValues.purchaseLimitPerUser,
     allowRenewal: watchedValues.allowRenewal,
+    speedLimitMbps: watchedValues.speedLimitMbps ? Number(watchedValues.speedLimitMbps) : null,
     features: watchedValues.featuresText
       ? watchedValues.featuresText.split('\n').filter(Boolean)
       : undefined,
@@ -443,8 +455,41 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-badge">角标文本（可选）</Label>
+                  <Label htmlFor="plan-badge">营销角标文本（可选）</Label>
                   <Input id="plan-badge" placeholder="例如：HOT、镇店之宝、8.5折" {...form.register('badgeText')} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plan-speed-limit">带宽速率上限（Mbps）</Label>
+                  <Input
+                    id="plan-speed-limit"
+                    type="number"
+                    min="1"
+                    placeholder="留空或 0 表示不限速"
+                    {...form.register('speedLimitMbps')}
+                  />
+                  <p className="text-[11px] text-muted-foreground">客户端订阅峰值限速，如 100 Mbps</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>节点速率角标策略</Label>
+                  <Controller
+                    control={form.control}
+                    name="appendSpeedBadge"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="INHERIT">跟随系统全局设置</SelectItem>
+                          <SelectItem value="ENABLE">强制追加（例如 [100M]）</SelectItem>
+                          <SelectItem value="DISABLE">强制不追加角标</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  <p className="text-[11px] text-muted-foreground">在下发的订阅节点名称末尾追加速率标识</p>
                 </div>
               </div>
             </div>

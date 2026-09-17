@@ -110,6 +110,9 @@ export interface InboundTlsConfig {
   reality?: InboundRealityConfig;
   alpn?: string[];
   insecure?: boolean;
+  min_version?: string;
+  max_version?: string;
+  cipher_suites?: string[];
 }
 
 // 入站协议专属参数（响应已剥离 privateKey）
@@ -117,6 +120,28 @@ export interface InboundParams {
   flow?: string;
   transport?: InboundTransport;
   tls?: InboundTlsConfig;
+  multiplex?: {
+    enabled?: boolean;
+    protocol?: 'smux' | 'yamux' | 'h2mux';
+    max_connections?: number;
+    min_streams?: number;
+    max_streams?: number;
+    padding?: boolean;
+    brutal?: {
+      enabled?: boolean;
+      up_mbps?: number;
+      down_mbps?: number;
+    };
+  };
+  masquerade?: {
+    type: 'none' | 'file' | 'proxy' | 'string';
+    file?: string;
+    dir?: string;
+    url?: string;
+    string?: string;
+    text?: string;
+  };
+  udp_over_tcp?: boolean;
   alterId?: number;
   upMbps?: number;
   downMbps?: number;

@@ -125,6 +125,7 @@ export interface ConfigSyncData {
   // 可选字段：旧版 Agent 忽略该字段，使用本地日志配置。
   agentLogRotation?: AgentLogRotationConfig;
   tunnelConfigs?: TunnelConfigPayload[];
+  portSpeedLimits?: Record<number, number>;
 }
 
 export type UpgradeTarget = 'singbox' | 'agent';
@@ -209,6 +210,8 @@ export interface AgentPollResponse {
   singboxConfig: Record<string, unknown> | null;
   singboxLogCaptureLevel?: SingboxLogCaptureLevel;
   agentLogRotation?: AgentLogRotationConfig;
+  tunnelConfigs?: TunnelConfigPayload[];
+  portSpeedLimits?: Record<number, number>;
   tasks: AgentTaskMessage[];
   nextPollSecs: number;
 }

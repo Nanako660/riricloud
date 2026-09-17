@@ -24,6 +24,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
+	"github.com/Nanako660/riricloud/apps/agent/internal/trafficshaper"
 	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
@@ -127,6 +128,7 @@ type pollResponse struct {
 	SingboxLogCaptureLevel string                  `json:"singboxLogCaptureLevel,omitempty"`
 	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
 	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
+	PortSpeedLimits        map[int]int             `json:"portSpeedLimits,omitempty"`
 	Tasks                  []taskMessage           `json:"tasks"`
 	NextPollSecs           int                     `json:"nextPollSecs"`
 }
@@ -160,6 +162,7 @@ type Client struct {
 	tasks            sync.WaitGroup
 	logCollector     *logging.Collector
 	logRotator       *logging.RotatingWriter
+	shaper           *trafficshaper.Shaper
 }
 
 func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
@@ -183,11 +186,15 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		traffic:        trafficstats.NewCollector(log),
 		logCollector:   logCollector,
 		logRotator:     logRotator,
+		shaper:         trafficshaper.NewShaper(log),
 	}
 }
 
 // Run 先立即轮询一次，随后采用服务端建议周期；请求失败时短暂指数退避，成功后恢复协商周期。
 func (c *Client) Run(ctx context.Context) {
+	if c.shaper != nil {
+		defer c.shaper.Cleanup()
+	}
 	interval := c.interval
 	for {
 		if ctx.Err() != nil {
@@ -299,6 +306,11 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	if response.TunnelConfigs != nil && c.tunnelMgr != nil {
 		if err := c.tunnelMgr.ApplyConfigs(response.TunnelConfigs); err != nil {
 			c.log.WithError(err).Warn("apply polled tunnel configs failed")
+		}
+	}
+	if response.PortSpeedLimits != nil && c.shaper != nil {
+		if err := c.shaper.Sync(response.PortSpeedLimits); err != nil {
+			c.log.WithError(err).Warn("apply polled traffic shaping failed")
 		}
 	}
 	for _, task := range response.Tasks {

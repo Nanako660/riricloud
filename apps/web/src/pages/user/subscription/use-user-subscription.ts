@@ -19,6 +19,7 @@ export interface UserPlan {
   cardConfig?: PlanCardConfig;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  speedLimitMbps?: number | null;
 }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; trafficResetMode: TrafficResetMode; nextTrafficResetAt: string | null; extraLineIds: string[]; plan: UserPlan; }
 export interface UserLine {
@@ -26,6 +27,7 @@ export interface UserLine {
   name: string;
   protocolType: string;
   trafficRate: number;
+  speedLimitMbps?: number | null;
   lastLatencyMs?: number | null;
   lastTestedAt?: string | null;
   lastTestStatus?: string | null;

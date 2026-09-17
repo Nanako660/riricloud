@@ -1,6 +1,7 @@
 import type { UseFormReturn } from 'react-hook-form';
 import { Separator } from '@/components/ui/separator';
 import { FieldGrid, SelectField, TextField } from './line-form-controls';
+import { LineNetworkFields } from './line-network-fields';
 import { LineProtocolFields } from './line-protocol-fields';
 import { hasProtocolSpecificFields } from './line-protocol-capabilities';
 import { LineSecurityFields } from './line-security-fields';
@@ -38,6 +39,13 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
           <TextField form={form} name="entryPort" label="入口监听端口" type="number" placeholder="留空自动分配" />
         </FieldGrid>
         <p className="text-xs text-muted-foreground">切换协议会重置该协议的传输、安全和专属参数；线路公共属性会保留。</p>
+      </section>
+
+      <Separator />
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium">底层网络与物理限速</h3>
+        <Separator />
+        <LineNetworkFields form={form} />
       </section>
 
       {supportsTransport && <>

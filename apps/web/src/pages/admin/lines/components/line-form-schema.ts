@@ -78,6 +78,9 @@ export const lineFormSchema = z.object({
   tlsKeyPath: z.string(),
   tlsAlpn: z.array(z.string().trim().min(1)),
   tlsInsecure: z.boolean(),
+  tlsMinVersion: z.string().default(''),
+  tlsMaxVersion: z.string().default(''),
+  tlsCipherSuites: z.string().default(''),
   realityDest: z.string(),
   realityPrivateKey: z.string(),
   realityPublicKey: z.string(),
@@ -87,18 +90,46 @@ export const lineFormSchema = z.object({
   acmeEmail: z.string(),
   acmeProvider: z.string(),
 
+  // 网络监听与物理限速
+  speedLimitMbps: optionalNonNegative,
+  tcpFastOpen: z.boolean().default(false),
+  tcpMultiPath: z.boolean().default(false),
+  udpFragment: z.boolean().default(true),
+  udpTimeout: z.string().default(''),
+  proxyProtocol: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined || v === 0 || v === '0' ? undefined : Number(v)),
+    z.union([z.literal(1), z.literal(2)]).optional()
+  ),
+  proxyProtocolAcceptNoHeader: z.boolean().default(false),
+
+  // 多路复用 Multiplex
+  multiplexEnabled: z.boolean().default(false),
+  multiplexProtocol: z.enum(['smux', 'yamux', 'h2mux']).default('smux'),
+  multiplexMaxConnections: optionalNonNegative,
+  multiplexMinStreams: optionalNonNegative,
+  multiplexMaxStreams: optionalNonNegative,
+  multiplexPadding: z.boolean().default(false),
+  multiplexBrutalEnabled: z.boolean().default(false),
+  multiplexBrutalUpMbps: optionalNonNegative,
+  multiplexBrutalDownMbps: optionalNonNegative,
+
   vlessFlow: z.string(),
   vmessAlterId: optionalNonNegative,
   hy2UpMbps: optionalNonNegative,
   hy2DownMbps: optionalNonNegative,
   hy2IgnoreClientBandwidth: z.boolean(),
   hy2ObfsPassword: z.string(),
+  hy2MasqueradeType: z.enum(['none', 'file', 'proxy', 'string']).default('none'),
+  hy2MasqueradeFile: z.string().default(''),
+  hy2MasqueradeProxyUrl: z.string().default(''),
+  hy2MasqueradeString: z.string().default(''),
   tuicCongestionControl: z.string(),
   tuicZeroRtt: z.boolean(),
   tuicHeartbeat: z.string(),
   ssMethod: z.string(),
   ssPassword: z.string(),
   ssMode: z.enum(['shared', 'multi-user']),
+  ssUdpOverTcp: z.boolean().default(false),
   naiveNetwork: z.enum(['tcp', 'udp']),
   stHandshakeDest: z.string(),
   stInnerMethod: z.string(),
@@ -209,11 +240,17 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
     transportType: 'tcp', wsPath: '/ws', wsHost: '', wsHeaders: [], wsMaxEarlyData: undefined,
     wsEarlyDataHeaderName: '', grpcServiceName: 'grpc', httpPath: '/http', httpHost: '', httpHeaders: [],
     tlsMode, tlsServerName: '', tlsCertPath: '', tlsKeyPath: '', tlsAlpn: isQuic ? ['h3'] : getAlpnPresets(protocolType),
-    tlsInsecure: false, realityDest: 'www.apple.com:443', realityPrivateKey: '', realityPublicKey: '',
+    tlsInsecure: false, tlsMinVersion: '', tlsMaxVersion: '', tlsCipherSuites: '',
+    realityDest: 'www.apple.com:443', realityPrivateKey: '', realityPublicKey: '',
     realityShortIds: '0123456789abcdef', realityServerNames: 'www.apple.com', acmeDomain: '', acmeEmail: '', acmeProvider: '',
+    speedLimitMbps: undefined, tcpFastOpen: false, tcpMultiPath: false, udpFragment: true, udpTimeout: '', proxyProtocol: undefined, proxyProtocolAcceptNoHeader: false,
+    multiplexEnabled: false, multiplexProtocol: 'smux', multiplexMaxConnections: undefined, multiplexMinStreams: undefined, multiplexMaxStreams: undefined,
+    multiplexPadding: false, multiplexBrutalEnabled: false, multiplexBrutalUpMbps: undefined, multiplexBrutalDownMbps: undefined,
     vlessFlow: 'xtls-rprx-vision', vmessAlterId: 0, hy2UpMbps: 0, hy2DownMbps: 0,
-    hy2IgnoreClientBandwidth: false, hy2ObfsPassword: '', tuicCongestionControl: 'bbr', tuicZeroRtt: false,
-    tuicHeartbeat: '', ssMethod: '2022-blake3-aes-128-gcm', ssPassword: '', ssMode: 'shared', naiveNetwork: 'tcp',
+    hy2IgnoreClientBandwidth: false, hy2ObfsPassword: '',
+    hy2MasqueradeType: 'none', hy2MasqueradeFile: '', hy2MasqueradeProxyUrl: '', hy2MasqueradeString: '',
+    tuicCongestionControl: 'bbr', tuicZeroRtt: false,
+    tuicHeartbeat: '', ssMethod: '2022-blake3-aes-128-gcm', ssPassword: '', ssMode: 'shared', ssUdpOverTcp: false, naiveNetwork: 'tcp',
     stHandshakeDest: 'gateway.icloud.com:443', stInnerMethod: '2022-blake3-aes-128-gcm', stInnerPassword: '', stStrictMode: true,
     localAllowLan: false, localUsersEnabled: false, directOverrideAddress: '', directOverridePort: undefined,
     endpointOverrideEnabled: false, serverHost: '', serverPort: undefined, serverName: '', host: '',
@@ -288,6 +325,9 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     tlsKeyPath: asString(rawTls.keyPath),
     tlsAlpn: asStringArray(rawTls.alpn, getAlpnPresets(line.protocolType, transportType)),
     tlsInsecure: rawTls.insecure === true,
+    tlsMinVersion: asString(rawTls.min_version),
+    tlsMaxVersion: asString(rawTls.max_version),
+    tlsCipherSuites: Array.isArray(rawTls.cipher_suites) ? rawTls.cipher_suites.join(', ') : asString(rawTls.cipher_suites),
     realityDest: asString(rawReality.dest, defaults.realityDest),
     realityPrivateKey: '',
     realityPublicKey: asString(rawReality.publicKey),
@@ -296,18 +336,39 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     acmeDomain: asString(rawAcme.domain),
     acmeEmail: asString(rawAcme.email),
     acmeProvider: asString(rawAcme.provider),
+    speedLimitMbps: asNumber(line.speedLimitMbps),
+    tcpFastOpen: line.tcpFastOpen === true,
+    tcpMultiPath: line.tcpMultiPath === true,
+    udpFragment: line.udpFragment !== false,
+    udpTimeout: asString(line.udpTimeout),
+    proxyProtocol: line.proxyProtocol === 1 || line.proxyProtocol === 2 ? line.proxyProtocol : undefined,
+    proxyProtocolAcceptNoHeader: line.proxyProtocolAcceptNoHeader === true,
+    multiplexEnabled: asRecord(params.multiplex).enabled === true,
+    multiplexProtocol: (asString(asRecord(params.multiplex).protocol, 'smux') as LineFormValues['multiplexProtocol']),
+    multiplexMaxConnections: asNumber(asRecord(params.multiplex).max_connections),
+    multiplexMinStreams: asNumber(asRecord(params.multiplex).min_streams),
+    multiplexMaxStreams: asNumber(asRecord(params.multiplex).max_streams),
+    multiplexPadding: asRecord(params.multiplex).padding === true,
+    multiplexBrutalEnabled: asRecord(asRecord(params.multiplex).brutal).enabled === true,
+    multiplexBrutalUpMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).up_mbps),
+    multiplexBrutalDownMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).down_mbps),
     vlessFlow: asString(params.flow),
     vmessAlterId: asNumber(params.alterId, 0),
     hy2UpMbps: asNumber(params.upMbps, 0),
     hy2DownMbps: asNumber(params.downMbps, 0),
     hy2IgnoreClientBandwidth: params.ignoreClientBandwidth === true,
     hy2ObfsPassword: asString(asRecord(params.obfs).password),
+    hy2MasqueradeType: (asString(asRecord(params.masquerade).type, 'none') as LineFormValues['hy2MasqueradeType']),
+    hy2MasqueradeFile: asString(asRecord(params.masquerade).file ?? asRecord(params.masquerade).dir),
+    hy2MasqueradeProxyUrl: asString(asRecord(params.masquerade).url),
+    hy2MasqueradeString: asString(asRecord(params.masquerade).string ?? asRecord(params.masquerade).text),
     tuicCongestionControl: asString(params.congestionControl, 'bbr'),
     tuicZeroRtt: params.zeroRttHandshake === true,
     tuicHeartbeat: asString(params.heartbeat),
     ssMethod: asString(params.method, defaults.ssMethod),
     ssPassword: asString(params.password),
     ssMode: params.mode === 'multi-user' ? 'multi-user' : 'shared',
+    ssUdpOverTcp: params.udp_over_tcp !== undefined && params.udp_over_tcp !== false,
     naiveNetwork: params.network === 'udp' ? 'udp' : 'tcp',
     stHandshakeDest: asString(params.handshakeDest, defaults.stHandshakeDest),
     stInnerMethod: asString(rawShadowtlsInner.method, defaults.stInnerMethod),
@@ -391,7 +452,28 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
         provider: values.acmeProvider.trim() || undefined
       };
     }
+    if (values.tlsMinVersion.trim()) tls.min_version = values.tlsMinVersion.trim();
+    if (values.tlsMaxVersion.trim()) tls.max_version = values.tlsMaxVersion.trim();
+    if (values.tlsCipherSuites.trim()) tls.cipher_suites = splitList(values.tlsCipherSuites);
     params.tls = tls;
+  }
+
+  if (['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(values.protocolType) && values.multiplexEnabled) {
+    params.multiplex = {
+      enabled: true,
+      protocol: values.multiplexProtocol,
+      ...(values.multiplexMaxConnections ? { max_connections: values.multiplexMaxConnections } : {}),
+      ...(values.multiplexMinStreams ? { min_streams: values.multiplexMinStreams } : {}),
+      ...(values.multiplexMaxStreams ? { max_streams: values.multiplexMaxStreams } : {}),
+      padding: values.multiplexPadding,
+      ...(values.multiplexBrutalEnabled ? {
+        brutal: {
+          enabled: true,
+          up_mbps: values.multiplexBrutalUpMbps || 0,
+          down_mbps: values.multiplexBrutalDownMbps || 0
+        }
+      } : {})
+    };
   }
 
   switch (values.protocolType) {
@@ -406,6 +488,13 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       params.downMbps = values.hy2DownMbps ?? 0;
       params.ignoreClientBandwidth = values.hy2IgnoreClientBandwidth;
       if (values.hy2ObfsPassword.trim()) params.obfs = { type: 'salamander', password: values.hy2ObfsPassword.trim() };
+      if (values.hy2MasqueradeType === 'file' && values.hy2MasqueradeFile.trim()) {
+        params.masquerade = { type: 'file', file: values.hy2MasqueradeFile.trim() };
+      } else if (values.hy2MasqueradeType === 'proxy' && values.hy2MasqueradeProxyUrl.trim()) {
+        params.masquerade = { type: 'proxy', url: values.hy2MasqueradeProxyUrl.trim() };
+      } else if (values.hy2MasqueradeType === 'string' && values.hy2MasqueradeString.trim()) {
+        params.masquerade = { type: 'string', string: values.hy2MasqueradeString.trim() };
+      }
       break;
     case 'TUIC':
       params.congestionControl = values.tuicCongestionControl.trim() || 'bbr';
@@ -416,6 +505,7 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       params.method = values.ssMethod.trim() || '2022-blake3-aes-128-gcm';
       if (values.ssPassword.trim()) params.password = values.ssPassword.trim();
       params.mode = values.ssMode;
+      if (values.ssUdpOverTcp) params.udp_over_tcp = true;
       break;
     case 'NAIVE':
       params.network = values.naiveNetwork;
@@ -463,6 +553,13 @@ export function toLinePayload(values: LineFormValues) {
     entryPort: values.entryPort,
     landingNodeId,
     landingPort,
+    speedLimitMbps: values.speedLimitMbps ?? null,
+    tcpFastOpen: values.tcpFastOpen,
+    tcpMultiPath: values.tcpMultiPath,
+    udpFragment: values.udpFragment,
+    udpTimeout: values.udpTimeout.trim() || null,
+    proxyProtocol: values.proxyProtocol ?? null,
+    proxyProtocolAcceptNoHeader: values.proxyProtocolAcceptNoHeader,
     certificateId: values.tlsMode === 'tls' && values.certificateId !== MANUAL_CERTIFICATE_ID ? values.certificateId : null,
     endpointOverrideEnabled: values.endpointOverrideEnabled,
     serverHost: values.serverHost.trim() || null,

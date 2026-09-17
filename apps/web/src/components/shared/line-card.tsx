@@ -20,6 +20,11 @@ export function LineCard({ line, className }: LineCardProps) {
           {line.name}
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
+          {Boolean(line.speedLimitMbps) && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 text-xs">
+              ⚡ {line.speedLimitMbps}M
+            </Badge>
+          )}
           <Badge variant="outline" className="text-xs">{line.protocolType}</Badge>
           <Badge variant="outline" className="text-xs">{line.trafficRate}x</Badge>
         </div>

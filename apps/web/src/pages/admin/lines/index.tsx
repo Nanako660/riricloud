@@ -174,7 +174,7 @@ export default function AdminLinesPage() {
                   </>
                 )}
               </TableCell>
-              <TableCell><div className="flex max-w-40 flex-wrap gap-1">{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
+              <TableCell><div className="flex max-w-40 flex-wrap gap-1">{Boolean(line.speedLimitMbps) && <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400">⚡ {line.speedLimitMbps}M</Badge>}{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
               <TableCell>
                 <LineLatencyChip
                   latencyMs={line.lastLatencyMs}

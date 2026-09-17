@@ -245,6 +245,8 @@ model Plan {
   sortOrder            Int      @default(0)
   purchaseLimitPerUser Int? // null 表示不限购；>=1 时限制每购买身份累计次数
   allowRenewal         Boolean  @default(true)
+  speedLimitMbps       Int?     @default(0) // 用户套餐带宽速率上限 (Mbps), 0 或 null 为不限制
+  appendSpeedBadge     String   @default("INHERIT") // INHERIT | ENABLE | DISABLE (订阅节点追加速率角标)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -285,6 +287,13 @@ model Line {
   tunnelType              String? // TCP_MUX | WIREGUARD (反向穿透隧道类型，NAT 落地中继时生效)
   tunnelPort              Int? // 入口 VPS 监听的隧道连接端口
   tunnelSecret            String? // AES-GCM 加密存储的隧道握手鉴权凭据
+  speedLimitMbps          Int?      @default(0) // 物理端口带宽限速 (Mbps), 0 或 null 为不限制
+  tcpFastOpen             Boolean   @default(false) // 开启 TCP Fast Open
+  tcpMultiPath            Boolean   @default(false) // 开启 MPTCP
+  udpFragment             Boolean? // UDP 分片
+  udpTimeout              String? // UDP 超时时长（如 "5m", "300s"）
+  proxyProtocol           Int       @default(0) // PROXY Protocol 版本：0 关闭, 1 v1, 2 v2
+  proxyProtocolAcceptNoHeader Boolean @default(false) // 是否接受无 PROXY 头的连接
   tagsJson                String    @default("[]")
   level                   Int       @default(0)
   sortOrder               Int       @default(0)

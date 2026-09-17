@@ -138,6 +138,45 @@ export class UpdateLineDto {
   @IsOptional()
   tunnelSecret?: string | null;
 
+  @ApiPropertyOptional({ example: 100, nullable: true, description: '物理端口带宽限速 (Mbps)，0 或 null 表示不限速' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  @IsOptional()
+  speedLimitMbps?: number | null;
+
+  @ApiPropertyOptional({ description: '是否开启 TCP Fast Open' })
+  @IsBoolean()
+  @IsOptional()
+  tcpFastOpen?: boolean;
+
+  @ApiPropertyOptional({ description: '是否开启 MPTCP' })
+  @IsBoolean()
+  @IsOptional()
+  tcpMultiPath?: boolean;
+
+  @ApiPropertyOptional({ nullable: true, description: 'UDP 分片支持' })
+  @IsBoolean()
+  @IsOptional()
+  udpFragment?: boolean | null;
+
+  @ApiPropertyOptional({ example: '5m', nullable: true, description: 'UDP 超时时长' })
+  @IsString()
+  @IsOptional()
+  udpTimeout?: string | null;
+
+  @ApiPropertyOptional({ example: 0, enum: [0, 1, 2], description: 'PROXY Protocol 版本：0 关闭, 1 v1, 2 v2' })
+  @Type(() => Number)
+  @IsIn([0, 1, 2])
+  @IsOptional()
+  proxyProtocol?: number;
+
+  @ApiPropertyOptional({ description: '是否接受无 PROXY 头的连接' })
+  @IsBoolean()
+  @IsOptional()
+  proxyProtocolAcceptNoHeader?: boolean;
+
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsString({ each: true })
