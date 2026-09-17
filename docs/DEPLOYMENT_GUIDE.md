@@ -59,6 +59,8 @@ pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模�
 
 仓库根目录提供主控 `Dockerfile`、边缘节点 `Dockerfile.agent`、默认协同编排 `docker-compose.yml` 与离线运行模板 `docker-compose.image.yml`。
 
+两个 Dockerfile 的 Agent 编译阶段统一使用 digest 固定的 Go 1.26 基础镜像，必须与 `apps/agent/go.mod` 的 `go 1.26.0` 保持一致或更高；构建不依赖 `GOTOOLCHAIN=auto` 在线下载额外工具链。
+
 在解耦架构下，**Docker Compose 默认同时拉起 `master` 与 `agent`（Master-Local 本机节点）两个独立容器**：
 - **Master 容器**：专注控制平面与 Web 面板，仅暴露 3000 端口，不再以子进程托管 Agent；在构建期会将当前宿主平台的 `riri-agent`、定制 Sing-box（含 `libcronet.so`）按 manifest 登记的版本化布局打入 `/app/binaries/`（静态分发基线仓，不再复制旧的平铺路径副本），并将 `sing-box` 内核放置于 `/usr/local/bin/sing-box`、`mihomo` 内核放置于 `/usr/local/bin/mihomo`（并通过环境变量 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo` 声明路径）供服务端 `LineSpeedtestService` 与 `TemplatesService` 执行精准的端到端线路代理测速和 Sing-box / Mihomo 双内核真实验证诊断。即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供 Agent 二进制与内核的下载和升级分发。
 - **Agent 容器（Master-Local）**：独立容器运行，镜像通过 `AGENT_IMAGE`（默认 `riricloud/agent:latest`）注入；采用 `network_mode: host` 与 `NET_ADMIN` 能力直接监听宿主机网络，并通过 `MASTER_LOCAL_AGENT_TOKEN` 环境变量与 Master 服务端完成 Token 预置与生命周期对接。
