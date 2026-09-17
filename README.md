@@ -8,7 +8,7 @@
 [![Version](https://img.shields.io/badge/version-0.8.15-blue.svg)](./CHANGELOG.md)
 [![Node](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933.svg?logo=node.js)](https://nodejs.org)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-F69220.svg?logo=pnpm)](https://pnpm.io)
-[![Go](https://img.shields.io/badge/Go-%3E%3D1.25-00ADD8.svg?logo=go)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-%3E%3D1.26-00ADD8.svg?logo=go)](https://go.dev)
 [![NestJS](https://img.shields.io/badge/NestJS-11.x-E0234E.svg?logo=nestjs)](https://nestjs.com)
 [![React](https://img.shields.io/badge/React-19.x-61DAFB.svg?logo=react)](https://react.dev)
 [![Prisma](https://img.shields.io/badge/Prisma-6.x-2D3748.svg?logo=prisma)](https://prisma.io)
@@ -101,7 +101,7 @@ graph TB
 
 - **Node.js**：`>= 20.0.0`
 - **pnpm**：`9.15.9`（系统 npm 全局安装）
-- **Go**：`>= 1.25`（以 `apps/agent/go.mod` 为准）
+- **Go**：`>= 1.26`（以 `apps/agent/go.mod` 为准）
 
 > **Linux 开发环境**：Node.js、pnpm 与 Go 使用系统安装，依赖缓存使用当前用户默认路径。`source scripts/dev-env.sh` 在 Linux 下不会改写 `PATH` 或缓存路径；Windows Git Bash 才使用项目内兼容缓存与便携 Go 工具链。
 
@@ -113,7 +113,7 @@ sudo apt-get install -y nodejs golang-go
 sudo npm install --global pnpm@9.15.9
 node --version       # >= 20.0.0
 pnpm --version       # 9.15.9
-go version           # >= 1.25
+go version           # >= 1.26
 source scripts/dev-env.sh
 ```
 
@@ -313,7 +313,7 @@ sudo systemctl reload nginx
 | **实时通信网关** | `@nestjs/websockets` + `ws` | WebSocket over TLS (WSS) 双向长连接与 HTTP 轮询支持 |
 | **前端面板 (Web)** | React 19 + Vite 6 + TypeScript | 模块化单页应用，Tailwind CSS + shadcn/ui 组件系统 |
 | **前端状态与表格** | Zustand + TanStack Query / Table | 全局状态管理、接口数据缓存与复杂数据表格 |
-| **边缘节点 (Agent)** | Go 1.25+ + Cobra + Bubble Tea + kardianos/service | 单静态二进制，`CGO_ENABLED=0`，跨平台系统服务与全屏 TUI |
+| **边缘节点 (Agent)** | Go 1.26+ + Cobra + Bubble Tea + kardianos/service | 单静态二进制，`CGO_ENABLED=0`，跨平台系统服务与全屏 TUI |
 | **代理协议内核** | Sing-box | 支持 VLESS-Reality、Hysteria2、TUIC、Shadowsocks、ShadowTLS |
 | **工程架构治理** | pnpm Monorepo + Husky + Commitlint | Conventional Commits 规范，ESLint 9，Jest，五合一质量门禁 |
 

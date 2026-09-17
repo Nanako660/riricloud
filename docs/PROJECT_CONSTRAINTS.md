@@ -15,7 +15,7 @@
 | 主控后端 | NestJS + TypeScript |
 | 持久化 | SQLite (WAL) + Prisma ORM |
 | 实时通信 | `@nestjs/websockets` + `ws`（WSS） |
-| 边缘节点 | Go ≥ 1.25（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI、Bubble Tea TUI 与系统服务适配） |
+| 边缘节点 | Go ≥ 1.26（`CGO_ENABLED=0` 单静态二进制，内置 Cobra CLI、Bubble Tea TUI 与系统服务适配） |
 | 代理内核 | Sing-box |
 | Node.js / pnpm 版本 | Node ≥ 20，pnpm ≥ 9 |
 
@@ -27,10 +27,17 @@ Linux 是本项目的首选本地开发环境，Node.js、pnpm 与 Go 必须安�
 
 - Node.js `>=20.0.0`（推荐使用与 CI 一致的 22.x）。
 - pnpm `9.15.9`（根 `package.json` 的 `packageManager` 为唯一版本来源），通过系统 npm 全局安装。
-- Go `>=1.25`，以 `apps/agent/go.mod` 的 `go 1.25.0` 为最低兼容基线。
+- Go `>=1.26`，以 `apps/agent/go.mod` 的 `go 1.26.0` 为最低兼容基线。
 - Linux 不得通过 `.npmrc`、`scripts/dev-env.sh` 或其他脚本把运行时、pnpm store、npm cache、Prisma cache 或 Go cache 重定向到仓库内；项目依赖本身仍按 pnpm Workspace 安装到本地 `node_modules`。
 - `source scripts/dev-env.sh` 在 Linux 下必须保持系统 `PATH` 与用户默认缓存不变。`.cache/`、`.tools/` 只用于 Windows Git Bash 兼容场景和临时构建产物，不作为 Linux 工具链来源。
 - CI 使用 runner 提供的 Node.js、pnpm、Go 与缓存，不依赖开发机 `.cache/` 或 `.tools/`。
+
+### 1.2 Agent Docker 构建工具链一致性
+
+- `apps/agent/go.mod` 的 `go` 指令是 Agent 编译工具链的最低版本真相源；升级该指令时，必须在同一 PR 同步更新根 `Dockerfile` 与 `Dockerfile.agent` 的 `agent-build` 阶段。
+- 两个 Dockerfile 的 `agent-build` 阶段必须使用不低于 `apps/agent/go.mod` 的官方 Go 基础镜像，并保留 digest 固定，确保 Master 内置 Agent 与独立 Agent 镜像使用同一编译基线。
+- Agent Docker 构建不得依赖自动下载或隐式切换 Go toolchain；构建容器应直接提供满足 `go.mod` 要求的 Go 版本，`GOTOOLCHAIN=local` 下也必须能够完成 `go mod download` 与编译。
+- Go module/build cache 只能缓存依赖和编译中间产物，不能替代或掩盖编译器版本校验；修改 Go 最低版本后必须验证 `Dockerfile` 与 `Dockerfile.agent` 的 `agent-build` 阶段均可独立构建。
 
 ---
 

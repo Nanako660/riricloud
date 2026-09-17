@@ -17,6 +17,7 @@
 ### Changed
 
 ### Fixed
+- **修复 Docker Agent 构建工具链版本不一致**：根 `Dockerfile` 与 `Dockerfile.agent` 的 Agent 编译阶段统一升级到 digest 固定的 Go 1.26，与 `apps/agent/go.mod` 的最低版本要求保持一致，避免在 `GOTOOLCHAIN=local` 下因 Go 1.25 拒绝执行 `go mod download`。
 
 
 ## [0.8.15] - 2026-09-17
