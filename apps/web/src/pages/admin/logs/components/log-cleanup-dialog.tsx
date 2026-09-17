@@ -76,7 +76,6 @@ export function LogCleanupDialog({
                   <SelectItem value="7">清理 7 天前的全部日志（推荐）</SelectItem>
                   <SelectItem value="14">清理 14 天前的全部日志</SelectItem>
                   <SelectItem value="30">清理 30 天前的全部日志</SelectItem>
-                  <SelectItem value="0">清空全部历史日志（重置数据库）</SelectItem>
                 </SelectContent>
               </Select>
             </div>

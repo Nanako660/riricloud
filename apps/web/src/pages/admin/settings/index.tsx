@@ -9,7 +9,7 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { useTheme } from 'next-themes';
 import { z } from 'zod';
-import { Clock, Code2, Gauge, Globe2, Link2, Mail, Palette, RotateCcw, Save, Send, ShieldCheck, UsersRound, type LucideIcon } from 'lucide-react';
+import { Clock, Code2, Database, Gauge, Globe2, Link2, Mail, Palette, RotateCcw, Save, Send, ShieldCheck, Trash2, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
@@ -19,6 +19,7 @@ import { useAdminPlans } from '@/pages/admin/plans/use-plans';
 import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
 import { ProbePresetEditor } from './components/probe-preset-editor';
 import { probePresetTargetsSchema, toProbePresetFormValue, toProbePresetTarget, type ProbePresetTarget } from './components/probe-preset-schema';
+import { TelemetryCleanupDialog } from '@/components/shared/telemetry-cleanup-dialog';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -121,6 +122,13 @@ interface SystemSettings {
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
   turnstileSecretKey: string;
+  logsRetentionDays: number;
+  logsMaxCount: number;
+  logsMinIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  trafficHourlyRetentionDays: number;
+  nodeRateRetentionDays: number;
+  agentLogMaxSizeMb: number;
+  agentLogMaxFiles: number;
 }
 
 const settingsSchema = z.object({
@@ -178,7 +186,14 @@ const settingsSchema = z.object({
   enforceEmailVerification: z.boolean(),
   captchaMode: z.enum(['OFF', 'LOCAL', 'TURNSTILE']),
   turnstileSiteKey: z.string().max(255),
-  turnstileSecretKey: z.string().max(512)
+  turnstileSecretKey: z.string().max(512),
+  logsRetentionDays: z.coerce.number().int().min(1).max(3650),
+  logsMaxCount: z.coerce.number().int().min(1000).max(1000000),
+  logsMinIngestLevel: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']),
+  trafficHourlyRetentionDays: z.coerce.number().int().min(1).max(3650),
+  nodeRateRetentionDays: z.coerce.number().int().min(1).max(3650),
+  agentLogMaxSizeMb: z.coerce.number().int().min(1).max(1024),
+  agentLogMaxFiles: z.coerce.number().int().min(1).max(20)
 });
 
 export type SettingsForm = z.infer<typeof settingsSchema>;
@@ -190,6 +205,7 @@ export default function AdminSettingsPage() {
   const templates = useAdminTemplates();
   const [smtpTestOpen, setSmtpTestOpen] = useState(false);
   const [smtpTestEmail, setSmtpTestEmail] = useState('');
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: async () => (await api.get<SystemSettings>('/admin/settings')).data
@@ -209,7 +225,9 @@ export default function AdminSettingsPage() {
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
       lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000,
       smtpEnabled: false, smtpHost: '', smtpPort: 587, smtpSecure: false, smtpUser: '', smtpPass: '', smtpFrom: '',
-      emailVerificationEnabled: false, enforceEmailVerification: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: ''
+      emailVerificationEnabled: false, enforceEmailVerification: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: '',
+      logsRetentionDays: 7, logsMaxCount: 100000, logsMinIngestLevel: 'INFO', trafficHourlyRetentionDays: 90,
+      nodeRateRetentionDays: 30, agentLogMaxSizeMb: 50, agentLogMaxFiles: 5
     })
   });
 
@@ -274,9 +292,10 @@ export default function AdminSettingsPage() {
             <TabsList className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto p-1">
               <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />基础与品牌</TabsTrigger>
               <TabsTrigger className="shrink-0" value="users"><UsersRound className="h-4 w-4 shrink-0" />注册与用户</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />订阅与分发</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />Agent 运维</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />订阅与分发</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />Agent 运维</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="storage"><Database className="h-4 w-4 shrink-0" />存储与日志</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
             </TabsList>
 
             <TabsContent value="branding"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
@@ -348,7 +367,7 @@ export default function AdminSettingsPage() {
               <SettingsSwitch name="includeUsageHeaders" label="注入用量响应头" description="向订阅响应附加 Subscription-Userinfo。" />
             </CardContent></Card></TabsContent>
 
-            <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 运维与网络探针" description="调整节点健康判定、配置推送和 HTTP 轮询行为。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+             <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 运维与网络探针" description="调整节点健康判定、配置推送和 HTTP 轮询行为。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
               <SettingsInput name="heartbeatTimeoutSecs" label="心跳离线判定超时（秒）" type="number" min={5} max={3600} />
               <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
@@ -371,10 +390,26 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
               </div>
-              <ProbePresetEditor />
-            </CardContent></Card></TabsContent>
+               <ProbePresetEditor />
+             </CardContent></Card></TabsContent>
 
-            <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="min-w-0 space-y-6">
+            <TabsContent value="storage"><div className="space-y-4">
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Database} title="观测数据保留策略" description="控制 Master 端流量统计、节点速率与系统日志的自动清理周期。保存设置不会立即删除历史数据。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+                <SettingsInput name="trafficHourlyRetentionDays" label="流量小时汇总保留天数" type="number" min={1} max={3650} description="默认 90 天；仅影响 TrafficHourlyMetric 历史观测数据。" />
+                <SettingsInput name="nodeRateRetentionDays" label="节点速率指标保留天数" type="number" min={1} max={3650} description="默认 30 天；不影响节点当前实时速率。" />
+                <SettingsInput name="logsRetentionDays" label="系统日志保留天数" type="number" min={1} max={3650} />
+                <SettingsInput name="logsMaxCount" label="系统日志最大记录数" type="number" min={1000} max={1000000} />
+                <SettingsSelect name="logsMinIngestLevel" label="系统日志最低采集级别" options={[{ value: 'DEBUG', label: 'DEBUG' }, { value: 'INFO', label: 'INFO（推荐）' }, { value: 'WARN', label: 'WARN' }, { value: 'ERROR', label: 'ERROR' }]} description="低于此级别的日志不会进入遥测库；清理审计日志始终强制写入。" />
+                <div className="rounded-lg border bg-muted/20 p-4 text-xs text-muted-foreground md:col-span-2">旧版 TrafficLog 仅作为迁移过渡数据保留 7 天，清理入口可单独处理，不开放为长期策略。</div>
+              </CardContent></Card>
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 本地日志轮转" description="新版本 Agent 会按文件大小轮转 agent.log；旧版本继续运行但需要升级后才能应用此策略。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+                <SettingsInput name="agentLogMaxSizeMb" label="单文件大小（MiB）" type="number" min={1} max={1024} />
+                <SettingsInput name="agentLogMaxFiles" label="日志文件总数" type="number" min={1} max={20} description="包含当前文件，默认 5 个。" />
+              </CardContent></Card>
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Trash2} title="历史数据管理" description="预览并按数据类型清理历史观测数据。用户额度、订阅用量和流量游标不会被修改。" /></CardHeader><CardContent><Button type="button" variant="destructive" onClick={() => setCleanupOpen(true)}><Trash2 />打开清理中心</Button></CardContent></Card>
+            </div></TabsContent>
+
+             <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="min-w-0 space-y-6">
               <div className="max-w-2xl min-w-0"><SettingsInput name="jwtSessionDays" label="JWT 会话有效天数" type="number" min={1} max={30} description="安全提示：缩短会话周期可以降低长期凭据泄漏风险，修改后新登录会使用新周期。" /></div>
               <SettingsEditor name="customCss" label="自定义 CSS" extensions={[css()]} description="样式只注入当前面板页面，适合覆盖主题变量或品牌细节。" />
               <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="这是管理员可信边界：内容会原样挂载到 document.head，页面内脚本可能读取当前 JWT；默认 CSP 会阻止任意 inline script，请仅使用已审计的资源。" />
@@ -385,6 +420,7 @@ export default function AdminSettingsPage() {
       </Form>
       {publicSettings.isError ? <p className="text-xs text-muted-foreground">公开站点信息暂时不可用，保存后会自动重试同步。</p> : null}
       <Dialog open={smtpTestOpen} onOpenChange={setSmtpTestOpen}><DialogContent size="compact"><DialogHeader><DialogTitle>发送 SMTP 测试邮件</DialogTitle><DialogDescription>请输入收件地址，系统会先验证 SMTP 连接，再发送一封测试邮件。</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="smtp-test-email">收件邮箱</Label><Input id="smtp-test-email" type="email" value={smtpTestEmail} onChange={(event) => setSmtpTestEmail(event.target.value)} placeholder="admin@example.com" /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setSmtpTestOpen(false)}>取消</Button><Button type="button" disabled={smtpTestMutation.isPending || !smtpTestEmail.trim()} onClick={() => smtpTestMutation.mutate(smtpTestEmail.trim())}><Send />{smtpTestMutation.isPending ? '发送中…' : '发送测试邮件'}</Button></DialogFooter></DialogContent></Dialog>
+      <TelemetryCleanupDialog open={cleanupOpen} onOpenChange={setCleanupOpen} />
     </PageContainer>
   );
 }
@@ -569,7 +605,14 @@ function toForm(settings: SystemSettings): SettingsForm {
     enforceEmailVerification: settings.enforceEmailVerification ?? false,
     captchaMode: settings.captchaMode,
     turnstileSiteKey: settings.turnstileSiteKey,
-    turnstileSecretKey: settings.turnstileSecretKey
+    turnstileSecretKey: settings.turnstileSecretKey,
+    logsRetentionDays: settings.logsRetentionDays,
+    logsMaxCount: settings.logsMaxCount,
+    logsMinIngestLevel: settings.logsMinIngestLevel,
+    trafficHourlyRetentionDays: settings.trafficHourlyRetentionDays,
+    nodeRateRetentionDays: settings.nodeRateRetentionDays,
+    agentLogMaxSizeMb: settings.agentLogMaxSizeMb,
+    agentLogMaxFiles: settings.agentLogMaxFiles
   };
 }
 
@@ -629,7 +672,14 @@ function toPayload(values: SettingsForm) {
     enforceEmailVerification: values.enforceEmailVerification,
     captchaMode: values.captchaMode,
     turnstileSiteKey: values.turnstileSiteKey,
-    turnstileSecretKey: values.turnstileSecretKey
+    turnstileSecretKey: values.turnstileSecretKey,
+    logsRetentionDays: values.logsRetentionDays,
+    logsMaxCount: values.logsMaxCount,
+    logsMinIngestLevel: values.logsMinIngestLevel,
+    trafficHourlyRetentionDays: values.trafficHourlyRetentionDays,
+    nodeRateRetentionDays: values.nodeRateRetentionDays,
+    agentLogMaxSizeMb: values.agentLogMaxSizeMb,
+    agentLogMaxFiles: values.agentLogMaxFiles
   };
 }
 

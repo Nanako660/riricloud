@@ -35,6 +35,8 @@ type Config struct {
 	HeartbeatSecs    int      `yaml:"heartbeatSecs"`
 	PollIntervalSecs int      `yaml:"pollIntervalSecs"`
 	LogPath          string   `yaml:"logPath"`
+	LogMaxSizeMb     int      `yaml:"logMaxSizeMb"`
+	LogMaxFiles      int      `yaml:"logMaxFiles"`
 	GitHubMirrors    []string `yaml:"githubMirrors,omitempty"`
 
 	// MasterWsURL 为旧调用方保留，不会持久化。
@@ -102,6 +104,8 @@ func LoadFrom(path string) (*Config, error) {
 		HeartbeatSecs:    5,
 		PollIntervalSecs: 15,
 		LogPath:          filepath.Join(dataDir, "agent.log"),
+		LogMaxSizeMb:     50,
+		LogMaxFiles:      5,
 		ConfigPath:       path,
 	}
 
@@ -124,6 +128,12 @@ func LoadFrom(path string) (*Config, error) {
 	if c.LogPath == "" {
 		c.LogPath = filepath.Join(dataDir, "agent.log")
 	}
+	if c.LogMaxSizeMb == 0 {
+		c.LogMaxSizeMb = 50
+	}
+	if c.LogMaxFiles == 0 {
+		c.LogMaxFiles = 5
+	}
 	mode, err := resolveMode(c.MasterURL, string(c.Mode))
 	if err != nil {
 		return nil, err
@@ -144,6 +154,12 @@ func LoadFrom(path string) (*Config, error) {
 	}
 	if c.PollIntervalSecs < 5 || c.PollIntervalSecs > 300 {
 		return nil, fmt.Errorf("POLL_INTERVAL_SECS must be an integer between 5 and 300")
+	}
+	if c.LogMaxSizeMb < 1 || c.LogMaxSizeMb > 1024 {
+		return nil, fmt.Errorf("logMaxSizeMb must be an integer between 1 and 1024")
+	}
+	if c.LogMaxFiles < 1 || c.LogMaxFiles > 20 {
+		return nil, fmt.Errorf("logMaxFiles must be an integer between 1 and 20")
 	}
 	return c, nil
 }
@@ -248,6 +264,20 @@ func applyEnvironment(c *Config) {
 	}
 	if value := os.Getenv("RIRICLOUD_LOG_PATH"); value != "" {
 		c.LogPath = value
+	}
+	if value := os.Getenv("RIRICLOUD_LOG_MAX_SIZE_MB"); value != "" {
+		if size, err := strconv.Atoi(value); err == nil {
+			c.LogMaxSizeMb = size
+		} else {
+			c.LogMaxSizeMb = -1
+		}
+	}
+	if value := os.Getenv("RIRICLOUD_LOG_MAX_FILES"); value != "" {
+		if files, err := strconv.Atoi(value); err == nil {
+			c.LogMaxFiles = files
+		} else {
+			c.LogMaxFiles = -1
+		}
 	}
 	if value := os.Getenv("POLL_INTERVAL_SECS"); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {

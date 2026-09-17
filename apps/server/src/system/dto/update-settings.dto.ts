@@ -387,11 +387,11 @@ export class UpdateSettingsDto {
   @IsOptional()
   turnstileSecretKey?: string;
 
-  @ApiPropertyOptional({ example: 7, description: '系统日志保留天数（1~365）' })
+  @ApiPropertyOptional({ example: 7, description: '系统日志保留天数（1~3650）' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(365)
+  @Max(3650)
   @IsOptional()
   logsRetentionDays?: number;
 
@@ -411,6 +411,38 @@ export class UpdateSettingsDto {
   @IsIn(['DEBUG', 'INFO', 'WARN', 'ERROR'])
   @IsOptional()
   logsMinIngestLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+  @ApiPropertyOptional({ example: 90, description: '流量小时汇总保留天数（1~3650）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  @IsOptional()
+  trafficHourlyRetentionDays?: number;
+
+  @ApiPropertyOptional({ example: 30, description: '节点速率指标保留天数（1~3650）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  @IsOptional()
+  nodeRateRetentionDays?: number;
+
+  @ApiPropertyOptional({ example: 50, description: 'Agent 本地日志单文件大小（MiB，1~1024）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1024)
+  @IsOptional()
+  agentLogMaxSizeMb?: number;
+
+  @ApiPropertyOptional({ example: 5, description: 'Agent 本地日志文件总数，包含当前文件（1~20）' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  @IsOptional()
+  agentLogMaxFiles?: number;
 }
 
 export class ResetSettingsDto {

@@ -63,8 +63,8 @@ func TestResolvePollURLRejectsWS(t *testing.T) {
 	}
 }
 
-func TestPollPayloadIncludesSingboxCaptureCapability(t *testing.T) {
-	payload, err := json.Marshal(pollPayload{ProtocolVersion: protocol.Version, Capabilities: []string{"mirror_proxy", "singbox_log_capture"}, TrafficSnapshots: []pollTrafficRecord{}})
+func TestPollPayloadIncludesLogCapabilities(t *testing.T) {
+	payload, err := json.Marshal(pollPayload{ProtocolVersion: protocol.Version, Capabilities: []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"}, TrafficSnapshots: []pollTrafficRecord{}})
 	if err != nil {
 		t.Fatalf("marshal poll payload: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestPollPayloadIncludesSingboxCaptureCapability(t *testing.T) {
 	if err := json.Unmarshal(decoded["capabilities"], &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v", err)
 	}
-	if len(capabilities) != 2 || capabilities[1] != "singbox_log_capture" {
+	if len(capabilities) != 3 || capabilities[1] != "singbox_log_capture" || capabilities[2] != "agent_log_rotation" {
 		t.Fatalf("unexpected capabilities: %#v", capabilities)
 	}
 }

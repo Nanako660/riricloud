@@ -75,7 +75,11 @@ export const SETTING_KEYS = {
   TURNSTILE_SECRET_KEY: 'turnstileSecretKey',
   LOGS_RETENTION_DAYS: 'logsRetentionDays',
   LOGS_MAX_COUNT: 'logsMaxCount',
-  LOGS_MIN_INGEST_LEVEL: 'logsMinIngestLevel'
+  LOGS_MIN_INGEST_LEVEL: 'logsMinIngestLevel',
+  TRAFFIC_HOURLY_RETENTION_DAYS: 'trafficHourlyRetentionDays',
+  NODE_RATE_RETENTION_DAYS: 'nodeRateRetentionDays',
+  AGENT_LOG_MAX_SIZE_MB: 'agentLogMaxSizeMb',
+  AGENT_LOG_MAX_FILES: 'agentLogMaxFiles'
 } as const;
 
 export interface SystemSettings {
@@ -137,6 +141,10 @@ export interface SystemSettings {
   logsRetentionDays: number;
   logsMaxCount: number;
   logsMinIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  trafficHourlyRetentionDays: number;
+  nodeRateRetentionDays: number;
+  agentLogMaxSizeMb: number;
+  agentLogMaxFiles: number;
 }
 
 export type SystemSettingsPatch = {
@@ -235,7 +243,11 @@ export const DEFAULTS: SystemSettings = {
   turnstileSecretKey: '',
   logsRetentionDays: 7,
   logsMaxCount: 100000,
-  logsMinIngestLevel: 'INFO'
+  logsMinIngestLevel: 'INFO',
+  trafficHourlyRetentionDays: 90,
+  nodeRateRetentionDays: 30,
+  agentLogMaxSizeMb: 50,
+  agentLogMaxFiles: 5
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -296,7 +308,11 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   turnstileSecretKey: 'Cloudflare Turnstile Secret Key',
   logsRetentionDays: '系统日志保留天数',
   logsMaxCount: '系统日志最大保留条数',
-  logsMinIngestLevel: '系统日志最低采集入库级别'
+  logsMinIngestLevel: '系统日志最低采集入库级别',
+  trafficHourlyRetentionDays: '流量小时汇总保留天数',
+  nodeRateRetentionDays: '节点速率指标保留天数',
+  agentLogMaxSizeMb: 'Agent 本地日志单文件大小（MiB）',
+  agentLogMaxFiles: 'Agent 本地日志文件总数'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -384,9 +400,13 @@ export class SettingsService {
       captchaMode: this.readEnum(map, 'captchaMode', ['OFF', 'LOCAL', 'TURNSTILE']),
       turnstileSiteKey: this.readString(map, 'turnstileSiteKey'),
       turnstileSecretKey: this.readString(map, 'turnstileSecretKey'),
-      logsRetentionDays: this.readInteger(map, 'logsRetentionDays', 1, 365),
+      logsRetentionDays: this.readInteger(map, 'logsRetentionDays', 1, 3650),
       logsMaxCount: this.readInteger(map, 'logsMaxCount', 1000, 1000000),
-      logsMinIngestLevel: this.readEnum(map, 'logsMinIngestLevel', ['DEBUG', 'INFO', 'WARN', 'ERROR'])
+      logsMinIngestLevel: this.readEnum(map, 'logsMinIngestLevel', ['DEBUG', 'INFO', 'WARN', 'ERROR']),
+      trafficHourlyRetentionDays: this.readInteger(map, 'trafficHourlyRetentionDays', 1, 3650),
+      nodeRateRetentionDays: this.readInteger(map, 'nodeRateRetentionDays', 1, 3650),
+      agentLogMaxSizeMb: this.readInteger(map, 'agentLogMaxSizeMb', 1, 1024),
+      agentLogMaxFiles: this.readInteger(map, 'agentLogMaxFiles', 1, 20)
     };
   }
 

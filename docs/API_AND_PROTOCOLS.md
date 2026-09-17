@@ -81,7 +81,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 
 #### 节点管理
 - `GET /admin/nodes`：获取所有节点详情（不返回 AgentToken，包含遥测状态、承载线路摘要与派生端口）。返回字段包含网络可达性 `reachability`（`PUBLIC` | `NAT`）。启动 bootstrap 会自动创建 `isLocal=true` 的 `Master-Local` 系统节点；Docker/发行包默认由 Master 内置 Agent 自动上线。⭐
-- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 响应节点对象包含加性字段 `pendingVersionConfirm`（可选，向后兼容）：升级任务完成但心跳上报的 `agentVersion` 尚未达到目标版本时的待确认信息 `{ taskId, expectedVersion, completedAt }`，用于提示“Agent 重启可能失败”；版本对账窗口为主控侧 15 分钟，确认或超时后字段回到 `null`。同时返回 `singboxLogMode`（`NORMAL`/`INFO`/`DEBUG`，已过期诊断会折算为 `NORMAL`）、`singboxLogModeUntil` 与 `supportsSingboxLogCapture`。WS 协议契约本身无变更。 安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
+- `GET /admin/nodes/:id`：获取单个节点详情（含承载线路、入口/出口角色、派生端口、安装命令、Agent/内核版本画像与最近探针快照）。⭐ 响应节点对象包含加性字段 `pendingVersionConfirm`（可选，向后兼容）：升级任务完成但心跳上报的 `agentVersion` 尚未达到目标版本时的待确认信息 `{ taskId, expectedVersion, completedAt }`，用于提示“Agent 重启可能失败”；版本对账窗口为主控侧 15 分钟，确认或超时后字段回到 `null`。同时返回 `singboxLogMode`（`NORMAL`/`INFO`/`DEBUG`，已过期诊断会折算为 `NORMAL`）、`singboxLogModeUntil`、`supportsSingboxLogCapture` 与 `supportsAgentLogRotation`。WS 协议契约本身无变更。安装命令的公开地址优先使用系统设置 `publicBaseUrl`，其次使用 `RIRICLOUD_PUBLIC_URL`，最后使用当前请求的 `X-Forwarded-Proto` + `X-Forwarded-Host`/`Host` 自动匹配。
 - `GET /admin/nodes/:id/offline-package?platform=<os-arch>`：管理员下载指定节点的完整 Agent 离线安装包（流式压缩包：Windows `.zip`，Linux/macOS `.tar.gz`）。⭐ 需管理员 JWT 鉴权；内嵌该节点预配置的 `config.yaml`、平台二进制与全自动化免交互安装/卸载脚本。
 - `GET /admin/nodes/:id/install-script?platform=<os-arch>&format=bat|sh|ps1`：管理员下载指定节点的预编排免交互安装脚本（Windows 默认为 `.bat`，Linux/macOS 为 `.sh`）。⭐ 需管理员 JWT 鉴权；内嵌固化该节点的 AgentToken 与 MasterUrl，响应附加 `Content-Disposition: attachment` 供浏览器或脚本一键下载。
 - `POST /admin/nodes`：创建节点基础信息（生成 AgentToken 与多目标安装命令）。⭐ 请求 `{ name?, serverHost?, reachability?: "PUBLIC"|"NAT", communicationMode?: "WS"|"HTTP" }`；`reachability` 默认为 `PUBLIC`，当为 `NAT` 时 `serverHost` 可选（默认回退为 `127.0.0.1`）；NAT 节点仅可作为中继落地出口节点，禁止作为直连入站或中继入口节点。线路通过 `/admin/lines` 独立管理，创建后响应 `{ node, agentToken, installCommand, installCommands, uninstallCommand, windowsUninstallCommand }`，其中 AgentToken 仅在本次创建响应中返回一次。命令中的下载 URL、HTTP 轮询地址和 WS/WSS 地址使用同一公开地址解析结果。`installCommands` 结构：`{ ws, http, dockerWs, dockerHttp, adminScriptUrl, native: { linux, macos, windows }, portable: { linux, macos, windows }, offline: { packageDownloadUrl, adminPackageUrl, windows, linux } }`（每项均为 `{ ws, http }` 命令对，`adminScriptUrl` 为专属免交互脚本下载路径）：`ws/http` 为兼容保留的 POSIX 原生安装键；`native.windows` 为 Windows CMD 与 PowerShell 跨终端通用的免交互安装命令（拉取并执行预编排自提权 `.bat` 批处理，支持直接双击运行）；`native.linux` / `native.macos` 为预编排免交互 shell 命令（`curl | sudo sh`）；`portable.*` 为免安装直接运行命令；`offline.*` 包含各操作系统终端一键 curl/unzip/install 离线部署命令。`windowsUninstallCommand` 为 Windows 管理员 PowerShell 卸载命令。
@@ -131,7 +131,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA 与统一时区 `systemTimezone` 等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA、统一时区 `systemTimezone` 与存储日志策略等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。存储日志策略包括 `trafficHourlyRetentionDays`（默认 90）、`nodeRateRetentionDays`（默认 30）、`logsRetentionDays`（默认 7）、`logsMaxCount`（默认 100000）、`logsMinIngestLevel`（默认 `INFO`）、`agentLogMaxSizeMb`（默认 50）和 `agentLogMaxFiles`（默认 5）。
 - `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、探针对象与 IANA 时区合法性；敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 - `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
@@ -187,7 +187,9 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /logs/stream-ticket` 与 `GET /logs/stream-ticket`：管理员创建一次性、60 秒有效的 SSE 实时推流票据（双通道兼容）。⭐
 - `GET /logs/stream?ticket=<ONE_TIME_TICKET>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 票据只允许消费一次且不得替代长期 JWT；支持动态按级别、来源端、节点和关键词实时推流最新日志事件。
 - `POST /logs/frontend`：前端批量上报异常与关键操作日志。⭐ 无需管理员鉴权（`@Public()`）；请求 `{ logs: [{ level, module, message, traceId?, metadata? }] }`；服务端自动补齐 Client IP、User Agent 与当前登录用户 ID，深度脱敏后缓冲入库并广播至 SSE 监听端。
-- `DELETE /logs?retentionDays&maxRecords`：管理员手动或按策略触发历史日志清理。⭐ 请求可选指定天数与最大保留条数，返回 `{ deletedCount }`；后台定时巡检会自动根据系统设置中的 `logsRetentionDays` 与 `logsMaxCount` 定期清理。
+- `POST /admin/telemetry/cleanup/preview`：管理员预览历史观测数据清理。⭐ 请求 `{ targets: [{ kind: "trafficHourly"|"nodeRate"|"systemLog"|"legacyTraffic", mode: "retention"|"before"|"range"|"count"|"all", before?, from?, to?, keepLatest? }] }`；每类返回匹配数、估算字节、最早/最新时间、实际条件和当前策略，不执行删除。
+- `POST /admin/telemetry/cleanup`：管理员执行历史观测数据清理。⭐ 必须提交固定确认短语 `{ confirmationPhrase: "CLEAR_HISTORY" }`，服务端按目标逐表执行并返回 `SUCCEEDED`、`PARTIAL` 或 `FAILED` 及每类匹配/删除数、耗时和错误；完成后追加不可被本次清空删除的 `TelemetryCleanup` 审计日志。清理只触及四类观测数据，不修改额度、订阅用量、流量游标、节点实时状态或计费数据。
+- `DELETE /logs?retentionDays&maxRecords`：旧版系统日志清理兼容接口。⭐ 新管理端统一使用上述遥测清理接口；后台每小时根据 `logsRetentionDays` 与 `logsMaxCount` 清理系统日志，手动清空使用 `mode=all`，不再用 `retentionDays=0` 表示清空。
 - `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员按当前过滤条件导出日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
 
 #### HTTP 请求日志智能降噪与采集门槛
@@ -267,6 +269,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   "data": {
     "version": 1,
     "singboxLogCaptureLevel": "WARN",
+    "agentLogRotation": { "maxSizeMb": 50, "maxFiles": 5 },
     "singboxConfig": {
       "log": { "level": "warn" },
       "inbounds": [
@@ -325,6 +328,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 ```
 
 > 日志采集策略：`NORMAL` 为默认模式，Master 生成 `log.level=warn` 且 Agent 仅上报真实 Sing-box `WARN/ERROR`；`INFO`/`DEBUG` 是固定 30 分钟的管理员诊断模式，只临时覆盖最终配置的 `log.level`，保留 `configOverride` 的其他日志字段。`singboxLogCaptureLevel` 是可选的独立采集门槛（`WARN`/`INFO`/`DEBUG`），旧 Agent 忽略时仍按安全的 WARN/ERROR 策略工作。连接、访问、dial、connection closed 等输出标记为 `ACCESS`，NORMAL 模式不上传；stderr 不再自动升级为 WARN，无法解析级别的 stderr 按 INFO 处理。
+
+> Agent 本地日志轮转：`agentLogRotation` 是可选配置字段，`maxSizeMb` 范围为 1~1024，`maxFiles` 范围为 1~20 且包含当前日志文件。新 Agent 收到后动态应用；旧 Agent 忽略该字段并继续业务运行，Master 根据 `agent_log_rotation` 能力标记其需要升级。配置字段缺失时 Agent 使用本地 YAML/环境变量，最终回退到 50 MiB 与 5 个文件。
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 
@@ -395,7 +400,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "kernelRunning": true,
     "appliedConfigVersion": 3,
     "lastError": "",
-    "capabilities": ["mirror_proxy", "singbox_log_capture"],
+    "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation"],
     "trafficSnapshots": [
       { "userUuid": "user-uuid-1", "uploadTotal": "52428800", "downloadTotal": "104857600" },
       { "userUuid": "user-uuid-2", "uploadTotal": "1024000", "downloadTotal": "2048000" }
@@ -556,7 +561,7 @@ Content-Type: application/json
   "agentVersion": "0.3.0",
   "osArch": "linux/amd64",
   "kernelVersion": "1.11.0",
-  "capabilities": ["mirror_proxy", "singbox_log_capture"],
+  "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation"],
   "trafficSnapshots": [],
   "configApplyResults": [
     { "version": 3, "success": true, "message": "ok" }
@@ -687,7 +692,7 @@ Master 订阅编译引擎（`builders.ts`）支持通过 `SubscriptionTemplate` 
 
 ### 4.2 Master-Agent WS 消息
 
-Agent 心跳可携带 `capabilities: string[]`；能力包含 `mirror_proxy` 的在线 WS 节点可承载镜像任务，能力包含 `singbox_log_capture` 的在线节点才允许管理员开启临时 Sing-box 诊断：
+Agent 心跳可携带 `capabilities: string[]`；能力包含 `mirror_proxy` 的在线 WS 节点可承载镜像任务，能力包含 `singbox_log_capture` 的在线节点才允许管理员开启临时 Sing-box 诊断，能力包含 `agent_log_rotation` 的节点支持 Master 下发本地日志轮转策略。旧 Agent 缺少该能力时仍可继续通信和承载业务，但管理端应提示升级：
 
 ```json
 { "type": "mirror_request", "data": { "taskId": "...", "method": "GET", "url": "https://github.com/...", "allowedHosts": ["github.com", "objects.githubusercontent.com"], "requestHeaders": {}, "timeoutMs": 600000, "maxBytes": 268435456 } }

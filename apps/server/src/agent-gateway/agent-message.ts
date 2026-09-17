@@ -112,11 +112,18 @@ export interface TunnelConfigPayload {
 
 export type SingboxLogCaptureLevel = 'WARN' | 'INFO' | 'DEBUG';
 
+export interface AgentLogRotationConfig {
+  maxSizeMb: number;
+  maxFiles: number;
+}
+
 export interface ConfigSyncData {
   version: number;
   singboxConfig: Record<string, unknown>;
   // 可选字段：旧版 Agent 忽略该字段，默认仅保留 WARN/ERROR。
   singboxLogCaptureLevel?: SingboxLogCaptureLevel;
+  // 可选字段：旧版 Agent 忽略该字段，使用本地日志配置。
+  agentLogRotation?: AgentLogRotationConfig;
   tunnelConfigs?: TunnelConfigPayload[];
 }
 
@@ -201,6 +208,7 @@ export interface AgentPollResponse {
   version: number;
   singboxConfig: Record<string, unknown> | null;
   singboxLogCaptureLevel?: SingboxLogCaptureLevel;
+  agentLogRotation?: AgentLogRotationConfig;
   tasks: AgentTaskMessage[];
   nextPollSecs: number;
 }

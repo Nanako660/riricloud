@@ -216,7 +216,7 @@ model Node {
   agentVersion   String?                                 // Agent 编译版本
   osArch         String?                                 // Agent 运行平台与架构，例如 linux/amd64
   kernelVersion  String?                                 // sing-box 内核版本
-  capabilitiesJson String      @default("[]")             // Agent 能力数组，含 singbox_log_capture 时支持临时诊断
+  capabilitiesJson String      @default("[]")             // Agent 能力数组，含 singbox_log_capture 时支持临时诊断，含 agent_log_rotation 时支持本地日志轮转
 
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -658,6 +658,15 @@ model SystemSetting {
 | `enforceEmailVerification` | `"true"` / `"false"` | `"false"` | 是否强制要求已核验邮箱才能使用订阅与连接节点（未核验普通用户拦截 403 并从节点入站名单剔除；ADMIN 豁免） |
 | `captchaMode` | `OFF` / `LOCAL` / `TURNSTILE` | `"OFF"` | 注册、获取注册/重置验证码前的人机验证模式 |
 | `turnstileSiteKey` / `turnstileSecretKey` | 文本 | `""` | Cloudflare Turnstile 公钥与服务端密钥；仅 Site Key 进入公共设置，Secret Key 管理端读取时脱敏 |
+| `trafficHourlyRetentionDays` | 十进制整数（1~3650） | `"90"` | `TrafficHourlyMetric` 小时汇总保留天数 |
+| `nodeRateRetentionDays` | 十进制整数（1~3650） | `"30"` | `NodeRateMetric` 节点速率指标保留天数 |
+| `logsRetentionDays` | 十进制整数（1~3650） | `"7"` | `SystemLog` 系统日志保留天数 |
+| `logsMaxCount` | 十进制整数（1000~1000000） | `"100000"` | `SystemLog` 最大记录数，自动清理保留最新记录 |
+| `logsMinIngestLevel` | `DEBUG` / `INFO` / `WARN` / `ERROR` | `"INFO"` | 系统日志最低采集级别；清理审计日志显式绕过该门槛 |
+| `agentLogMaxSizeMb` | 十进制整数（1~1024） | `"50"` | Master 下发的 Agent 本地单文件日志轮转上限（MiB） |
+| `agentLogMaxFiles` | 十进制整数（1~20） | `"5"` | Agent 本地日志文件总数上限，包含当前文件 |
+
+存储日志设置仅更新清理和采集策略，不会在保存时立即删除数据；旧版 `TrafficLog` 作为过渡数据继续按固定 7 天清理，不暴露为长期保留项。
 
 读取时与默认值合并：键缺失或 value 解析失败一律回退默认值（新库无需预先 seed）；更新走事务 upsert（`PUT /admin/settings`，接受任意子集）；重置通过删除指定覆盖键回到默认值。密码复杂度策略由 `passwordMinLength` 与 `passwordRequire*` 四个开关构成，对注册、找回密码、修改密码与管理员建户/重置密码全场景生效，全部开关关闭时仅校验长度；公开信息端点 (`GET /system/public-info`) 返回该策略供前端动态校验。敏感设置 `smtpPass` 与 `turnstileSecretKey` 在管理端读取时返回 `********`，更新时提交该占位值表示保留原密钥。`defaultPlanId` 与 `defaultTemplateId` 写入时会校验关联实体，公开信息端点 (`GET /system/public-info`) 返回品牌、公告、客服、版权、注册开关、时区 `systemTimezone`、基准 URL `publicBaseUrl` 与 `subscriptionBaseUrl`、短链接开关、特效同步开关 `subscriptionEffectsSyncEnabled`、运行时样式以及注册邮箱验证和 CAPTCHA 的公共参数（不含 SMTP 或 Turnstile Secret）。废弃字段 `defaultTrafficLimitBytes` 与 `defaultValidityDays` 已彻底下线，新用户初始权益完全由默认套餐与初始余额决定。
 
@@ -848,12 +857,13 @@ NORMAL 节点的 SINGBOX INFO/DEBUG 不进入 `SystemLog`；有效诊断期内�
 
 ### 5.3 存储缓冲与自动滚动淘汰机制
 1. **内存队列与批量入库**：高频日志优先写入 Master 内存环形队列，每隔 1 秒或积攒 50 条日志异步执行批量写入（`createMany`），消除 SQLite 单写锁争用风险。
-2. **生命周期双上限自动清理**：后台定时巡检任务按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀。
-3. **敏感信息脱敏红线**：所有 Token、密码、UUID 凭证与 Cookie 在入库前必须经过不可逆掩码处理（如 `eyJ...***`）。
+2. **生命周期双上限自动清理**：后台每小时按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀；管理员也可从统一遥测清理中心预览、按时间/数量清理或清空。
+3. **清理审计与数据边界**：`POST /admin/telemetry/cleanup` 按 `TrafficHourlyMetric`、`NodeRateMetric`、`SystemLog` 和旧版 `TrafficLog` 分表执行，支持部分成功结果。操作要求二次确认和 `CLEAR_HISTORY` 短语，完成后以绕过最低采集级别的 `TelemetryCleanup` 日志记录操作者、请求 ID、条件、匹配数、删除数和耗时；审计写入在数据清理之后执行，因此清空系统日志仍保留本次审计。清理不触及 `User`/`Subscription` 用量、`TrafficCursor`、节点实时快照或计费数据。
+4. **敏感信息脱敏红线**：所有 Token、密码、UUID 凭证与 Cookie 在入库前必须经过不可逆掩码处理（如 `eyJ...***`）。
 
 ## 6. 实时节点镜像站模型
 
-`Node.capabilitiesJson` 保存 Agent 最近一次心跳宣告的能力数组；管理端向前端暴露解析后的能力、`supportsMirrorProxy` 与 `supportsSingboxLogCapture` 布尔值。只有在线、WS/WSS 且宣告 `mirror_proxy` 的节点可以承载实时镜像请求；只有在线且宣告 `singbox_log_capture` 的节点可以开启临时 Sing-box 诊断。
+`Node.capabilitiesJson` 保存 Agent 最近一次心跳宣告的能力数组；管理端向前端暴露解析后的能力、`supportsMirrorProxy`、`supportsSingboxLogCapture` 与 `supportsAgentLogRotation` 布尔值。只有在线、WS/WSS 且宣告 `mirror_proxy` 的节点可以承载实时镜像请求；只有在线且宣告 `singbox_log_capture` 的节点可以开启临时 Sing-box 诊断；缺少 `agent_log_rotation` 的旧 Agent 继续承载业务，但不会执行本地日志轮转。
 
 `MirrorSite` 是可复用的实时反向代理配置，不保存响应体：
 
@@ -938,7 +948,7 @@ NORMAL 节点的 SINGBOX INFO/DEBUG 不进入 `SystemLog`；有效诊断期内�
 ### 8.3 缓冲写入与生命周期
 1. **内存微批缓冲（10~15s）**：心跳解析的流量增量先行注入 `AgentGatewayService` 内存缓冲队列，由定时任务以原生 SQL `ON CONFLICT(...) DO UPDATE` 进行原子累加，彻底消除高频秒级写锁。
 2. **优雅停机保护**：服务销毁时触发 `onModuleDestroy` 强制清空残余缓冲，保障时序数据完整性。
-3. **90 天滑动窗口 TTL**：系统低峰期每日定时巡检，硬删除 90 天前的小时记录，确保 SQLite 数据库文件体积恒定可控。
+3. **可配置滑动窗口 TTL**：系统每 12 小时按 `trafficHourlyRetentionDays`（默认 90 天）清理小时记录，并按 `nodeRateRetentionDays`（默认 30 天）清理节点速率桶；旧版 `TrafficLog` 继续按固定 7 天过渡策略清理。保留策略只删除历史观测数据，不修改计费游标和用户用量。
 
 ---
 

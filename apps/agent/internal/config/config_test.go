@@ -64,6 +64,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HeartbeatSecs != 5 {
 		t.Fatalf("unexpected default heartbeat: %d", cfg.HeartbeatSecs)
 	}
+	if cfg.LogMaxSizeMb != 50 || cfg.LogMaxFiles != 5 {
+		t.Fatalf("unexpected log rotation defaults: size=%d files=%d", cfg.LogMaxSizeMb, cfg.LogMaxFiles)
+	}
 	if cfg.SingboxBinPath != filepath.Join(root, "var", executableName("sing-box")) {
 		t.Fatalf("unexpected default sing-box path: %s", cfg.SingboxBinPath)
 	}
@@ -104,6 +107,20 @@ func TestLoadFromYAMLAndEnvironmentOverride(t *testing.T) {
 		if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0o077 != 0 {
 			t.Fatalf("config file is not private: %v", err)
 		}
+	}
+}
+
+func TestLoadLogRotationEnvironmentOverride(t *testing.T) {
+	isolateConfig(t)
+	t.Setenv("AGENT_TOKEN", "tok")
+	t.Setenv("RIRICLOUD_LOG_MAX_SIZE_MB", "12")
+	t.Setenv("RIRICLOUD_LOG_MAX_FILES", "3")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LogMaxSizeMb != 12 || cfg.LogMaxFiles != 3 {
+		t.Fatalf("unexpected log rotation config: size=%d files=%d", cfg.LogMaxSizeMb, cfg.LogMaxFiles)
 	}
 }
 

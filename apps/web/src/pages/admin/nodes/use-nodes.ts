@@ -200,6 +200,7 @@ export interface AdminNode {
   capabilities: string[];
   supportsMirrorProxy?: boolean;
   supportsSingboxLogCapture?: boolean;
+  supportsAgentLogRotation?: boolean;
   agentProtocolVersion?: number | null;
   currentAgentAssetId?: string | null;
   currentSingboxAssetId?: string | null;
