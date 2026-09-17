@@ -105,6 +105,25 @@ describe('SystemLogsService', () => {
     });
   });
 
+  it('should wait for an in-flight flush before returning', async () => {
+    let resolveWrite!: () => void;
+    telemetryPrisma.systemLog.createMany.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    }));
+    service.enqueue({ source: 'SERVER', level: 'INFO', module: 'Cleanup', message: 'first' });
+    const firstFlush = service.flush();
+    service.enqueue({ source: 'SERVER', level: 'INFO', module: 'Cleanup', message: 'second' });
+    let secondFinished = false;
+    const secondFlush = service.flush().then(() => { secondFinished = true; });
+
+    await Promise.resolve();
+    expect(secondFinished).toBe(false);
+    resolveWrite();
+    await Promise.all([firstFlush, secondFlush]);
+
+    expect(telemetryPrisma.systemLog.createMany).toHaveBeenCalledTimes(2);
+  });
+
   it('should support pagination and filtering in query', async () => {
     telemetryPrisma.systemLog.findMany.mockResolvedValueOnce([
       {

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { api } from '@/lib/api';
-import { LogCleanupDialog } from './components/log-cleanup-dialog';
+import { TelemetryCleanupDialog } from '@/components/shared/telemetry-cleanup-dialog';
 import { LogDetailDrawer } from './components/log-detail-drawer';
 import { LogFilterBar } from './components/log-filter-bar';
 import { LogLiveTailBar } from './components/log-live-tail-bar';
@@ -55,7 +55,7 @@ export default function AdminLogsPage() {
     }
   }, [searchParams]);
 
-  const { logsQuery, metricsQuery, cleanMutation, exportLogs } = useLogs(filter);
+  const { logsQuery, metricsQuery, exportLogs } = useLogs(filter);
 
   // 获取节点列表供筛选
   const nodesQuery = useQuery({
@@ -189,14 +189,7 @@ export default function AdminLogsPage() {
       />
 
       {/* 日志清理确认模态框 */}
-      <LogCleanupDialog
-        open={isCleanupOpen}
-        onOpenChange={setIsCleanupOpen}
-        onClean={async (params) => {
-          await cleanMutation.mutateAsync(params);
-        }}
-        isLoading={cleanMutation.isPending}
-      />
+      <TelemetryCleanupDialog open={isCleanupOpen} onOpenChange={setIsCleanupOpen} />
     </PageContainer>
   );
 }

@@ -14,9 +14,11 @@
 
 ### Added
 - **Sing-box 分级日志治理与临时诊断采集**：解析 stdout/stderr 真实级别，支持 `singbox_log_capture` 能力和 WARN/INFO/DEBUG 动态采集门槛；保留 500 条环形缓冲、2 秒/50 条批量上报与 ERROR 快速冲刷。
+- **Agent 本地日志轮转**：`agent.log` 默认按 50 MiB 单文件上限轮转，最多保留 5 个文件（包含当前文件），支持文件数量淘汰、轮转失败回退写入和 `agent_log_rotation` 能力宣告。
 
 ### Changed
 - **内核输出降噪**：去除 ANSI 控制字符，stderr 不再自动升级为 WARN；连接访问类日志标记 ACCESS，NORMAL 模式默认丢弃；相同模块与消息的 Sing-box WARN 在 60 秒内合并并记录 `repeatCount`。
+- **日志轮转配置同步**：支持 YAML、`RIRICLOUD_LOG_MAX_SIZE_MB` / `RIRICLOUD_LOG_MAX_FILES` 环境变量及 Master `config_sync` 动态下发，并按 Master 配置、Agent 本地配置、默认值的顺序生效；旧版 Agent 保持业务运行但不启用轮转。
 
 ### Fixed
 - **异常退出级别修正**：预期停止记录 INFO，非预期 Sing-box 退出记录 ERROR，避免正常重启污染告警面板。

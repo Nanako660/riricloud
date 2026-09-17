@@ -48,10 +48,11 @@ type authResult struct {
 }
 
 type configSync struct {
-	Version                int             `json:"version"`
-	SingboxConfig          json.RawMessage `json:"singboxConfig"`
-	SingboxLogCaptureLevel string          `json:"singboxLogCaptureLevel,omitempty"`
-	TunnelConfigs          []tunnel.Config `json:"tunnelConfigs,omitempty"`
+	Version                int                     `json:"version"`
+	SingboxConfig          json.RawMessage         `json:"singboxConfig"`
+	SingboxLogCaptureLevel string                  `json:"singboxLogCaptureLevel,omitempty"`
+	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
+	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
 }
 
 type heartbeatTraffic struct {
@@ -197,9 +198,14 @@ type Client struct {
 	mirrorMu      sync.Mutex
 	mirrorCancels map[string]context.CancelFunc
 	logCollector  *logging.Collector
+	logRotator    *logging.RotatingWriter
 }
 
-func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector) *Client {
+func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
+	var logRotator *logging.RotatingWriter
+	if len(logRotators) > 0 {
+		logRotator = logRotators[0]
+	}
 	return &Client{
 		masterURL:     masterURL,
 		token:         token,
@@ -214,6 +220,7 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		mirrorExec:    mirror.NewExecutor(),
 		mirrorCancels: make(map[string]context.CancelFunc),
 		logCollector:  logCollector,
+		logRotator:    logRotator,
 	}
 }
 
@@ -323,6 +330,11 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			}
 			if c.logCollector != nil {
 				c.logCollector.SetSingboxCaptureLevel(sync.SingboxLogCaptureLevel)
+			}
+			if c.logRotator != nil && sync.AgentLogRotation != nil {
+				if err := c.logRotator.Update(sync.AgentLogRotation.MaxSizeMb, sync.AgentLogRotation.MaxFiles); err != nil {
+					c.log.WithError(err).Warn("invalid agent log rotation policy")
+				}
 			}
 			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig, int64(sync.Version)); err != nil {
 				c.log.WithError(err).Error("apply singbox config failed")
@@ -567,7 +579,7 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				OSArch:           c.osArch,
 				KernelVersion:    kernel.Version,
 				TrafficSnapshots: make([]heartbeatTraffic, 0, len(trafficSnapshots)),
-				Capabilities:     []string{"mirror_proxy", "singbox_log_capture"},
+				Capabilities:     []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"},
 			}
 			for _, record := range trafficSnapshots {
 				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{

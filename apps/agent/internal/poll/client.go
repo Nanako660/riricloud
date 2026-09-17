@@ -120,14 +120,15 @@ type pollPayload struct {
 }
 
 type pollResponse struct {
-	ProtocolVersion        int             `json:"protocolVersion"`
-	NeedUpdate             bool            `json:"needUpdate"`
-	Version                int64           `json:"version"`
-	SingboxConfig          json.RawMessage `json:"singboxConfig"`
-	SingboxLogCaptureLevel string          `json:"singboxLogCaptureLevel,omitempty"`
-	TunnelConfigs          []tunnel.Config `json:"tunnelConfigs,omitempty"`
-	Tasks                  []taskMessage   `json:"tasks"`
-	NextPollSecs           int             `json:"nextPollSecs"`
+	ProtocolVersion        int                     `json:"protocolVersion"`
+	NeedUpdate             bool                    `json:"needUpdate"`
+	Version                int64                   `json:"version"`
+	SingboxConfig          json.RawMessage         `json:"singboxConfig"`
+	SingboxLogCaptureLevel string                  `json:"singboxLogCaptureLevel,omitempty"`
+	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
+	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
+	Tasks                  []taskMessage           `json:"tasks"`
+	NextPollSecs           int                     `json:"nextPollSecs"`
 }
 
 type pendingResult struct {
@@ -158,9 +159,14 @@ type Client struct {
 	traffic          *trafficstats.Collector
 	tasks            sync.WaitGroup
 	logCollector     *logging.Collector
+	logRotator       *logging.RotatingWriter
 }
 
-func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector) *Client {
+func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
+	var logRotator *logging.RotatingWriter
+	if len(logRotators) > 0 {
+		logRotator = logRotators[0]
+	}
 	return &Client{
 		masterURL:      masterURL,
 		token:          token,
@@ -176,6 +182,7 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		completedTasks: make(map[string]struct{}),
 		traffic:        trafficstats.NewCollector(log),
 		logCollector:   logCollector,
+		logRotator:     logRotator,
 	}
 }
 
@@ -228,7 +235,7 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		AgentVersion:     c.version,
 		OSArch:           c.osArch,
 		KernelVersion:    kernel.Version,
-		Capabilities:     []string{"mirror_proxy", "singbox_log_capture"},
+		Capabilities:     []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"},
 		TrafficSnapshots: make([]pollTrafficRecord, 0, len(trafficSnapshots)),
 	}
 	for _, record := range trafficSnapshots {
@@ -271,6 +278,11 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	c.removePendingResults(sentResults)
 	if response.NextPollSecs >= 5 && response.NextPollSecs <= 300 {
 		c.interval = time.Duration(response.NextPollSecs) * time.Second
+	}
+	if c.logRotator != nil && response.AgentLogRotation != nil {
+		if err := c.logRotator.Update(response.AgentLogRotation.MaxSizeMb, response.AgentLogRotation.MaxFiles); err != nil {
+			c.log.WithError(err).Warn("invalid agent log rotation policy")
+		}
 	}
 	if response.NeedUpdate && len(response.SingboxConfig) > 0 {
 		if c.logCollector != nil {

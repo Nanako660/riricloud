@@ -98,7 +98,8 @@ graph TB
 - **配置预检与回滚（v0.3.0）**：落盘后、拉起前执行 `sing-box check -c` 预检（15s 超时）；失败则拒绝该配置、把磁盘回滚为 lastGood、在跑内核不受影响，并通过 `config_apply_result` 回执失败原因。内核 stderr 环形采样尾部 8KB，**非预期退出**（崩溃）原因随心跳 `lastError` 上报；配置变更引发的主动重启（SIGTERM/Kill 退出码非 0）属预期停止，不记错误、不计退避；内核拉起成功即清除历史失败原因。
 - **远程升级与网络诊断（v0.3.0）**：升级任务默认使用 Master 内置二进制分发中心，也可显式指定已校验的自定义 URL；Agent 流式下载至临时文件并校验。Sing-box 在升级窗口抑制 supervisor，保留旧二进制备份，确认新进程启动后再清理备份，失败则恢复旧版本。Agent 自身升级或管理员快捷重启均保留启动参数；探针支持 TCP、DNS、ICMP，返回延迟、丢包率、DNS 地址和错误，并由 Master 保存最近一次快照。
 - **Line 驱动的监听与中继**：节点不再由管理员维护业务入站；主控按节点承担的启用 Line 自动生成协议入站、盲转发 `direct` 入站、协议代理 outbound 和 route。监听地址由 Line 可视化编辑，默认 `0.0.0.0`；Tag 可自定义，空值时按 Line ID 派生，中继入口/出口自动追加角色后缀。Line 端口未指定时由主控随机分配 `20000~65535` 的五位端口；同节点同 TCP/UDP 传输层端口互斥，已有端口在编辑、重启和配置同步时保持不变。历史 `NodeInbound` 仅保留作迁移兼容，不参与新配置生成。标准 TLS 可通过 `Certificate` 实体统一托管，Master 在 `config_sync` 时以内嵌 PEM 数组下发并在证书更新后级联同步关联节点；未关联证书的线路仍支持 Agent 机本地路径。
-- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，保留 30 天，由低频巡检清理过期桶。
+- **系统遥测 (Telemetry)**：基于 `gopsutil` 定期采集服务器 CPU 占用、内存使用、磁盘及实时网络带宽吞吐，随心跳上报。网络吞吐拆分为 `uploadRate` / `downloadRate`（bytes/s），并保留兼容字段 `bandwidthRate`；计数器回绕或采样异常时对应方向归零。节点当前速率落在 `Node`，历史速率进入 `NodeRateMetric` 的 UTC 五分钟桶，默认保留 30 天并按设置可配置，由 12 小时巡检清理过期桶。
+- **Agent 本地日志轮转**：新 Agent 以 `agentLogMaxSizeMb`/`agentLogMaxFiles` 接收 Master 的可选策略，默认 50 MiB/5 个文件（包含当前文件）；本地 YAML/环境变量在远端配置缺失时生效。轮转 writer 与前台、服务和 TUI 共用同一 `agent.log` 路径，轮转失败时保留当前文件写入并报告错误。旧 Agent 未声明 `agent_log_rotation` 时继续通信和业务运行，但管理端显示升级提示。
 - **流量统计与上报（协议 v2）**：服务端为每个节点配置本地 `experimental.v2ray_api` gRPC StatsService，Agent 使用 `QueryStats(reset=false)` 读取 `user>>>{name}>>>traffic>>>uplink/downlink` 累计值，并在 WS/HTTP 两种模式中统一上报 `trafficSnapshots`。Master 按 `nodeId + credential` 保存 `TrafficCursor`，以 BigInt 差分计算增量；首次值计入，计数器下降按重置告警并计入当前值，相等值不生成流水。启用套餐重置策略的订阅在心跳入账前检查自然月或 `durationDays` 周期边界，跨界时先在事务内同步清零 Subscription 与 User 镜像，再计入当前增量；`TrafficLog`、`TrafficCursor`、`Subscription.trafficUsedBytes` 与 `User.trafficUsedBytes` 在同一短 SQLite 事务内提交；未知凭证只建立游标基线。共享密码模式的 SS 没有用户归属，按协议粒度不产生用户流量记录。
 - **Agent 写入调度**：Master 对同节点心跳使用最新值覆盖积压数据，并通过单写者队列串行化 Agent 相关数据库写入；速率指标先在内存按 UTC 五分钟桶聚合，再批量写入 `NodeRateMetric`。写入失败保留最新任务并指数退避重试，队列等待、队列长度、事务耗时和计数器重置均记录到日志。SQLite 继续使用 WAL 与 `busy_timeout`，不通过无限增大事务等待时间掩盖写锁争用。
 - **网络速率统计查询**：`GET /admin/traffic/overview` 同时返回节点网络吞吐当前摘要与历史 `rateSeries`。当前值仅汇总在线且未超时节点；历史按查询周期重采样为 5 分钟、30 分钟或 1 小时。该指标描述网卡吞吐，不进入 `TrafficLog`，中继入口与出口的重复网络传输允许分别计入。
@@ -209,7 +210,9 @@ sequenceDiagram
 同一节点在写入队列中只保留最新遥测和最新累计快照；累计计数器本身支持请求重试和断线恢复，因此不依赖 ACK 作为流量正确性的基础。
 
 系统日志与流量账务严格解耦：`SystemLogsService` 只承载运维事件与异常，SINGBOX 连接访问日志默认不入库；流量计费、配额熔断和小时桶仍由 StatsService、heartbeat 与 TrafficHourlyMetric 管线完成，不从 `SystemLog` 推导连接流量。
-流量时序看板查询直接读取 `TrafficHourlyMetric` 小时桶数据，彻底根除秒级明细插入带来的写锁竞争与百万级原始行内存遍历；后台 `TrafficCleanupService` 定期执行 90 天滑动窗口硬淘汰，保障 SQLite 体积恒定可控。
+流量时序看板查询直接读取 `TrafficHourlyMetric` 小时桶数据，彻底根除秒级明细插入带来的写锁竞争与百万级原始行内存遍历；后台 `TrafficCleanupService` 每 12 小时按 `trafficHourlyRetentionDays` 滑动窗口清理，`AgentSweepService` 同周期按 `nodeRateRetentionDays` 清理速率桶，旧版 `TrafficLog` 继续按固定 7 天过渡策略清理，保障 SQLite 体积恒定可控。
+
+管理员可以通过统一遥测清理中心先预览再执行 `TrafficHourlyMetric`、`NodeRateMetric`、`SystemLog` 和 `TrafficLog` 的按策略、时间、数量或全量历史清理。清理按表独立返回成功/失败，执行结束后才追加 `TelemetryCleanup` 审计日志并刷新日志队列，清空系统日志不会删除本次审计。该边界明确排除用户额度、订阅已用流量、`TrafficCursor`、节点实时状态和计费数据。
 
 ### 3.5 订阅生命周期与配置联动
 

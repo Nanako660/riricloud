@@ -243,7 +243,7 @@ riri-agent restart
 riri-agent uninstall --purge --yes
 ```
 
-> **Agent 环境变量**：`AGENT_TOKEN`、`MASTER_URL`、`AGENT_MODE`、`POLL_INTERVAL_SECS`、`HEARTBEAT_SECS`、`SINGBOX_CONFIG_PATH`、`SINGBOX_BINARY_PATH`、`SINGBOX_SOURCE` 与 `RIRICLOUD_LOG_PATH` 可覆盖 YAML 配置；`MASTER_WS_URL` 继续兼容旧版 Agent。安装后的标准配置路径为 Linux/macOS `/etc/riri-agent/config.yaml`，Windows `%ProgramData%\RiriCloud\config.yaml`。
+> **Agent 环境变量**：`AGENT_TOKEN`、`MASTER_URL`、`AGENT_MODE`、`POLL_INTERVAL_SECS`、`HEARTBEAT_SECS`、`SINGBOX_CONFIG_PATH`、`SINGBOX_BINARY_PATH`、`SINGBOX_SOURCE`、`RIRICLOUD_LOG_PATH`、`RIRICLOUD_LOG_MAX_SIZE_MB` 与 `RIRICLOUD_LOG_MAX_FILES` 可覆盖 YAML 配置；`MASTER_WS_URL` 继续兼容旧版 Agent。日志轮转默认单文件 50 MiB、总计 5 个文件（包含当前文件），有效范围分别为 1~1024 MiB 与 1~20 个；Master 下发的有效 `agentLogRotation` 优先于本地 YAML/环境变量。安装后的标准配置路径为 Linux/macOS `/etc/riri-agent/config.yaml`，Windows `%ProgramData%\RiriCloud\config.yaml`。
 
 直接在连接终端中运行 `riri-agent`（不带子命令）会进入 Bubble Tea 全屏控制台 GUI/TUI：使用方向键选择菜单，Enter 执行，Esc 返回，q 退出；安装页提供 AgentToken、Master URL 和通信模式表单，长诊断/日志输出可在结果页滚动查看。脚本、服务管理器、内置 Agent 和无 TTY 环境继续使用上面的一级子命令，不依赖交互输入。
 
@@ -375,6 +375,8 @@ artifacts/packages/
 2. **备份建议**：在进行数据冷备或容灾时，请同步备份主库与时序库文件，包括：
    - `riri.db`、`riri.db-wal`、`riri.db-shm`
    - `telemetry.db`、`telemetry.db-wal`、`telemetry.db-shm`
+
+管理员可在「系统设置 → 存储与日志」维护小时流量、节点速率、系统日志和 Agent 本地日志策略；策略保存不会立即删除数据。系统日志每小时自动清理，小时汇总、节点速率与旧版 `TrafficLog` 每 12 小时自动清理，旧版明细固定按 7 天过渡保留。手动清理使用 `/admin/telemetry/cleanup/preview` 预览与 `/admin/telemetry/cleanup` 执行，并要求 `CLEAR_HISTORY` 确认短语；执行后审计日志写入时序库。清理接口不修改主业务库中的额度、订阅用量、流量游标、节点实时状态或计费数据。
 
 ---
 

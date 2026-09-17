@@ -38,7 +38,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
   private buffer: Prisma.SystemLogCreateManyInput[] = [];
   private bufferBytes = 0;
   private flushTimer: NodeJS.Timeout | null = null;
-  private isFlushing = false;
+  private flushPromise: Promise<boolean> | null = null;
   private minIngestLevel: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' = 'INFO';
 
   constructor(
@@ -154,28 +154,42 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
    * 将内存缓冲队列中的日志批量异步写入 SQLite
    */
   async flush(): Promise<void> {
-    if (this.isFlushing || this.buffer.length === 0) {
+    if (this.flushPromise) {
+      const completed = await this.flushPromise;
+      if (completed && this.buffer.length > 0) await this.flush();
       return;
     }
-    this.isFlushing = true;
+    if (this.buffer.length === 0) {
+      return;
+    }
     const toWrite = this.buffer;
     this.buffer = [];
     this.bufferBytes = 0;
 
-    try {
-      await this.telemetryPrisma.systemLog.createMany({
-        data: toWrite
-      });
-    } catch (err) {
-      this.logger.error(`Flush system logs to SQLite failed: ${String(err)}`, (err as Error)?.stack);
-      // 写入失败时，若队列过大则丢弃以防内存膨胀，否则放回头部稍后重试
-      if (toWrite.length < 500) {
-        this.buffer.unshift(...toWrite);
-        this.bufferBytes += toWrite.reduce((sum, item) => sum + Buffer.byteLength(item.message, 'utf8') + Buffer.byteLength(item.metadata ?? '{}', 'utf8') + 256, 0);
+    const promise = (async () => {
+      try {
+        await this.telemetryPrisma.systemLog.createMany({
+          data: toWrite
+        });
+        return true;
+      } catch (err) {
+        this.logger.error(`Flush system logs to SQLite failed: ${String(err)}`, (err as Error)?.stack);
+        // 写入失败时，若队列过大则丢弃以防内存膨胀，否则放回头部稍后重试
+        if (toWrite.length < 500) {
+          this.buffer.unshift(...toWrite);
+          this.bufferBytes += toWrite.reduce((sum, item) => sum + Buffer.byteLength(item.message, 'utf8') + Buffer.byteLength(item.metadata ?? '{}', 'utf8') + 256, 0);
+        }
+        return false;
       }
+    })();
+    this.flushPromise = promise;
+    let completed = false;
+    try {
+      completed = await promise;
     } finally {
-      this.isFlushing = false;
+      if (this.flushPromise === promise) this.flushPromise = null;
     }
+    if (completed && this.buffer.length > 0) await this.flush();
   }
 
   /**

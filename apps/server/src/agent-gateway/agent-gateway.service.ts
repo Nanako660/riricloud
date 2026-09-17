@@ -28,7 +28,7 @@ import {
   INTERNAL_SPEEDTEST_UUID,
   type ProtocolType
 } from '../common/constants';
-import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type SingboxLogCaptureLevel, type TunnelConfigPayload, type TunnelPortMapping, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData } from './agent-message';
+import { AGENT_PROTOCOL_VERSION, type AuthResultData, type AgentPollResponse, type AgentTaskMessage, type AgentTransportMode, type ConfigApplyResultData, type ConfigSyncData, type SingboxLogCaptureLevel, type TunnelConfigPayload, type TunnelPortMapping, type HeartbeatData, type ProbeRequest, type ProbeResultData, type RestartAgentResultData, type UpgradeResultData, type UpgradeTarget, type UpgradeTaskData, type LogReportData, type MirrorRequestData, type MirrorResponseEndData, type MirrorResponseHeadersData, type MirrorErrorData, type AgentLogRotationConfig } from './agent-message';
 import type { AgentPollDto } from './dto/agent-poll.dto';
 import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
@@ -189,7 +189,7 @@ type DeploymentTaskDelegate = {
 };
 
 const NODE_RATE_BUCKET_MS = 5 * 60 * 1000;
-const NODE_RATE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_NODE_RATE_RETENTION_DAYS = 30;
 
 type NodeRateMetricDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<{
@@ -208,7 +208,7 @@ type NodeRateMetricRootDelegate = {
   deleteMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
 };
 
-const RATE_METRIC_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+const RATE_METRIC_CLEANUP_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const RATE_METRIC_CLEANUP_RETRY_MS = 5 * 60 * 1000;
 const RATE_METRIC_FLUSH_INTERVAL_MS = 5_000;
 const AGENT_WRITE_RETRY_DELAY_MS = 250;
@@ -304,7 +304,11 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   ) {
     if (this.settingsService) {
       this.settingsService.onSettingsChange((patch) => {
-        if (patch.enforceEmailVerification !== undefined) {
+        if (
+          patch.enforceEmailVerification !== undefined ||
+          patch.agentLogMaxSizeMb !== undefined ||
+          patch.agentLogMaxFiles !== undefined
+        ) {
           void this.pushConfigToAll();
         }
       });
@@ -1155,11 +1159,12 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (now < this.nextRateMetricCleanupAt) return;
     this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_INTERVAL_MS;
     try {
+      const retentionDays = (await this.settingsService?.getSettings())?.nodeRateRetentionDays ?? DEFAULT_NODE_RATE_RETENTION_DAYS;
       const result = await this.enqueueAgentWrite('rate-cleanup', () => delegate.deleteMany({
-        where: { bucketStart: { lt: new Date(now - NODE_RATE_RETENTION_MS) } }
+        where: { bucketStart: { lt: new Date(now - retentionDays * 24 * 60 * 60 * 1000) } }
       }));
       if (result.count > 0) {
-        this.logger.log(`rate metric cleanup removed ${result.count} expired bucket(s)`);
+        this.logger.log(`rate metric cleanup removed ${result.count} expired bucket(s) (retention=${retentionDays}d)`);
       }
     } catch (err) {
       this.nextRateMetricCleanupAt = now + RATE_METRIC_CLEANUP_RETRY_MS;
@@ -1207,6 +1212,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       version: desired.version,
       singboxConfig: needUpdate ? desired.singboxConfig : null,
       singboxLogCaptureLevel: desired.singboxLogCaptureLevel,
+      agentLogRotation: desired.agentLogRotation,
       tasks: await this.takePendingTasks(auth.nodeId),
       nextPollSecs
     };
@@ -1503,6 +1509,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     let entitledSubscriptions: SubscriptionSnapshot[] = [];
     const settings = await this.settingsService?.getSettings();
     const enforceEmailVerification = settings?.enforceEmailVerification ?? false;
+    const agentLogRotation: AgentLogRotationConfig = {
+      maxSizeMb: settings?.agentLogMaxSizeMb ?? 50,
+      maxFiles: settings?.agentLogMaxFiles ?? 5
+    };
 
     if (subscriptionDelegate) {
       entitledSubscriptions = await subscriptionDelegate.findMany({
@@ -1894,6 +1904,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       version: ++this.configVersion,
       singboxConfig,
       singboxLogCaptureLevel: this.captureLevelForMode(logMode),
+      agentLogRotation,
       tunnelConfigs
     };
   }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -50,7 +49,7 @@ func runForeground(ctx context.Context, options Options) error {
 		return err
 	}
 
-	log, closeLog, err := newLogger(cfg.LogPath, stdoutUsable())
+	log, closeLog, logRotator, err := newLoggerWithRotation(cfg.LogPath, stdoutUsable(), cfg.LogMaxSizeMb, cfg.LogMaxFiles)
 	if err != nil {
 		return err
 	}
@@ -98,6 +97,7 @@ func runForeground(ctx context.Context, options Options) error {
 			entry,
 			restarter,
 			collector,
+			logRotator,
 		)
 		client.Run(ctx)
 	} else {
@@ -112,6 +112,7 @@ func runForeground(ctx context.Context, options Options) error {
 			entry,
 			restarter,
 			collector,
+			logRotator,
 		)
 		client.Run(ctx)
 	}
@@ -189,28 +190,30 @@ func stdoutUsable() bool {
 }
 
 func newLogger(path string, mirrorStdout bool) (*logrus.Logger, func(), error) {
+	log, closeLog, _, err := newLoggerWithRotation(path, mirrorStdout, logging.DefaultLogMaxSizeMb, logging.DefaultLogMaxFiles)
+	return log, closeLog, err
+}
+
+func newLoggerWithRotation(path string, mirrorStdout bool, maxSizeMb, maxFiles int) (*logrus.Logger, func(), *logging.RotatingWriter, error) {
 	log := logrus.New()
 	log.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 	if path == "" {
-		return log, func() {}, nil
+		return log, func() {}, nil, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, nil, fmt.Errorf("create log directory: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	writer, err := logging.NewRotatingWriter(path, maxSizeMb, maxFiles)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open log file: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
+		return nil, nil, nil, fmt.Errorf("open log file: %w (set RIRICLOUD_DATA_DIR or RIRICLOUD_LOG_PATH to a writable directory)", err)
 	}
 	// 文件必须排在 MultiWriter 首位：stdout 句柄失效时 MultiWriter 会短路，
 	// 若 stdout 在前，文件将永远收不到日志（Windows 服务模式下的空 agent.log 根因）。
 	if mirrorStdout {
-		log.SetOutput(io.MultiWriter(file, os.Stdout))
+		log.SetOutput(io.MultiWriter(writer, os.Stdout))
 	} else {
-		log.SetOutput(file)
+		log.SetOutput(writer)
 	}
 	return log, func() {
-		if err := file.Close(); err != nil {
+		if err := writer.Close(); err != nil {
 			log.WithError(err).Warn("close log file failed")
 		}
-	}, nil
+	}, writer, nil
 }

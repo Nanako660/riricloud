@@ -630,6 +630,7 @@ export class NodesService {
       capabilities,
       supportsMirrorProxy: capabilities.includes('mirror_proxy'),
       supportsSingboxLogCapture: capabilities.includes('singbox_log_capture'),
+      supportsAgentLogRotation: capabilities.includes('agent_log_rotation'),
       lastProbeResult: this.parseJson(lastProbeResult),
       lines,
       entryLines,

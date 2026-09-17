@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
+import { SettingsService } from '../system/settings.service';
 
 export const DEFAULT_TRAFFIC_RETENTION_DAYS = 90;
 export const DEFAULT_LEGACY_LOGS_RETENTION_DAYS = 7;
@@ -13,7 +14,8 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly telemetryPrisma: TelemetryPrismaService
+    private readonly telemetryPrisma: TelemetryPrismaService,
+    @Optional() private readonly settingsService?: SettingsService
   ) {}
 
   onModuleInit(): void {
@@ -39,21 +41,23 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
   }
 
   async runCleanup(
-    retentionDays = DEFAULT_TRAFFIC_RETENTION_DAYS,
+    retentionDays?: number,
     legacyRetentionDays = DEFAULT_LEGACY_LOGS_RETENTION_DAYS
   ): Promise<{ deletedHourlyCount: number; deletedLegacyCount: number }> {
     let deletedHourlyCount = 0;
     let deletedLegacyCount = 0;
+    const settings = await this.settingsService?.getSettings();
+    const effectiveRetentionDays = retentionDays ?? settings?.trafficHourlyRetentionDays ?? DEFAULT_TRAFFIC_RETENTION_DAYS;
 
     try {
       // 1. 清理 90 天前的小时桶时序记录
-      const hourlyCutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
+      const hourlyCutoff = new Date(Date.now() - effectiveRetentionDays * 24 * 3600 * 1000);
       const hourlyResult = await this.telemetryPrisma.trafficHourlyMetric.deleteMany({
         where: { bucketStart: { lt: hourlyCutoff } }
       });
       deletedHourlyCount = hourlyResult.count;
       if (deletedHourlyCount > 0) {
-        this.logger.log(`Auto cleanup expired traffic hourly metrics: purged ${deletedHourlyCount} records (retention=${retentionDays}d)`);
+        this.logger.log(`Auto cleanup expired traffic hourly metrics: purged ${deletedHourlyCount} records (retention=${effectiveRetentionDays}d)`);
       }
 
       // 2. 清理存量未清除的旧 TrafficLog 记录（默认保留不超过 7 天）

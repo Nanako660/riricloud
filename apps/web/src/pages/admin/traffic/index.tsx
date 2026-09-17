@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Gauge, Users, Zap } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, Gauge, Users, Zap } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,6 +13,8 @@ import { RateTrendChart, TrafficDonutChart, TrafficTrendChart } from './componen
 import { TrafficRankTable } from './components/traffic-rank-table';
 import { UserRankTable } from './components/user-rank-table';
 import { UserTrafficDialog } from '../users/components/user-traffic-dialog';
+import { Button } from '@/components/ui/button';
+import { TelemetryCleanupDialog } from '@/components/shared/telemetry-cleanup-dialog';
 import { trafficRangeLabels, trafficRanges, useTrafficOverview, type TrafficTimeRange, type UserTrafficRankItem } from './use-traffic';
 
 function TrafficSkeleton() {
@@ -38,6 +40,7 @@ export default function AdminTrafficPage() {
   const [donutMode, setDonutMode] = React.useState<'lines' | 'users'>('lines');
   const [detailMode, setDetailMode] = React.useState<'lines' | 'users'>('lines');
   const [trafficUser, setTrafficUser] = React.useState<UserTrafficRankItem | null>(null);
+  const [cleanupOpen, setCleanupOpen] = React.useState(false);
   const { data, isPending, isFetching, isError } = useTrafficOverview(range);
   const summary = data?.summary;
   const protocols = Array.from(new Set((data?.lineRankings ?? []).map((item) => item.protocolType).filter((value): value is string => Boolean(value))));
@@ -50,9 +53,12 @@ export default function AdminTrafficPage() {
     <PageContainer>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader title="流量统计" description="查看节点网络吞吐、线路用量分布与计费排行榜。" />
-        <Tabs value={range} onValueChange={(value) => setRange(value as TrafficTimeRange)}>
-          <TabsList className="h-8 w-full sm:w-auto"><span className="sr-only">时间范围</span>{trafficRanges.map((item) => <TabsTrigger key={item} value={item} className="h-7 flex-1 px-2 text-xs sm:flex-none">{trafficRangeLabels[item]}</TabsTrigger>)}</TabsList>
-        </Tabs>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Tabs value={range} onValueChange={(value) => setRange(value as TrafficTimeRange)}>
+            <TabsList className="h-8 w-full sm:w-auto"><span className="sr-only">时间范围</span>{trafficRanges.map((item) => <TabsTrigger key={item} value={item} className="h-7 flex-1 px-2 text-xs sm:flex-none">{trafficRangeLabels[item]}</TabsTrigger>)}</TabsList>
+          </Tabs>
+          <Button type="button" variant="outline" size="sm" onClick={() => setCleanupOpen(true)}><Database />管理历史数据</Button>
+        </div>
       </div>
 
       {isPending && !data ? <TrafficSkeleton /> : isError || !data || !summary || !data.rate ? <EmptyState title="无法加载流量统计" description="请稍后刷新重试" /> : (
@@ -137,6 +143,7 @@ export default function AdminTrafficPage() {
           />
         </div>
       )}
+      <TelemetryCleanupDialog open={cleanupOpen} onOpenChange={setCleanupOpen} />
     </PageContainer>
   );
 }

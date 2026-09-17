@@ -54,6 +54,10 @@ describe('SettingsService', () => {
     expect(settings.configSyncDebounceMs).toBe(DEFAULTS.configSyncDebounceMs);
     expect(settings.systemTimezone).toBe('America/New_York');
     expect(settings.logsMinIngestLevel).toBe('WARN');
+    expect(settings.trafficHourlyRetentionDays).toBe(DEFAULTS.trafficHourlyRetentionDays);
+    expect(settings.nodeRateRetentionDays).toBe(DEFAULTS.nodeRateRetentionDays);
+    expect(settings.agentLogMaxSizeMb).toBe(DEFAULTS.agentLogMaxSizeMb);
+    expect(settings.agentLogMaxFiles).toBe(DEFAULTS.agentLogMaxFiles);
   });
 
   it('无效时区自动回退为默认时区', async () => {
