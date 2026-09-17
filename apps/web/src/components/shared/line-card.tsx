@@ -1,4 +1,4 @@
-import { Activity } from 'lucide-react';
+import { Activity, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { LineLatencyChip } from '@/components/shared/line-latency-chip';
 import { cn } from '@/lib/utils';
@@ -20,11 +20,6 @@ export function LineCard({ line, className }: LineCardProps) {
           {line.name}
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
-          {Boolean(line.speedLimitMbps) && (
-            <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 text-xs">
-              ⚡ {line.speedLimitMbps}M
-            </Badge>
-          )}
           <Badge variant="outline" className="text-xs">{line.protocolType}</Badge>
           <Badge variant="outline" className="text-xs">{line.trafficRate}x</Badge>
         </div>
@@ -34,6 +29,12 @@ export function LineCard({ line, className }: LineCardProps) {
           <Activity className="size-3" />
           {isOnline ? '在线' : '离线'}
         </Badge>
+        {Boolean(line.speedLimitMbps) && (
+          <Badge variant="outline" className="gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400 text-xs">
+            <Zap className="size-3" />
+            {line.speedLimitMbps}M
+          </Badge>
+        )}
         <LineLatencyChip
           latencyMs={line.lastLatencyMs}
           status={line.lastTestStatus}

@@ -370,9 +370,10 @@ export function MarketPlanCard({
                 {Boolean(plan.speedLimitMbps) && (
                   <Badge
                     variant="outline"
-                    className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-2 py-0.5 font-semibold"
+                    className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-2 py-0.5 font-semibold"
                   >
-                    ⚡ {plan.speedLimitMbps} Mbps
+                    <Zap className="size-3" />
+                    {plan.speedLimitMbps} Mbps
                   </Badge>
                 )}
                 {isCurrent && (
