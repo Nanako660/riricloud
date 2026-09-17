@@ -662,7 +662,7 @@ describe('线路网络底座与协议增强', () => {
       tcpMultiPath: true,
       udpFragment: true,
       udpTimeout: '5m',
-      proxyProtocol: 2,
+      proxyProtocol: true,
       proxyProtocolAcceptNoHeader: true
     })).toEqual({
       tcp_fast_open: true,
@@ -735,7 +735,8 @@ describe('线路网络底座与协议增强', () => {
       users: [{ uuid: 'uuid-1', email: 'u1@x.com', credential: 'c1' }],
       listenOptions: {
         tcpFastOpen: true,
-        proxyProtocol: 1
+        proxyProtocol: true,
+        proxyProtocolAcceptNoHeader: true
       }
     });
 
@@ -744,6 +745,7 @@ describe('线路网络底座与协议增强', () => {
       tag: 'vless-in',
       tcp_fast_open: true,
       proxy_protocol: true,
+      proxy_protocol_accept_no_header: true,
       tls: expect.objectContaining({
         min_version: '1.2',
         max_version: '1.3',
@@ -754,5 +756,37 @@ describe('线路网络底座与协议增强', () => {
         padding: false
       }
     });
+  });
+
+  it('VLESS 采用 WebSocket 传输时强制省略 XTLS Vision 流控', () => {
+    const params = normalizeInboundParams('VLESS', {
+      transport: { type: 'ws', path: '/ws' },
+      tls: { mode: 'tls', certificatePath: '/c.pem', keyPath: '/k.pem' },
+      flow: 'xtls-rprx-vision'
+    }) as { flow?: string };
+
+    expect(params.flow).toBeUndefined();
+  });
+
+  it('SHADOWSOCKS 开启 UDP over TCP 时抑制 multiplex 配置块', () => {
+    const inbound = buildServerInbound({
+      type: 'SHADOWSOCKS',
+      tag: 'ss-in',
+      listen: '0.0.0.0',
+      port: 8388,
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'password',
+        udpOverTcp: true,
+        multiplex: {
+          enabled: true,
+          padding: true
+        }
+      },
+      users: []
+    });
+
+    expect(inbound.udp_over_tcp).toBe(true);
+    expect(inbound.multiplex).toBeUndefined();
   });
 });

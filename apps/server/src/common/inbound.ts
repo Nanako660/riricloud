@@ -153,7 +153,7 @@ export interface SharedListenOptions {
   tcpMultiPath?: boolean;
   udpFragment?: boolean | null;
   udpTimeout?: string | null;
-  proxyProtocol?: number;
+  proxyProtocol?: boolean;
   proxyProtocolAcceptNoHeader?: boolean;
 }
 
@@ -611,10 +611,10 @@ export function normalizeInboundParams(
         };
       }
       const tls = normalizeTlsConfig(rawTls, rawTls ? 'tls' : 'reality', defaultTlsAlpn(transport.type));
-      // Vision flow 依赖 TLS/Reality；明文 VLESS 必须省略 flow。
+      // Vision flow 依赖 TLS/Reality 与原始 TCP；明文 VLESS 或 WebSocket/gRPC 传输必须省略 flow。
       const requestedFlow = typeof raw.flow === 'string' && raw.flow.trim() ? raw.flow.trim() : undefined;
       const flow =
-        tls.mode === 'none'
+        tls.mode === 'none' || transport.type !== 'tcp'
           ? undefined
           : requestedFlow || (tls.mode === 'reality' ? REALITY_DEFAULTS.flow : undefined);
 
@@ -1057,7 +1057,7 @@ export function buildSharedListenFields(options?: SharedListenOptions): Record<s
   if (options.tcpMultiPath === true) res.tcp_multi_path = true;
   if (typeof options.udpFragment === 'boolean') res.udp_fragment = options.udpFragment;
   if (options.udpTimeout && options.udpTimeout.trim()) res.udp_timeout = options.udpTimeout.trim();
-  if (options.proxyProtocol && options.proxyProtocol > 0) {
+  if (options.proxyProtocol === true) {
     res.proxy_protocol = true;
     if (options.proxyProtocolAcceptNoHeader === true) {
       res.proxy_protocol_accept_no_header = true;
@@ -1200,7 +1200,8 @@ export function buildServerInbound(input: {
     case 'SHADOWSOCKS': {
       const p = normalizedParams as unknown as ShadowsocksParams;
       const password = normalizeShadowsocksPassword(p.method, p.password || '');
-      const multiplex = buildServerMultiplex(p.multiplex);
+      // Sing-box 官方规范：udp_over_tcp 与 multiplex 互斥
+      const multiplex = p.udpOverTcp ? undefined : buildServerMultiplex(p.multiplex);
       if (p.mode === 'multi-user') {
         return {
           type: 'shadowsocks',

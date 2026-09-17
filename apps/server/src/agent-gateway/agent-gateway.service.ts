@@ -1587,7 +1587,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       tcpMultiPath?: boolean;
       udpFragment?: boolean | null;
       udpTimeout?: string | null;
-      proxyProtocol?: number;
+      proxyProtocol?: boolean;
       proxyProtocolAcceptNoHeader?: boolean;
       entryNode?: { serverHost: string; status?: string; reachability?: string } | null;
       landingNode?: { serverHost: string; status?: string; reachability?: string } | null;

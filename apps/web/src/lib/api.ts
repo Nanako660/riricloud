@@ -93,7 +93,7 @@ export interface ApiLine {
   tcpMultiPath?: boolean | null;
   udpFragment?: boolean | null;
   udpTimeout?: string | null;
-  proxyProtocol?: number | null;
+  proxyProtocol?: boolean | null;
   proxyProtocolAcceptNoHeader?: boolean | null;
   tunnelType?: string | null;
   tunnelPort?: number | null;

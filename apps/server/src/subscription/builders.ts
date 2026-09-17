@@ -696,9 +696,13 @@ function buildClashSmux(multiplex?: InboundMultiplexConfig): Record<string, unkn
   if (!multiplex || !multiplex.enabled) return undefined;
   const smux: Record<string, unknown> = { enabled: true };
   if (multiplex.protocol) smux.protocol = multiplex.protocol;
-  if (multiplex.maxConnections) smux['max-connections'] = multiplex.maxConnections;
+  // 规范互斥：max-connections 与 max-streams 互斥
+  if (multiplex.maxConnections) {
+    smux['max-connections'] = multiplex.maxConnections;
+  } else if (multiplex.maxStreams) {
+    smux['max-streams'] = multiplex.maxStreams;
+  }
   if (multiplex.minStreams) smux['min-streams'] = multiplex.minStreams;
-  if (multiplex.maxStreams) smux['max-streams'] = multiplex.maxStreams;
   if (multiplex.padding !== undefined) smux.padding = multiplex.padding;
   return smux;
 }
@@ -978,7 +982,8 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         udp: true
       };
 
-      if (p.flow) {
+      const isDirectTcpTls = (!p.transport || p.transport.type === 'tcp') && Boolean(tls && tls.enabled && tls.mode !== 'none');
+      if (p.flow && isDirectTcpTls) {
         proxy.flow = p.flow;
       }
 
@@ -1098,7 +1103,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         udp: true,
         ...(p.udpOverTcp ? { 'udp-over-tcp': true } : {})
       };
-      const smux = buildClashSmux(p.multiplex);
+      const smux = p.udpOverTcp ? undefined : buildClashSmux(p.multiplex);
       if (smux) proxy.smux = smux;
       break;
     }
@@ -1213,9 +1218,13 @@ function buildSingboxClientMultiplex(multiplex?: InboundMultiplexConfig): Record
   if (!multiplex || !multiplex.enabled) return undefined;
   const res: Record<string, unknown> = { enabled: true };
   if (multiplex.protocol) res.protocol = multiplex.protocol;
-  if (multiplex.maxConnections) res.max_connections = multiplex.maxConnections;
+  // Sing-box 官方规范：max_connections 与 max_streams 互斥
+  if (multiplex.maxConnections) {
+    res.max_connections = multiplex.maxConnections;
+  } else if (multiplex.maxStreams) {
+    res.max_streams = multiplex.maxStreams;
+  }
   if (multiplex.minStreams) res.min_streams = multiplex.minStreams;
-  if (multiplex.maxStreams) res.max_streams = multiplex.maxStreams;
   if (multiplex.padding !== undefined) res.padding = multiplex.padding;
   if (multiplex.brutal && multiplex.brutal.enabled) {
     res.brutal = {
@@ -1246,14 +1255,15 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
         uuid: user.uuid
       };
 
-      if (p.flow) {
-        outbound.flow = p.flow;
-      }
-
       const clientTls = buildClientTls(tls, effectiveServerName(entry));
       if (clientTls) outbound.tls = clientTls;
       const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
       if (clientTransport) outbound.transport = clientTransport;
+
+      if (p.flow && !clientTransport && clientTls) {
+        outbound.flow = p.flow;
+      }
+
       const clientMultiplex = buildSingboxClientMultiplex(p.multiplex);
       if (clientMultiplex) outbound.multiplex = clientMultiplex;
 
@@ -1339,7 +1349,7 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
         password,
         ...(p.udpOverTcp ? { udp_over_tcp: true } : {})
       };
-      const clientMultiplex = buildSingboxClientMultiplex(p.multiplex);
+      const clientMultiplex = p.udpOverTcp ? undefined : buildSingboxClientMultiplex(p.multiplex);
       if (clientMultiplex) outbound.multiplex = clientMultiplex;
       return outbound;
     }

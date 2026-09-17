@@ -96,10 +96,7 @@ export const lineFormSchema = z.object({
   tcpMultiPath: z.boolean().default(false),
   udpFragment: z.boolean().default(true),
   udpTimeout: z.string().default(''),
-  proxyProtocol: z.preprocess(
-    (v) => (v === '' || v === null || v === undefined || v === 0 || v === '0' ? undefined : Number(v)),
-    z.union([z.literal(1), z.literal(2)]).optional()
-  ),
+  proxyProtocol: z.boolean().default(false),
   proxyProtocolAcceptNoHeader: z.boolean().default(false),
 
   // 多路复用 Multiplex
@@ -186,6 +183,33 @@ export const lineFormSchema = z.object({
   if (value.protocolType === 'SHADOWTLS' && !value.stInnerMethod.trim()) {
     ctx.addIssue({ code: 'custom', path: ['stInnerMethod'], message: '请输入内层 Shadowsocks 2022 算法' });
   }
+
+  // 规范互斥：客户端 Multiplex 中 max_connections 与 max_streams 互斥
+  if (value.multiplexEnabled && value.multiplexMaxConnections && value.multiplexMaxStreams) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['multiplexMaxStreams'],
+      message: 'Sing-box 官方规范中最大连接数 (max_connections) 与最大并发流数 (max_streams) 互斥，请仅保留其中一项'
+    });
+  }
+
+  // 规范互斥：Shadowsocks 中 UDP over TCP 与 Multiplex 互斥
+  if (value.protocolType === 'SHADOWSOCKS' && value.ssUdpOverTcp && value.multiplexEnabled) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['multiplexEnabled'],
+      message: 'Shadowsocks 协议中 UDP over TCP 与 多路复用 (Multiplex) 互斥，不能同时开启'
+    });
+  }
+
+  // 规范互斥：VLESS XTLS Vision 流控仅限原始 TCP 传输，WS/gRPC 传输不得携带 flow
+  if (value.protocolType === 'VLESS' && value.transportType !== 'tcp' && value.vlessFlow) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['vlessFlow'],
+      message: 'XTLS Vision 流控仅限原始 TCP 传输，WebSocket / gRPC 等传输协议不能启用 flow'
+    });
+  }
 });
 
 export type LineFormValues = z.infer<typeof lineFormSchema>;
@@ -243,7 +267,7 @@ export function defaultLineFormValues(protocolType: ProtocolType = 'VLESS'): Lin
     tlsInsecure: false, tlsMinVersion: '', tlsMaxVersion: '', tlsCipherSuites: '',
     realityDest: 'www.apple.com:443', realityPrivateKey: '', realityPublicKey: '',
     realityShortIds: '0123456789abcdef', realityServerNames: 'www.apple.com', acmeDomain: '', acmeEmail: '', acmeProvider: '',
-    speedLimitMbps: undefined, tcpFastOpen: false, tcpMultiPath: false, udpFragment: true, udpTimeout: '', proxyProtocol: undefined, proxyProtocolAcceptNoHeader: false,
+    speedLimitMbps: undefined, tcpFastOpen: false, tcpMultiPath: false, udpFragment: true, udpTimeout: '', proxyProtocol: false, proxyProtocolAcceptNoHeader: false,
     multiplexEnabled: false, multiplexProtocol: 'smux', multiplexMaxConnections: undefined, multiplexMinStreams: undefined, multiplexMaxStreams: undefined,
     multiplexPadding: false, multiplexBrutalEnabled: false, multiplexBrutalUpMbps: undefined, multiplexBrutalDownMbps: undefined,
     vlessFlow: 'xtls-rprx-vision', vmessAlterId: 0, hy2UpMbps: 0, hy2DownMbps: 0,
@@ -341,7 +365,7 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     tcpMultiPath: line.tcpMultiPath === true,
     udpFragment: line.udpFragment !== false,
     udpTimeout: asString(line.udpTimeout),
-    proxyProtocol: line.proxyProtocol === 1 || line.proxyProtocol === 2 ? line.proxyProtocol : undefined,
+    proxyProtocol: line.proxyProtocol === true || Number(line.proxyProtocol) > 0,
     proxyProtocolAcceptNoHeader: line.proxyProtocolAcceptNoHeader === true,
     multiplexEnabled: asRecord(params.multiplex).enabled === true,
     multiplexProtocol: (asString(asRecord(params.multiplex).protocol, 'smux') as LineFormValues['multiplexProtocol']),
@@ -558,8 +582,8 @@ export function toLinePayload(values: LineFormValues) {
     tcpMultiPath: values.tcpMultiPath,
     udpFragment: values.udpFragment,
     udpTimeout: values.udpTimeout.trim() || null,
-    proxyProtocol: values.proxyProtocol ?? null,
-    proxyProtocolAcceptNoHeader: values.proxyProtocolAcceptNoHeader,
+    proxyProtocol: values.proxyProtocol ?? false,
+    proxyProtocolAcceptNoHeader: values.proxyProtocol ? values.proxyProtocolAcceptNoHeader : false,
     certificateId: values.tlsMode === 'tls' && values.certificateId !== MANUAL_CERTIFICATE_ID ? values.certificateId : null,
     endpointOverrideEnabled: values.endpointOverrideEnabled,
     serverHost: values.serverHost.trim() || null,

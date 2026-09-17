@@ -5,6 +5,8 @@ import type { LineFormValues } from './line-form-schema';
 export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues> }) {
   const protocol = form.watch('protocolType');
   const proxyProtocol = form.watch('proxyProtocol');
+  const ssUdpOverTcp = form.watch('ssUdpOverTcp');
+  const isShadowsocksWithUdpOverTcp = protocol === 'SHADOWSOCKS' && ssUdpOverTcp;
   const supportsMultiplex = ['VLESS', 'VMESS', 'TROJAN', 'SHADOWSOCKS'].includes(protocol);
   const multiplexEnabled = form.watch('multiplexEnabled');
   const brutalEnabled = form.watch('multiplexBrutalEnabled');
@@ -21,16 +23,11 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
           min={0}
           max={100000}
         />
-        <SelectField
+        <SwitchField
           form={form}
           name="proxyProtocol"
           label="PROXY Protocol"
-          options={[
-            { value: '', label: '关闭' },
-            { value: '1', label: 'Version 1 (文本明文)' },
-            { value: '2', label: 'Version 2 (二进制高效)' }
-          ]}
-          description="在上游有 HAProxy / 负载均衡器时获取真实客户端 IP。"
+          description="接收上游 HAProxy / Nginx 的 PROXY 协议头（自动兼容解析 v1 与 v2）以获取真实客户端 IP。"
         />
       </FieldGrid>
 
@@ -80,10 +77,15 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
             form={form}
             name="multiplexEnabled"
             label="启用多路复用 (Multiplex)"
-            description="将多个 TCP 逻辑连接合并在单一长连接隧道中传输，降低握手开销。"
+            description={
+              isShadowsocksWithUdpOverTcp
+                ? 'Shadowsocks 协议已开启 UDP over TCP，根据 Sing-box 规范两者互斥，已自动禁用多路复用。'
+                : '将多个 TCP 逻辑连接合并在单一长连接隧道中传输，降低握手开销。'
+            }
+            disabled={isShadowsocksWithUdpOverTcp}
           />
 
-          {multiplexEnabled && (
+          {multiplexEnabled && !isShadowsocksWithUdpOverTcp && (
             <div className="space-y-3 pt-2">
               <FieldGrid>
                 <SelectField
@@ -99,8 +101,10 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
                 <NumberField
                   form={form}
                   name="multiplexMaxConnections"
-                  label="最大底层连接数"
-                  placeholder="默认 4"
+                  label="最大底层连接数 (max_connections)"
+                  placeholder={form.watch('multiplexMaxStreams') ? '已配置最大流数，此项留空' : '默认 4'}
+                  description="与最大复用流数互斥（Sing-box 规范二选一）。"
+                  disabled={Boolean(form.watch('multiplexMaxStreams'))}
                   min={1}
                   max={64}
                 />
@@ -118,8 +122,10 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
                 <NumberField
                   form={form}
                   name="multiplexMaxStreams"
-                  label="最大复用流数"
-                  placeholder="留空不限制"
+                  label="最大复用流数 (max_streams)"
+                  placeholder={form.watch('multiplexMaxConnections') ? '已配置底层连接数，此项留空' : '留空不限制'}
+                  description="与最大底层连接数互斥（Sing-box 规范二选一）。"
+                  disabled={Boolean(form.watch('multiplexMaxConnections'))}
                   min={0}
                   max={1024}
                 />

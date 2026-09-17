@@ -31,7 +31,7 @@ CREATE TABLE "new_Line" (
     "tcpMultiPath" BOOLEAN NOT NULL DEFAULT false,
     "udpFragment" BOOLEAN,
     "udpTimeout" TEXT,
-    "proxyProtocol" INTEGER NOT NULL DEFAULT 0,
+    "proxyProtocol" BOOLEAN NOT NULL DEFAULT false,
     "proxyProtocolAcceptNoHeader" BOOLEAN NOT NULL DEFAULT false,
     "tagsJson" TEXT NOT NULL DEFAULT '[]',
     "level" INTEGER NOT NULL DEFAULT 0,

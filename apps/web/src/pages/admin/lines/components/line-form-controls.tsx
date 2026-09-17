@@ -53,12 +53,12 @@ export function SelectField({ form, name, label, options, description, disabled,
   );
 }
 
-export function SwitchField({ form, name, label, description }: Pick<BaseFieldProps, 'form' | 'name' | 'label' | 'description'>) {
+export function SwitchField({ form, name, label, description, disabled }: Pick<BaseFieldProps, 'form' | 'name' | 'label' | 'description' | 'disabled'>) {
   return (
     <FormField control={form.control} name={name} render={({ field }) => (
       <FormItem className="flex items-center justify-between gap-4">
         <div><FormLabel>{label}</FormLabel>{description && <FormDescription>{description}</FormDescription>}</div>
-        <FormControl><Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} /></FormControl>
+        <FormControl><Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} disabled={disabled} /></FormControl>
       </FormItem>
     )} />
   );

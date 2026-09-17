@@ -25,6 +25,9 @@
 - **日志隐私与账务解耦**：清洗诊断日志中的 ANSI、域名、IP、Token、密码和密钥模式；流量统计继续只使用 StatsService、heartbeat 与小时桶，不从系统日志计费。
 
 ### Fixed
+- **修复线路更新 Prisma 校验异常与 Sing-box 官方规范全量对齐**：
+  - 修复 `PATCH /admin/lines/:id` 时因 `proxyProtocol` 为 `null` 导致 Prisma 回退到非扁平更新引发 500 的问题，将 `Line.proxyProtocol` 从整数枚举彻底统一为原生布尔值（`Boolean @default(false)`，Sing-box 官方已自动兼容解析 v1 与 v2 协议头），提供完整的轻量迁移与兜底；
+  - 严格对齐 Sing-box 官方规范互斥约束：客户端多路复用中 `max_connections` 与 `max_streams` 严格互斥；Shadowsocks 开启 `udp_over_tcp` 时自动抑制多路复用 `multiplex` / `smux`；VLESS 的 `flow: xtls-rprx-vision` 仅允许在原生 TCP + TLS/Reality 模式下启用，非 TCP 传输（WebSocket、gRPC、HTTP 等）或明文传输时强制清空抑制，前端表单联动置灰并提供精确校验错误提示。
 - **修复 Docker Agent 构建工具链版本不一致**：根 `Dockerfile` 与 `Dockerfile.agent` 的 Agent 编译阶段统一升级到 digest 固定的 Go 1.26，与 `apps/agent/go.mod` 的最低版本要求保持一致，避免在 `GOTOOLCHAIN=local` 下因 Go 1.25 拒绝执行 `go mod download`。
 
 

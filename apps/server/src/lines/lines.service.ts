@@ -79,7 +79,7 @@ type LineInput = {
   tcpMultiPath?: boolean;
   udpFragment?: boolean | null;
   udpTimeout?: string | null;
-  proxyProtocol?: number;
+  proxyProtocol?: boolean;
   proxyProtocolAcceptNoHeader?: boolean;
 };
 
@@ -411,8 +411,8 @@ export class LinesService {
       tcpMultiPath: input.tcpMultiPath ?? current?.tcpMultiPath ?? false,
       udpFragment: input.udpFragment !== undefined ? input.udpFragment : current?.udpFragment,
       udpTimeout: optionalText(input.udpTimeout, current?.udpTimeout),
-      proxyProtocol: input.proxyProtocol !== undefined ? input.proxyProtocol : current?.proxyProtocol ?? 0,
-      proxyProtocolAcceptNoHeader: input.proxyProtocolAcceptNoHeader ?? current?.proxyProtocolAcceptNoHeader ?? false,
+      proxyProtocol: Boolean(input.proxyProtocol ?? current?.proxyProtocol ?? false),
+      proxyProtocolAcceptNoHeader: Boolean(input.proxyProtocolAcceptNoHeader ?? current?.proxyProtocolAcceptNoHeader ?? false),
       level: input.level ?? current?.level ?? 0,
       sortOrder: input.sortOrder ?? current?.sortOrder ?? 0,
       isPublic: input.isPublic ?? current?.isPublic ?? true,

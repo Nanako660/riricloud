@@ -325,7 +325,7 @@ model Line {
   tcpMultiPath    Boolean  @default(false) // TCP MultiPath 开关
   udpFragment     Boolean  @default(true)  // 允许 UDP 分片
   udpTimeout      String?  // UDP 会话超时（如 5m、30s）
-  proxyProtocol   Int?     // PROXY Protocol 版本（1 或 2，null 为关闭）
+  proxyProtocol   Boolean  @default(false) // 开启 PROXY Protocol 解析 (自动兼容 v1 与 v2)
   proxyProtocolAcceptNoHeader Boolean @default(false) // 允许缺少 PROXY Protocol 头的连接
   tagsJson        String   @default("[]")
   level           Int      @default(0)
@@ -703,12 +703,12 @@ model SystemSetting {
 - `acme`：Sing-box 内置 ACME 自动申请证书（`domain`、`email`、`provider`）
 
 #### 协议专属参数结构
-- **VLESS**：`flow`（如 `xtls-rprx-vision`，仅适用于启用 TLS/Reality 的入站）、`transport`、`tls`
+- **VLESS**：`flow`（如 `xtls-rprx-vision`，根据 Sing-box 规范仅适用于纯 TCP 传输且启用 TLS/Reality 的场景，WS/gRPC/HTTP 传输或无 TLS 自动清空抑制）、`transport`、`tls`
 - **VMESS**：`alterId`（默认 0）、`transport`、`tls`
 - **TROJAN**：`transport`、`tls`
 - **HYSTERIA2**：`upMbps`、`downMbps`、`ignoreClientBandwidth`、`obfs: { type: "salamander", password }`、`tls`
 - **TUIC**：`congestionControl`（`bbr`/`cubic`/`new_reno`）、`zeroRttHandshake`（默认关闭）、`heartbeat`、`tls`
-- **SHADOWSOCKS**：`method`、`password`、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥；多用户客户端密码按协议组装为 `server_password:user_password`
+- **SHADOWSOCKS**：`method`、`password`、`udpOverTcp`（开启时根据 Sing-box 规范与多路复用互斥，自动抑制出站 `multiplex` / `smux`）、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥；多用户客户端密码按协议组装为 `server_password:user_password`
 - **NAIVE**：`network`、`tls`
 - **SHADOWTLS**：固定 v3，结构为 `version: 3`、`handshakeDest`、`strictMode`、`inner: { type: "SHADOWSOCKS", method, password }`。内层必须使用 SS2022；`password` 是内层 SS2022 服务端密钥，外层 ShadowTLS 用户密码由用户凭证注入。旧版 v2 与独立 ShadowTLS 密码结构不再接受。
 - **MIXED / SOCKS / HTTP**：`allowLan`、`usersEnabled`

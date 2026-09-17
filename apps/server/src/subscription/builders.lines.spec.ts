@@ -148,7 +148,7 @@ describe('subscription builders with lines', () => {
       params: {
         method: '2022-blake3-aes-128-gcm',
         password: 'pass',
-        udpOverTcp: true,
+        udpOverTcp: false,
         multiplex: {
           enabled: true,
           protocol: 'smux',
@@ -163,7 +163,6 @@ describe('subscription builders with lines', () => {
       name: '限速节点 [50M]',
       type: 'ss',
       'bandwidth-limit': '50 Mbps',
-      'udp-over-tcp': true,
       smux: {
         enabled: true,
         protocol: 'smux',
@@ -178,7 +177,6 @@ describe('subscription builders with lines', () => {
     expect(singbox.outbounds[0]).toMatchObject({
       tag: '限速节点 [50M]',
       type: 'shadowsocks',
-      udp_over_tcp: true,
       multiplex: {
         enabled: true,
         protocol: 'smux',
@@ -186,5 +184,35 @@ describe('subscription builders with lines', () => {
         min_streams: 4
       }
     });
+  });
+
+  it('Shadowsocks 开启 udpOverTcp 时自动抑制 multiplex / smux', () => {
+    const uotLine: SubLine = {
+      id: 'line-uot',
+      name: 'UoT 节点',
+      type: 'DIRECT',
+      serverHost: 'node.example.com',
+      serverPort: 10086,
+      protocolType: 'SHADOWSOCKS',
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'pass',
+        udpOverTcp: true,
+        multiplex: {
+          enabled: true,
+          protocol: 'smux'
+        }
+      }
+    };
+
+    const clash = parse(buildClashYaml(user, [uotLine])) as { proxies: Array<Record<string, unknown>> };
+    expect(clash.proxies[0]['udp-over-tcp']).toBe(true);
+    expect(clash.proxies[0].smux).toBeUndefined();
+
+    const singbox = JSON.parse(buildSingboxJson(user, [uotLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect(singbox.outbounds[0].udp_over_tcp).toBe(true);
+    expect(singbox.outbounds[0].multiplex).toBeUndefined();
   });
 });

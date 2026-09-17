@@ -292,7 +292,7 @@ model Line {
   tcpMultiPath            Boolean   @default(false) // 开启 MPTCP
   udpFragment             Boolean? // UDP 分片
   udpTimeout              String? // UDP 超时时长（如 "5m", "300s"）
-  proxyProtocol           Int       @default(0) // PROXY Protocol 版本：0 关闭, 1 v1, 2 v2
+  proxyProtocol           Boolean   @default(false) // 开启 PROXY Protocol 解析 (自动兼容 v1 与 v2)
   proxyProtocolAcceptNoHeader Boolean @default(false) // 是否接受无 PROXY 头的连接
   tagsJson                String    @default("[]")
   level                   Int       @default(0)

@@ -165,11 +165,10 @@ export class CreateLineDto {
   @IsOptional()
   udpTimeout?: string | null;
 
-  @ApiPropertyOptional({ example: 0, enum: [0, 1, 2], description: 'PROXY Protocol 版本：0 关闭, 1 v1, 2 v2' })
-  @Type(() => Number)
-  @IsIn([0, 1, 2])
+  @ApiPropertyOptional({ default: false, description: '是否开启 PROXY Protocol' })
+  @IsBoolean()
   @IsOptional()
-  proxyProtocol?: number;
+  proxyProtocol?: boolean;
 
   @ApiPropertyOptional({ default: false, description: '是否接受无 PROXY 头的连接' })
   @IsBoolean()
