@@ -27,6 +27,7 @@ export interface EnqueueLogInput {
   nodeId?: string | null;
   userId?: string | null;
   createdAt?: Date;
+  bypassMinIngestLevel?: boolean;
 }
 
 @Injectable()
@@ -90,7 +91,7 @@ export class SystemLogsService implements OnModuleInit, OnModuleDestroy {
    * 写入单条或批量日志到内存环形缓冲队列
    */
   enqueue(input: EnqueueLogInput): void {
-    if (LOG_LEVEL_SEVERITY[input.level] < LOG_LEVEL_SEVERITY[this.minIngestLevel]) {
+    if (!input.bypassMinIngestLevel && LOG_LEVEL_SEVERITY[input.level] < LOG_LEVEL_SEVERITY[this.minIngestLevel]) {
       return;
     }
 

@@ -80,6 +80,18 @@ function formatTime(iso: string) {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${padMs(d.getMilliseconds())}`;
 }
 
+function getRepeatCount(metadata: string | undefined): number {
+  if (!metadata) return 1;
+  try {
+    const parsed = JSON.parse(metadata) as { repeatCount?: unknown };
+    return typeof parsed.repeatCount === 'number' && Number.isFinite(parsed.repeatCount) && parsed.repeatCount > 1
+      ? Math.floor(parsed.repeatCount)
+      : 1;
+  } catch {
+    return 1;
+  }
+}
+
 export function LogTable({
   logs,
   isLoading,
@@ -133,6 +145,7 @@ export function LogTable({
             {logs.map((log) => {
               const SourceIcon = SOURCE_ICONS[log.source] || Server;
               const lvlConfig = LEVEL_BADGE_VARIANTS[log.level] || LEVEL_BADGE_VARIANTS.INFO;
+              const repeatCount = getRepeatCount(log.metadata);
 
               return (
                 <tr
@@ -186,6 +199,11 @@ export function LogTable({
                       <span className="truncate text-xs font-mono select-text" title={log.message}>
                         {highlightKeyword(log.message, keyword)}
                       </span>
+                      {repeatCount > 1 && (
+                        <Badge variant="secondary" className="h-4.5 shrink-0 px-1 font-mono text-[10px]" title={`相同 Sing-box WARN 在 60 秒内合并 ${repeatCount} 次`}>
+                          x{repeatCount}
+                        </Badge>
+                      )}
                       {log.node && (
                         <Badge
                           variant="outline"

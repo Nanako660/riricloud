@@ -48,9 +48,10 @@ type authResult struct {
 }
 
 type configSync struct {
-	Version       int             `json:"version"`
-	SingboxConfig json.RawMessage `json:"singboxConfig"`
-	TunnelConfigs []tunnel.Config `json:"tunnelConfigs,omitempty"`
+	Version                int             `json:"version"`
+	SingboxConfig          json.RawMessage `json:"singboxConfig"`
+	SingboxLogCaptureLevel string          `json:"singboxLogCaptureLevel,omitempty"`
+	TunnelConfigs          []tunnel.Config `json:"tunnelConfigs,omitempty"`
 }
 
 type heartbeatTraffic struct {
@@ -320,15 +321,12 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				c.sendApplyResult(conn, sync.Version, false, "invalid config_sync payload")
 				continue
 			}
+			if c.logCollector != nil {
+				c.logCollector.SetSingboxCaptureLevel(sync.SingboxLogCaptureLevel)
+			}
 			if err := c.singboxMgr.ApplyConfig(sync.SingboxConfig, int64(sync.Version)); err != nil {
 				c.log.WithError(err).Error("apply singbox config failed")
 				c.sendApplyResult(conn, sync.Version, false, err.Error())
-				c.sendLogReport(conn, []agentLogItem{{
-					Level:   "ERROR",
-					Module:  "Singbox",
-					Source:  "SINGBOX",
-					Message: fmt.Sprintf("Apply singbox config v%d failed: %v", sync.Version, err),
-				}})
 				continue
 			}
 			if c.tunnelMgr != nil && sync.TunnelConfigs != nil {
@@ -338,12 +336,6 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")
 			c.sendApplyResult(conn, sync.Version, true, "ok")
-			c.sendLogReport(conn, []agentLogItem{{
-				Level:   "INFO",
-				Module:  "Singbox",
-				Source:  "SINGBOX",
-				Message: fmt.Sprintf("Singbox config v%d applied successfully", sync.Version),
-			}})
 		case "upgrade_task":
 			var task upgradeTask
 			if err := json.Unmarshal(msg.Data, &task); err != nil {
@@ -575,7 +567,7 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				OSArch:           c.osArch,
 				KernelVersion:    kernel.Version,
 				TrafficSnapshots: make([]heartbeatTraffic, 0, len(trafficSnapshots)),
-				Capabilities:     []string{"mirror_proxy"},
+				Capabilities:     []string{"mirror_proxy", "singbox_log_capture"},
 			}
 			for _, record := range trafficSnapshots {
 				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{

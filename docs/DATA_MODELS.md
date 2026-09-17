@@ -48,6 +48,13 @@ enum NodeStatus {
   DISABLED  // 手动禁用维护中
 }
 
+// Sing-box 日志采集模式（SQLite 逻辑枚举）
+enum SingboxLogMode {
+  NORMAL    // 默认：内核 warn，Master 只接收真实 WARN/ERROR
+  INFO      // 固定 30 分钟诊断
+  DEBUG     // 固定 30 分钟诊断
+}
+
 // Agent 通信模式
 enum AgentTransportMode {
   WS     // WS/WSS 长连接
@@ -183,6 +190,10 @@ model Node {
   // 高级模式：完整 singboxConfig 顶层覆盖 JSON（与生成配置深合并；含 inbounds 则整组替换）
   configOverride String?
 
+  // Sing-box 临时日志诊断：NORMAL | INFO | DEBUG；INFO/DEBUG 到期后由巡检恢复 NORMAL
+  singboxLogMode      SingboxLogMode @default(NORMAL)
+  singboxLogModeUntil DateTime?
+
   // 主从长连接通信凭证
   agentToken      String        @unique @default(uuid()) // Agent 接入认证密钥
   agentTokenHash  String?       @unique                    // AgentToken HMAC/SHA-256 校验值，避免仅依赖可逆密文
@@ -205,6 +216,7 @@ model Node {
   agentVersion   String?                                 // Agent 编译版本
   osArch         String?                                 // Agent 运行平台与架构，例如 linux/amd64
   kernelVersion  String?                                 // sing-box 内核版本
+  capabilitiesJson String      @default("[]")             // Agent 能力数组，含 singbox_log_capture 时支持临时诊断
 
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -703,6 +715,8 @@ model SystemSetting {
 
 完整 sing-box 配置的**顶层覆盖 JSON**（字符串落库，服务端校验必须为 JSON 对象）。`config_sync` 组装时与生成配置做**顶层深合并**：嵌套 plain object 按键递归合并，数组与标量整体替换（`inbounds`/`outbounds` 提供即整组替换，`log`/`route` 等按键合并）。出站与路由配置不建关系表，全部走该覆盖层。
 
+生成配置默认使用 `log.level=warn`。诊断模式只在有效期内覆盖最终 `log.level` 为 `info` 或 `debug`，不会覆盖 `timestamp`、`output` 等其他 `configOverride.log` 字段；到期后配置缓存失效并恢复正常模式。
+
 ### 3.3 `Line` 线路与 `Plan` 匹配
 
 `Node` 只描述底层机器、Agent 和遥测状态；历史 `NodeInbound` 仅用于旧数据兼容。`Line` 描述用户实际连接的端点，并直接持有协议、归一化参数、入口节点/端口与出口节点/端口。Agent 根据 Line 在相关节点自动派生 sing-box 入站、出站和路由规则。
@@ -830,6 +844,8 @@ model SystemLog {
 | `userId` | String? | 关联的操作/请求用户 ID，可为空；用户删除时级联设置为 `null`（`SetNull`） |
 | `createdAt` | DateTime | 记录产生时间戳，建有复合时序索引保障毫秒级分页检索 |
 
+NORMAL 节点的 SINGBOX INFO/DEBUG 不进入 `SystemLog`；有效诊断期内仅允许不高于请求级别的 SINGBOX 日志受控绕过全局 `logsMinIngestLevel`。历史日志不迁移、不重分类；系统日志也不参与流量计费，账务继续由 StatsService、heartbeat 与 `TrafficHourlyMetric` 小时桶驱动。入库前除既有敏感键掩码外，还清洗域名、IP、Token、密码和密钥模式。
+
 ### 5.3 存储缓冲与自动滚动淘汰机制
 1. **内存队列与批量入库**：高频日志优先写入 Master 内存环形队列，每隔 1 秒或积攒 50 条日志异步执行批量写入（`createMany`），消除 SQLite 单写锁争用风险。
 2. **生命周期双上限自动清理**：后台定时巡检任务按 `SystemSetting` 中的 `logsRetentionDays`（默认 7 天）与 `logsMaxCount`（默认 100,000 条）执行旧日志清理，防止 SQLite 数据库膨胀。
@@ -837,7 +853,7 @@ model SystemLog {
 
 ## 6. 实时节点镜像站模型
 
-`Node.capabilitiesJson` 保存 Agent 最近一次心跳宣告的能力数组；管理端只向前端暴露解析后的能力和 `supportsMirrorProxy` 布尔值。只有在线、WS/WSS 且宣告 `mirror_proxy` 的节点可以承载实时镜像请求。
+`Node.capabilitiesJson` 保存 Agent 最近一次心跳宣告的能力数组；管理端向前端暴露解析后的能力、`supportsMirrorProxy` 与 `supportsSingboxLogCapture` 布尔值。只有在线、WS/WSS 且宣告 `mirror_proxy` 的节点可以承载实时镜像请求；只有在线且宣告 `singbox_log_capture` 的节点可以开启临时 Sing-box 诊断。
 
 `MirrorSite` 是可复用的实时反向代理配置，不保存响应体：
 

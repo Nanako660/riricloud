@@ -110,6 +110,7 @@ type pollPayload struct {
 	AgentVersion        string              `json:"agentVersion,omitempty"`
 	OSArch              string              `json:"osArch,omitempty"`
 	KernelVersion       string              `json:"kernelVersion,omitempty"`
+	Capabilities        []string            `json:"capabilities,omitempty"`
 	TrafficSnapshots    []pollTrafficRecord `json:"trafficSnapshots"`
 	ConfigApplyResults  []json.RawMessage   `json:"configApplyResults,omitempty"`
 	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`
@@ -119,13 +120,14 @@ type pollPayload struct {
 }
 
 type pollResponse struct {
-	ProtocolVersion int             `json:"protocolVersion"`
-	NeedUpdate      bool            `json:"needUpdate"`
-	Version         int64           `json:"version"`
-	SingboxConfig   json.RawMessage `json:"singboxConfig"`
-	TunnelConfigs   []tunnel.Config `json:"tunnelConfigs,omitempty"`
-	Tasks           []taskMessage   `json:"tasks"`
-	NextPollSecs    int             `json:"nextPollSecs"`
+	ProtocolVersion        int             `json:"protocolVersion"`
+	NeedUpdate             bool            `json:"needUpdate"`
+	Version                int64           `json:"version"`
+	SingboxConfig          json.RawMessage `json:"singboxConfig"`
+	SingboxLogCaptureLevel string          `json:"singboxLogCaptureLevel,omitempty"`
+	TunnelConfigs          []tunnel.Config `json:"tunnelConfigs,omitempty"`
+	Tasks                  []taskMessage   `json:"tasks"`
+	NextPollSecs           int             `json:"nextPollSecs"`
 }
 
 type pendingResult struct {
@@ -226,6 +228,7 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		AgentVersion:     c.version,
 		OSArch:           c.osArch,
 		KernelVersion:    kernel.Version,
+		Capabilities:     []string{"mirror_proxy", "singbox_log_capture"},
 		TrafficSnapshots: make([]pollTrafficRecord, 0, len(trafficSnapshots)),
 	}
 	for _, record := range trafficSnapshots {
@@ -270,9 +273,12 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		c.interval = time.Duration(response.NextPollSecs) * time.Second
 	}
 	if response.NeedUpdate && len(response.SingboxConfig) > 0 {
+		if c.logCollector != nil {
+			c.logCollector.SetSingboxCaptureLevel(response.SingboxLogCaptureLevel)
+		}
 		if err := c.singboxMgr.ApplyConfig(response.SingboxConfig, response.Version); err != nil {
 			c.addResult("config", configApplyResult{Version: response.Version, Success: false, Message: err.Error()})
-			c.log.WithError(err).Warn("apply polled sing-box config failed")
+			c.log.WithError(err).Error("apply polled sing-box config failed")
 		} else {
 			c.addResult("config", configApplyResult{Version: response.Version, Success: true, Message: "ok"})
 			c.log.WithField("version", response.Version).Info("polled sing-box config applied")

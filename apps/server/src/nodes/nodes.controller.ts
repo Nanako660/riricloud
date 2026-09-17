@@ -9,6 +9,7 @@ import { CreateNodeDto } from './dto/create-node.dto';
 import { UpdateNodeDto } from './dto/update-node.dto';
 import { ProbeNodeDto } from './dto/probe-node.dto';
 import { UpgradeNodeDto } from './dto/upgrade-node.dto';
+import { LogDiagnosticsDto } from './dto/log-diagnostics.dto';
 import { NodesService } from './nodes.service';
 
 @ApiTags('admin')
@@ -66,6 +67,21 @@ export class NodesController {
   @Post()
   create(@Body() dto: CreateNodeDto, @CurrentUser() user: { id: string }, @Req() request: Request) {
     return this.nodesService.create(dto, user.id, getRequestBaseUrl(request));
+  }
+
+
+  @Post(':id/log-diagnostics')
+  enableLogDiagnostics(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LogDiagnosticsDto,
+    @CurrentUser() user: { id: string }
+  ) {
+    return this.nodesService.enableLogDiagnostics(id, dto.level, user.id);
+  }
+
+  @Delete(':id/log-diagnostics')
+  disableLogDiagnostics(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: { id: string }) {
+    return this.nodesService.disableLogDiagnostics(id, user.id);
   }
 
   @Patch(':id')

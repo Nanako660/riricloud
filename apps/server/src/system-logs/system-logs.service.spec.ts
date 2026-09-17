@@ -168,4 +168,20 @@ describe('SystemLogsService', () => {
     });
     expect(publishSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('允许诊断 Sing-box 日志受控绕过全局最低级别', () => {
+    const publishSpy = jest.spyOn(sseHub, 'publish');
+    service.setMinIngestLevel('ERROR');
+
+    service.enqueue({
+      source: 'SINGBOX',
+      level: 'INFO',
+      module: 'Singbox',
+      message: 'diagnostic info',
+      bypassMinIngestLevel: true
+    });
+
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ source: 'SINGBOX', level: 'INFO' }));
+  });
+
 });

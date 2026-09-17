@@ -36,6 +36,7 @@ export const PROTOCOL_LABELS: Record<ProtocolType, string> = {
 
 export type TransportType = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type CommunicationMode = 'WS' | 'HTTP';
+export type SingboxLogMode = 'NORMAL' | 'INFO' | 'DEBUG';
 
 export type ProbeResult = {
   type: 'tcp' | 'dns' | 'icmp';
@@ -179,6 +180,8 @@ export interface AdminNode {
   reachability?: 'PUBLIC' | 'NAT';
   isLocal: boolean;
   configOverride: string | null;
+  singboxLogMode: SingboxLogMode;
+  singboxLogModeUntil: string | null;
   communicationMode: CommunicationMode;
   pollIntervalSecs: number;
   status: string;
@@ -196,6 +199,7 @@ export interface AdminNode {
   kernelVersion: string | null;
   capabilities: string[];
   supportsMirrorProxy?: boolean;
+  supportsSingboxLogCapture?: boolean;
   agentProtocolVersion?: number | null;
   currentAgentAssetId?: string | null;
   currentSingboxAssetId?: string | null;
@@ -387,6 +391,26 @@ export function useNodeMutations() {
     onError: (e: unknown) => toast.error(extractErrorMessage(e, '删除失败'))
   });
 
+  const enableLogDiagnostics = useMutation({
+    mutationFn: async ({ id, level }: { id: string; level: 'INFO' | 'DEBUG' }) =>
+      (await api.post<{ nodeId: string; enabled: boolean; level: 'INFO' | 'DEBUG'; expiresAt: string; requested: boolean }>(`/admin/nodes/${id}/log-diagnostics`, { level })).data,
+    onSuccess: (data, variables) => {
+      toast.success(`已开启 Sing-box ${data.level} 诊断日志`);
+      invalidateDetail(variables.id);
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '开启诊断日志失败'))
+  });
+
+  const disableLogDiagnostics = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.delete<{ nodeId: string; enabled: boolean }>(`/admin/nodes/${id}/log-diagnostics`)).data,
+    onSuccess: (_data, id) => {
+      toast.success('已关闭 Sing-box 诊断日志');
+      invalidateDetail(id);
+    },
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, '关闭诊断日志失败'))
+  });
+
   const reloadNode = useMutation({
     mutationFn: async (id: string) => (await api.post<{ requested: boolean }>(`/admin/nodes/${id}/reload`)).data,
     onSuccess: (data) => {
@@ -470,5 +494,5 @@ export function useNodeMutations() {
     return undefined;
   };
 
-  return { createNode, rotateToken, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, retryTask, rollbackTask, waitForTask };
+  return { createNode, rotateToken, updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, retryTask, rollbackTask, waitForTask, enableLogDiagnostics, disableLogDiagnostics };
 }

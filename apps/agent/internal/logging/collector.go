@@ -1,10 +1,14 @@
 package logging
 
 import (
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+const singboxWarnDedupWindow = time.Minute
 
 // LogItem 单条上报日志结构（与主控 agent-message.ts 中 AgentLogItem 契约一致）
 type LogItem struct {
@@ -21,6 +25,8 @@ type Collector struct {
 	items       []LogItem
 	capacity    int
 	notifyError chan struct{}
+	singboxMin  logrus.Level
+	warnSeenAt  map[string]time.Time
 }
 
 // NewCollector 创建指定容量的有界日志收集器
@@ -32,13 +38,40 @@ func NewCollector(capacity int) *Collector {
 		items:       make([]LogItem, 0, capacity),
 		capacity:    capacity,
 		notifyError: make(chan struct{}, 1),
+		singboxMin:  logrus.WarnLevel,
+		warnSeenAt:  make(map[string]time.Time),
 	}
+}
+
+// SetSingboxCaptureLevel 设置 Sing-box 日志上报最低级别。
+// Agent 自身日志仍由 Hook 的独立 INFO 门槛控制。
+func (c *Collector) SetSingboxCaptureLevel(level string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.singboxMin = parseCaptureLevel(level)
+}
+
+// SingboxCaptureLevel 返回当前 Sing-box 日志上报最低级别。
+func (c *Collector) SingboxCaptureLevel() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return formatCaptureLevel(c.singboxMin)
 }
 
 // Push 向缓冲区插入一条日志；超出容量时丢弃最旧日志，永不阻塞
 func (c *Collector) Push(item LogItem) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if !c.shouldCaptureLocked(item) {
+		return
+	}
+
+	if item.Source == "SINGBOX" && item.Level == "WARN" && c.singboxMin == logrus.WarnLevel {
+		if c.coalesceRepeatedWarning(item) {
+			return
+		}
+	}
 
 	if len(c.items) >= c.capacity {
 		c.items = c.items[1:]
@@ -51,6 +84,77 @@ func (c *Collector) Push(item LogItem) {
 		default:
 		}
 	}
+}
+
+func (c *Collector) shouldCaptureLocked(item LogItem) bool {
+	// 保留未标注来源的内部调用兼容性；来自 Agent/Sing-box 的结构化日志执行严格策略。
+	if item.Source != "SINGBOX" && item.Source != "AGENT" {
+		return true
+	}
+	level := parseItemLevel(item.Level)
+	if item.Source == "SINGBOX" {
+		if c.singboxMin == logrus.WarnLevel && metadataCategory(item.Metadata) == "ACCESS" {
+			return false
+		}
+		return level <= c.singboxMin
+	}
+	return level <= logrus.InfoLevel
+}
+
+func parseItemLevel(level string) logrus.Level {
+	switch strings.ToUpper(strings.TrimSpace(level)) {
+	case "ERROR":
+		return logrus.ErrorLevel
+	case "WARN":
+		return logrus.WarnLevel
+	case "INFO":
+		return logrus.InfoLevel
+	default:
+		return logrus.DebugLevel
+	}
+}
+
+func metadataCategory(metadata map[string]interface{}) string {
+	if category, ok := metadata["category"].(string); ok {
+		return category
+	}
+	return ""
+}
+
+// coalesceRepeatedWarning 合并短时间内重复出现的 Sing-box WARN，避免正常内核抖动刷屏。
+// ERROR 永不进入此路径；诊断模式也不合并 INFO/DEBUG。
+func (c *Collector) coalesceRepeatedWarning(item LogItem) bool {
+	key := item.Module + "\x00" + item.Message
+	now := time.Now()
+	if previous, ok := c.warnSeenAt[key]; ok && now.Sub(previous) < singboxWarnDedupWindow {
+		for index := len(c.items) - 1; index >= 0; index-- {
+			current := &c.items[index]
+			if current.Source != "SINGBOX" || current.Level != "WARN" || current.Module != item.Module || current.Message != item.Message {
+				continue
+			}
+			if current.Metadata == nil {
+				current.Metadata = make(map[string]interface{})
+			}
+			count := 1
+			if raw, ok := current.Metadata["repeatCount"].(int); ok && raw > 0 {
+				count = raw
+			} else if raw, ok := current.Metadata["repeatCount"].(float64); ok && raw > 0 {
+				count = int(raw)
+			}
+			current.Metadata["repeatCount"] = count + 1
+			c.warnSeenAt[key] = now
+			return true
+		}
+	}
+	c.warnSeenAt[key] = now
+	if len(c.warnSeenAt) > c.capacity*4 {
+		for seenKey, seenAt := range c.warnSeenAt {
+			if now.Sub(seenAt) >= singboxWarnDedupWindow {
+				delete(c.warnSeenAt, seenKey)
+			}
+		}
+	}
+	return false
 }
 
 // Drain 原子取出至多 maxCount 条缓冲日志
@@ -104,17 +208,19 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 		source = "SINGBOX"
 	}
 
-	// 分级过滤策略：
-	// 1. Sing-box 日常仅上报 WARN/ERROR，过滤海量普通连接日志以防冲击数据库与带宽
-	// 2. Agent 运行日志上报 INFO/WARN/ERROR
+	// Sing-box 的上报级别由 Master 下发的诊断策略动态控制；Agent 自身仍上报 INFO/WARN/ERROR。
+	h.collector.mu.Lock()
+	singboxMin := h.collector.singboxMin
+	h.collector.mu.Unlock()
 	if source == "SINGBOX" {
-		if entry.Level > logrus.WarnLevel {
+		if category, ok := entry.Data["category"].(string); ok && category == "ACCESS" && singboxMin == logrus.WarnLevel {
 			return nil
 		}
-	} else {
-		if entry.Level > logrus.InfoLevel {
+		if entry.Level > singboxMin {
 			return nil
 		}
+	} else if entry.Level > logrus.InfoLevel {
+		return nil
 	}
 
 	var levelStr string
@@ -149,9 +255,31 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 		Level:    levelStr,
 		Module:   moduleStr,
 		Source:   source,
-		Message:  entry.Message,
+		Message:  strings.TrimSpace(entry.Message),
 		Metadata: metadata,
 	})
 
 	return nil
+}
+
+func parseCaptureLevel(level string) logrus.Level {
+	switch strings.ToUpper(strings.TrimSpace(level)) {
+	case "DEBUG":
+		return logrus.DebugLevel
+	case "INFO":
+		return logrus.InfoLevel
+	default:
+		return logrus.WarnLevel
+	}
+}
+
+func formatCaptureLevel(level logrus.Level) string {
+	switch level {
+	case logrus.DebugLevel:
+		return "DEBUG"
+	case logrus.InfoLevel:
+		return "INFO"
+	default:
+		return "WARN"
+	}
 }

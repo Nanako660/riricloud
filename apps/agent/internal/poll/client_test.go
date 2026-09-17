@@ -62,3 +62,21 @@ func TestResolvePollURLRejectsWS(t *testing.T) {
 		t.Fatal("expected WS URL to be rejected by HTTP client")
 	}
 }
+
+func TestPollPayloadIncludesSingboxCaptureCapability(t *testing.T) {
+	payload, err := json.Marshal(pollPayload{ProtocolVersion: protocol.Version, Capabilities: []string{"mirror_proxy", "singbox_log_capture"}, TrafficSnapshots: []pollTrafficRecord{}})
+	if err != nil {
+		t.Fatalf("marshal poll payload: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal poll payload: %v", err)
+	}
+	var capabilities []string
+	if err := json.Unmarshal(decoded["capabilities"], &capabilities); err != nil {
+		t.Fatalf("decode capabilities: %v", err)
+	}
+	if len(capabilities) != 2 || capabilities[1] != "singbox_log_capture" {
+		t.Fatalf("unexpected capabilities: %#v", capabilities)
+	}
+}

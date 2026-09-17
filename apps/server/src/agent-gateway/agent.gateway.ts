@@ -132,7 +132,7 @@ export class AgentGateway implements OnGatewayConnection, OnGatewayDisconnect {
         break;
       }
       case 'log_report': {
-        this.gatewayService.handleLogReport(nodeId, message.data);
+        await this.gatewayService.handleLogReport(nodeId, message.data);
         break;
       }
       case 'mirror_response_headers':

@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
-import { ArrowLeft, Cpu, FileText, GitBranch, KeyRound, Network, RefreshCw, RotateCcw, Server, Trash2, Wrench } from 'lucide-react';
+import { ArrowLeft, Clock3, Cpu, FileText, GitBranch, KeyRound, Network, RefreshCw, RotateCcw, Server, ShieldAlert, Trash2, Wrench } from 'lucide-react';
 import { PageContainer } from '@/components/shared/page-container';
 import { CopyButton } from '@/components/shared/copy-button';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -70,7 +70,7 @@ function GeneratedConfigPreview({ node }: { node: { id: string; lines: NodeLine[
     if (line.landingNodeId === node.id && line.type === 'RELAY' && line.relayMode !== 'TARGET_LINE' && line.landingPort) result.push({ type: line.protocolType.toLowerCase(), tag: `line-${line.id}-landing`, listen: '0.0.0.0', listen_port: line.landingPort });
     return result;
   });
-  return <pre className="max-h-[480px] overflow-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed">{JSON.stringify({ log: { level: 'info', timestamp: true }, inbounds, outbounds: [{ type: 'direct', tag: 'direct' }] }, null, 2)}</pre>;
+  return <pre className="max-h-[480px] overflow-auto rounded-md border bg-muted/50 p-3 text-xs leading-relaxed">{JSON.stringify({ log: { level: 'warn', timestamp: true }, inbounds, outbounds: [{ type: 'direct', tag: 'direct' }] }, null, 2)}</pre>;
 }
 
 function ProbeSnapshotCard({ snapshot }: { snapshot: ProbeSnapshot | null }) {
@@ -113,6 +113,77 @@ function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onO
   );
 }
 
+function formatDiagnosticRemaining(expiresAt: string | null, now: number): string {
+  if (!expiresAt) return '—';
+  const remaining = Math.max(0, new Date(expiresAt).getTime() - now);
+  const minutes = Math.floor(remaining / 60_000);
+  const seconds = Math.floor((remaining % 60_000) / 1_000);
+  return `${minutes} 分 ${seconds.toString().padStart(2, '0')} 秒`;
+}
+
+function SingboxDiagnosticsCard({
+  node,
+  enabling,
+  disabling,
+  onEnable,
+  onDisable
+}: {
+  node: AdminNode;
+  enabling: boolean;
+  disabling: boolean;
+  onEnable: (level: 'INFO' | 'DEBUG') => void;
+  onDisable: () => void;
+}) {
+  const [level, setLevel] = React.useState<'INFO' | 'DEBUG'>('INFO');
+  const [now, setNow] = React.useState(() => Date.now());
+  const active = node.singboxLogMode !== 'NORMAL' && Boolean(node.singboxLogModeUntil);
+
+  React.useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+
+  const available = node.status === 'ONLINE' && node.supportsSingboxLogCapture;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-4 w-4" />Sing-box 诊断日志</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {active ? (
+          <div className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2"><Badge variant="outline">{node.singboxLogMode}</Badge><span>诊断采集进行中</span></div>
+              <p className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />剩余 {formatDiagnosticRemaining(node.singboxLogModeUntil, now)}，结束后自动恢复 NORMAL</p>
+            </div>
+            <Button variant="outline" size="sm" disabled={disabling} onClick={onDisable}>停止诊断</Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm text-muted-foreground">正常模式只上传真实 WARN/ERROR。诊断会临时重启 Sing-box，并可能记录域名、IP 等敏感连接信息。</p>
+              {!node.supportsSingboxLogCapture && <p className="text-xs text-muted-foreground">当前 Agent 不支持诊断日志，请先升级 Agent。</p>}
+              {node.status !== 'ONLINE' && <p className="text-xs text-muted-foreground">节点离线时不可开启临时诊断。</p>}
+              <Select value={level} onValueChange={(value) => setLevel(value as 'INFO' | 'DEBUG')}>
+                <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="诊断级别" /></SelectTrigger>
+                <SelectContent><SelectItem value="INFO">INFO（推荐）</SelectItem><SelectItem value="DEBUG">DEBUG（更详细）</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <AlertDialog>
+              <AlertDialogTrigger asChild><Button size="sm" disabled={!available || enabling}>{enabling ? '下发中…' : '开启诊断日志'}</Button></AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader><AlertDialogTitle>开启 {level} 诊断日志？</AlertDialogTitle><AlertDialogDescription>该操作会重启 Sing-box，诊断持续 30 分钟并自动关闭。连接详情可能包含域名和 IP，系统会执行脱敏处理。</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => onEnable(level)}>确认开启</AlertDialogAction></AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function NodeDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -121,7 +192,7 @@ export default function NodeDetailPage() {
   const { data: node, isPending, isError } = useAdminNodeDetail(id);
   const { data: binaryInfo } = useAdminBinaryInfo();
   const { data: binaryResources } = useAdminBinaryResources({ status: 'ACTIVE', pageSize: 100 });
-  const { updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask } = useNodeMutations();
+  const { updateNode, deleteNode, reloadNode, upgradeNode, probeNode, restartAgent, importBinary, waitForTask, enableLogDiagnostics, disableLogDiagnostics } = useNodeMutations();
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [probeOpen, setProbeOpen] = React.useState(false);
   const [installOpen, setInstallOpen] = React.useState(false);
@@ -172,6 +243,7 @@ export default function NodeDetailPage() {
   return <PageContainer>
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex min-w-0 items-center gap-3"><Button variant="ghost" size="icon" asChild aria-label="返回"><Link to="/admin/nodes"><ArrowLeft className="h-4 w-4" /></Link></Button><div className="min-w-0"><h1 className="truncate text-2xl font-semibold tracking-tight">{node.name}</h1><p className="truncate text-sm text-muted-foreground">{node.serverHost}</p></div><Badge variant={node.status === 'ONLINE' ? 'default' : 'secondary'}>{statusLabel}</Badge><Badge variant={node.reachability === 'NAT' ? 'secondary' : 'outline'}>{node.reachability === 'NAT' ? '内网 NAT' : '公网'}</Badge></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" asChild><Link to={`/admin/logs?nodeId=${node.id}&live=true`}><FileText />实时日志</Link></Button><Button variant="outline" size="sm" disabled={reloadNode.isPending} onClick={() => reloadNode.mutate(node.id)}><RefreshCw />重载内核</Button><Button variant="outline" size="sm" disabled={restartAgent.isPending} onClick={() => restartAgent.mutate(node.id, { onSuccess: (data) => data.requested && wait(data.taskId, 'Agent 重启') })}><RotateCcw />重启 Agent</Button><Button variant="outline" size="sm" onClick={() => setProbeOpen(true)}><Network />网络探针</Button><Button variant="outline" size="sm" onClick={() => setUpgradeOpen(true)}><Wrench />升级中心</Button><Button variant="outline" size="sm" onClick={() => setInstallOpen(true)}><Server />安装命令</Button></div></div>
     {node.configError && <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"><span className="font-medium">内核最近错误：</span>{node.configError}</div>}
+    <SingboxDiagnosticsCard node={node} enabling={enableLogDiagnostics.isPending} disabling={disableLogDiagnostics.isPending} onEnable={(level) => enableLogDiagnostics.mutate({ id: node.id, level })} onDisable={() => disableLogDiagnostics.mutate(node.id)} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">线路承载</p><p className="mt-1 text-2xl font-semibold">{node.lines.length}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">派生端口</p><p className="mt-1 text-2xl font-semibold">{node.servicePorts.length}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">内存</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}</p></CardContent></Card></div>
     <Tabs defaultValue="lines"><TabsList className="w-full justify-start overflow-x-auto"><TabsTrigger value="lines">线路承载</TabsTrigger><TabsTrigger value="basic">基础与遥测</TabsTrigger><TabsTrigger value="advanced">高级与运维</TabsTrigger></TabsList>
       <TabsContent value="lines" className="space-y-4"><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4" />当前承载线路（{node.lines.length}）</CardTitle></CardHeader><CardContent className="p-0">{node.lines.length ? <Table className="min-w-[720px]"><TableHeader><TableRow><TableHead>线路</TableHead><TableHead>协议</TableHead><TableHead>角色</TableHead><TableHead>入口端口</TableHead><TableHead>落地端口</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{node.lines.map((line) => <TableRow key={line.id}><TableCell className="font-medium">{line.name}</TableCell><TableCell><Badge variant="outline">{line.protocolType}</Badge></TableCell><TableCell>{line.role === 'DIRECT' ? '直连' : line.role === 'ENTRY' ? '中转入口' : '落地'}{line.type === 'RELAY' && <span className="ml-1 text-xs text-muted-foreground">· {line.relayMode === 'BLIND_FORWARD' ? '盲转发' : line.relayMode === 'TARGET_LINE' ? '桥接已有线路' : '协议代理'}</span>}</TableCell><TableCell className="tabular-nums">{line.entryNodeId === node.id ? line.entryPort : '—'}</TableCell><TableCell className="tabular-nums">{line.landingNodeId === node.id ? (line.landingPort ?? '—') : '—'}</TableCell><TableCell><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge></TableCell></TableRow>)}</TableBody></Table> : <EmptyState title="暂无承载线路" description="请在线路管理中创建并选择该节点。" className="border-0" />}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">派生监听端口</CardTitle></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2">{node.servicePorts.length ? node.servicePorts.map((port) => <div key={`${port.lineId}-${port.role}`} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"><span className="truncate">{port.lineName}</span><span className="font-mono text-xs text-muted-foreground">{port.port} · {port.role === 'DIRECT' ? '直连' : port.role === 'TRANSIT' ? '中转' : '落地'}</span></div>) : <p className="text-sm text-muted-foreground">暂无派生端口</p>}</CardContent></Card></TabsContent>

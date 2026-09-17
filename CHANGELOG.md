@@ -13,8 +13,11 @@
 ## [Unreleased]
 
 ### Added
+- **Sing-box 临时诊断日志控制**：节点详情支持在线且兼容 Agent 开启 INFO/DEBUG 诊断，固定 30 分钟自动恢复并保留重启与隐私风险提示。
 
 ### Changed
+- **Sing-box 日志采集降噪**：默认内核日志级别调整为 `warn`；Agent 解析真实级别、过滤 ACCESS/INFO/DEBUG、合并短时间重复 WARN，Master 对旧 Agent 上报执行来源级二次拦截，系统日志不再把正常内核启动细节计入 WARN/ERROR 指标。
+- **日志隐私与账务解耦**：清洗诊断日志中的 ANSI、域名、IP、Token、密码和密钥模式；流量统计继续只使用 StatsService、heartbeat 与小时桶，不从系统日志计费。
 
 ### Fixed
 - **修复 Docker Agent 构建工具链版本不一致**：根 `Dockerfile` 与 `Dockerfile.agent` 的 Agent 编译阶段统一升级到 digest 固定的 Go 1.26，与 `apps/agent/go.mod` 的最低版本要求保持一致，避免在 `GOTOOLCHAIN=local` 下因 Go 1.25 拒绝执行 `go mod download`。
