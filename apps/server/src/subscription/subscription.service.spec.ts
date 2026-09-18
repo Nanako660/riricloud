@@ -611,5 +611,62 @@ describe('SubscriptionService', () => {
       expect(yaml.proxies[0].up).toBe('50 Mbps');
       expect(yaml.proxies[0].down).toBe('50 Mbps');
     });
+
+    it('速率达到 1000M 及以上时自动换算为 1G / 2.5G 角标', async () => {
+      settingsService.getSettings.mockResolvedValue({
+        appendSubscriptionSpeedBadge: true,
+        speedLimitUnitConversionEnabled: true
+      });
+      const mockSubDelegate = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sub-2',
+          userId: activeUser.id,
+          planId: 'p2',
+          status: 'ACTIVE',
+          trafficLimitBytes: 1000000000n,
+          trafficUsedBytes: 0n,
+          expireAt: new Date(Date.now() + 86400000),
+          user: { ...activeUser, isActive: true },
+          plan: {
+            id: 'p2',
+            name: '千兆套餐',
+            speedLimitMbps: 2500,
+            appendSpeedBadge: 'INHERIT',
+            lineMatchMode: 'ALL',
+            lineTagsJson: '[]',
+            lineIdsJson: '[]'
+          }
+        })
+      };
+      (service as unknown as { subscriptionDelegate: () => unknown }).subscriptionDelegate = () => mockSubDelegate;
+
+      linesService.getAvailableForPlan.mockResolvedValue([
+        {
+          id: 'line-g',
+          name: '千兆直连',
+          type: 'DIRECT',
+          serverHost: 'g.example.com',
+          serverPort: 8443,
+          speedLimitMbps: 1000,
+          protocolType: 'VLESS',
+          params: {}
+        },
+        {
+          id: 'line-2.5g',
+          name: '高速专线',
+          type: 'DIRECT',
+          serverHost: 'fast.example.com',
+          serverPort: 8443,
+          speedLimitMbps: 2500,
+          protocolType: 'VLESS',
+          params: {}
+        }
+      ]);
+
+      const res = await service.getSubscription('tok-1', { type: 'clash' });
+      const yaml = parseYaml(res.body) as { proxies: Array<Record<string, unknown>> };
+      expect(yaml.proxies[0].name).toBe('千兆直连 [1G]');
+      expect(yaml.proxies[1].name).toBe('高速专线 [2.5G]');
+    });
   });
 });

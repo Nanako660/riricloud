@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { setDefaultSystemTimezone } from './utils';
+import type { SpeedTier } from './speed-tier';
 
 export interface PublicSystemSettings {
   siteName: string;
@@ -24,6 +25,8 @@ export interface PublicSystemSettings {
   subscriptionBaseUrl: string;
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled?: boolean;
+  speedLimitUnitConversionEnabled?: boolean;
+  speedLimitColorTiers?: SpeedTier[];
   customCss: string;
   customHeadHtml: string;
   emailVerificationEnabled: boolean;

@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptSecret, encryptSecret } from '../common/secret-crypto';
+import { DEFAULT_SPEED_TIERS, type SpeedTier } from '../common/speed-format';
 
 export type EmailDomainMode = 'none' | 'whitelist' | 'blacklist';
 export type ProbePresetType = 'tcp' | 'dns' | 'icmp';
@@ -44,6 +45,8 @@ export const SETTING_KEYS = {
   SUBSCRIPTION_EFFECTS_SYNC_ENABLED: 'subscriptionEffectsSyncEnabled',
   SUBSCRIPTION_UPDATE_INTERVAL_HOURS: 'subscriptionUpdateIntervalHours',
   APPEND_SUBSCRIPTION_SPEED_BADGE: 'appendSubscriptionSpeedBadge',
+  SPEED_LIMIT_UNIT_CONVERSION_ENABLED: 'speedLimitUnitConversionEnabled',
+  SPEED_LIMIT_COLOR_TIERS: 'speedLimitColorTiers',
   DEFAULT_TEMPLATE_ID: 'defaultTemplateId',
   PUBLIC_LINES_ENABLED: 'publicLinesEnabled',
   INCLUDE_USAGE_HEADERS: 'includeUsageHeaders',
@@ -110,6 +113,8 @@ export interface SystemSettings {
   subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
   appendSubscriptionSpeedBadge: boolean;
+  speedLimitUnitConversionEnabled: boolean;
+  speedLimitColorTiers: SpeedTier[];
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
@@ -176,6 +181,8 @@ export type PublicSystemSettings = Pick<
   | 'subscriptionBaseUrl'
   | 'subscriptionShortLinksEnabled'
   | 'subscriptionEffectsSyncEnabled'
+  | 'speedLimitUnitConversionEnabled'
+  | 'speedLimitColorTiers'
   | 'customCss'
   | 'customHeadHtml'
   | 'emailVerificationEnabled'
@@ -211,6 +218,8 @@ export const DEFAULTS: SystemSettings = {
   subscriptionEffectsSyncEnabled: true,
   subscriptionUpdateIntervalHours: 24,
   appendSubscriptionSpeedBadge: true,
+  speedLimitUnitConversionEnabled: true,
+  speedLimitColorTiers: [...DEFAULT_SPEED_TIERS],
   defaultTemplateId: null,
   publicLinesEnabled: true,
   includeUsageHeaders: true,
@@ -255,22 +264,22 @@ export const DEFAULTS: SystemSettings = {
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   siteName: '站点名称',
-  siteDescription: '站点副标题描述',
-  publicBaseUrl: '全站对外访问地址',
-  logoUrl: '站点 Logo 地址',
+  siteDescription: '系统副标题描述（展示于登录页等区域）',
+  publicBaseUrl: '系统对外访问基准地址',
+  logoUrl: '系统 Logo 地址',
   faviconUrl: '站点 Favicon 地址',
-  siteAnnouncement: '全局公告横幅',
-  footerCopyright: '页脚版权信息',
+  siteAnnouncement: '用户面板公告横幅（支持 Markdown）',
+  footerCopyright: '页脚版权文案',
   supportTelegramUrl: 'Telegram 客服或群组地址',
-  supportDiscordUrl: 'Discord 客服或群组地址',
-  supportEmail: '客服邮箱',
-  supportCustomUrl: '自定义客服支持地址',
-  registrationEnabled: '是否开放注册',
-  defaultPlanId: '新用户默认套餐',
-  defaultBalance: '新用户注册初始余额（分）',
-  emailDomainMode: '邮箱域名过滤模式',
-  emailDomainList: '邮箱域名过滤列表',
-  passwordMinLength: '密码最小长度',
+  supportDiscordUrl: 'Discord 服务器邀请地址',
+  supportEmail: '客服支持邮箱',
+  supportCustomUrl: '自定义帮助中心/工单系统地址',
+  registrationEnabled: '是否允许新用户注册',
+  defaultPlanId: '新用户注册默认激活的公开套餐',
+  defaultBalance: '新用户注册默认赠送余额（分）',
+  emailDomainMode: '注册邮箱域名过滤模式',
+  emailDomainList: '注册邮箱域名名单列表',
+  passwordMinLength: '密码最小长度限制',
   passwordRequireLowercase: '密码必须包含小写字母',
   passwordRequireUppercase: '密码必须包含大写字母',
   passwordRequireDigit: '密码必须包含数字',
@@ -280,6 +289,8 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   subscriptionEffectsSyncEnabled: '是否开启「我的订阅」卡片套餐特效同步',
   subscriptionUpdateIntervalHours: '客户端订阅更新周期（小时）',
   appendSubscriptionSpeedBadge: '是否在订阅节点名称默认追加速率角标（如 [50M]）',
+  speedLimitUnitConversionEnabled: '速率展示是否在达到 1000M 及以上时自动换算为 G 单位（如 1G、2.5G）',
+  speedLimitColorTiers: '速率展示阶梯阈值与色彩映射规则（JSON 数组）',
   defaultTemplateId: '全局默认订阅模板',
   publicLinesEnabled: '是否公开线路列表',
   includeUsageHeaders: '是否注入订阅用量响应头',
@@ -375,6 +386,8 @@ export class SettingsService {
       subscriptionEffectsSyncEnabled: this.readBoolean(map, 'subscriptionEffectsSyncEnabled'),
       subscriptionUpdateIntervalHours: this.readInteger(map, 'subscriptionUpdateIntervalHours', 1, 168),
       appendSubscriptionSpeedBadge: this.readBoolean(map, 'appendSubscriptionSpeedBadge'),
+      speedLimitUnitConversionEnabled: this.readBoolean(map, 'speedLimitUnitConversionEnabled'),
+      speedLimitColorTiers: this.readSpeedTiers(map),
       defaultTemplateId: this.readNullableString(map, 'defaultTemplateId'),
       publicLinesEnabled: this.readBoolean(map, 'publicLinesEnabled'),
       includeUsageHeaders: this.readBoolean(map, 'includeUsageHeaders'),
@@ -448,6 +461,8 @@ export class SettingsService {
       subscriptionBaseUrl: settings.subscriptionBaseUrl,
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled,
+      speedLimitUnitConversionEnabled: settings.speedLimitUnitConversionEnabled,
+      speedLimitColorTiers: settings.speedLimitColorTiers,
       customCss: settings.customCss,
       customHeadHtml: settings.customHeadHtml,
       emailVerificationEnabled: settings.emailVerificationEnabled,
@@ -586,6 +601,27 @@ export class SettingsService {
     }
     return DEFAULTS[key] as string;
   }
+
+  private readSpeedTiers(map: Map<string, string>): SpeedTier[] {
+    try {
+      const raw = map.get('speedLimitColorTiers');
+      if (!raw) return DEFAULTS.speedLimitColorTiers;
+      const value: unknown = JSON.parse(raw);
+      if (!Array.isArray(value)) return DEFAULTS.speedLimitColorTiers;
+      const filtered = value.filter(isSpeedTier).slice(0, 16);
+      return filtered.length > 0 ? filtered : DEFAULTS.speedLimitColorTiers;
+    } catch {
+      return DEFAULTS.speedLimitColorTiers;
+    }
+  }
+}
+
+function isSpeedTier(value: unknown): value is SpeedTier {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  const validMax = item.maxMbps === null || (typeof item.maxMbps === 'number' && Number.isFinite(item.maxMbps) && item.maxMbps >= 0);
+  const validColor = typeof item.color === 'string' && item.color.trim().length > 0;
+  return validMax && validColor;
 }
 
 export function isValidTimezone(tz: string): boolean {

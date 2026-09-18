@@ -49,6 +49,18 @@ export class ProbePresetTargetDto {
   timeoutMs?: number;
 }
 
+export class SpeedTierDto {
+  @ApiPropertyOptional({ example: 300, nullable: true })
+  @IsOptional()
+  maxMbps?: number | null;
+
+  @ApiProperty({ example: 'blue' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  color!: string;
+}
+
 export class UpdateSettingsDto {
   @ApiPropertyOptional({ example: '我的面板' })
   @IsString()
@@ -204,6 +216,19 @@ export class UpdateSettingsDto {
   @IsBoolean()
   @IsOptional()
   appendSubscriptionSpeedBadge?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: '速率展示是否在达到 1000M 及以上时自动换算为 G 单位（如 1G、2.5G）' })
+  @IsBoolean()
+  @IsOptional()
+  speedLimitUnitConversionEnabled?: boolean;
+
+  @ApiPropertyOptional({ type: [SpeedTierDto], description: '速率展示阶梯阈值与色彩映射规则' })
+  @IsArray()
+  @ArrayMaxSize(16)
+  @ValidateNested({ each: true })
+  @Type(() => SpeedTierDto)
+  @IsOptional()
+  speedLimitColorTiers?: SpeedTierDto[];
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @ValidateIf((o) => o.defaultTemplateId !== undefined && o.defaultTemplateId !== null && o.defaultTemplateId !== '')

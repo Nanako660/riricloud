@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatBytes, formatCurrency } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { usePublicSettings } from '@/lib/public-settings';
+import { formatSpeedLimitWithUnit, getSpeedTierBadgeClass } from '@/lib/speed-tier';
 import type { PlanCardConfig, PlanCardStyle, PlanThemeColor } from '@/pages/admin/plans/use-plans';
 import type { UserPlan } from '@/pages/user/subscription/use-user-subscription';
 import {
@@ -122,6 +124,10 @@ export function MarketPlanCard({
   const IconComponent = PLAN_ICONS[selectedIconKey]?.icon || Zap;
 
   // Pricing
+  const { data: publicSettings } = usePublicSettings();
+  const unitConversion = publicSettings?.speedLimitUnitConversionEnabled !== false;
+  const speedText = formatSpeedLimitWithUnit(plan.speedLimitMbps, unitConversion);
+  const speedBadgeClass = getSpeedTierBadgeClass(plan.speedLimitMbps, publicSettings?.speedLimitColorTiers);
   const currentPrice = plan.price;
   const originalPrice = cardConfig.originalPrice;
   const hasDiscount = originalPrice != null && originalPrice > currentPrice;
@@ -370,10 +376,10 @@ export function MarketPlanCard({
                 {Boolean(plan.speedLimitMbps) && (
                   <Badge
                     variant="outline"
-                    className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs px-2 py-0.5 font-semibold"
+                    className={cn('gap-1 text-xs px-2 py-0.5 font-semibold', speedBadgeClass)}
                   >
                     <Zap className="size-3" />
-                    {plan.speedLimitMbps} Mbps
+                    {speedText}
                   </Badge>
                 )}
                 {isCurrent && (

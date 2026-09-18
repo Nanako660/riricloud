@@ -32,6 +32,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { getTrafficPeriod, TRAFFIC_RESET_MODES } from '../common/traffic-reset';
 import type { PlanPurchaseSource } from './plan-purchases.service';
 import { PlanPurchasesService } from './plan-purchases.service';
+import { formatSpeedLimit } from '../common/speed-format';
 
 type SubscriptionPlan = {
   id: string;
@@ -170,6 +171,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     const plan = subscription?.plan;
     const planSpeedLimit = plan?.speedLimitMbps ?? null;
     const appendBadgeSetting = settings?.appendSubscriptionSpeedBadge ?? false;
+    const unitConversion = settings?.speedLimitUnitConversionEnabled !== false;
     const shouldAppendBadge = plan?.appendSpeedBadge === 'ENABLE'
       ? true
       : plan?.appendSpeedBadge === 'DISABLE'
@@ -189,7 +191,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
       let lineName = line.name;
       if (shouldAppendBadge && effectiveSpeed && effectiveSpeed > 0) {
-        lineName = `${line.name} [${effectiveSpeed}M]`;
+        const badge = formatSpeedLimit(effectiveSpeed, unitConversion);
+        lineName = `${line.name} [${badge}]`;
       }
 
       const params = { ...(line.params ?? {}) };

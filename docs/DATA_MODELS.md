@@ -643,6 +643,8 @@ model SystemSetting {
 | `subscriptionEffectsSyncEnabled` | `"true"` / `"false"` | `"true"` | 是否开启「我的订阅」卡片套餐特效同步；开启后用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框，关闭后保持经典极简原生卡片 |
 | `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
 | `appendSubscriptionSpeedBadge` | `"true"` / `"false"` | `"true"` | 订阅节点名称是否默认追加如 `[50M]` 速率角标（套餐可单独覆盖） |
+| `speedLimitUnitConversionEnabled` | `"true"` / `"false"` | `"true"` | 速率达到 1000 Mbps 及以上时是否自动换算为 G 单位（如 1G、2.5G），全站 UI 与订阅节点名称角标同步生效 |
+| `speedLimitColorTiers` | JSON 数组字符串 | `[{"maxMbps":300,"color":"blue"},{"maxMbps":1000,"color":"emerald"},{"maxMbps":null,"color":"violet"}]` | 速率分级色彩阶梯配置，支持科技蓝、极光青、翡翠绿、琥珀金、星曜紫、玫瑰红等语义色阶 |
 | `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板；系统设置中以只读卡片展示，引导前往模板页维护 |
 | `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
 | `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |
