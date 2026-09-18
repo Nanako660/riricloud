@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.16] - 2026-09-18
+
+### Added
 - **线路底层网络与多路复用增强配置**：对齐 Sing-box 官方规范，线路支持 TCP Fast Open (TFO)、TCP MultiPath (MPTCP)、UDP Fragment 与 UDP Timeout 超时设置；支持 PROXY Protocol v1/v2 及无头握手降级；在 VLESS / VMESS / TROJAN / SHADOWSOCKS 协议下支持多路复用 `multiplex`（smux/yamux/h2mux、最大连接数、最小/最大流数、填充 Padding、TCP Brutal 拥塞控制与速率期望）；支持 Hysteria 2 HTTP Masquerade 伪装（file/proxy/string）、Shadowsocks UDP over TCP 开关及标准 TLS 最低/最高版本与自定义密码套件。
 - **分层限速架构与速率角标自动化**：Master 向 Agent 同步下发端口物理限速表 `portSpeedLimits`；套餐与线路独立设置 `speedLimitMbps`，计算 `effectiveSpeed = min(plan, line)`，Clash Meta 注入 `bandwidth-limit`，Hysteria 2 动态协商 `up_mbps`/`down_mbps`；系统设置提供 `appendSubscriptionSpeedBadge` 开关，套餐支持 `INHERIT`/`ENABLE`/`DISABLE` 覆盖，启用时自动在订阅节点名称追加如 `[50M]` 角标；线路管理、套餐表单与前台市场卡片全面支持速率与网络调优。
 - **速率色彩阶梯与单位自动换算全链路可配置**：系统设置新增 `speedLimitUnitConversionEnabled`（默认开启，超过 1000M 自动折算为 1G/2.5G 单位，去除尾零）与 `speedLimitColorTiers`（阶梯阈值列表与语义色彩配置）；全站 UI（线路卡片、线路管理列表、套餐市场卡片）及客户端订阅节点名称角标（如 `[1G]`、`[2.5G]`）全链路打通，统一支持依据速率阈值自动渲染语义色彩（科技蓝、极光青、翡翠绿、琥珀金、星曜紫、玫瑰红）并原生适配明暗模式；线路卡片速率角标统一样式为 `Zap` 图标，位置重构至底栏状态标签组（在线状态后、延迟探测前）。
@@ -30,6 +39,7 @@
   - 修复 `PATCH /admin/lines/:id` 时因 `proxyProtocol` 为 `null` 导致 Prisma 回退到非扁平更新引发 500 的问题，将 `Line.proxyProtocol` 从整数枚举彻底统一为原生布尔值（`Boolean @default(false)`，Sing-box 官方已自动兼容解析 v1 与 v2 协议头），提供完整的轻量迁移与兜底；
   - 严格对齐 Sing-box 官方规范互斥约束：客户端多路复用中 `max_connections` 与 `max_streams` 严格互斥；Shadowsocks 开启 `udp_over_tcp` 时自动抑制多路复用 `multiplex` / `smux`；VLESS 的 `flow: xtls-rprx-vision` 仅允许在原生 TCP + TLS/Reality 模式下启用，非 TCP 传输（WebSocket、gRPC、HTTP 等）或明文传输时强制清空抑制，前端表单联动置灰并提供精确校验错误提示。
 - **修复 Docker Agent 构建工具链版本不一致**：根 `Dockerfile` 与 `Dockerfile.agent` 的 Agent 编译阶段统一升级到 digest 固定的 Go 1.26，与 `apps/agent/go.mod` 的最低版本要求保持一致，避免在 `GOTOOLCHAIN=local` 下因 Go 1.25 拒绝执行 `go mod download`。
+
 
 
 ## [0.8.15] - 2026-09-17
