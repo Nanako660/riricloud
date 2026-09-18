@@ -18,6 +18,8 @@ import { useAdminCertificates } from '../certificates/use-certificates';
 import { LineFormDialog } from './components/line-form-dialog';
 import { LineSpeedtestDialog } from './components/line-speedtest-dialog';
 import { LineLatencyChip } from '@/components/shared/line-latency-chip';
+import { usePublicSettings } from '@/lib/public-settings';
+import { formatSpeedLimit, getSpeedTierBadgeClass } from '@/lib/speed-tier';
 import { useAdminLines, useLineMutations, type AdminLine } from './use-lines';
 
 const typeLabels: Record<LineType, string> = { DIRECT: '直连', RELAY: '中继' };
@@ -49,6 +51,8 @@ export default function AdminLinesPage() {
   const { data, isPending, isError } = useAdminLines(query);
   const { data: nodes } = useAdminNodes();
   const { data: certificates } = useAdminCertificates();
+  const { data: publicSettings } = usePublicSettings();
+  const unitConversion = publicSettings?.speedLimitUnitConversionEnabled !== false;
   const { create, update, remove, duplicate, testResolve, batchStatus, reorder, speedtest, speedtestAll } = useLineMutations();
   const lines = data?.data ?? [];
   const allSelected = lines.length > 0 && lines.every((line) => selected.has(line.id));
@@ -174,7 +178,7 @@ export default function AdminLinesPage() {
                   </>
                 )}
               </TableCell>
-              <TableCell><div className="flex max-w-40 flex-wrap gap-1">{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
+              <TableCell><div className="flex max-w-40 flex-wrap gap-1">{Boolean(line.speedLimitMbps) && <Badge variant="outline" className={cn('gap-1', getSpeedTierBadgeClass(line.speedLimitMbps, publicSettings?.speedLimitColorTiers))}><Zap className="size-3" />{formatSpeedLimit(line.speedLimitMbps, unitConversion)}</Badge>}{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
               <TableCell>
                 <LineLatencyChip
                   latencyMs={line.lastLatencyMs}

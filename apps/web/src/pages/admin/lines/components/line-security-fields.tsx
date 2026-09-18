@@ -70,6 +70,38 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
           <TextField form={form} name="tlsServerName" label="TLS SNI" placeholder="example.com" />
           {mode !== 'reality' && <AlpnField form={form} options={alpnOptions} />}
         </FieldGrid>
+        {mode !== 'reality' && (
+          <FieldGrid>
+            <SelectField
+              form={form}
+              name="tlsMinVersion"
+              label="最低 TLS 版本"
+              options={[
+                { value: '', label: '内核默认 (1.2)' },
+                { value: '1.2', label: 'TLS 1.2' },
+                { value: '1.3', label: 'TLS 1.3 (更安全)' }
+              ]}
+            />
+            <SelectField
+              form={form}
+              name="tlsMaxVersion"
+              label="最高 TLS 版本"
+              options={[
+                { value: '', label: '内核默认 (1.3)' },
+                { value: '1.3', label: 'TLS 1.3' },
+                { value: '1.2', label: 'TLS 1.2' }
+              ]}
+            />
+          </FieldGrid>
+        )}
+        {mode !== 'reality' && (
+          <TextField
+            form={form}
+            name="tlsCipherSuites"
+            label="自定义密码套件 (Cipher Suites)"
+            placeholder="例如: TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384 (逗号分隔，留空默认)"
+          />
+        )}
         <SwitchField form={form} name="tlsInsecure" label="跳过证书校验" description="仅用于自签名或证书不匹配场景。" />
       </>}
       {mode === 'tls' && <div className="space-y-3">

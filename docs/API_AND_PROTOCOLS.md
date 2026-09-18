@@ -112,7 +112,7 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 #### 线路管理
 - `GET /admin/lines?page&pageSize&search&type&status&tag`：分页查询线路，可按名称/地址、类型、启停状态和标签筛选；响应包含 `tag`、`listen`、`protocolType`、脱敏后的 `params`、`certificateId`/`certificate` 简要关联、`targetLineId`/`targetLine` 目标摘要、`topology`（入口/落地节点与端口）、最终生效的 `serverHost/serverPort`、原始 `endpointOverrides` 以及测速快照（`lastLatencyMs`、`lastTestedAt`、`lastTestStatus`、`lastTestMessage`）。旧客户端仍可读取只读 `targetInbound` 摘要。⭐
 - `GET /admin/lines/:id`：查询线路详情及入口/落地节点关联、协议参数、证书简要信息、端点解析结果与最新测速快照。⭐
-- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, landingNodeId?, landingPort?, allowLanAccess?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status? }`；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路仅需指定入口节点与端口，落地字段保持为 null；普通中继线路必须指定入口、落地和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，落地节点与端口动态由目标线路解析。入口节点 `entryNodeId` 必须为公网可达节点（`reachability=PUBLIC`）；落地节点支持公网节点或 NAT 节点（`reachability=NAT`）。当落地为 NAT 节点时，系统自动编排反向 Yamux 多路复用隧道（`tunnelType=YAMUX`），复用或自动分配隧道端口（`tunnelPort`）与高熵密钥（`tunnelSecret`）；`allowLanAccess` 控制落地端是否放行家庭/私网局域网资源访问（布尔值，默认 `false` 严格拦截私网网段）。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~65535` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
+- `POST /admin/lines`：创建线路。⭐ 请求 `{ name, tag?, listen?, type?, protocolType?, params?, relayMode?, targetLineId?, entryNodeId?, entryPort?, landingNodeId?, landingPort?, allowLanAccess?, certificateId?(UUID|null), endpointOverrideEnabled?, serverHost?, serverPort?, serverName?, host?, trafficRate?, tags?, level?, sortOrder?, isPublic?, status?, speedLimitMbps?, tcpFastOpen?, tcpMultiPath?, udpFragment?, udpTimeout?, proxyProtocol?, proxyProtocolAcceptNoHeader? }`；`proxyProtocol` 为布尔类型（开启时自动兼容解析 v1 与 v2 协议头），`proxyProtocolAcceptNoHeader` 控制是否允许无 PROXY 头的连接；`speedLimitMbps` 控制单端口限速；`certificateId` 只能用于标准 TLS，关联后无需在 `params.tls` 中填写本地证书/私钥路径，Master 会在配置同步时注入最新 PEM。`params` 按 `docs/DATA_MODELS.md` §3.1 归一化并在响应中脱敏，TLS `alpn` 使用字符串数组，可按协议/传输层从预设值多选。直连线路仅需指定入口节点与端口，落地字段保持为 null；普通中继线路必须指定入口、落地和机制，`TARGET_LINE` 必须指定其他节点上的 `DIRECT` 目标线路，落地节点与端口动态由目标线路解析。入口节点 `entryNodeId` 必须为公网可达节点（`reachability=PUBLIC`）；落地节点支持公网节点或 NAT 节点（`reachability=NAT`）。当落地为 NAT 节点时，系统自动编排反向 Yamux 多路复用隧道（`tunnelType=YAMUX`），复用或自动分配隧道端口（`tunnelPort`）与高熵密钥（`tunnelSecret`）；`allowLanAccess` 控制落地端是否放行家庭/私网局域网资源访问（布尔值，默认 `false` 严格拦截私网网段）。目标协议仅支持 `VLESS`、`VMESS`、`TROJAN`、`HYSTERIA2`、`TUIC`、`SHADOWSOCKS`、`NAIVE`。端口省略时由服务端在 `20000~65535` 范围随机分配五位端口。同节点同 TCP/UDP 传输层端口冲突返回 `409`，自定义 Tag 冲突返回 `409`，HYSTERIA2/TUIC 按 UDP 计算。
 - `PATCH /admin/lines/:id`：部分更新线路，字段同创建请求。⭐ 保存后触发全量 Agent 配置推送防抖。
 - `DELETE /admin/lines/:id`：删除线路。⭐ 被 `TARGET_LINE` 中继引用的线路会返回 `400`，必须先解除引用。
 - `POST /admin/lines/:id/duplicate`（兼容别名 `/copy`）：复制线路，副本默认禁用；若端口冲突则为副本分配新的可用五位端口。⭐
@@ -131,8 +131,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA、统一时区 `systemTimezone` 与存储日志策略等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。存储日志策略包括 `trafficHourlyRetentionDays`（默认 90）、`nodeRateRetentionDays`（默认 30）、`logsRetentionDays`（默认 7）、`logsMaxCount`（默认 100000）、`logsMinIngestLevel`（默认 `INFO`）、`agentLogMaxSizeMb`（默认 50）和 `agentLogMaxFiles`（默认 5）。
-- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、探针对象与 IANA 时区合法性；敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA、统一时区 `systemTimezone`、速率色彩阶梯 `speedLimitColorTiers` 与单位换算 `speedLimitUnitConversionEnabled`、存储日志策略等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。存储日志策略包括 `trafficHourlyRetentionDays`（默认 90）、`nodeRateRetentionDays`（默认 30）、`logsRetentionDays`（默认 7）、`logsMaxCount`（默认 100000）、`logsMinIngestLevel`（默认 `INFO`）、`agentLogMaxSizeMb`（默认 50）和 `agentLogMaxFiles`（默认 5）。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、速率阶梯色阶对象、探针对象与 IANA 时区合法性；敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 - `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
 
@@ -270,6 +270,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "version": 1,
     "singboxLogCaptureLevel": "WARN",
     "agentLogRotation": { "maxSizeMb": 50, "maxFiles": 5 },
+    "portSpeedLimits": { "443": 100, "8443": 50 },
     "singboxConfig": {
       "log": { "level": "warn" },
       "inbounds": [
@@ -330,6 +331,8 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > 日志采集策略：`NORMAL` 为默认模式，Master 生成 `log.level=warn` 且 Agent 仅上报真实 Sing-box `WARN/ERROR`；`INFO`/`DEBUG` 是固定 30 分钟的管理员诊断模式，只临时覆盖最终配置的 `log.level`，保留 `configOverride` 的其他日志字段。`singboxLogCaptureLevel` 是可选的独立采集门槛（`WARN`/`INFO`/`DEBUG`），旧 Agent 忽略时仍按安全的 WARN/ERROR 策略工作。连接、访问、dial、connection closed 等输出标记为 `ACCESS`，NORMAL 模式不上传；stderr 不再自动升级为 WARN，无法解析级别的 stderr 按 INFO 处理。
 
 > Agent 本地日志轮转：`agentLogRotation` 是可选配置字段，`maxSizeMb` 范围为 1~1024，`maxFiles` 范围为 1~20 且包含当前日志文件。新 Agent 收到后动态应用；旧 Agent 忽略该字段并继续业务运行，Master 根据 `agent_log_rotation` 能力标记其需要升级。配置字段缺失时 Agent 使用本地 YAML/环境变量，最终回退到 50 MiB 与 5 个文件。
+
+> 物理端口限速 (`portSpeedLimits`)：可选映射 `{ [port]: limitMbps }`。Linux 边缘 Agent 收到后调用 `trafficshaper` 模块，通过 Linux `tc`（HTB 根队列与子类、u32 双向匹配）实施对应物理端口的出入双向流量整形；非 Linux 或无权限环境平滑跳过记 Warn；线路未配置限速时自动清理对应类规则。同时，入站生成支持 `tcp_fast_open`、`tcp_multi_path`、`udp_fragment`、`udp_timeout`、`proxy_protocol`，以及 `multiplex`、`masquerade`、`udp_over_tcp` 等 Sing-box 原生调优项。
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 

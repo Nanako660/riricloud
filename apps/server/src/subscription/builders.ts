@@ -1,6 +1,7 @@
 import { parseDocument, stringify } from 'yaml';
 import type {
   Hysteria2Params,
+  InboundMultiplexConfig,
   InboundTransport,
   NaiveParams,
   ShadowtlsParams,
@@ -59,6 +60,7 @@ export interface SubLine {
   trafficRate?: number;
   tags?: string[];
   level?: number;
+  speedLimitMbps?: number | null;
   // 旧版调用方兼容字段；新代码使用 protocolType + params。
   targetInbound?: SubInbound;
 }
@@ -690,6 +692,21 @@ function buildClashTransportOptions(
   return undefined;
 }
 
+function buildClashSmux(multiplex?: InboundMultiplexConfig): Record<string, unknown> | undefined {
+  if (!multiplex || !multiplex.enabled) return undefined;
+  const smux: Record<string, unknown> = { enabled: true };
+  if (multiplex.protocol) smux.protocol = multiplex.protocol;
+  // 规范互斥：max-connections 与 max-streams 互斥
+  if (multiplex.maxConnections) {
+    smux['max-connections'] = multiplex.maxConnections;
+  } else if (multiplex.maxStreams) {
+    smux['max-streams'] = multiplex.maxStreams;
+  }
+  if (multiplex.minStreams) smux['min-streams'] = multiplex.minStreams;
+  if (multiplex.padding !== undefined) smux.padding = multiplex.padding;
+  return smux;
+}
+
 // 输出条目名：单入站节点用节点名，多入站节点追加 tag 区分；再全局去重保证 Clash proxy 名唯一
 export function entryLabels(nodes: SubscriptionSource[]): string[] {
   return dedupeNames(
@@ -946,6 +963,7 @@ export function buildUriList(user: SubUser, nodes: SubscriptionSource[]): string
 function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown> {
   const serverHost = endpointHost(entry);
   const port = endpointPort(entry);
+  let proxy: Record<string, unknown> = {};
 
   switch (entry.inbound.type) {
     case 'VLESS':
@@ -954,7 +972,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       const transport = p.transport?.type || 'tcp';
       const tls = p.tls;
 
-      const proxy: Record<string, unknown> = {
+      proxy = {
         name: entry.label,
         type: 'vless',
         server: serverHost,
@@ -964,7 +982,8 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         udp: true
       };
 
-      if (p.flow) {
+      const isDirectTcpTls = (!p.transport || p.transport.type === 'tcp') && Boolean(tls && tls.enabled && tls.mode !== 'none');
+      if (p.flow && isDirectTcpTls) {
         proxy.flow = p.flow;
       }
 
@@ -986,8 +1005,9 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       }
 
       Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
-
-      return proxy;
+      const smux = buildClashSmux(p.multiplex);
+      if (smux) proxy.smux = smux;
+      break;
     }
 
     case 'VMESS': {
@@ -995,7 +1015,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       const transport = p.transport?.type || 'tcp';
       const tls = p.tls;
 
-      const proxy: Record<string, unknown> = {
+      proxy = {
         name: entry.label,
         type: 'vmess',
         server: serverHost,
@@ -1016,8 +1036,9 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       }
 
       Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
-
-      return proxy;
+      const smux = buildClashSmux(p.multiplex);
+      if (smux) proxy.smux = smux;
+      break;
     }
 
     case 'TROJAN': {
@@ -1025,7 +1046,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       const transport = p.transport?.type || 'tcp';
       const tls = p.tls;
 
-      const proxy: Record<string, unknown> = {
+      proxy = {
         name: entry.label,
         type: 'trojan',
         server: serverHost,
@@ -1041,13 +1062,14 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       if (tls?.alpn) proxy.alpn = [...tls.alpn];
 
       Object.assign(proxy, buildClashTransportOptions(p.transport, effectiveTransportHost(entry)));
-
-      return proxy;
+      const smux = buildClashSmux(p.multiplex);
+      if (smux) proxy.smux = smux;
+      break;
     }
 
     case 'HYSTERIA2': {
       const p = entry.inbound.params as unknown as Hysteria2Params;
-      const proxy: Record<string, unknown> = {
+      proxy = {
         name: entry.label,
         type: 'hysteria2',
         server: serverHost,
@@ -1063,7 +1085,7 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         proxy.obfs = p.obfs.type || 'salamander';
         proxy['obfs-password'] = p.obfs.password;
       }
-      return proxy;
+      break;
     }
 
     case 'SHADOWSOCKS': {
@@ -1071,20 +1093,24 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
       const password = p.mode === 'multi-user'
         ? buildShadowsocksClientPassword(p.method, p.password || '', user.credential, user.uuid)
         : normalizeShadowsocksPassword(p.method, p.password || '');
-      return {
+      proxy = {
         name: entry.label,
         type: 'ss',
         server: serverHost,
         port,
         cipher: p.method,
         password,
-        udp: true
+        udp: true,
+        ...(p.udpOverTcp ? { 'udp-over-tcp': true } : {})
       };
+      const smux = p.udpOverTcp ? undefined : buildClashSmux(p.multiplex);
+      if (smux) proxy.smux = smux;
+      break;
     }
 
     case 'SHADOWTLS': {
       const p = entry.inbound.params as unknown as ShadowtlsParams;
-      return {
+      proxy = {
         name: entry.label,
         type: 'ss',
         server: serverHost,
@@ -1100,11 +1126,12 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
           version: 3
         }
       };
+      break;
     }
 
     case 'TUIC': {
       const p = entry.inbound.params as unknown as TuicParams;
-      return {
+      proxy = {
         name: entry.label,
         type: 'tuic',
         server: serverHost,
@@ -1117,11 +1144,17 @@ function buildClashProxy(user: SubUser, entry: SubEntry): Record<string, unknown
         'congestion-controller': p.congestionControl || 'bbr',
         'udp-relay-mode': 'native'
       };
+      break;
     }
 
     default:
       return {};
   }
+
+  if (entry.line?.speedLimitMbps && entry.line.speedLimitMbps > 0 && Object.keys(proxy).length > 0) {
+    proxy['bandwidth-limit'] = `${entry.line.speedLimitMbps} Mbps`;
+  }
+  return proxy;
 }
 
 // Clash Meta 客户端配置：完整最小可用（基础设置 + proxies + 策略组 + 兜底规则）
@@ -1181,6 +1214,28 @@ export function buildClashYaml(user: SubUser, nodes: SubscriptionSource[], templ
 // Sing-box 客户端 JSON
 // ==============================
 
+function buildSingboxClientMultiplex(multiplex?: InboundMultiplexConfig): Record<string, unknown> | undefined {
+  if (!multiplex || !multiplex.enabled) return undefined;
+  const res: Record<string, unknown> = { enabled: true };
+  if (multiplex.protocol) res.protocol = multiplex.protocol;
+  // Sing-box 官方规范：max_connections 与 max_streams 互斥
+  if (multiplex.maxConnections) {
+    res.max_connections = multiplex.maxConnections;
+  } else if (multiplex.maxStreams) {
+    res.max_streams = multiplex.maxStreams;
+  }
+  if (multiplex.minStreams) res.min_streams = multiplex.minStreams;
+  if (multiplex.padding !== undefined) res.padding = multiplex.padding;
+  if (multiplex.brutal && multiplex.brutal.enabled) {
+    res.brutal = {
+      enabled: true,
+      ...(multiplex.brutal.upMbps ? { up_mbps: multiplex.brutal.upMbps } : {}),
+      ...(multiplex.brutal.downMbps ? { down_mbps: multiplex.brutal.downMbps } : {})
+    };
+  }
+  return res;
+}
+
 export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<string, unknown> {
   const serverHost = endpointHost(entry);
   const port = endpointPort(entry);
@@ -1200,14 +1255,17 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
         uuid: user.uuid
       };
 
-      if (p.flow) {
-        outbound.flow = p.flow;
-      }
-
       const clientTls = buildClientTls(tls, effectiveServerName(entry));
       if (clientTls) outbound.tls = clientTls;
       const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
       if (clientTransport) outbound.transport = clientTransport;
+
+      if (p.flow && !clientTransport && clientTls) {
+        outbound.flow = p.flow;
+      }
+
+      const clientMultiplex = buildSingboxClientMultiplex(p.multiplex);
+      if (clientMultiplex) outbound.multiplex = clientMultiplex;
 
       return outbound;
     }
@@ -1231,6 +1289,8 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
       if (clientTls) outbound.tls = clientTls;
       const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
       if (clientTransport) outbound.transport = clientTransport;
+      const clientMultiplex = buildSingboxClientMultiplex(p.multiplex);
+      if (clientMultiplex) outbound.multiplex = clientMultiplex;
 
       return outbound;
     }
@@ -1252,6 +1312,8 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
       if (clientTls) outbound.tls = clientTls;
       const clientTransport = buildClientTransport(transport, effectiveTransportHost(entry));
       if (clientTransport) outbound.transport = clientTransport;
+      const clientMultiplex = buildSingboxClientMultiplex(p.multiplex);
+      if (clientMultiplex) outbound.multiplex = clientMultiplex;
 
       return outbound;
     }
@@ -1278,14 +1340,18 @@ export function buildSingboxOutbound(user: SubUser, entry: SubEntry): Record<str
       const password = p.mode === 'multi-user'
         ? buildShadowsocksClientPassword(p.method, p.password || '', user.credential, user.uuid)
         : normalizeShadowsocksPassword(p.method, p.password || '');
-      return {
+      const outbound: Record<string, unknown> = {
         type: 'shadowsocks',
         tag: entry.label,
         server: serverHost,
         server_port: port,
         method: p.method,
-        password
+        password,
+        ...(p.udpOverTcp ? { udp_over_tcp: true } : {})
       };
+      const clientMultiplex = p.udpOverTcp ? undefined : buildSingboxClientMultiplex(p.multiplex);
+      if (clientMultiplex) outbound.multiplex = clientMultiplex;
+      return outbound;
     }
 
     case 'SHADOWTLS': {

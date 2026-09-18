@@ -5,7 +5,16 @@ import type { LineFormValues } from './line-form-schema';
 export function LineProtocolFields({ form }: { form: UseFormReturn<LineFormValues> }) {
   const protocol = form.watch('protocolType');
   return <div className="space-y-3">
-    {protocol === 'VLESS' && <TextField form={form} name="vlessFlow" label="Flow（流控）" placeholder="xtls-rprx-vision" />}
+    {protocol === 'VLESS' && (
+      <TextField
+        form={form}
+        name="vlessFlow"
+        label="Flow（流控）"
+        placeholder="xtls-rprx-vision"
+        disabled={form.watch('transportType') !== 'tcp'}
+        description={form.watch('transportType') !== 'tcp' ? 'XTLS Vision 流控仅限原始 TCP 传输，当前传输协议已自动禁用' : undefined}
+      />
+    )}
     {protocol === 'VMESS' && <TextField form={form} name="vmessAlterId" label="AlterId" type="number" placeholder="0" />}
     {protocol === 'HYSTERIA2' && <>
       <FieldGrid>
@@ -14,6 +23,26 @@ export function LineProtocolFields({ form }: { form: UseFormReturn<LineFormValue
         <TextField form={form} name="hy2ObfsPassword" label="Salamander 混淆密码" type="password" placeholder="可选" />
       </FieldGrid>
       <SwitchField form={form} name="hy2IgnoreClientBandwidth" label="忽略客户端带宽" description="强制使用服务端限速。" />
+      <SelectField
+        form={form}
+        name="hy2MasqueradeType"
+        label="HTTP 伪装模式 (Masquerade)"
+        options={[
+          { value: 'none', label: '关闭' },
+          { value: 'file', label: '本地静态目录 (File)' },
+          { value: 'proxy', label: '反向代理 (Proxy)' },
+          { value: 'string', label: '自定义响应字符串 (String)' }
+        ]}
+      />
+      {form.watch('hy2MasqueradeType') === 'file' && (
+        <TextField form={form} name="hy2MasqueradeFile" label="静态网站目录绝对路径" placeholder="/var/www/html" />
+      )}
+      {form.watch('hy2MasqueradeType') === 'proxy' && (
+        <TextField form={form} name="hy2MasqueradeProxyUrl" label="反代目标 URL" placeholder="https://news.ycombinator.com" />
+      )}
+      {form.watch('hy2MasqueradeType') === 'string' && (
+        <TextField form={form} name="hy2MasqueradeString" label="自定义 HTTP 响应内容" placeholder="404 Not Found" />
+      )}
     </>}
     {protocol === 'TUIC' && <FieldGrid>
       <SelectField form={form} name="tuicCongestionControl" label="拥塞控制" options={[{ value: 'bbr', label: 'BBR' }, { value: 'cubic', label: 'CUBIC' }, { value: 'new_reno', label: 'New Reno' }]} />
@@ -26,6 +55,12 @@ export function LineProtocolFields({ form }: { form: UseFormReturn<LineFormValue
         <SelectField form={form} name="ssMode" label="认证模式" options={[{ value: 'shared', label: '共享密码模式' }, { value: 'multi-user', label: '多用户模式' }]} />
       </FieldGrid>
       <TextField form={form} name="ssPassword" label="入站密钥 / 密码" type="password" placeholder="留空自动生成" />
+      <SwitchField
+        form={form}
+        name="ssUdpOverTcp"
+        label="启用 UDP over TCP"
+        description="通过 TCP 隧道承载 UDP 数据，提升严苛网络下的 UDP 连通性（与多路复用 Multiplex 互斥）。"
+      />
     </>}
     {protocol === 'NAIVE' && <SelectField form={form} name="naiveNetwork" label="网络" options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }]} />}
     {protocol === 'SHADOWTLS' && <>

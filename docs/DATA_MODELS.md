@@ -320,6 +320,13 @@ model Line {
   tunnelType      String?  // 反向穿透隧道类型：TCP_MUX (Yamux 多路复用) | WIREGUARD (NAT 落地中继时生效)
   tunnelPort      Int?     // 入口 VPS 监听的隧道连接端口
   tunnelSecret    String?  // AES-GCM 加密存储的隧道握手鉴权凭据
+  speedLimitMbps  Int?     // 单端口物理限速（Mbps，0 或 null 为不限速，边缘 Agent 执行 tc 整形）
+  tcpFastOpen     Boolean  @default(false) // TCP Fast Open 开关
+  tcpMultiPath    Boolean  @default(false) // TCP MultiPath 开关
+  udpFragment     Boolean  @default(true)  // 允许 UDP 分片
+  udpTimeout      String?  // UDP 会话超时（如 5m、30s）
+  proxyProtocol   Boolean  @default(false) // 开启 PROXY Protocol 解析 (自动兼容 v1 与 v2)
+  proxyProtocolAcceptNoHeader Boolean @default(false) // 允许缺少 PROXY Protocol 头的连接
   tagsJson        String   @default("[]")
   level           Int      @default(0)
   sortOrder       Int      @default(0)
@@ -393,6 +400,8 @@ model Plan {
   sortOrder         Int      @default(0)
   purchaseLimitPerUser Int?  // null 表示不限购；>=1 时限制每购买身份累计次数
   allowRenewal      Boolean  @default(true)
+  speedLimitMbps    Int?     // 套餐带宽速率上限（Mbps，0 或 null 为不限速）
+  appendSpeedBadge  String   @default("INHERIT") // 节点追加速率角标策略：INHERIT | ENABLE | DISABLE
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -633,6 +642,9 @@ model SystemSetting {
 | `subscriptionShortLinksEnabled` | `"true"` / `"false"` | `"false"` | 用户端是否展示由 Nginx rewrite 提供的 UUID 伪静态订阅地址 |
 | `subscriptionEffectsSyncEnabled` | `"true"` / `"false"` | `"true"` | 是否开启「我的订阅」卡片套餐特效同步；开启后用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框，关闭后保持经典极简原生卡片 |
 | `subscriptionUpdateIntervalHours` | 十进制整数（1~168） | `"24"` | `Profile-Update-Interval` 响应头值 |
+| `appendSubscriptionSpeedBadge` | `"true"` / `"false"` | `"true"` | 订阅节点名称是否默认追加如 `[50M]` 速率角标（套餐可单独覆盖） |
+| `speedLimitUnitConversionEnabled` | `"true"` / `"false"` | `"true"` | 速率达到 1000 Mbps 及以上时是否自动换算为 G 单位（如 1G、2.5G），全站 UI 与订阅节点名称角标同步生效 |
+| `speedLimitColorTiers` | JSON 数组字符串 | `[{"maxMbps":300,"color":"blue"},{"maxMbps":1000,"color":"emerald"},{"maxMbps":null,"color":"violet"}]` | 速率分级色彩阶梯配置，支持科技蓝、极光青、翡翠绿、琥珀金、星曜紫、玫瑰红等语义色阶 |
 | `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板；系统设置中以只读卡片展示，引导前往模板页维护 |
 | `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
 | `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |
@@ -693,12 +705,12 @@ model SystemSetting {
 - `acme`：Sing-box 内置 ACME 自动申请证书（`domain`、`email`、`provider`）
 
 #### 协议专属参数结构
-- **VLESS**：`flow`（如 `xtls-rprx-vision`，仅适用于启用 TLS/Reality 的入站）、`transport`、`tls`
+- **VLESS**：`flow`（如 `xtls-rprx-vision`，根据 Sing-box 规范仅适用于纯 TCP 传输且启用 TLS/Reality 的场景，WS/gRPC/HTTP 传输或无 TLS 自动清空抑制）、`transport`、`tls`
 - **VMESS**：`alterId`（默认 0）、`transport`、`tls`
 - **TROJAN**：`transport`、`tls`
 - **HYSTERIA2**：`upMbps`、`downMbps`、`ignoreClientBandwidth`、`obfs: { type: "salamander", password }`、`tls`
 - **TUIC**：`congestionControl`（`bbr`/`cubic`/`new_reno`）、`zeroRttHandshake`（默认关闭）、`heartbeat`、`tls`
-- **SHADOWSOCKS**：`method`、`password`、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥；多用户客户端密码按协议组装为 `server_password:user_password`
+- **SHADOWSOCKS**：`method`、`password`、`udpOverTcp`（开启时根据 Sing-box 规范与多路复用互斥，自动抑制出站 `multiplex` / `smux`）、`mode`（`shared` 共享单密码 / `multi-user` SS2022 多用户）；SS2022 密钥必须是对应算法长度的 Base64 原始密钥（128 位为 16 字节，256 位为 32 字节），普通密码会由服务端稳定派生为合规密钥；多用户客户端密码按协议组装为 `server_password:user_password`
 - **NAIVE**：`network`、`tls`
 - **SHADOWTLS**：固定 v3，结构为 `version: 3`、`handshakeDest`、`strictMode`、`inner: { type: "SHADOWSOCKS", method, password }`。内层必须使用 SS2022；`password` 是内层 SS2022 服务端密钥，外层 ShadowTLS 用户密码由用户凭证注入。旧版 v2 与独立 ShadowTLS 密码结构不再接受。
 - **MIXED / SOCKS / HTTP**：`allowLan`、`usersEnabled`

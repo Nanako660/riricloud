@@ -25,6 +25,7 @@ import (
 	"github.com/Nanako660/riricloud/apps/agent/internal/singbox"
 	trafficstats "github.com/Nanako660/riricloud/apps/agent/internal/stats"
 	"github.com/Nanako660/riricloud/apps/agent/internal/telemetry"
+	"github.com/Nanako660/riricloud/apps/agent/internal/trafficshaper"
 	"github.com/Nanako660/riricloud/apps/agent/internal/tunnel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/upgrade"
 )
@@ -53,6 +54,7 @@ type configSync struct {
 	SingboxLogCaptureLevel string                  `json:"singboxLogCaptureLevel,omitempty"`
 	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
 	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
+	PortSpeedLimits        map[int]int             `json:"portSpeedLimits,omitempty"`
 }
 
 type heartbeatTraffic struct {
@@ -199,6 +201,7 @@ type Client struct {
 	mirrorCancels map[string]context.CancelFunc
 	logCollector  *logging.Collector
 	logRotator    *logging.RotatingWriter
+	shaper        *trafficshaper.Shaper
 }
 
 func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
@@ -221,11 +224,15 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		mirrorCancels: make(map[string]context.CancelFunc),
 		logCollector:  logCollector,
 		logRotator:    logRotator,
+		shaper:        trafficshaper.NewShaper(log),
 	}
 }
 
 // Run 主循环：断线后指数退避重连（上限 60s + 抖动），ctx 取消即退出
 func (c *Client) Run(ctx context.Context) {
+	if c.shaper != nil {
+		defer c.shaper.Cleanup()
+	}
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
@@ -344,6 +351,11 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			if c.tunnelMgr != nil && sync.TunnelConfigs != nil {
 				if err := c.tunnelMgr.ApplyConfigs(sync.TunnelConfigs); err != nil {
 					c.log.WithError(err).Warn("apply tunnel configs failed")
+				}
+			}
+			if c.shaper != nil && sync.PortSpeedLimits != nil {
+				if err := c.shaper.Sync(sync.PortSpeedLimits); err != nil {
+					c.log.WithError(err).Warn("apply traffic shaping failed")
 				}
 			}
 			c.log.WithField("version", sync.Version).Info("singbox config applied")

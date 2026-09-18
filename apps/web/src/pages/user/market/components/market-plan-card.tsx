@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatBytes, formatCurrency } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { usePublicSettings } from '@/lib/public-settings';
+import { formatSpeedLimitWithUnit, getSpeedTierBadgeClass } from '@/lib/speed-tier';
 import type { PlanCardConfig, PlanCardStyle, PlanThemeColor } from '@/pages/admin/plans/use-plans';
 import type { UserPlan } from '@/pages/user/subscription/use-user-subscription';
 import {
@@ -122,6 +124,10 @@ export function MarketPlanCard({
   const IconComponent = PLAN_ICONS[selectedIconKey]?.icon || Zap;
 
   // Pricing
+  const { data: publicSettings } = usePublicSettings();
+  const unitConversion = publicSettings?.speedLimitUnitConversionEnabled !== false;
+  const speedText = formatSpeedLimitWithUnit(plan.speedLimitMbps, unitConversion);
+  const speedBadgeClass = getSpeedTierBadgeClass(plan.speedLimitMbps, publicSettings?.speedLimitColorTiers);
   const currentPrice = plan.price;
   const originalPrice = cardConfig.originalPrice;
   const hasDiscount = originalPrice != null && originalPrice > currentPrice;
@@ -142,6 +148,7 @@ export function MarketPlanCard({
   // Features
   const features = plan.features && plan.features.length > 0 ? plan.features : [
     `${formatBytes(plan.trafficLimitBytes)} 流量配额`,
+    plan.speedLimitMbps ? `[zap] ${plan.speedLimitMbps} Mbps 峰值速率` : '[zap] 全速专线无上限接入',
     `流量规则：${RESET_LABELS[plan.trafficResetMode] || '自动重置'}`,
     '全格式支持 (Clash Meta / Sing-box / 通用订阅)',
     '智能授权接入所有高速节点'
@@ -366,6 +373,15 @@ export function MarketPlanCard({
 
               {/* 徽章组 */}
               <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                {Boolean(plan.speedLimitMbps) && (
+                  <Badge
+                    variant="outline"
+                    className={cn('gap-1 text-xs px-2 py-0.5 font-semibold', speedBadgeClass)}
+                  >
+                    <Zap className="size-3" />
+                    {speedText}
+                  </Badge>
+                )}
                 {isCurrent && (
                   <Badge variant="default" className="text-xs">
                     当前套餐

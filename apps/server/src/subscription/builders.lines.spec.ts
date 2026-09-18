@@ -135,4 +135,84 @@ describe('subscription builders with lines', () => {
     expect(uri).toContain('ss://');
     expect(uri).toContain('plugin=shadow-tls%3Bhost%3Dwww.apple.com');
   });
+
+  it('支持限速参数与多路复用配置进入 Clash 与 Sing-box 输出', () => {
+    const shapedLine: SubLine = {
+      id: 'line-shaped',
+      name: '限速节点 [50M]',
+      type: 'DIRECT',
+      serverHost: 'node.example.com',
+      serverPort: 10086,
+      speedLimitMbps: 50,
+      protocolType: 'SHADOWSOCKS',
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'pass',
+        udpOverTcp: false,
+        multiplex: {
+          enabled: true,
+          protocol: 'smux',
+          maxConnections: 4,
+          minStreams: 4
+        }
+      }
+    };
+
+    const clash = parse(buildClashYaml(user, [shapedLine])) as { proxies: Array<Record<string, unknown>> };
+    expect(clash.proxies[0]).toMatchObject({
+      name: '限速节点 [50M]',
+      type: 'ss',
+      'bandwidth-limit': '50 Mbps',
+      smux: {
+        enabled: true,
+        protocol: 'smux',
+        'max-connections': 4,
+        'min-streams': 4
+      }
+    });
+
+    const singbox = JSON.parse(buildSingboxJson(user, [shapedLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect(singbox.outbounds[0]).toMatchObject({
+      tag: '限速节点 [50M]',
+      type: 'shadowsocks',
+      multiplex: {
+        enabled: true,
+        protocol: 'smux',
+        max_connections: 4,
+        min_streams: 4
+      }
+    });
+  });
+
+  it('Shadowsocks 开启 udpOverTcp 时自动抑制 multiplex / smux', () => {
+    const uotLine: SubLine = {
+      id: 'line-uot',
+      name: 'UoT 节点',
+      type: 'DIRECT',
+      serverHost: 'node.example.com',
+      serverPort: 10086,
+      protocolType: 'SHADOWSOCKS',
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'pass',
+        udpOverTcp: true,
+        multiplex: {
+          enabled: true,
+          protocol: 'smux'
+        }
+      }
+    };
+
+    const clash = parse(buildClashYaml(user, [uotLine])) as { proxies: Array<Record<string, unknown>> };
+    expect(clash.proxies[0]['udp-over-tcp']).toBe(true);
+    expect(clash.proxies[0].smux).toBeUndefined();
+
+    const singbox = JSON.parse(buildSingboxJson(user, [uotLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect(singbox.outbounds[0].udp_over_tcp).toBe(true);
+    expect(singbox.outbounds[0].multiplex).toBeUndefined();
+  });
 });

@@ -103,6 +103,58 @@ export interface InboundTlsConfig {
   reality?: InboundRealityConfig;
   alpn?: string[];
   insecure?: boolean; // 客户端 skip-cert-verify
+  minVersion?: string; // 最小 TLS 版本，如 "1.2", "1.3"
+  maxVersion?: string; // 最大 TLS 版本，如 "1.3"
+  cipherSuites?: string[]; // 自定义密码套件列表
+}
+
+// ==============================
+// 多路复用 (Multiplex) 参数定义
+// ==============================
+
+export interface InboundMultiplexBrutal {
+  enabled?: boolean;
+  upMbps?: number;
+  downMbps?: number;
+}
+
+export interface InboundMultiplexConfig {
+  enabled: boolean;
+  protocol?: 'smux' | 'yamux' | 'h2mux';
+  maxConnections?: number;
+  minStreams?: number;
+  maxStreams?: number;
+  padding?: boolean;
+  brutal?: InboundMultiplexBrutal;
+}
+
+// ==============================
+// 伪装响应 (Masquerade) 参数定义
+// ==============================
+
+export type Hysteria2MasqueradeType = 'file' | 'proxy' | 'string';
+
+export interface Hysteria2Masquerade {
+  type: Hysteria2MasqueradeType;
+  dir?: string;
+  url?: string;
+  rewriteHost?: boolean;
+  content?: string;
+  statusCode?: number;
+  headers?: Record<string, string>;
+}
+
+// ==============================
+// 共享监听底座 (Shared Listen) 参数定义
+// ==============================
+
+export interface SharedListenOptions {
+  tcpFastOpen?: boolean;
+  tcpMultiPath?: boolean;
+  udpFragment?: boolean | null;
+  udpTimeout?: string | null;
+  proxyProtocol?: boolean;
+  proxyProtocolAcceptNoHeader?: boolean;
 }
 
 // ==============================
@@ -113,17 +165,20 @@ export interface VlessParams {
   flow?: string;
   transport?: InboundTransport;
   tls?: InboundTlsConfig;
+  multiplex?: InboundMultiplexConfig;
 }
 
 export interface VmessParams {
   alterId?: number;
   transport?: InboundTransport;
   tls?: InboundTlsConfig;
+  multiplex?: InboundMultiplexConfig;
 }
 
 export interface TrojanParams {
   transport?: InboundTransport;
   tls?: InboundTlsConfig;
+  multiplex?: InboundMultiplexConfig;
 }
 
 export interface Hysteria2Params {
@@ -133,6 +188,7 @@ export interface Hysteria2Params {
     type: string;
     password?: string;
   };
+  masquerade?: Hysteria2Masquerade;
   ignoreClientBandwidth?: boolean;
   tls?: InboundTlsConfig;
 }
@@ -148,6 +204,8 @@ export interface ShadowsocksParams {
   method: string;
   password?: string;
   mode?: 'shared' | 'multi-user';
+  udpOverTcp?: boolean;
+  multiplex?: InboundMultiplexConfig;
 }
 
 export interface NaiveParams {
@@ -388,6 +446,17 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none', default
     }
   }
 
+  const minVersion = typeof tls.minVersion === 'string' && tls.minVersion.trim() ? tls.minVersion.trim() : undefined;
+  const maxVersion = typeof tls.maxVersion === 'string' && tls.maxVersion.trim() ? tls.maxVersion.trim() : undefined;
+  const cipherSuites = Array.isArray(tls.cipherSuites)
+    ? tls.cipherSuites.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((s) => s.trim())
+    : undefined;
+  const extraTlsFields = {
+    ...(minVersion ? { minVersion } : {}),
+    ...(maxVersion ? { maxVersion } : {}),
+    ...(cipherSuites && cipherSuites.length ? { cipherSuites } : {})
+  };
+
   if (mode === 'reality') {
     const rawReality = (tls.reality ?? {}) as Record<string, unknown>;
     const hasPriv = typeof rawReality.privateKey === 'string' && rawReality.privateKey.length > 0;
@@ -419,7 +488,8 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none', default
       mode: 'reality',
       serverName: reality.serverNames[0],
       reality,
-      insecure
+      insecure,
+      ...extraTlsFields
     };
   }
 
@@ -437,7 +507,8 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none', default
         provider: typeof rawAcme.provider === 'string' ? rawAcme.provider.trim() : undefined
       },
       alpn,
-      insecure
+      insecure,
+      ...extraTlsFields
     };
   }
 
@@ -453,8 +524,66 @@ function normalizeTlsConfig(raw: unknown, defaultMode: TlsMode = 'none', default
           keyPath: asNonEmptyString(tls.keyPath, 'tls.keyPath（Agent 本地路径）')
         }),
     alpn,
-    insecure
+    insecure,
+    ...extraTlsFields
   };
+}
+
+export function normalizeMultiplex(raw: unknown): InboundMultiplexConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const m = raw as Record<string, unknown>;
+  if (m.enabled !== true) return undefined;
+  let brutal: InboundMultiplexBrutal | undefined;
+  if (m.brutal && typeof m.brutal === 'object' && !Array.isArray(m.brutal)) {
+    const b = m.brutal as Record<string, unknown>;
+    brutal = {
+      enabled: b.enabled === true,
+      upMbps: asPositiveNumber(b.upMbps, 0) || undefined,
+      downMbps: asPositiveNumber(b.downMbps, 0) || undefined
+    };
+  }
+  const protocol = ['smux', 'yamux', 'h2mux'].includes(String(m.protocol).toLowerCase())
+    ? (String(m.protocol).toLowerCase() as 'smux' | 'yamux' | 'h2mux')
+    : 'smux';
+  return {
+    enabled: true,
+    protocol,
+    maxConnections: asPositiveNumber(m.maxConnections, 0) || undefined,
+    minStreams: asPositiveNumber(m.minStreams, 0) || undefined,
+    maxStreams: asPositiveNumber(m.maxStreams, 0) || undefined,
+    padding: m.padding === true,
+    brutal
+  };
+}
+
+export function normalizeMasquerade(raw: unknown): Hysteria2Masquerade | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const m = raw as Record<string, unknown>;
+  const type = (typeof m.type === 'string' ? m.type.trim().toLowerCase() : '') as Hysteria2MasqueradeType;
+  if (!['file', 'proxy', 'string'].includes(type)) return undefined;
+  if (type === 'file') {
+    const dir = typeof m.dir === 'string' && m.dir.trim()
+      ? m.dir.trim()
+      : (m.file && typeof m.file === 'object' ? String((m.file as Record<string, unknown>).dir ?? '').trim() : '');
+    return dir ? { type: 'file', dir } : undefined;
+  }
+  if (type === 'proxy') {
+    const url = typeof m.url === 'string' && m.url.trim()
+      ? m.url.trim()
+      : (m.proxy && typeof m.proxy === 'object' ? String((m.proxy as Record<string, unknown>).url ?? '').trim() : '');
+    const rewriteHost = m.rewriteHost === true || (m.proxy !== null && typeof m.proxy === 'object' && (m.proxy as Record<string, unknown>).rewrite_host === true);
+    return url ? { type: 'proxy', url, rewriteHost: Boolean(rewriteHost) } : undefined;
+  }
+  if (type === 'string') {
+    const content = typeof m.content === 'string'
+      ? m.content
+      : (m.string && typeof m.string === 'object' && typeof (m.string as Record<string, unknown>).content === 'string'
+          ? (m.string as Record<string, unknown>).content as string
+          : '404 Not Found');
+    const statusCode = asPositiveNumber(m.statusCode, 404) || 404;
+    return { type: 'string', content, statusCode };
+  }
+  return undefined;
 }
 
 // 按协议归一化 paramsJson：填充默认值、生成缺失密钥、校验必填项
@@ -482,17 +611,19 @@ export function normalizeInboundParams(
         };
       }
       const tls = normalizeTlsConfig(rawTls, rawTls ? 'tls' : 'reality', defaultTlsAlpn(transport.type));
-      // Vision flow 依赖 TLS/Reality；明文 VLESS 必须省略 flow。
+      // Vision flow 依赖 TLS/Reality 与原始 TCP；明文 VLESS 或 WebSocket/gRPC 传输必须省略 flow。
       const requestedFlow = typeof raw.flow === 'string' && raw.flow.trim() ? raw.flow.trim() : undefined;
       const flow =
-        tls.mode === 'none'
+        tls.mode === 'none' || transport.type !== 'tcp'
           ? undefined
           : requestedFlow || (tls.mode === 'reality' ? REALITY_DEFAULTS.flow : undefined);
 
+      const multiplex = normalizeMultiplex(raw.multiplex);
       const params: VlessParams = {
         flow,
         transport,
-        tls
+        tls,
+        ...(multiplex ? { multiplex } : {})
       };
       return params as unknown as Record<string, unknown>;
     }
@@ -501,7 +632,13 @@ export function normalizeInboundParams(
       const transport = raw.transport ? normalizeTransport(raw.transport) : { type: 'tcp' as const };
       const tls = normalizeTlsConfig(raw.tls, 'none', defaultTlsAlpn(transport.type));
       const alterId = Number(raw.alterId) || 0;
-      const params: VmessParams = { alterId, transport, tls };
+      const multiplex = normalizeMultiplex(raw.multiplex);
+      const params: VmessParams = {
+        alterId,
+        transport,
+        tls,
+        ...(multiplex ? { multiplex } : {})
+      };
       return params as unknown as Record<string, unknown>;
     }
 
@@ -511,7 +648,12 @@ export function normalizeInboundParams(
       if (!tls.enabled || tls.mode === 'none') {
         throw new BadRequestException('Trojan 协议必须启用 TLS 安全层');
       }
-      const params: TrojanParams = { transport, tls };
+      const multiplex = normalizeMultiplex(raw.multiplex);
+      const params: TrojanParams = {
+        transport,
+        tls,
+        ...(multiplex ? { multiplex } : {})
+      };
       return params as unknown as Record<string, unknown>;
     }
 
@@ -527,12 +669,14 @@ export function normalizeInboundParams(
           obfs = { type: typeof o.type === 'string' ? o.type.trim() : 'salamander', password: o.password.trim() };
         }
       }
+      const masquerade = normalizeMasquerade(raw.masquerade);
       const params: Hysteria2Params = {
         upMbps: asPositiveNumber(raw.upMbps, 0),
         downMbps: asPositiveNumber(raw.downMbps, 0),
         ignoreClientBandwidth: raw.ignoreClientBandwidth === true,
         obfs,
-        tls
+        tls,
+        ...(masquerade ? { masquerade } : {})
       };
       return params as unknown as Record<string, unknown>;
     }
@@ -568,7 +712,14 @@ export function normalizeInboundParams(
         password = normalizeShadowsocksPassword(method, password);
       }
       const mode = raw.mode === 'multi-user' ? 'multi-user' : 'shared';
-      const params: ShadowsocksParams = { method, password, mode };
+      const multiplex = normalizeMultiplex(raw.multiplex);
+      const params: ShadowsocksParams = {
+        method,
+        password,
+        mode,
+        udpOverTcp: raw.udpOverTcp === true,
+        ...(multiplex ? { multiplex } : {})
+      };
       return params as unknown as Record<string, unknown>;
     }
 
@@ -803,6 +954,11 @@ function buildServerTransport(transport?: InboundTransport): Record<string, unkn
 function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undefined {
   if (!tls || !tls.enabled || tls.mode === 'none') return undefined;
 
+  const extraOptions: Record<string, unknown> = {};
+  if (tls.minVersion) extraOptions.min_version = tls.minVersion;
+  if (tls.maxVersion) extraOptions.max_version = tls.maxVersion;
+  if (tls.cipherSuites && tls.cipherSuites.length) extraOptions.cipher_suites = tls.cipherSuites;
+
   if (tls.mode === 'reality' && tls.reality) {
     const { host, port } = parseDest(tls.reality.dest);
     return {
@@ -813,7 +969,8 @@ function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undef
         handshake: { server: host, server_port: port },
         private_key: tls.reality.privateKey,
         short_id: tls.reality.shortIds
-      }
+      },
+      ...extraOptions
     };
   }
 
@@ -826,7 +983,8 @@ function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undef
         email: tls.acme.email,
         ...(tls.acme.provider ? { provider: tls.acme.provider } : {})
       },
-      ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {})
+      ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {}),
+      ...extraOptions
     };
   }
 
@@ -836,7 +994,8 @@ function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undef
       ...(tls.serverName ? { server_name: tls.serverName } : {}),
       certificate: tls.certificate,
       key: tls.key,
-      ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {})
+      ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {}),
+      ...extraOptions
     };
   }
 
@@ -846,8 +1005,65 @@ function buildServerTls(tls?: InboundTlsConfig): Record<string, unknown> | undef
     ...(tls.serverName ? { server_name: tls.serverName } : {}),
     certificate_path: tls.certificatePath,
     key_path: tls.keyPath,
-    ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {})
+    ...(tls.alpn && tls.alpn.length ? { alpn: tls.alpn } : {}),
+    ...extraOptions
   };
+}
+
+// 构建 Sing-box Inbound Multiplex 配置块
+export function buildServerMultiplex(multiplex?: InboundMultiplexConfig): Record<string, unknown> | undefined {
+  if (!multiplex || !multiplex.enabled) return undefined;
+  const res: Record<string, unknown> = { enabled: true };
+  if (multiplex.padding !== undefined) res.padding = multiplex.padding;
+  if (multiplex.brutal && multiplex.brutal.enabled) {
+    res.brutal = {
+      enabled: true,
+      ...(multiplex.brutal.upMbps ? { up_mbps: multiplex.brutal.upMbps } : {}),
+      ...(multiplex.brutal.downMbps ? { down_mbps: multiplex.brutal.downMbps } : {})
+    };
+  }
+  return res;
+}
+
+// 构建 Sing-box Hysteria2 Masquerade 配置块
+export function buildServerMasquerade(masquerade?: Hysteria2Masquerade): Record<string, unknown> | undefined {
+  if (!masquerade || !masquerade.type) return undefined;
+  if (masquerade.type === 'file' && masquerade.dir) {
+    return { type: 'file', dir: masquerade.dir };
+  }
+  if (masquerade.type === 'proxy' && masquerade.url) {
+    return {
+      type: 'proxy',
+      url: masquerade.url,
+      ...(masquerade.rewriteHost ? { rewrite_host: true } : {})
+    };
+  }
+  if (masquerade.type === 'string' && masquerade.content !== undefined) {
+    return {
+      type: 'string',
+      content: masquerade.content,
+      ...(masquerade.statusCode ? { status_code: masquerade.statusCode } : {}),
+      ...(masquerade.headers ? { headers: masquerade.headers } : {})
+    };
+  }
+  return undefined;
+}
+
+// 构建 Sing-box 入站共享监听底座字段
+export function buildSharedListenFields(options?: SharedListenOptions): Record<string, unknown> {
+  if (!options) return {};
+  const res: Record<string, unknown> = {};
+  if (options.tcpFastOpen === true) res.tcp_fast_open = true;
+  if (options.tcpMultiPath === true) res.tcp_multi_path = true;
+  if (typeof options.udpFragment === 'boolean') res.udp_fragment = options.udpFragment;
+  if (options.udpTimeout && options.udpTimeout.trim()) res.udp_timeout = options.udpTimeout.trim();
+  if (options.proxyProtocol === true) {
+    res.proxy_protocol = true;
+    if (options.proxyProtocolAcceptNoHeader === true) {
+      res.proxy_protocol_accept_no_header = true;
+    }
+  }
+  return res;
 }
 
 // 组装 Sing-box 服务端入站 JSON（用于 Agent 的 config_sync）
@@ -860,8 +1076,10 @@ export function buildServerInbound(input: {
   users: InboundUserCredential[];
   lineId?: string;
   proxyPoolUsers?: ProxyPoolCredential[];
+  listenOptions?: SharedListenOptions;
 }): Record<string, unknown> {
-  const { type, tag, listen, port, params, users, lineId } = input;
+  const { type, tag, listen, port, params, users, lineId, listenOptions } = input;
+  const listenFields = buildSharedListenFields(listenOptions);
   // VLESS 需要在运行时修复旧版明文 + Vision 数据；其余协议已在入站 CRUD 边界完成归一化，
   // 中继组装还可能只携带客户端侧 TLS 参数，不能在这里重复要求 Agent 证书路径。
   const rawVlessTls = params.tls;
@@ -881,18 +1099,21 @@ export function buildServerInbound(input: {
       const normalized = normalizedParams as unknown as VlessParams;
       const transport = buildServerTransport(normalized.transport);
       const tls = buildServerTls(normalized.tls);
+      const multiplex = buildServerMultiplex(normalized.multiplex);
       return {
         type: 'vless',
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         users: users.map((u) => ({
           uuid: u.uuid,
           name: formatInboundUserName(u, lineId),
           ...(normalized.flow ? { flow: normalized.flow } : {})
         })),
         ...(transport ? { transport } : {}),
-        ...(tls ? { tls } : {})
+        ...(tls ? { tls } : {}),
+        ...(multiplex ? { multiplex } : {})
       };
     }
 
@@ -900,18 +1121,21 @@ export function buildServerInbound(input: {
       const p = normalizedParams as unknown as VmessParams;
       const transport = buildServerTransport(p.transport);
       const tls = buildServerTls(p.tls);
+      const multiplex = buildServerMultiplex(p.multiplex);
       return {
         type: 'vmess',
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         users: users.map((u) => ({
           uuid: u.uuid,
           name: formatInboundUserName(u, lineId),
           alterId: p.alterId ?? 0
         })),
         ...(transport ? { transport } : {}),
-        ...(tls ? { tls } : {})
+        ...(tls ? { tls } : {}),
+        ...(multiplex ? { multiplex } : {})
       };
     }
 
@@ -919,32 +1143,38 @@ export function buildServerInbound(input: {
       const p = normalizedParams as unknown as TrojanParams;
       const transport = buildServerTransport(p.transport);
       const tls = buildServerTls(p.tls);
+      const multiplex = buildServerMultiplex(p.multiplex);
       return {
         type: 'trojan',
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         users: users.map((u) => ({
           password: u.credential,
           name: formatInboundUserName(u, lineId)
         })),
         ...(transport ? { transport } : {}),
-        ...(tls ? { tls } : {})
+        ...(tls ? { tls } : {}),
+        ...(multiplex ? { multiplex } : {})
       };
     }
 
     case 'HYSTERIA2': {
       const p = normalizedParams as unknown as Hysteria2Params;
       const tls = buildServerTls(p.tls);
+      const masquerade = buildServerMasquerade(p.masquerade);
       return {
         type: 'hysteria2',
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         ...(p.upMbps && p.upMbps > 0 ? { up_mbps: p.upMbps } : {}),
         ...(p.downMbps && p.downMbps > 0 ? { down_mbps: p.downMbps } : {}),
         ...(p.ignoreClientBandwidth ? { ignore_client_bandwidth: true } : {}),
         ...(p.obfs ? { obfs: p.obfs } : {}),
+        ...(masquerade ? { masquerade } : {}),
         users: users.map((u) => ({ name: formatInboundUserName(u, lineId), password: u.credential })),
         ...(tls ? { tls } : {})
       };
@@ -958,6 +1188,7 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         users: users.map((u) => ({ uuid: u.uuid, name: formatInboundUserName(u, lineId), password: u.credential })),
         congestion_control: p.congestionControl || 'bbr',
         ...(p.zeroRttHandshake ? { zero_rtt_handshake: true } : {}),
@@ -969,14 +1200,19 @@ export function buildServerInbound(input: {
     case 'SHADOWSOCKS': {
       const p = normalizedParams as unknown as ShadowsocksParams;
       const password = normalizeShadowsocksPassword(p.method, p.password || '');
+      // Sing-box 官方规范：udp_over_tcp 与 multiplex 互斥
+      const multiplex = p.udpOverTcp ? undefined : buildServerMultiplex(p.multiplex);
       if (p.mode === 'multi-user') {
         return {
           type: 'shadowsocks',
           tag,
           listen,
           listen_port: port,
+          ...listenFields,
           method: p.method,
           password,
+          ...(p.udpOverTcp ? { udp_over_tcp: true } : {}),
+          ...(multiplex ? { multiplex } : {}),
           users: users.map((u) => ({
             name: formatInboundUserName(u, lineId),
             password: resolveShadowsocksUserPassword(p.method, u.credential, u.uuid)
@@ -988,8 +1224,11 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         method: p.method,
-        password
+        password,
+        ...(p.udpOverTcp ? { udp_over_tcp: true } : {}),
+        ...(multiplex ? { multiplex } : {})
       };
     }
 
@@ -1001,6 +1240,7 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         network: p.network || 'tcp',
         users: users.map((u) => ({ username: formatInboundUserName(u, lineId), password: u.credential })),
         ...(tls ? { tls } : {})
@@ -1015,6 +1255,7 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         detour: `${tag}-inner`,
         version: 3,
         users: users.map((u) => ({ name: formatInboundUserName(u, lineId), password: u.credential })),
@@ -1032,7 +1273,8 @@ export function buildServerInbound(input: {
         type: type.toLowerCase(),
         tag,
         listen,
-        listen_port: port
+        listen_port: port,
+        ...listenFields
       };
       const inboundUsers: Array<Record<string, unknown>> = [];
       if (p.usersEnabled && users.length) {
@@ -1062,6 +1304,7 @@ export function buildServerInbound(input: {
         tag,
         listen,
         listen_port: port,
+        ...listenFields,
         ...(p.overrideAddress ? { override_address: p.overrideAddress } : {}),
         ...(p.overridePort ? { override_port: p.overridePort } : {})
       };

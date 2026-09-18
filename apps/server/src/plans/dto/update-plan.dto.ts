@@ -89,6 +89,19 @@ export class UpdatePlanDto {
   @IsOptional()
   allowRenewal?: boolean;
 
+  @ApiPropertyOptional({ example: 50, nullable: true, description: '套餐带宽速率上限，单位为 Mbps，0 或 null 表示不限速' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  @IsOptional()
+  speedLimitMbps?: number | null;
+
+  @ApiPropertyOptional({ enum: ['INHERIT', 'ENABLE', 'DISABLE'], description: '订阅节点名称追加速率角标策略' })
+  @IsIn(['INHERIT', 'ENABLE', 'DISABLE'])
+  @IsOptional()
+  appendSpeedBadge?: 'INHERIT' | 'ENABLE' | 'DISABLE';
+
   @ApiPropertyOptional({ nullable: true })
   @IsString()
   @IsOptional()

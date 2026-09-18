@@ -88,6 +88,13 @@ export interface ApiLine {
   landingNodeId?: string | null;
   landingPort?: number | null;
   allowLanAccess?: boolean;
+  speedLimitMbps?: number | null;
+  tcpFastOpen?: boolean | null;
+  tcpMultiPath?: boolean | null;
+  udpFragment?: boolean | null;
+  udpTimeout?: string | null;
+  proxyProtocol?: boolean | null;
+  proxyProtocolAcceptNoHeader?: boolean | null;
   tunnelType?: string | null;
   tunnelPort?: number | null;
   tunnelSecret?: string | null;

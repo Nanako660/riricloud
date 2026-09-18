@@ -10,11 +10,13 @@ import {
   buildProxyPoolWhitelistRules,
   buildShadowsocksClientPassword,
   buildServerInbounds,
+  buildSharedListenFields,
   normalizeShadowsocksPassword,
   parseTrafficCredential,
   revealInboundSecrets,
   type InboundUserCredential,
-  type ProxyPoolCredential
+  type ProxyPoolCredential,
+  type SharedListenOptions
 } from '../common/inbound';
 import { parseWhitelistIps } from '../proxy-pool/proxy-key.util';
 import { resolveLineTags } from '../common/line-tags';
@@ -1214,7 +1216,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       singboxLogCaptureLevel: desired.singboxLogCaptureLevel,
       agentLogRotation: desired.agentLogRotation,
       tasks: await this.takePendingTasks(auth.nodeId),
-      nextPollSecs
+      nextPollSecs,
+      ...(desired.portSpeedLimits ? { portSpeedLimits: desired.portSpeedLimits } : {})
     };
   }
 
@@ -1579,6 +1582,13 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       tagsJson: string;
       isPublic: boolean;
       status: string;
+      speedLimitMbps?: number | null;
+      tcpFastOpen?: boolean;
+      tcpMultiPath?: boolean;
+      udpFragment?: boolean | null;
+      udpTimeout?: string | null;
+      proxyProtocol?: boolean;
+      proxyProtocolAcceptNoHeader?: boolean;
       entryNode?: { serverHost: string; status?: string; reachability?: string } | null;
       landingNode?: { serverHost: string; status?: string; reachability?: string } | null;
       certificate: { certificatePem: string; privateKeyPem: string } | null;
@@ -1613,6 +1623,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     const inbounds: Array<Record<string, unknown>> = [];
     const outbounds: Array<Record<string, unknown>> = [{ type: 'direct', tag: 'direct' }];
     const relayRules: Array<Record<string, unknown>> = [];
+    const portSpeedLimits: Record<number, number> = {};
     // 直连代理池：仅注入当前仍具备订阅资格的用户的 Proxy Key（超额/停用即时吊销）
     const entitledUserUuids = new Set(entitledSubscriptions.map((subscription) => subscription.user.uuid));
     const proxyPoolKeys = await this.loadProxyPoolKeys(entitledUserUuids);
@@ -1672,6 +1683,24 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         proxyPoolTags.add(tag);
         return lineUsers;
       };
+
+      const listenOptions: SharedListenOptions = {
+        tcpFastOpen: line.tcpFastOpen,
+        tcpMultiPath: line.tcpMultiPath,
+        udpFragment: line.udpFragment,
+        udpTimeout: line.udpTimeout,
+        proxyProtocol: line.proxyProtocol,
+        proxyProtocolAcceptNoHeader: line.proxyProtocolAcceptNoHeader
+      };
+      if (line.speedLimitMbps && line.speedLimitMbps > 0) {
+        if (isEntry) {
+          portSpeedLimits[line.entryPort] = line.speedLimitMbps;
+        }
+        if (isLanding && !(line.type === 'RELAY' && line.relayMode === 'TARGET_LINE') && line.landingPort) {
+          portSpeedLimits[line.landingPort] = line.speedLimitMbps;
+        }
+      }
+
       if (line.type === 'DIRECT' && isEntry) {
         const tag = lineTags.direct ?? `line-${line.id}`;
         inbounds.push(...buildServerInbounds({
@@ -1682,18 +1711,21 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           params,
           users: targetInboundUsers,
           lineId: line.id,
-          proxyPoolUsers: proxyPoolUsersForTag(tag)
+          proxyPoolUsers: proxyPoolUsersForTag(tag),
+          listenOptions
         }));
         continue;
       }
 
       if (isEntry && line.relayMode === 'BLIND_FORWARD' && line.landingNode && line.landingPort) {
         const isNatLanding = line.landingNode.reachability === 'NAT';
+        const blindListenFields = buildSharedListenFields(listenOptions);
         inbounds.push({
           type: 'direct',
           tag: lineTags.entry ?? `relay-${line.id}-entry`,
           listen: line.listen || DEFAULT_INBOUND_LISTEN,
           listen_port: line.entryPort,
+          ...blindListenFields,
           override_address: isNatLanding ? '127.0.0.1' : line.landingNode.serverHost,
           override_port: line.landingPort
         });
@@ -1709,7 +1741,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           params,
           users,
           lineId: line.id,
-          proxyPoolUsers: proxyPoolUsersForTag(relayTag)
+          proxyPoolUsers: proxyPoolUsersForTag(relayTag),
+          listenOptions
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound(line);
@@ -1733,7 +1766,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           params,
           users,
           lineId: line.id,
-          proxyPoolUsers: proxyPoolUsersForTag(relayTag)
+          proxyPoolUsers: proxyPoolUsersForTag(relayTag),
+          listenOptions
         });
         inbounds.push(...relayInbounds);
         const outbound = this.buildProtocolRelayOutbound({
@@ -1765,7 +1799,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           params,
           users: exitUsers,
           lineId: line.id,
-          proxyPoolUsers: proxyPoolUsersForTag(landingTag)
+          proxyPoolUsers: proxyPoolUsersForTag(landingTag),
+          listenOptions
         }));
         if (isSelfNat && !line.allowLanAccess) {
           relayRules.push({
@@ -1905,7 +1940,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       singboxConfig,
       singboxLogCaptureLevel: this.captureLevelForMode(logMode),
       agentLogRotation,
-      tunnelConfigs
+      tunnelConfigs,
+      ...(Object.keys(portSpeedLimits).length > 0 ? { portSpeedLimits } : {})
     };
   }
 

@@ -179,4 +179,25 @@ describe('SettingsService', () => {
     expect(prisma.systemSetting.deleteMany).toHaveBeenCalledWith({ where: { key: { in: ['siteName', 'registrationEnabled', 'subscriptionShortLinksEnabled'] } } });
     expect(result).toEqual(DEFAULTS);
   });
+
+  it('正确解析速率换算开关与阶梯色彩配置', async () => {
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.SPEED_LIMIT_UNIT_CONVERSION_ENABLED, value: 'false' },
+      { key: SETTING_KEYS.SPEED_LIMIT_COLOR_TIERS, value: JSON.stringify([{ maxMbps: 500, color: 'cyan' }, { maxMbps: null, color: 'rose' }]) }
+    ]);
+    const settings = await service.getSettings();
+    expect(settings.speedLimitUnitConversionEnabled).toBe(false);
+    expect(settings.speedLimitColorTiers).toEqual([
+      { maxMbps: 500, color: 'cyan' },
+      { maxMbps: null, color: 'rose' }
+    ]);
+
+    const publicSettings = await service.getPublicSettings();
+    expect(publicSettings.speedLimitUnitConversionEnabled).toBe(false);
+    expect(publicSettings.speedLimitColorTiers).toEqual([
+      { maxMbps: 500, color: 'cyan' },
+      { maxMbps: null, color: 'rose' }
+    ]);
+  });
 });
+

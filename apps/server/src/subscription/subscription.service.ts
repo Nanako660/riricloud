@@ -32,6 +32,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { getTrafficPeriod, TRAFFIC_RESET_MODES } from '../common/traffic-reset';
 import type { PlanPurchaseSource } from './plan-purchases.service';
 import { PlanPurchasesService } from './plan-purchases.service';
+import { formatSpeedLimit } from '../common/speed-format';
 
 type SubscriptionPlan = {
   id: string;
@@ -46,6 +47,8 @@ type SubscriptionPlan = {
   price?: number;
   purchaseLimitPerUser?: number | null;
   allowRenewal?: boolean;
+  speedLimitMbps?: number | null;
+  appendSpeedBadge?: string | null;
   template?: SubscriptionTemplateConfig | null;
 };
 
@@ -164,22 +167,58 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           this.getExtraLineIds(subscription)
         )
       : await this.linesService.getAvailableForPlan({ lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' });
-    const subscriptionSources: SubLine[] = lines.map((line) => ({
-      id: line.id,
-      name: line.name,
-      type: line.type,
-      relayMode: line.relayMode,
-      endpointOverrideEnabled: line.endpointOverrideEnabled,
-      serverHost: line.serverHost,
-      serverPort: line.serverPort,
-      serverName: line.serverName,
-      host: line.host,
-      trafficRate: line.trafficRate,
-      tags: line.tags,
-      level: line.level,
-      protocolType: line.protocolType as ProtocolType,
-      params: line.params
-    }));
+
+    const plan = subscription?.plan;
+    const planSpeedLimit = plan?.speedLimitMbps ?? null;
+    const appendBadgeSetting = settings?.appendSubscriptionSpeedBadge ?? false;
+    const unitConversion = settings?.speedLimitUnitConversionEnabled !== false;
+    const shouldAppendBadge = plan?.appendSpeedBadge === 'ENABLE'
+      ? true
+      : plan?.appendSpeedBadge === 'DISABLE'
+        ? false
+        : appendBadgeSetting;
+
+    const subscriptionSources: SubLine[] = lines.map((line) => {
+      const lineSpeedLimit = line.speedLimitMbps ?? null;
+      let effectiveSpeed: number | null = null;
+      if (planSpeedLimit && planSpeedLimit > 0 && lineSpeedLimit && lineSpeedLimit > 0) {
+        effectiveSpeed = Math.min(planSpeedLimit, lineSpeedLimit);
+      } else if (planSpeedLimit && planSpeedLimit > 0) {
+        effectiveSpeed = planSpeedLimit;
+      } else if (lineSpeedLimit && lineSpeedLimit > 0) {
+        effectiveSpeed = lineSpeedLimit;
+      }
+
+      let lineName = line.name;
+      if (shouldAppendBadge && effectiveSpeed && effectiveSpeed > 0) {
+        const badge = formatSpeedLimit(effectiveSpeed, unitConversion);
+        lineName = `${line.name} [${badge}]`;
+      }
+
+      const params = { ...(line.params ?? {}) };
+      if (line.protocolType === 'HYSTERIA2' && effectiveSpeed && effectiveSpeed > 0) {
+        params.upMbps = effectiveSpeed;
+        params.downMbps = effectiveSpeed;
+      }
+
+      return {
+        id: line.id,
+        name: lineName,
+        type: line.type,
+        relayMode: line.relayMode,
+        endpointOverrideEnabled: line.endpointOverrideEnabled,
+        serverHost: line.serverHost,
+        serverPort: line.serverPort,
+        serverName: line.serverName,
+        host: line.host,
+        trafficRate: line.trafficRate,
+        tags: line.tags,
+        level: line.level,
+        protocolType: line.protocolType as ProtocolType,
+        params,
+        speedLimitMbps: effectiveSpeed
+      };
+    });
 
     const subUser: SubUser = { uuid: user.uuid, email: user.email, credential: user.password ?? user.uuid };
     const format = resolveFormat(opts.type, opts.userAgent);

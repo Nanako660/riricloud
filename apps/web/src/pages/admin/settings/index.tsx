@@ -19,6 +19,8 @@ import { useAdminPlans } from '@/pages/admin/plans/use-plans';
 import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
 import { ProbePresetEditor } from './components/probe-preset-editor';
 import { probePresetTargetsSchema, toProbePresetFormValue, toProbePresetTarget, type ProbePresetTarget } from './components/probe-preset-schema';
+import { SpeedTierEditor } from './components/speed-tier-editor';
+import { DEFAULT_SPEED_TIERS, type SpeedTier } from '@/lib/speed-tier';
 import { TelemetryCleanupDialog } from '@/components/shared/telemetry-cleanup-dialog';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Button } from '@/components/ui/button';
@@ -93,6 +95,9 @@ interface SystemSettings {
   subscriptionShortLinksEnabled: boolean;
   subscriptionEffectsSyncEnabled: boolean;
   subscriptionUpdateIntervalHours: number;
+  appendSubscriptionSpeedBadge: boolean;
+  speedLimitUnitConversionEnabled: boolean;
+  speedLimitColorTiers: SpeedTier[];
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
@@ -158,6 +163,12 @@ const settingsSchema = z.object({
   subscriptionShortLinksEnabled: z.boolean(),
   subscriptionEffectsSyncEnabled: z.boolean(),
   subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
+  appendSubscriptionSpeedBadge: z.boolean(),
+  speedLimitUnitConversionEnabled: z.boolean(),
+  speedLimitColorTiers: z.array(z.object({
+    maxMbps: z.number().int().min(1).nullable().optional(),
+    color: z.string().min(1)
+  })),
   defaultTemplateId: z.string(),
   publicLinesEnabled: z.boolean(),
   includeUsageHeaders: z.boolean(),
@@ -218,7 +229,8 @@ export default function AdminSettingsPage() {
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
       systemTimezone: 'Asia/Shanghai',
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
-      emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24,
+      emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24, appendSubscriptionSpeedBadge: true,
+      speedLimitUnitConversionEnabled: true, speedLimitColorTiers: DEFAULT_SPEED_TIERS,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: 'https://github.com/Nanako660/riricloud', githubMirrorUrls: [], probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
@@ -365,6 +377,11 @@ export default function AdminSettingsPage() {
               </div>
               <SettingsSwitch name="publicLinesEnabled" label="公开线路列表" description="关闭后用户订阅和线路页不再返回公开线路。" />
               <SettingsSwitch name="includeUsageHeaders" label="注入用量响应头" description="向订阅响应附加 Subscription-Userinfo。" />
+              <SettingsSwitch name="appendSubscriptionSpeedBadge" label="默认追加节点速率角标" description="开启后，在套餐或线路配置了限速时，下发订阅的节点名称末尾自动追加例如 [50M] 速率标签（套餐可单独覆盖）。" />
+              <SettingsSwitch name="speedLimitUnitConversionEnabled" label="超过 1000M 自动转换为 G 单位" description="开启后，速率达到 1000 Mbps 及以上时自动换算为 G 单位（如 1G、2.5G），全站 UI 与订阅节点名称角标同步生效。" />
+              <div className="md:col-span-2 min-w-0">
+                <SpeedTierEditor />
+              </div>
             </CardContent></Card></TabsContent>
 
              <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 运维与网络探针" description="调整节点健康判定、配置推送和 HTTP 轮询行为。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
@@ -577,6 +594,9 @@ function toForm(settings: SystemSettings): SettingsForm {
     subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled ?? true,
     subscriptionUpdateIntervalHours: settings.subscriptionUpdateIntervalHours,
+    appendSubscriptionSpeedBadge: settings.appendSubscriptionSpeedBadge ?? true,
+    speedLimitUnitConversionEnabled: settings.speedLimitUnitConversionEnabled ?? true,
+    speedLimitColorTiers: settings.speedLimitColorTiers?.length ? settings.speedLimitColorTiers : DEFAULT_SPEED_TIERS,
     defaultTemplateId: settings.defaultTemplateId ?? 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
     includeUsageHeaders: settings.includeUsageHeaders,
@@ -644,6 +664,9 @@ function toPayload(values: SettingsForm) {
     subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: values.subscriptionEffectsSyncEnabled,
     subscriptionUpdateIntervalHours: values.subscriptionUpdateIntervalHours,
+    appendSubscriptionSpeedBadge: values.appendSubscriptionSpeedBadge,
+    speedLimitUnitConversionEnabled: values.speedLimitUnitConversionEnabled,
+    speedLimitColorTiers: values.speedLimitColorTiers,
     defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,
     includeUsageHeaders: values.includeUsageHeaders,

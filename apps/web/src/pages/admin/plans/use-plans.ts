@@ -48,6 +48,8 @@ export interface Plan {
   sortOrder: number;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  speedLimitMbps?: number | null;
+  appendSpeedBadge?: 'INHERIT' | 'ENABLE' | 'DISABLE' | null;
 }
 
 export interface PlanPayload {
@@ -69,6 +71,8 @@ export interface PlanPayload {
   sortOrder: number;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  speedLimitMbps?: number | null;
+  appendSpeedBadge?: 'INHERIT' | 'ENABLE' | 'DISABLE' | null;
 }
 
 export function useAdminPlans() {
