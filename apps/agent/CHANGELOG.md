@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.7.7] - 2026-09-18
+
+### Added
 - **Linux Traffic Control (tc) 物理端口双向限速整形器**：新增 `apps/agent/internal/trafficshaper` 模块，自动探测默认公网出口网卡，通过 Linux `tc`（HTB 根队列与子类、u32 端口双向 filter）对指定监听端口实施物理级出入双向限速整形；非 Linux 或无权限环境平滑跳过记 Warn，并在进程退出或重连时自动执行 `Cleanup` 队列清理。
 - **配置同步与主动轮询限速表联动**：在 `config_sync`（WebSocket）与主动轮询（HTTP Poll）响应协议中支持 `portSpeedLimits` 映射，实时驱动 `trafficshaper` 动态重配物理限速。
 - **Sing-box 分级日志治理与临时诊断采集**：解析 stdout/stderr 真实级别，支持 `singbox_log_capture` 能力和 WARN/INFO/DEBUG 动态采集门槛；保留 500 条环形缓冲、2 秒/50 条批量上报与 ERROR 快速冲刷。
@@ -24,6 +33,7 @@
 
 ### Fixed
 - **异常退出级别修正**：预期停止记录 INFO，非预期 Sing-box 退出记录 ERROR，避免正常重启污染告警面板。
+
 
 
 ## [0.7.6] - 2026-09-17
