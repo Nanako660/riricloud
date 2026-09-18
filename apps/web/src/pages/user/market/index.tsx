@@ -203,7 +203,7 @@ export default function MarketPage() {
                   : t('user:market.confirmBuyDesc', { price: selected?.price ?? 0, planName: selected?.name ?? '' })}
               </span>
               <span className="block text-xs">
-                {t('user:profile.balance')}：{formatCurrency(userBalanceCents)}；扣款后预计剩余：
+                {t('user:market.balanceAndEstimatedRemaining', { balance: formatCurrency(userBalanceCents) })}
                 <strong className={cn('ml-1 font-semibold', userBalanceCents < selectedCostCents ? 'text-destructive' : 'text-foreground')}>
                   {formatCurrency(userBalanceCents - selectedCostCents)}
                 </strong>

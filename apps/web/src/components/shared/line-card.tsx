@@ -11,8 +11,11 @@ interface LineCardProps {
   className?: string;
 }
 
+import { useTranslation } from 'react-i18next';
+
 // 用户只需确认线路名称、协议、倍率、延迟和当前在线状态，拓扑细节由订阅客户端负责展示。
 export function LineCard({ line, className }: LineCardProps) {
+  const { t } = useTranslation('common');
   const { data: publicSettings } = usePublicSettings();
   const isOnline = line.entryNode?.status === 'ONLINE' && (!line.landingNode || line.landingNode.status === 'ONLINE');
   const unitConversion = publicSettings?.speedLimitUnitConversionEnabled !== false;
@@ -33,7 +36,7 @@ export function LineCard({ line, className }: LineCardProps) {
       <div className="flex items-center gap-2">
         <Badge variant={isOnline ? 'default' : 'secondary'} className="gap-1 text-xs">
           <Activity className="size-3" />
-          {isOnline ? '在线' : '离线'}
+          {isOnline ? t('status.online') : t('status.offline')}
         </Badge>
         {Boolean(line.speedLimitMbps) && (
           <Badge variant="outline" className={cn('gap-1 text-xs font-normal', speedBadgeClass)}>

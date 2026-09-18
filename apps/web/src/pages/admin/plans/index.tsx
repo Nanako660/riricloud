@@ -40,18 +40,6 @@ import { useAdminTemplates } from '../templates/use-templates';
 import { useAdminLines } from '../lines/use-lines';
 import { formatBytes, formatYuan } from '@/lib/utils';
 
-const matchLabels: Record<string, string> = {
-  ALL: '全部线路',
-  TAGS: '按标签',
-  EXPLICIT: '指定线路'
-};
-
-const resetLabels: Record<string, string> = {
-  NONE: '不自动重置',
-  CALENDAR_MONTH: '自然月重置',
-  SUBSCRIPTION_CYCLE: '订阅周期重置'
-};
-
 export default function PlansPage() {
   const { t } = useTranslation(['admin', 'common']);
   const { data, isPending, isError } = useAdminPlans();
@@ -176,7 +164,7 @@ export default function PlansPage() {
                               className="text-[11px] h-5 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 gap-0.5 hover:bg-amber-500/20"
                             >
                               <Sparkles className="h-3 w-3" />
-                              主推
+                              {t('admin:plans.featured')}
                             </Badge>
                           )}
                           {plan.badgeText && (
@@ -194,7 +182,7 @@ export default function PlansPage() {
                     <TableCell>
                       <div className="space-y-0.5">
                         <span className="font-semibold text-foreground">
-                          {plan.price === 0 ? '免费' : formatYuan(plan.price)}
+                          {plan.price === 0 ? t('common:pricing.free') : formatYuan(plan.price)}
                         </span>
                         <span className="text-xs text-muted-foreground"> / {t('common:time.days', { count: plan.durationDays })}</span>
                       </div>
@@ -204,14 +192,24 @@ export default function PlansPage() {
                         <div className="font-medium tabular-nums text-foreground">
                           {formatBytes(plan.trafficLimitBytes)}
                         </div>
-                        <div className="text-muted-foreground">{resetLabels[plan.trafficResetMode]}</div>
+                        <div className="text-muted-foreground">
+                          {plan.trafficResetMode === 'CALENDAR_MONTH'
+                            ? t('common:resetMode.CALENDAR_MONTH')
+                            : plan.trafficResetMode === 'SUBSCRIPTION_CYCLE'
+                              ? t('common:resetMode.SUBSCRIPTION_CYCLE')
+                              : t('common:resetMode.NONE')}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1 text-xs">
                         <div className="flex items-center gap-1 flex-wrap">
                           <Badge variant="outline" className="text-[11px]">
-                            {matchLabels[plan.lineMatchMode]}
+                            {plan.lineMatchMode === 'TAGS'
+                              ? t('common:matchMode.TAGS')
+                              : plan.lineMatchMode === 'EXPLICIT'
+                                ? t('common:matchMode.EXPLICIT')
+                                : t('common:matchMode.ALL')}
                           </Badge>
                           {plan.lineMatchMode === 'TAGS' && plan.lineTags.length > 0 && (
                             <span className="text-muted-foreground">
@@ -221,7 +219,7 @@ export default function PlansPage() {
                           )}
                           {plan.lineMatchMode === 'EXPLICIT' && (
                             <span className="text-muted-foreground">
-                              {plan.lineIds.length} 条线路
+                              {t('admin:plans.linesCountValue', { count: plan.lineIds.length })}
                             </span>
                           )}
                         </div>

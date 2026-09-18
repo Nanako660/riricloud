@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import i18n from '@/i18n/config';
 
 // 密码字符类别要求，开关来自系统设置 passwordRequire*（与后端 auth-security.ts 的动态策略保持一致）
 export interface PasswordComplexity {
@@ -42,10 +43,10 @@ export function passwordComplexityFromSettings(source?: Partial<PasswordComplexi
 
 function passwordComplexityGroups(complexity: PasswordComplexity): string[] {
   const groups: string[] = [];
-  if (complexity.requireLowercase) groups.push('小写字母');
-  if (complexity.requireUppercase) groups.push('大写字母');
-  if (complexity.requireDigit) groups.push('数字');
-  if (complexity.requireSpecial) groups.push('特殊字符');
+  if (complexity.requireLowercase) groups.push(i18n.t('common:passwordPolicy.lowercase'));
+  if (complexity.requireUppercase) groups.push(i18n.t('common:passwordPolicy.uppercase'));
+  if (complexity.requireDigit) groups.push(i18n.t('common:passwordPolicy.digit'));
+  if (complexity.requireSpecial) groups.push(i18n.t('common:passwordPolicy.special'));
   return groups;
 }
 
@@ -56,20 +57,25 @@ export function buildPasswordStrengthPolicy(complexity: PasswordComplexity): Pas
   if (complexity.requireUppercase) lookaheads.push('(?=.*[A-Z])');
   if (complexity.requireDigit) lookaheads.push('(?=.*\\d)');
   if (complexity.requireSpecial) lookaheads.push('(?=.*[^A-Za-z0-9\\s])');
+  const separator = i18n.t('common:passwordPolicy.separator');
   return {
     pattern: lookaheads.length ? new RegExp(`${lookaheads.join('')}.+$`) : null,
-    message: groups.length ? `密码必须包含：${groups.join('、')}` : ''
+    message: groups.length ? i18n.t('common:passwordPolicy.mustInclude', { groups: groups.join(separator) }) : ''
   };
 }
 
 // 表单 placeholder 等提示片段，如「含小写字母、数字」；无复杂度要求时返回空串
 export function passwordComplexityHint(complexity: PasswordComplexity): string {
   const groups = passwordComplexityGroups(complexity);
-  return groups.length ? `含${groups.join('、')}` : '';
+  const separator = i18n.t('common:passwordPolicy.separator');
+  return groups.length ? i18n.t('common:passwordPolicy.hintPrefix', { groups: groups.join(separator) }) : '';
 }
 
 // 密码字段 zod 校验：动态最小长度 + 8-64 绝对边界 + 字符类别复杂度
 export function passwordZodSchema(minLength: number, policy: PasswordStrengthPolicy): z.ZodString {
-  const base = z.string().min(minLength, `密码至少 ${minLength} 位`).max(64, '密码最多 64 位');
+  const base = z
+    .string()
+    .min(minLength, i18n.t('common:passwordPolicy.minChars', { min: minLength }))
+    .max(64, i18n.t('common:passwordPolicy.maxChars'));
   return policy.pattern ? base.regex(policy.pattern, policy.message) : base;
 }

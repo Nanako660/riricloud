@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Bar,
   BarChart,
@@ -17,6 +18,8 @@ interface LogTrendChartProps {
 }
 
 export function LogTrendChart({ trend, isLoading }: LogTrendChartProps) {
+  const { t } = useTranslation(['admin', 'common']);
+
   if (isLoading && (!trend || trend.length === 0)) {
     return null;
   }
@@ -33,15 +36,15 @@ export function LogTrendChart({ trend, isLoading }: LogTrendChartProps) {
       <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-sm font-semibold">24 小时分级日志趋势</CardTitle>
-            <CardDescription className="text-xs">各时段日志产生量与错误占比</CardDescription>
+            <CardTitle className="text-sm font-semibold">{t('admin:logs.trendTitle')}</CardTitle>
+            <CardDescription className="text-xs">{t('admin:logs.trendDesc')}</CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent className="px-2 sm:px-6 pb-4 pt-1">
         {!hasData ? (
           <div className="flex h-44 items-center justify-center text-xs text-muted-foreground">
-            近 24 小时内暂无日志记录
+            {t('admin:logs.noTrendData')}
           </div>
         ) : (
           <div className="h-44 w-full">
@@ -80,7 +83,7 @@ export function LogTrendChart({ trend, isLoading }: LogTrendChartProps) {
                     };
                     return [value, labelMap[String(name)] || name];
                   }}
-                  labelFormatter={(label) => `时间：${label}`}
+                  labelFormatter={(label) => t('admin:logs.timeLabel', { time: String(label ?? '') })}
                 />
                 <Legend
                   verticalAlign="top"

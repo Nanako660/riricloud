@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
@@ -64,15 +65,16 @@ export function useAdminUsers(params: ListUsersParams) {
 }
 
 export function useUserMutations() {
+  const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
 
   const invalidateSub = {
     onSuccess: () => {
-      toast.success('已保存');
+      toast.success(t('admin:users.savedSuccess'));
       void invalidate();
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '操作失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:users.operationFailed')))
   };
 
   const createUser = useMutation({
@@ -115,12 +117,12 @@ export function useUserMutations() {
       extraLineIds?: string[];
     }) => (await api.patch(`/admin/subscriptions/${id}`, payload)).data,
     onSuccess: () => {
-      toast.success('订阅已更新');
+      toast.success(t('admin:users.subUpdatedSuccess'));
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
       void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '订阅更新失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:users.subUpdateFailed')))
   });
 
   const assignSubscription = useMutation({
@@ -135,28 +137,28 @@ export function useUserMutations() {
       extraLineIds?: string[];
     }) => (await api.post(`/admin/subscriptions/users/${userId}`, payload)).data,
     onSuccess: () => {
-      toast.success('已绑定订阅');
+      toast.success(t('admin:users.subBoundSuccess'));
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: ['admin', 'subscriptions'] });
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '绑定订阅失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:users.subBindFailed')))
   });
 
   const resetSubscriptionToken = useMutation({
     mutationFn: async (userId: string) =>
       (await api.post<{ subscriptionToken: string }>(`/admin/users/${userId}/reset-subscription-token`)).data,
     onSuccess: () => {
-      toast.success('订阅链接已重置');
+      toast.success(t('admin:users.subTokenResetSuccess'));
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: ['user', 'subscription'] });
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置订阅链接失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:users.subTokenResetFailed')))
   });
 
   const adjustBalance = useMutation({
     mutationFn: async ({ id, amount, description }: { id: string; amount: number; description?: string }) => (await api.post(`/admin/users/${id}/adjust-balance`, { amount, description })).data,
-    onSuccess: () => { toast.success('余额已调整'); void invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '余额调整失败'))
+    onSuccess: () => { toast.success(t('admin:users.balanceAdjustedSuccess')); void invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:users.balanceAdjustFailed')))
   });
 
   const deleteUser = useMutation({
@@ -175,9 +177,13 @@ export function useUserMutations() {
     },
     onSuccess: ({ total, failed }) => {
       if (failed === 0) {
-        toast.success(`已${total === 1 ? '操作' : '批量操作'} ${total} 个用户`);
+        toast.success(
+          total === 1
+            ? t('admin:users.batchOperateSingleSuccess')
+            : t('admin:users.batchOperateSuccess', { count: total })
+        );
       } else {
-        toast.warning(`操作完成：${total - failed} 成功，${failed} 失败`);
+        toast.warning(t('admin:users.batchOperatePartial', { success: total - failed, failed }));
       }
       void invalidate();
     }

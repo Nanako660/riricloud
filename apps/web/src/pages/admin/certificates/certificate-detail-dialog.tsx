@@ -1,23 +1,25 @@
 import * as React from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { CopyButton } from '@/components/shared/copy-button';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { formatDate } from '@/lib/utils';
-import { useCertificateDetail } from './use-certificates';
-
-const statusLabels = {
-  VALID: '有效',
-  EXPIRING: '即将到期',
-  EXPIRED: '已过期',
-  NOT_YET_VALID: '尚未生效'
-} as const;
+import { useCertificateDetail, type ApiCertificate } from './use-certificates';
 
 export function CertificateDetailDialog({ open, onOpenChange, certificateId }: { open: boolean; onOpenChange: (open: boolean) => void; certificateId: string | null }) {
+  const { t } = useTranslation(['admin', 'common']);
   const detail = useCertificateDetail(certificateId, open);
   const [showKey, setShowKey] = React.useState(false);
+
+  const statusLabels: Record<ApiCertificate['status'], string> = {
+    VALID: t('admin:certificates.statusValid'),
+    EXPIRING: t('admin:certificates.statusExpiring'),
+    EXPIRED: t('admin:certificates.statusExpired'),
+    NOT_YET_VALID: t('admin:certificates.statusNotYetValid')
+  };
 
   React.useEffect(() => {
     if (!open) setShowKey(false);
@@ -27,37 +29,37 @@ export function CertificateDetailDialog({ open, onOpenChange, certificateId }: {
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="wide">
         <DialogHeader>
-          <DialogTitle>{detail.data?.name ?? '证书详情'}</DialogTitle>
-          <DialogDescription>查看证书元数据与已保存的 PEM 内容。</DialogDescription>
+          <DialogTitle>{detail.data?.name ?? t('admin:certificates.certDetail')}</DialogTitle>
+          <DialogDescription>{t('admin:certificates.detailDesc')}</DialogDescription>
         </DialogHeader>
-        {detail.isPending && <p className="text-sm text-muted-foreground">加载中…</p>}
-        {detail.isError && <p className="text-sm text-destructive">证书详情加载失败，请稍后重试。</p>}
+        {detail.isPending && <p className="text-sm text-muted-foreground">{t('common:actions.loading')}</p>}
+        {detail.isError && <p className="text-sm text-destructive">{t('admin:certificates.loadFailed')}</p>}
         {detail.data && <div className="space-y-4">
           <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2">
-            <span>状态：{statusLabels[detail.data.status]}</span>
-            <span>关联线路：{detail.data.lineCount}</span>
-            <span>签发者：{detail.data.issuer}</span>
-            <span>序列号：{detail.data.serialNumber}</span>
-            <span>生效：{formatDate(detail.data.validFrom)}</span>
-            <span>到期：{formatDate(detail.data.validTo)}</span>
-            <span className="sm:col-span-2">SAN：{detail.data.sans.join('、')}</span>
+            <span>{t('admin:certificates.labelStatus')}{statusLabels[detail.data.status]}</span>
+            <span>{t('admin:certificates.labelLines')}{detail.data.lineCount}</span>
+            <span>{t('admin:certificates.labelIssuer')}{detail.data.issuer}</span>
+            <span>{t('admin:certificates.labelSerial')}{detail.data.serialNumber}</span>
+            <span>{t('admin:certificates.labelValidFrom')}{formatDate(detail.data.validFrom)}</span>
+            <span>{t('admin:certificates.labelValidTo')}{formatDate(detail.data.validTo)}</span>
+            <span className="sm:col-span-2">{t('admin:certificates.labelSans')}{detail.data.sans.join(', ')}</span>
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2"><span className="text-sm font-medium">证书 PEM</span><CopyButton value={detail.data.certificatePem} /></div>
+            <div className="flex items-center justify-between gap-2"><span className="text-sm font-medium">{t('admin:certificates.labelCertPem')}</span><CopyButton value={detail.data.certificatePem} /></div>
             <Textarea readOnly value={detail.data.certificatePem} className="min-h-44 font-mono text-xs" spellCheck={false} />
           </div>
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-medium">私钥 PEM</span>
+              <span className="text-sm font-medium">{t('admin:certificates.labelKeyPem')}</span>
               <div className="flex items-center gap-2">
                 {showKey && <CopyButton value={detail.data.privateKeyPem} />}
-                <Button type="button" variant="outline" size="sm" onClick={() => setShowKey((value) => !value)}>{showKey ? <EyeOff /> : <Eye />} {showKey ? '隐藏私钥' : '显示私钥'}</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowKey((value) => !value)}>{showKey ? <EyeOff /> : <Eye />} {showKey ? t('admin:certificates.hideKey') : t('admin:certificates.showKey')}</Button>
               </div>
             </div>
-            <Textarea readOnly value={showKey ? detail.data.privateKeyPem : '私钥已隐藏'} className="min-h-36 font-mono text-xs" spellCheck={false} />
+            <Textarea readOnly value={showKey ? detail.data.privateKeyPem : t('admin:certificates.keyHidden')} className="min-h-36 font-mono text-xs" spellCheck={false} />
           </div>
         </div>}
-        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>关闭</Button></DialogFooter>
+        <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.close')}</Button></DialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

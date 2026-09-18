@@ -63,6 +63,7 @@ const common = {
     logout: 'Sign Out',
     clean: 'Clean',
     generate: 'Generate',
+    toggleSidebar: 'Toggle sidebar',
     finish: 'Finish',
     saving: 'Saving...',
     confirmDelete: 'Confirm Delete'
@@ -85,7 +86,41 @@ const common = {
     permanent: 'Permanent',
     unused: 'Unused',
     used: 'Redeemed',
-    revoked: 'Revoked'
+    revoked: 'Revoked',
+    banned: 'Banned',
+    activated: 'Active',
+    canceled: 'Canceled',
+    none: 'None'
+  },
+  pricing: {
+    free: 'Free',
+    yuanPerUnit: '¥{{amount}}',
+    yuan: 'CNY'
+  },
+  roles: {
+    admin: 'Super Admin',
+    user: 'Standard User'
+  },
+  matchMode: {
+    ALL: 'All Lines',
+    TAGS: 'By Tags',
+    EXPLICIT: 'Specific Lines'
+  },
+  resetMode: {
+    NONE: 'No Auto-reset',
+    CALENDAR_MONTH: 'Calendar Month',
+    SUBSCRIPTION_CYCLE: 'Billing Cycle'
+  },
+  passwordPolicy: {
+    lowercase: 'lowercase letters',
+    uppercase: 'uppercase letters',
+    digit: 'digits',
+    special: 'special characters',
+    separator: ', ',
+    mustInclude: 'Password must include: {{groups}}',
+    hintPrefix: 'with {{groups}}',
+    minChars: 'Password must be at least {{min}} characters',
+    maxChars: 'Password must be at most 64 characters'
   },
   table: {
     pagination: 'Total {{total}} records, page {{current}} of {{pages}}',

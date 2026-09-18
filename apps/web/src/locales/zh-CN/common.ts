@@ -63,6 +63,7 @@ const common = {
     logout: '退出登录',
     clean: '清理',
     generate: '生成',
+    toggleSidebar: '切换侧边栏',
     finish: '完成',
     saving: '保存中...',
     confirmDelete: '确认删除'
@@ -85,7 +86,41 @@ const common = {
     permanent: '永久有效',
     unused: '未兑换',
     used: '已兑换',
-    revoked: '已作废'
+    revoked: '已作废',
+    banned: '已封禁',
+    activated: '已激活',
+    canceled: '已取消',
+    none: '无'
+  },
+  pricing: {
+    free: '免费',
+    yuanPerUnit: '¥{{amount}}',
+    yuan: '元'
+  },
+  roles: {
+    admin: '超级管理员',
+    user: '普通用户'
+  },
+  matchMode: {
+    ALL: '全部线路',
+    TAGS: '按标签',
+    EXPLICIT: '指定线路'
+  },
+  resetMode: {
+    NONE: '不自动重置',
+    CALENDAR_MONTH: '自然月重置',
+    SUBSCRIPTION_CYCLE: '订阅周期重置'
+  },
+  passwordPolicy: {
+    lowercase: '小写字母',
+    uppercase: '大写字母',
+    digit: '数字',
+    special: '特殊字符',
+    separator: '、',
+    mustInclude: '密码必须包含：{{groups}}',
+    hintPrefix: '含{{groups}}',
+    minChars: '密码至少 {{min}} 位',
+    maxChars: '密码最多 64 位'
   },
   table: {
     pagination: '共 {{total}} 条记录，第 {{current}} / {{pages}} 页',

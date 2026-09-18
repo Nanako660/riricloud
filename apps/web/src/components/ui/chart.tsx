@@ -38,11 +38,16 @@ export function ChartIndicator({
 
 function getSeriesWeight(nameOrKey?: string): number {
   if (!nameOrKey) return 99;
-  const str = String(nameOrKey);
-  if (str.includes('下行') && (str.includes('平均') || !str.includes('峰值'))) return 1;
-  if (str.includes('上行') && (str.includes('平均') || !str.includes('峰值'))) return 2;
-  if (str.includes('峰值') && str.includes('下行')) return 3;
-  if (str.includes('峰值') && str.includes('上行')) return 4;
+  const str = String(nameOrKey).toLowerCase();
+  const isDown = str.includes('下行') || str.includes('down');
+  const isUp = str.includes('上行') || str.includes('up');
+  const isPeak = str.includes('峰值') || str.includes('peak');
+  const isAvg = str.includes('平均') || str.includes('avg');
+
+  if (isDown && (isAvg || !isPeak)) return 1;
+  if (isUp && (isAvg || !isPeak)) return 2;
+  if (isPeak && isDown) return 3;
+  if (isPeak && isUp) return 4;
   return 99;
 }
 
@@ -56,8 +61,19 @@ export function ChartLegendContent(props: {
   return (
     <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
       {sorted.map((item) => {
-        const isDashed = Boolean(item.strokeDasharray || item.value?.includes('峰值') || item.dataKey?.toString().includes('peak'));
-        const isLine = Boolean(isDashed || item.value?.includes('速率') || item.value?.includes('平均') || item.value?.includes('上行') || item.value?.includes('下行'));
+        const text = String(item.value ?? item.dataKey ?? '').toLowerCase();
+        const isDashed = Boolean(item.strokeDasharray || text.includes('峰值') || text.includes('peak'));
+        const isLine = Boolean(
+          isDashed ||
+          text.includes('速率') ||
+          text.includes('rate') ||
+          text.includes('平均') ||
+          text.includes('avg') ||
+          text.includes('上行') ||
+          text.includes('up') ||
+          text.includes('下行') ||
+          text.includes('down')
+        );
         return (
           <div key={item.value} className="flex items-center gap-1.5 text-muted-foreground">
             <ChartIndicator color={item.color} isDashed={isDashed} isLine={isLine} />
@@ -92,8 +108,19 @@ export function ChartTooltipContent({
       <p className="mb-2 font-medium">{label}</p>
       <div className="space-y-1.5">
         {sorted.map((item) => {
-          const isDashed = Boolean(item.strokeDasharray || item.name?.includes('峰值') || item.dataKey?.toString().includes('peak'));
-          const isLine = Boolean(isDashed || item.name?.includes('速率') || item.name?.includes('平均') || item.name?.includes('上行') || item.name?.includes('下行'));
+          const text = String(item.name ?? item.dataKey ?? '').toLowerCase();
+          const isDashed = Boolean(item.strokeDasharray || text.includes('峰值') || text.includes('peak'));
+          const isLine = Boolean(
+            isDashed ||
+            text.includes('速率') ||
+            text.includes('rate') ||
+            text.includes('平均') ||
+            text.includes('avg') ||
+            text.includes('上行') ||
+            text.includes('up') ||
+            text.includes('下行') ||
+            text.includes('down')
+          );
           return (
             <div key={item.name} className="flex items-center justify-between gap-6">
               <span className="flex items-center gap-2 text-muted-foreground">

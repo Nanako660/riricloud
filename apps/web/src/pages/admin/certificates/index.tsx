@@ -95,7 +95,7 @@ export default function AdminCertificatesPage() {
                     </TableCell>
                     <TableCell><div className="flex max-w-64 flex-wrap gap-1">{certificate.sans.slice(0, 4).map((san) => <Badge key={san} variant="secondary">{san}</Badge>)}{certificate.sans.length > 4 && <Badge variant="outline">+{certificate.sans.length - 4}</Badge>}</div></TableCell>
                     <TableCell className="max-w-56 truncate text-sm text-muted-foreground">{certificate.issuer}</TableCell>
-                    <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={statusVariant(certificate.status)}>{statusLabels[certificate.status]}</Badge><span className="text-xs text-muted-foreground">至 {formatDate(certificate.validTo)}</span></div></TableCell>
+                    <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={statusVariant(certificate.status)}>{statusLabels[certificate.status]}</Badge><span className="text-xs text-muted-foreground">{t('admin:certificates.validUntil', { date: formatDate(certificate.validTo) })}</span></div></TableCell>
                     <TableCell><span className="font-medium">{certificate.lineCount}</span><span className="ml-1 text-xs text-muted-foreground">{t('admin:certificates.associatedLines')}</span></TableCell>
                     <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label={t('admin:certificates.editCert')} onClick={() => openEdit(certificate)}><Pencil /></Button><Button variant="ghost" size="icon" aria-label={t('common:actions.delete')} onClick={() => setDeleting(certificate)}><Trash2 className="text-destructive" /></Button></div></TableCell>
                   </TableRow>

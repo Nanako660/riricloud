@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ArrowDown, Pause, Play, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -23,6 +24,8 @@ export function LogLiveTailBar({
   streamCount,
   onClearStream
 }: LogLiveTailBarProps) {
+  const { t } = useTranslation(['admin', 'common']);
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs">
       <div className="flex items-center gap-2">
@@ -45,10 +48,12 @@ export function LogLiveTailBar({
           />
         </span>
         <span className="font-medium text-emerald-800 dark:text-emerald-300">
-          {isConnected ? (isPaused ? '实时流已暂停' : 'Live Tail 实时推流中 (SSE)') : '正在连接实时推流中枢...'}
+          {isConnected
+            ? (isPaused ? t('admin:logs.streamPaused') : t('admin:logs.streamRunning'))
+            : t('admin:logs.streamConnecting')}
         </span>
         <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:text-emerald-300">
-          已收到 {streamCount} 帧
+          {t('admin:logs.streamFrames', { count: streamCount })}
         </span>
       </div>
 
@@ -63,7 +68,7 @@ export function LogLiveTailBar({
           />
           <Label htmlFor="auto-scroll" className="cursor-pointer text-[11px] text-muted-foreground flex items-center gap-0.5">
             <ArrowDown className="size-3" />
-            自动滚动
+            {t('admin:logs.autoScroll')}
           </Label>
         </div>
 
@@ -76,7 +81,7 @@ export function LogLiveTailBar({
           className="h-7 text-xs gap-1 border-emerald-500/30 bg-background/80"
         >
           {isPaused ? <Play className="size-3 text-emerald-500" /> : <Pause className="size-3 text-amber-500" />}
-          {isPaused ? '继续推流' : '暂停'}
+          {isPaused ? t('admin:logs.resume') : t('admin:logs.pause')}
         </Button>
 
         {/* 清屏 */}
@@ -88,7 +93,7 @@ export function LogLiveTailBar({
           className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
         >
           <Trash2 className="size-3" />
-          清屏
+          {t('admin:logs.clearScreen')}
         </Button>
       </div>
     </div>

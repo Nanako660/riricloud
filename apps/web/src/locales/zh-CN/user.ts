@@ -125,6 +125,8 @@ const user = {
     downgradeUnsupported: '暂不支持降级',
     limitReached: '已达限额',
     claimed: '已领取',
+    savePercent: '立省 {{percent}}%',
+    defaultPlanDesc: '全能代理高速网络订阅方案',
     features: '包含特性',
     unlimitedSpeedFeature: '全速专线无上限接入',
     speedFeature: '{{speed}} Mbps 峰值带宽速率',
@@ -136,6 +138,7 @@ const user = {
     confirmBuyDesc: '确认使用账户可用余额 ¥{{price}} 订购「{{planName}}」吗？购买后将立即生效。',
     confirmUpgradeTitle: '确认升级套餐',
     confirmUpgradeDesc: '确认升级至「{{planName}}」吗？差额费用为 ¥{{price}}，原有未用尽配额将根据新套餐规则计算。',
+    balanceAndEstimatedRemaining: '当前余额：{{balance}}；扣款后预计剩余：',
     buySuccess: '恭喜！套餐订购成功',
     insufficientBalance: '账户可用余额不足，请前往个人中心使用卡密充值',
     emptyPlans: '暂无上架销售的套餐，请稍后再来查看'
@@ -405,6 +408,43 @@ const user = {
     emailChangeFailed: '换绑邮箱失败',
     emailVerifySuccess: '邮箱验证成功',
     emailVerifyFailed: '邮箱验证失败'
+  },
+  clientGuide: {
+    title: '客户端使用指引',
+    step1Title: '复制订阅链接',
+    step1Desc: '在我的订阅中复制专属的通用多格式订阅链接。',
+    step2Title: '导入客户端',
+    step2Desc: '在 Clash Meta、Sing-box 或 Shadowrocket 中粘贴订阅链接。',
+    step3Title: '选择线路并连接',
+    step3Desc: '更新配置后选择延迟较低的可用线路开启代理。',
+    footerTip: '公开可用的线路会由系统自动同步至客户端，无需手动填写服务器与端口。'
+  },
+  announcement: {
+    title: '系统公告',
+    dismiss: '我知道了'
+  },
+  quickRedeem: {
+    title: '卡密充值',
+    desc: '输入卡密兑换码快速充值余额或激活套餐。',
+    codeLabel: '兑换码',
+    codePlaceholder: '充值卡密',
+    redeemAction: '立即兑换',
+    successTitle: '兑换成功',
+    successDesc: '已成功为账户充值或激活套餐',
+    insufficientBalance: '余额不足？输入卡密充值',
+    redeeming: '兑换中…',
+    rechargeAction: '充值',
+    profileHintPrefix: '也可以前往 ',
+    profileHintSuffix: ' 查看完整账本。',
+    invalidCode: '请输入有效卡密'
+  },
+  proxySnippets: {
+    title: '代理接入代码片段',
+    tabCurl: 'cURL',
+    tabPython: 'Python (requests)',
+    tabNode: 'Node.js (fetch)',
+    tabGo: 'Go (net/http)',
+    desc: '直接复制下方生成的调用示例代码快速集成代理认证与转发。'
   }
 } as const;
 

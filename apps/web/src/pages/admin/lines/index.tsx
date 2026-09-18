@@ -47,7 +47,7 @@ export default function AdminLinesPage() {
 
   function relayDescription(line: AdminLine) {
     if (line.relayMode === 'TARGET_LINE' && line.targetLine) {
-      return `中转桥接 ➔ [${line.targetLine.entryNode.name}] ${line.targetLine.protocolType}:${line.targetLine.entryPort}`;
+      return `${t('admin:lines.relayTargetBridge')} ➔ [${line.targetLine.entryNode.name}] ${line.targetLine.protocolType}:${line.targetLine.entryPort}`;
     }
     return line.relayMode ? relayLabels[line.relayMode] : '';
   }
@@ -153,7 +153,7 @@ export default function AdminLinesPage() {
             <Table className="min-w-[980px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选" /></TableHead>
+                  <TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label={t('common:table.selectAll')} /></TableHead>
                   <TableHead>{t('admin:lines.colLine')}</TableHead>
                   <TableHead>{t('admin:lines.colType')}</TableHead>
                   <TableHead>{t('admin:lines.colEndpoint')}</TableHead>
@@ -181,7 +181,7 @@ export default function AdminLinesPage() {
               <TableBody>
                 {lines.map((line, index) => (
                   <TableRow key={line.id}>
-                    <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>
+                    <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`${t('common:actions.select')} ${line.name}`} /></TableCell>
                     <TableCell><div className="font-medium">{line.name}</div><div className="text-xs text-muted-foreground">Lv.{line.level}</div></TableCell>
                     <TableCell><Badge variant="outline" title={line.relayMode === 'TARGET_LINE' ? relayDescription(line) : undefined}>{typeLabels[line.type]}{line.relayMode ? ` · ${relayDescription(line)}` : ''}</Badge></TableCell>
                     <TableCell className="min-w-36"><div className="font-mono text-xs">{line.serverHost}:{line.serverPort}</div><div className="text-xs text-muted-foreground">{line.endpointOverrideEnabled ? t('admin:lines.overrideEnabled') : t('admin:lines.reuseUnderlying')}</div>{line.serverName && <div className="text-xs text-muted-foreground">SNI {line.serverName}</div>}{line.host && <div className="text-xs text-muted-foreground">Host {line.host}</div>}</TableCell>
@@ -189,7 +189,7 @@ export default function AdminLinesPage() {
                       {line.type === 'DIRECT' ? (
                         <>
                           <div>{line.entryNode.name}</div>
-                          <div className="text-xs text-muted-foreground">{line.protocolType} · 监听 {line.entryPort}</div>
+                          <div className="text-xs text-muted-foreground">{line.protocolType} · {t('admin:lines.portListen', { port: line.entryPort })}</div>
                         </>
                       ) : line.relayMode === 'TARGET_LINE' ? (
                         <>
@@ -199,7 +199,7 @@ export default function AdminLinesPage() {
                             <span>{line.targetLine?.entryNode.name ?? t('admin:lines.unbound')}</span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {line.protocolType} ➔ {line.targetLine?.protocolType ?? '未知'} · 落地 {line.targetLine?.entryPort ?? '—'}
+                            {line.protocolType} ➔ {line.targetLine?.protocolType ?? t('common:status.unknown')} · {t('admin:lines.portLanding', { port: line.targetLine?.entryPort ?? '—' })}
                           </div>
                         </>
                       ) : (
@@ -210,7 +210,7 @@ export default function AdminLinesPage() {
                             <span>{line.landingNode?.name ?? t('admin:lines.unbound')}</span>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {line.protocolType} · 落地 {line.landingPort ?? '—'}
+                            {line.protocolType} · {t('admin:lines.portLanding', { port: line.landingPort ?? '—' })}
                           </div>
                         </>
                       )}

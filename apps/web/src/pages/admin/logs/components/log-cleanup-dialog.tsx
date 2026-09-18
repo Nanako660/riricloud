@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +25,7 @@ export function LogCleanupDialog({
   onClean,
   isLoading
 }: LogCleanupDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [strategy, setStrategy] = React.useState<'days' | 'count'>('days');
   const [days, setDays] = React.useState('7');
   const [maxCount, setMaxCount] = React.useState('50000');
@@ -43,53 +45,53 @@ export function LogCleanupDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="size-4" />
-            清理系统历史日志
+            {t('admin:logs.cleanDialogTitle')}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            清理操作将物理删除 SQLite 数据库中符合条件的日志记录，此操作不可逆。
+            {t('admin:logs.cleanDialogDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
           <div className="space-y-1.5">
-            <label className="font-medium text-foreground">清理策略模式</label>
+            <label className="font-medium text-foreground">{t('admin:logs.cleanStrategyLabel')}</label>
             <Select value={strategy} onValueChange={(val) => setStrategy(val as 'days' | 'count')}>
               <SelectTrigger className="h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="days">按保留天数清理（删除指定天数前的旧日志）</SelectItem>
-                <SelectItem value="count">按保留条数截断（仅保留最新 N 条记录）</SelectItem>
+                <SelectItem value="days">{t('admin:logs.cleanStrategyDays')}</SelectItem>
+                <SelectItem value="count">{t('admin:logs.cleanStrategyCount')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {strategy === 'days' ? (
             <div className="space-y-1.5">
-              <label className="font-medium text-foreground">选择清理时间阈值</label>
+              <label className="font-medium text-foreground">{t('admin:logs.cleanDaysLabel')}</label>
               <Select value={days} onValueChange={setDays}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="3">清理 3 天前的全部日志</SelectItem>
-                  <SelectItem value="7">清理 7 天前的全部日志（推荐）</SelectItem>
-                  <SelectItem value="14">清理 14 天前的全部日志</SelectItem>
-                  <SelectItem value="30">清理 30 天前的全部日志</SelectItem>
+                  <SelectItem value="3">{t('admin:logs.cleanDays3')}</SelectItem>
+                  <SelectItem value="7">{t('admin:logs.cleanDays7')}</SelectItem>
+                  <SelectItem value="14">{t('admin:logs.cleanDays14')}</SelectItem>
+                  <SelectItem value="30">{t('admin:logs.cleanDays30')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           ) : (
             <div className="space-y-1.5">
-              <label className="font-medium text-foreground">选择保留记录上限</label>
+              <label className="font-medium text-foreground">{t('admin:logs.cleanCountLabel')}</label>
               <Select value={maxCount} onValueChange={setMaxCount}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="10000">仅保留最新 10,000 条</SelectItem>
-                  <SelectItem value="50000">仅保留最新 50,000 条（推荐）</SelectItem>
-                  <SelectItem value="100000">仅保留最新 100,000 条</SelectItem>
+                  <SelectItem value="10000">{t('admin:logs.cleanCount10k')}</SelectItem>
+                  <SelectItem value="50000">{t('admin:logs.cleanCount50k')}</SelectItem>
+                  <SelectItem value="100000">{t('admin:logs.cleanCount100k')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -98,7 +100,7 @@ export function LogCleanupDialog({
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-800 dark:text-amber-300">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" />
             <p className="text-[11px] leading-relaxed">
-              提示：Master 服务端后台已有定时巡检自动淘汰超期日志；若非紧急排查或磁盘紧张，建议保留自动轮转即可。
+              {t('admin:logs.cleanNotice')}
             </p>
           </div>
         </div>
@@ -110,7 +112,7 @@ export function LogCleanupDialog({
             onClick={() => onOpenChange(false)}
             disabled={isLoading}
           >
-            取消
+            {t('common:actions.cancel')}
           </Button>
           <Button
             type="button"
@@ -118,7 +120,7 @@ export function LogCleanupDialog({
             onClick={() => void handleConfirm()}
             disabled={isLoading}
           >
-            {isLoading ? '正在清理...' : '确认执行清理'}
+            {isLoading ? t('admin:logs.cleaning') : t('admin:logs.cleanConfirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

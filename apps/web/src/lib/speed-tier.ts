@@ -9,9 +9,10 @@ export const DEFAULT_SPEED_TIERS: SpeedTier[] = [
   { maxMbps: null, color: 'violet' }
 ];
 
+export type SpeedColorKey = 'blue' | 'cyan' | 'emerald' | 'amber' | 'violet' | 'rose';
+
 export interface SpeedColorOption {
-  value: string;
-  label: string;
+  value: SpeedColorKey;
   badgeClass: string;
   dotClass: string;
 }
@@ -19,37 +20,31 @@ export interface SpeedColorOption {
 export const SPEED_COLOR_OPTIONS: SpeedColorOption[] = [
   {
     value: 'blue',
-    label: '科技蓝',
     badgeClass: 'border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10',
     dotClass: 'bg-blue-500'
   },
   {
     value: 'cyan',
-    label: '极光青',
     badgeClass: 'border-cyan-500/40 text-cyan-600 dark:text-cyan-400 bg-cyan-500/10',
     dotClass: 'bg-cyan-500'
   },
   {
     value: 'emerald',
-    label: '翡翠绿',
     badgeClass: 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
     dotClass: 'bg-emerald-500'
   },
   {
     value: 'amber',
-    label: '琥珀金',
     badgeClass: 'border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10',
     dotClass: 'bg-amber-500'
   },
   {
     value: 'violet',
-    label: '星曜紫',
     badgeClass: 'border-violet-500/40 text-violet-600 dark:text-violet-400 bg-violet-500/10',
     dotClass: 'bg-violet-500'
   },
   {
     value: 'rose',
-    label: '玫瑰红',
     badgeClass: 'border-rose-500/40 text-rose-600 dark:text-rose-400 bg-rose-500/10',
     dotClass: 'bg-rose-500'
   }

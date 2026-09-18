@@ -22,25 +22,6 @@ interface InstallCommandsPickerProps {
   nodeId?: string;
 }
 
-const deployHint: Record<DeployType, Record<'posix' | 'windows', string>> = {
-  native: {
-    posix: '以 root 身份执行；自动拉取预编排安装脚本并注册启动 riri-agent 系统服务（Linux systemd / macOS launchd），开机自启。',
-    windows: '在 CMD 或 PowerShell 中均可直接粘贴执行；或下载 .bat 脚本直接以管理员身份运行。命令会自动提权并注册 riri-agent 系统服务。'
-  },
-  portable: {
-    posix: '免安装直接运行：数据目录为 ~/.riri-cloud，Ctrl+C 停止，sing-box 内核由 Agent 自动下载，不注册开机自启服务。',
-    windows: '免安装直接运行：数据目录为 %LOCALAPPDATA%\\RiriCloud，Ctrl+C 停止，sing-box 内核由 Agent 自动下载，不注册系统服务。'
-  },
-  docker: {
-    posix: '容器以 host 网络模式与 NET_ADMIN 能力运行，数据持久化于宿主机 /var/lib/riri-agent。',
-    windows: 'Docker 命令仅适用于 Linux 宿主机。'
-  },
-  offline: {
-    posix: '下载离线包解压后以 root 身份运行 sudo sh install.sh，脚本将自动配置系统服务与内核，无需外网访问。',
-    windows: '下载离线包解压后以管理员身份运行 install.bat 或 install.ps1，脚本将自动配置系统服务与内核，无需外网访问。'
-  }
-};
-
 export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode = 'ws', nodeOsArch, nodeId }: InstallCommandsPickerProps) {
   const { t } = useTranslation(['admin', 'common']);
   const [deployType, setDeployType] = useState<DeployType>('native');
@@ -97,9 +78,9 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      toast.success('离线安装包已开始下载');
+      toast.success(t('admin:nodes.offlinePkgDownloadingToast'));
     } catch {
-      toast.error('下载离线安装包失败');
+      toast.error(t('admin:nodes.offlinePkgDownloadFailed'));
     } finally {
       setDownloading(false);
     }
@@ -125,15 +106,22 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      toast.success('专属安装脚本已开始下载');
+      toast.success(t('admin:nodes.scriptDownloadingToast'));
     } catch {
-      toast.error('下载专属安装脚本失败');
+      toast.error(t('admin:nodes.scriptDownloadFailed'));
     } finally {
       setDownloadingScript(false);
     }
   };
 
-  const hint = deployType === 'docker' ? deployHint.docker.posix : deployHint[deployType][targetOs === 'windows' ? 'windows' : 'posix'];
+  const isWin = targetOs === 'windows';
+  const hint = deployType === 'docker'
+    ? t('admin:nodes.deployHintDockerPosix')
+    : deployType === 'native'
+      ? (isWin ? t('admin:nodes.deployHintNativeWindows') : t('admin:nodes.deployHintNativePosix'))
+      : deployType === 'portable'
+        ? (isWin ? t('admin:nodes.deployHintPortableWindows') : t('admin:nodes.deployHintPortablePosix'))
+        : (isWin ? t('admin:nodes.deployHintOfflineWindows') : t('admin:nodes.deployHintOfflinePosix'));
 
   return (
     <div className="min-w-0 space-y-3">
@@ -148,7 +136,7 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
       <div className="flex flex-wrap items-center gap-2">
         {deployType !== 'docker' ? (
           <Select value={targetOs} onValueChange={(value) => setTargetOs(value as TargetOs)}>
-            <SelectTrigger className="w-32" aria-label="目标操作系统"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-32" aria-label={t('admin:nodes.targetOsAria')}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="linux">Linux</SelectItem>
               <SelectItem value="macos">macOS</SelectItem>
@@ -160,7 +148,7 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
           <Tabs value={mode} onValueChange={(value) => setMode(value as InstallMode)} className="min-w-0 flex-1">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="ws">WS / WSS</TabsTrigger>
-              <TabsTrigger value="http">HTTP / HTTPS 轮询</TabsTrigger>
+              <TabsTrigger value="http">{t('admin:nodes.commModeHttpTab')}</TabsTrigger>
             </TabsList>
           </Tabs>
         ) : null}

@@ -1,6 +1,7 @@
 import { ExternalLink, KeyRound } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -8,30 +9,9 @@ import { FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/
 import { Label } from '@/components/ui/label';
 import type { ApiCertificate } from '@/lib/api';
 import { FieldGrid, SelectField, SwitchField, TextField } from './line-form-controls';
-import { ALPN_PRESET_VALUES, getAlpnOptions, MANUAL_CERTIFICATE_ID, type LineFormValues } from './line-form-schema';
+import { getAlpnOptions, MANUAL_CERTIFICATE_ID, type LineFormValues } from './line-form-schema';
 
 const LOCAL_PROXY_PROTOCOLS = ['MIXED', 'SOCKS', 'HTTP'];
-
-const tlsModeLabels: Record<'none' | 'tls' | 'reality' | 'acme', string> = {
-  none: '关闭 TLS',
-  tls: '标准 TLS',
-  reality: 'Reality',
-  acme: 'ACME 自动证书'
-};
-
-// local 代理协议只支持「明文 / 标准 TLS / ACME」：Reality 依赖 VLESS 类握手，不适用于 SOCKS/HTTP
-function buildTlsOptions(protocolType: string) {
-  const modes: Array<'none' | 'tls' | 'reality' | 'acme'> = LOCAL_PROXY_PROTOCOLS.includes(protocolType)
-    ? ['none', 'tls', 'acme']
-    : ['none', 'tls', 'reality', 'acme'];
-  return modes.map((value) => ({ value, label: tlsModeLabels[value] }));
-}
-
-const alpnLabels: Record<typeof ALPN_PRESET_VALUES[number], string> = {
-  h3: 'HTTP/3（h3）',
-  h2: 'HTTP/2（h2）',
-  'http/1.1': 'HTTP/1.1'
-};
 
 export function LineSecurityFields({ form, onGenerateKeys, keyPending, certificates }: {
   form: UseFormReturn<LineFormValues>;
@@ -39,6 +19,7 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
   keyPending: boolean;
   certificates: ApiCertificate[];
 }) {
+  const { t } = useTranslation(['admin']);
   const mode = form.watch('tlsMode');
   const protocolType = form.watch('protocolType');
   const transportType = form.watch('transportType');
@@ -46,7 +27,14 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
   const certificateId = form.watch('certificateId');
   const selectedCertificate = certificates.find((certificate) => certificate.id === certificateId);
   const alpnOptions = getAlpnOptions(protocolType, transportType, tlsAlpn);
-  const tlsOptions = buildTlsOptions(protocolType);
+
+  const tlsModes: Array<'none' | 'tls' | 'reality' | 'acme'> = LOCAL_PROXY_PROTOCOLS.includes(protocolType)
+    ? ['none', 'tls', 'acme']
+    : ['none', 'tls', 'reality', 'acme'];
+  const tlsOptions = tlsModes.map((value) => ({
+    value,
+    label: t(`admin:lineForm.tlsModes.${value}` as const)
+  }));
 
   useEffect(() => {
     if (mode !== 'tls' && certificateId !== MANUAL_CERTIFICATE_ID) {
@@ -64,10 +52,10 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
 
   return (
     <div className="space-y-3">
-      <SelectField form={form} name="tlsMode" label="安全模式" options={tlsOptions} />
+      <SelectField form={form} name="tlsMode" label={t('admin:lineForm.tlsMode')} options={tlsOptions} />
       {mode !== 'none' && <>
         <FieldGrid>
-          <TextField form={form} name="tlsServerName" label="TLS SNI" placeholder="example.com" />
+          <TextField form={form} name="tlsServerName" label={t('admin:lineForm.tlsServerName')} placeholder={t('admin:lineForm.tlsServerNamePlaceholder')} />
           {mode !== 'reality' && <AlpnField form={form} options={alpnOptions} />}
         </FieldGrid>
         {mode !== 'reality' && (
@@ -75,21 +63,21 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
             <SelectField
               form={form}
               name="tlsMinVersion"
-              label="最低 TLS 版本"
+              label={t('admin:lineForm.tlsMinVersion')}
               options={[
-                { value: '', label: '内核默认 (1.2)' },
-                { value: '1.2', label: 'TLS 1.2' },
-                { value: '1.3', label: 'TLS 1.3 (更安全)' }
+                { value: '', label: t('admin:lineForm.tlsVersionDefault12') },
+                { value: '1.2', label: t('admin:lineForm.tlsVersion12') },
+                { value: '1.3', label: t('admin:lineForm.tlsVersion13Safer') }
               ]}
             />
             <SelectField
               form={form}
               name="tlsMaxVersion"
-              label="最高 TLS 版本"
+              label={t('admin:lineForm.tlsMaxVersion')}
               options={[
-                { value: '', label: '内核默认 (1.3)' },
-                { value: '1.3', label: 'TLS 1.3' },
-                { value: '1.2', label: 'TLS 1.2' }
+                { value: '', label: t('admin:lineForm.tlsVersionDefault13') },
+                { value: '1.3', label: t('admin:lineForm.tlsVersion13') },
+                { value: '1.2', label: t('admin:lineForm.tlsVersion12') }
               ]}
             />
           </FieldGrid>
@@ -98,11 +86,11 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
           <TextField
             form={form}
             name="tlsCipherSuites"
-            label="自定义密码套件 (Cipher Suites)"
-            placeholder="例如: TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384 (逗号分隔，留空默认)"
+            label={t('admin:lineForm.tlsCipherSuites')}
+            placeholder={t('admin:lineForm.tlsCipherSuitesPlaceholder')}
           />
         )}
-        <SwitchField form={form} name="tlsInsecure" label="跳过证书校验" description="仅用于自签名或证书不匹配场景。" />
+        <SwitchField form={form} name="tlsInsecure" label={t('admin:lineForm.tlsInsecure')} description={t('admin:lineForm.tlsInsecureDesc')} />
       </>}
       {mode === 'tls' && <div className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -110,37 +98,37 @@ export function LineSecurityFields({ form, onGenerateKeys, keyPending, certifica
             <SelectField
               form={form}
               name="certificateId"
-              label="标准 TLS 证书"
+              label={t('admin:lineForm.certificateId')}
               options={[
-                { value: MANUAL_CERTIFICATE_ID, label: '节点本地路径（手动）' },
+                { value: MANUAL_CERTIFICATE_ID, label: t('admin:lineForm.manualCertificate') },
                 ...certificates.map((certificate) => ({ value: certificate.id, label: `${certificate.name} · ${certificate.sans[0] ?? certificate.subject}` }))
               ]}
             />
           </div>
-          <Button type="button" variant="outline" size="sm" asChild className="shrink-0"><Link to="/admin/certificates"><ExternalLink />管理证书</Link></Button>
+          <Button type="button" variant="outline" size="sm" asChild className="shrink-0"><Link to="/admin/certificates"><ExternalLink />{t('admin:lineForm.manageCertificates')}</Link></Button>
         </div>
-        {selectedCertificate ? <p className="text-xs text-muted-foreground">已选择「{selectedCertificate.name}」，保存后 Master 会以内嵌 PEM 形式同步到关联节点。</p> : <FieldGrid>
-          <TextField form={form} name="tlsCertPath" label="证书路径" placeholder="/etc/ssl/cert.pem" />
-          <TextField form={form} name="tlsKeyPath" label="私钥路径" placeholder="/etc/ssl/key.pem" />
+        {selectedCertificate ? <p className="text-xs text-muted-foreground">{t('admin:lineForm.certificateSelectedHint', { name: selectedCertificate.name })}</p> : <FieldGrid>
+          <TextField form={form} name="tlsCertPath" label={t('admin:lineForm.tlsCertPath')} placeholder="/etc/ssl/cert.pem" />
+          <TextField form={form} name="tlsKeyPath" label={t('admin:lineForm.tlsKeyPath')} placeholder="/etc/ssl/key.pem" />
         </FieldGrid>}
       </div>}
       {mode === 'reality' && <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <div><p className="text-sm font-medium">Reality 参数</p><p className="text-xs text-muted-foreground">私钥不会从服务端回显，留空表示保留现有密钥。</p></div>
-          {protocolType === 'VLESS' && <Button type="button" variant="outline" size="sm" onClick={onGenerateKeys} disabled={keyPending}><KeyRound />生成密钥对</Button>}
+          <div><p className="text-sm font-medium">{t('admin:lineForm.realityParamsTitle')}</p><p className="text-xs text-muted-foreground">{t('admin:lineForm.realityParamsDesc')}</p></div>
+          {protocolType === 'VLESS' && <Button type="button" variant="outline" size="sm" onClick={onGenerateKeys} disabled={keyPending}><KeyRound />{t('admin:lineForm.generateKeypair')}</Button>}
         </div>
         <FieldGrid>
-          <TextField form={form} name="realityDest" label="Handshake Dest" placeholder="www.apple.com:443" />
-          <TextField form={form} name="realityServerNames" label="Server Names（逗号分隔）" placeholder="www.apple.com" />
-          <TextField form={form} name="realityShortIds" label="Short IDs（逗号分隔）" placeholder="0123456789abcdef" />
-          <TextField form={form} name="realityPublicKey" label="Public Key" placeholder="生成或填写公钥" />
+          <TextField form={form} name="realityDest" label={t('admin:lineForm.realityDest')} placeholder={t('admin:lineForm.realityDestPlaceholder')} />
+          <TextField form={form} name="realityServerNames" label={t('admin:lineForm.realityServerNames')} placeholder={t('admin:lineForm.realityServerNamesPlaceholder')} />
+          <TextField form={form} name="realityShortIds" label={t('admin:lineForm.realityShortIds')} placeholder={t('admin:lineForm.realityShortIdsPlaceholder')} />
+          <TextField form={form} name="realityPublicKey" label={t('admin:lineForm.realityPublicKey')} placeholder={t('admin:lineForm.realityPublicKeyPlaceholder')} />
         </FieldGrid>
-        <TextField form={form} name="realityPrivateKey" label="Private Key" type="password" placeholder="留空保留当前私钥" />
+        <TextField form={form} name="realityPrivateKey" label={t('admin:lineForm.realityPrivateKey')} type="password" placeholder={t('admin:lineForm.realityPrivateKeyPlaceholder')} />
       </div>}
       {mode === 'acme' && <FieldGrid>
-        <TextField form={form} name="acmeDomain" label="ACME 域名" placeholder="node.example.com" />
-        <TextField form={form} name="acmeEmail" label="ACME 邮箱" placeholder="admin@example.com" />
-        <TextField form={form} name="acmeProvider" label="ACME Provider（可选）" placeholder="letsencrypt" />
+        <TextField form={form} name="acmeDomain" label={t('admin:lineForm.acmeDomain')} placeholder={t('admin:lineForm.acmeDomainPlaceholder')} />
+        <TextField form={form} name="acmeEmail" label={t('admin:lineForm.acmeEmail')} placeholder={t('admin:lineForm.acmeEmailPlaceholder')} />
+        <TextField form={form} name="acmeProvider" label={t('admin:lineForm.acmeProvider')} placeholder={t('admin:lineForm.acmeProviderPlaceholder')} />
       </FieldGrid>}
     </div>
   );
@@ -150,11 +138,12 @@ function AlpnField({ form, options }: {
   form: UseFormReturn<LineFormValues>;
   options: string[];
 }) {
+  const { t } = useTranslation(['admin']);
   return (
     <FormField control={form.control} name="tlsAlpn" render={({ field }) => (
       <FormItem>
-        <FormLabel>ALPN</FormLabel>
-        <FormDescription>按协议与传输层选择协商协议，可多选。</FormDescription>
+        <FormLabel>{t('admin:lineForm.alpnLabel')}</FormLabel>
+        <FormDescription>{t('admin:lineForm.alpnDesc')}</FormDescription>
         <div className="grid gap-2 sm:grid-cols-2">
           {options.map((value) => {
             const id = `alpn-${value.replace(/[^a-z0-9]+/gi, '-')}`;
@@ -170,12 +159,14 @@ function AlpnField({ form, options }: {
                     field.onChange(next);
                   }}
                 />
-                <Label htmlFor={id} className="cursor-pointer font-normal">{alpnLabels[value as typeof ALPN_PRESET_VALUES[number]] ?? `自定义（${value}）`}</Label>
+                <Label htmlFor={id} className="cursor-pointer font-normal">
+                  {value === 'h3' ? 'HTTP/3 (h3)' : value === 'h2' ? 'HTTP/2 (h2)' : value === 'http/1.1' ? 'HTTP/1.1' : t('admin:lineForm.alpnCustom', { value })}
+                </Label>
               </div>
             );
           })}
         </div>
-        {options.length === 0 && <p className="text-xs text-muted-foreground">当前没有可用的 ALPN 预设。</p>}
+        {options.length === 0 && <p className="text-xs text-muted-foreground">{t('admin:lineForm.alpnEmpty')}</p>}
         <FormMessage />
       </FormItem>
     )} />

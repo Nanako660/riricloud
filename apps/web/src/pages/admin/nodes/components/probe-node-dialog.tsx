@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { CheckCircle2, CircleAlert, Clock3, Network } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import type { ProbeResult, ProbeSnapshot } from '../use-nodes';
 
 const schema = z.object({
   type: z.enum(['tcp', 'dns', 'icmp']),
-  target: z.string().trim().min(1, '请输入目标地址'),
+  target: z.string().trim().min(1, i18n.t('admin:nodes.valTargetReq')),
   port: z.coerce.number().int().min(1).max(65535).optional(),
   timeoutMs: z.coerce.number().int().min(100).max(10000)
 });
@@ -30,9 +31,9 @@ type Values = z.infer<typeof schema>;
 
 const presets: Array<{ value: string; label: string; probe: Values }> = [
   { value: 'cloudflare', label: 'Cloudflare Anycast · TCP 443', probe: { type: 'tcp', target: '1.1.1.1', port: 443, timeoutMs: 3000 } },
-  { value: 'google-dns', label: 'Google DNS · DNS 解析', probe: { type: 'dns', target: 'dns.google', port: 443, timeoutMs: 3000 } },
+  { value: 'google-dns', label: 'Google DNS · DNS', probe: { type: 'dns', target: 'dns.google', port: 443, timeoutMs: 3000 } },
   { value: 'github', label: 'GitHub · TCP 443', probe: { type: 'tcp', target: 'github.com', port: 443, timeoutMs: 5000 } },
-  { value: 'custom', label: '自定义目标', probe: { type: 'tcp', target: '', port: 443, timeoutMs: 3000 } }
+  { value: 'custom', label: 'custom', probe: { type: 'tcp', target: '', port: 443, timeoutMs: 3000 } }
 ];
 
 function resultLabel(result: ProbeResult) {
@@ -42,6 +43,7 @@ function resultLabel(result: ProbeResult) {
 }
 
 function ProbeResultCard({ result }: { result: ProbeResult }) {
+  const { t } = useTranslation(['admin', 'common']);
   const success = result.success;
   return (
     <Card className="shadow-none">
@@ -52,19 +54,19 @@ function ProbeResultCard({ result }: { result: ProbeResult }) {
             <span className="truncate text-sm text-muted-foreground">{result.target}</span>
           </div>
           {success ? (
-            <Badge><CheckCircle2 className="mr-1 h-3.5 w-3.5" />正常</Badge>
+            <Badge><CheckCircle2 className="mr-1 h-3.5 w-3.5" />{t('admin:nodes.probeNormal')}</Badge>
           ) : (
-            <Badge variant="destructive"><CircleAlert className="mr-1 h-3.5 w-3.5" />失败</Badge>
+            <Badge variant="destructive"><CircleAlert className="mr-1 h-3.5 w-3.5" />{t('admin:nodes.probeFailed')}</Badge>
           )}
         </div>
         <div className="grid gap-2 text-sm sm:grid-cols-3">
           <span className="flex items-center gap-1.5 text-muted-foreground">
-            <Clock3 className="h-3.5 w-3.5" />延迟 {success && result.latencyMs !== undefined ? `${result.latencyMs} ms` : '—'}
+            <Clock3 className="h-3.5 w-3.5" />{t('admin:nodes.latencyPrefix')}{success && result.latencyMs !== undefined ? `${result.latencyMs} ms` : '—'}
           </span>
-          <span className="text-muted-foreground">丢包 {result.packetLossPercent ?? (success ? 0 : 100)}%</span>
-          <span className="truncate text-muted-foreground">{result.addresses?.length ? `解析：${result.addresses.join(', ')}` : '未返回解析地址'}</span>
+          <span className="text-muted-foreground">{t('admin:nodes.packetLossPrefix')}{result.packetLossPercent ?? (success ? 0 : 100)}%</span>
+          <span className="truncate text-muted-foreground">{result.addresses?.length ? t('admin:nodes.dnsResolved', { addrs: result.addresses.join(', ') }) : t('admin:nodes.dnsNoAddr')}</span>
         </div>
-        {!success && <p className="break-words text-xs text-destructive">{result.message || '探针失败，未返回错误详情'}</p>}
+        {!success && <p className="break-words text-xs text-destructive">{result.message || t('admin:nodes.probeFailedNoDetails')}</p>}
       </CardContent>
     </Card>
   );
@@ -137,7 +139,7 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {availablePresets.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  <SelectItem key={item.value} value={item.value}>{item.value === 'custom' ? t('admin:nodes.customTarget') : item.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -154,9 +156,9 @@ export function ProbeNodeDialog({ open, onOpenChange, pending, snapshot, onSubmi
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="tcp">TCP 连接</SelectItem>
-                          <SelectItem value="dns">DNS 解析</SelectItem>
-                          <SelectItem value="icmp">ICMP Ping</SelectItem>
+                          <SelectItem value="tcp">{t('admin:nodes.probeTypeTcp')}</SelectItem>
+                          <SelectItem value="dns">{t('admin:nodes.probeTypeDns')}</SelectItem>
+                          <SelectItem value="icmp">{t('admin:nodes.probeTypeIcmp')}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />

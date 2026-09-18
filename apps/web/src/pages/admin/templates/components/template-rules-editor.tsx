@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { json } from '@codemirror/lang-json';
 import {
   ArrowDown,
@@ -42,93 +43,22 @@ export interface TemplateRuleDraft {
   format?: 'binary' | 'source';
 }
 
-const RULE_TYPES = [
-  { value: 'domain-suffix', label: '域名后缀' },
-  { value: 'domain-keyword', label: '域名关键词' },
-  { value: 'domain', label: '精确域名' },
-  { value: 'ip-cidr', label: 'IP 网段' },
-  { value: 'geosite', label: 'GeoSite' },
-  { value: 'remote-rule-set', label: '远程 Rule-Set' },
-  { value: 'match', label: '最终匹配' }
-];
+const VALID_RULE_TYPES = [
+  'domain-suffix',
+  'domain-keyword',
+  'domain',
+  'ip-cidr',
+  'geosite',
+  'remote-rule-set',
+  'match'
+] as const;
 
-const PRESET_RULES: Array<{ title: string; desc: string; payload: TemplateRuleDraft }> = [
-  {
-    title: '🛑 广告与追踪拦截',
-    desc: '常见广告追踪域名，出站目标 REJECT',
-    payload: {
-      name: '广告与追踪拦截',
-      type: 'domain-suffix',
-      target: 'REJECT',
-      enabled: true,
-      rules: ['doubleclick.net', 'adservice.google.com', 'adcolony.com', 'adjust.com', 'applovin.com', 'appsflyer.com']
-    }
-  },
-  {
-    title: '🤖 AI 服务分流',
-    desc: 'OpenAI、Claude、Gemini 等 AI 常用域名',
-    payload: {
-      name: 'AI 服务',
-      type: 'domain-suffix',
-      target: '',
-      enabled: true,
-      rules: ['openai.com', 'chatgpt.com', 'oaistatic.com', 'oaiusercontent.com', 'anthropic.com', 'claude.ai', 'bard.google.com', 'gemini.google.com']
-    }
-  },
-  {
-    title: '🎬 国际流媒体',
-    desc: 'YouTube、Netflix、Disney+ 常见流媒体后缀',
-    payload: {
-      name: '国际流媒体',
-      type: 'domain-suffix',
-      target: '',
-      enabled: true,
-      rules: ['youtube.com', 'googlevideo.com', 'netflix.com', 'nflxvideo.net', 'disneyplus.com', 'spotify.com']
-    }
-  },
-  {
-    title: '🎯 中国大陆主流直连 (GeoSite)',
-    desc: '国内直连域名与私有地址，目标 DIRECT',
-    payload: {
-      name: '中国大陆直连',
-      type: 'geosite',
-      target: 'DIRECT',
-      enabled: true,
-      rules: ['cn', 'private']
-    }
-  },
-  {
-    title: '🐟 漏网之鱼 (兜底匹配)',
-    desc: '未命中前面任何规则的最终流量流向',
-    payload: {
-      name: '兜底匹配 Final',
-      type: 'match',
-      target: '',
-      enabled: true,
-      rules: []
-    }
-  },
-  {
-    title: '🌐 远程 Rule-Set 规则集',
-    desc: '通过 HTTP 订阅远端维护的规则集',
-    payload: {
-      name: '远程分流规则集',
-      type: 'remote-rule-set',
-      target: '',
-      enabled: true,
-      rules: [],
-      url: 'https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt',
-      singboxUrl: 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs',
-      format: 'binary'
-    }
-  }
-];
-
-function normalizeRule(value: unknown, index: number): TemplateRuleDraft {
+function normalizeRule(value: unknown, index: number, fallbackName?: string): TemplateRuleDraft {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const type = typeof source.type === 'string' && RULE_TYPES.some((item) => item.value === source.type) ? source.type as TemplateRuleDraft['type'] : 'domain-suffix';
+  const rawType = typeof source.type === 'string' ? source.type : 'domain-suffix';
+  const type = (VALID_RULE_TYPES.includes(rawType as (typeof VALID_RULE_TYPES)[number]) ? rawType : 'domain-suffix') as TemplateRuleDraft['type'];
   return {
-    name: typeof source.name === 'string' ? source.name : `分流规则 ${index + 1}`,
+    name: typeof source.name === 'string' ? source.name : (fallbackName || `Routing Rule ${index + 1}`),
     type,
     target: typeof source.target === 'string' ? source.target : '',
     enabled: source.enabled !== false,
@@ -146,7 +76,91 @@ function swap<T>(items: T[], from: number, to: number) {
 }
 
 export function TemplateRulesEditor({ value, onChange, targets }: { value: unknown[]; onChange: (value: unknown[]) => void; targets: string[] }) {
-  const rules = useMemo(() => value.map(normalizeRule), [value]);
+  const { t } = useTranslation(['admin', 'common']);
+
+  const ruleTypes = useMemo(() => [
+    { value: 'domain-suffix', label: t('admin:templateRules.types.domainSuffix') },
+    { value: 'domain-keyword', label: t('admin:templateRules.types.domainKeyword') },
+    { value: 'domain', label: t('admin:templateRules.types.domain') },
+    { value: 'ip-cidr', label: t('admin:templateRules.types.ipCidr') },
+    { value: 'geosite', label: t('admin:templateRules.types.geosite') },
+    { value: 'remote-rule-set', label: t('admin:templateRules.types.remoteRuleSet') },
+    { value: 'match', label: t('admin:templateRules.types.match') }
+  ], [t]);
+
+  const presetRules = useMemo<Array<{ title: string; desc: string; payload: TemplateRuleDraft }>>(() => [
+    {
+      title: t('admin:templateRules.presets.adBlockTitle'),
+      desc: t('admin:templateRules.presets.adBlockDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.adBlockName'),
+        type: 'domain-suffix',
+        target: 'REJECT',
+        enabled: true,
+        rules: ['doubleclick.net', 'adservice.google.com', 'adcolony.com', 'adjust.com', 'applovin.com', 'appsflyer.com']
+      }
+    },
+    {
+      title: t('admin:templateRules.presets.aiTitle'),
+      desc: t('admin:templateRules.presets.aiDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.aiName'),
+        type: 'domain-suffix',
+        target: '',
+        enabled: true,
+        rules: ['openai.com', 'chatgpt.com', 'oaistatic.com', 'oaiusercontent.com', 'anthropic.com', 'claude.ai', 'bard.google.com', 'gemini.google.com']
+      }
+    },
+    {
+      title: t('admin:templateRules.presets.streamingTitle'),
+      desc: t('admin:templateRules.presets.streamingDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.streamingName'),
+        type: 'domain-suffix',
+        target: '',
+        enabled: true,
+        rules: ['youtube.com', 'googlevideo.com', 'netflix.com', 'nflxvideo.net', 'disneyplus.com', 'spotify.com']
+      }
+    },
+    {
+      title: t('admin:templateRules.presets.chinaDirectTitle'),
+      desc: t('admin:templateRules.presets.chinaDirectDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.chinaDirectName'),
+        type: 'geosite',
+        target: 'DIRECT',
+        enabled: true,
+        rules: ['cn', 'private']
+      }
+    },
+    {
+      title: t('admin:templateRules.presets.finalMatchTitle'),
+      desc: t('admin:templateRules.presets.finalMatchDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.finalMatchName'),
+        type: 'match',
+        target: '',
+        enabled: true,
+        rules: []
+      }
+    },
+    {
+      title: t('admin:templateRules.presets.remoteRuleSetTitle'),
+      desc: t('admin:templateRules.presets.remoteRuleSetDesc'),
+      payload: {
+        name: t('admin:templateRules.presets.remoteRuleSetName'),
+        type: 'remote-rule-set',
+        target: '',
+        enabled: true,
+        rules: [],
+        url: 'https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt',
+        singboxUrl: 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs',
+        format: 'binary'
+      }
+    }
+  ], [t]);
+
+  const rules = useMemo(() => value.map((item, i) => normalizeRule(item, i, t('admin:templateRules.defaultRuleName', { index: i + 1 }))), [value, t]);
   const [mode, setMode] = useState<'visual' | 'code'>('visual');
   const [source, setSource] = useState(() => JSON.stringify(value, null, 2));
   const [sourceError, setSourceError] = useState('');
@@ -193,7 +207,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
             )}
           >
             <ListFilter className="h-3.5 w-3.5 text-primary" />
-            可视化设计
+            {t('admin:templateRules.modeVisual')}
           </button>
           <button
             type="button"
@@ -206,7 +220,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-blue-500" />
-            JSON 源码
+            {t('admin:templateRules.modeCode')}
           </button>
         </div>
 
@@ -214,7 +228,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {mode === 'visual' ? (
             <Badge variant="secondary" className="text-xs">
-              共 {rules.length} 条分流规则
+              {t('admin:templateRules.totalCount', { count: rules.length })}
             </Badge>
           ) : (
             <Badge
@@ -226,7 +240,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
               ) : (
                 <AlertCircle className="h-3 w-3" />
               )}
-              <span>{!sourceError ? '格式正常' : '语法错误'}</span>
+              <span>{!sourceError ? t('admin:templateRules.statusValid') : t('admin:templateRules.statusError')}</span>
             </Badge>
           )}
 
@@ -235,13 +249,13 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                常用预设
+                {t('admin:templateRules.presetsDropdown')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-xs">添加常用分流预设</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs">{t('admin:templateRules.presetsDropdownLabel')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {PRESET_RULES.map((preset) => (
+              {presetRules.map((preset) => (
                 <DropdownMenuItem
                   key={preset.title}
                   onClick={() => addPreset(preset.payload)}
@@ -263,10 +277,10 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
               className="h-7 gap-1 px-2 text-xs"
               onClick={formatSource}
               disabled={!!sourceError}
-              title="美化排版 JSON"
+              title={t('admin:templateRules.beautifyTitle')}
             >
               <Wand2 className="h-3.5 w-3.5 text-primary" />
-              美化
+              {t('admin:templateRules.beautify')}
             </Button>
           )}
 
@@ -276,10 +290,10 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
             variant="default"
             size="sm"
             className="h-7 gap-1 text-xs"
-            onClick={() => onChange([...rules, normalizeRule({}, rules.length)])}
+            onClick={() => onChange([...rules, normalizeRule({}, rules.length, t('admin:templateRules.defaultRuleName', { index: rules.length + 1 }))])}
           >
             <Plus className="h-3.5 w-3.5" />
-            新增规则
+            {t('admin:templateRules.addRule')}
           </Button>
         </div>
       </div>
@@ -289,7 +303,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
         <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto pr-1">
           {rules.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
-              <span>暂无分流规则，请点击上方「新增规则」或从「常用预设」快速引入</span>
+              <span>{t('admin:templateRules.emptyNotice')}</span>
             </div>
           ) : (
             rules.map((rule, index) => (
@@ -301,7 +315,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                     </span>
                     <CardTitle className="text-sm font-semibold">{rule.name}</CardTitle>
                     <Badge variant="outline" className="text-[10px]">
-                      {RULE_TYPES.find((t) => t.value === rule.type)?.label || rule.type}
+                      {ruleTypes.find((item) => item.value === rule.type)?.label || rule.type}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1">
@@ -310,7 +324,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      aria-label="上移分流规则"
+                      aria-label={t('admin:templateRules.moveUp')}
                       disabled={index === 0}
                       onClick={() => onChange(swap(rules, index, index - 1))}
                     >
@@ -321,7 +335,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      aria-label="下移分流规则"
+                      aria-label={t('admin:templateRules.moveDown')}
                       disabled={index === rules.length - 1}
                       onClick={() => onChange(swap(rules, index, index + 1))}
                     >
@@ -332,7 +346,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      aria-label="删除分流规则"
+                      aria-label={t('admin:templateRules.deleteRule')}
                       onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}
                     >
                       <Trash2 className="size-3.5" />
@@ -341,7 +355,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">规则名称</Label>
+                    <Label className="text-xs">{t('admin:templateRules.nameLabel')}</Label>
                     <Input
                       value={rule.name}
                       onChange={(event) => updateRule(index, { name: event.target.value })}
@@ -349,7 +363,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">匹配类型</Label>
+                    <Label className="text-xs">{t('admin:templateRules.typeLabel')}</Label>
                     <Select
                       value={rule.type}
                       onValueChange={(type) => updateRule(index, { type: type as TemplateRuleDraft['type'] })}
@@ -358,7 +372,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {RULE_TYPES.map((item) => (
+                        {ruleTypes.map((item) => (
                           <SelectItem key={item.value} value={item.value} className="text-xs">
                             {item.label}
                           </SelectItem>
@@ -367,17 +381,17 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">出站目标策略组</Label>
+                    <Label className="text-xs">{t('admin:templateRules.targetLabel')}</Label>
                     <Select
                       value={rule.target || '__default'}
                       onValueChange={(target) => updateRule(index, { target: target === '__default' ? '' : target })}
                     >
                       <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="默认主策略组" />
+                        <SelectValue placeholder={t('admin:templateRules.defaultTargetPlaceholder')} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__default" className="text-xs">
-                          默认主策略组
+                          {t('admin:templateRules.defaultTargetPlaceholder')}
                         </SelectItem>
                         {targetOptions.map((target) => (
                           <SelectItem key={target} value={target} className="text-xs">
@@ -394,13 +408,13 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                       onCheckedChange={(checked) => updateRule(index, { enabled: checked === true })}
                     />
                     <Label htmlFor={`enable-rule-${index}`} className="text-xs font-normal cursor-pointer">
-                      启用此分流规则
+                      {t('admin:templateRules.enableRule')}
                     </Label>
                   </div>
 
                   {rule.type !== 'match' && rule.type !== 'remote-rule-set' && (
                     <div className="space-y-1.5 sm:col-span-2">
-                      <Label className="text-xs">规则条目清单（每行一条）</Label>
+                      <Label className="text-xs">{t('admin:templateRules.rulesListLabel')}</Label>
                       <Textarea
                         value={rule.rules.join('\n')}
                         onChange={(event) =>
@@ -408,7 +422,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                             rules: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean)
                           })
                         }
-                        placeholder="例如 example.com 或 192.168.0.0/16"
+                        placeholder={t('admin:templateRules.rulesListPlaceholder')}
                         className="min-h-20 font-mono text-xs"
                       />
                     </div>
@@ -417,7 +431,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                   {rule.type === 'remote-rule-set' && (
                     <>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Clash Rule-Provider URL</Label>
+                        <Label className="text-xs">{t('admin:templateRules.clashUrlLabel')}</Label>
                         <Input
                           value={rule.url ?? ''}
                           onChange={(event) => updateRule(index, { url: event.target.value })}
@@ -426,7 +440,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Sing-box Rule-Set URL</Label>
+                        <Label className="text-xs">{t('admin:templateRules.singboxUrlLabel')}</Label>
                         <Input
                           value={rule.singboxUrl ?? ''}
                           onChange={(event) => updateRule(index, { singboxUrl: event.target.value })}
@@ -435,7 +449,7 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                         />
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
-                        <Label className="text-xs">Sing-box 规则集格式</Label>
+                        <Label className="text-xs">{t('admin:templateRules.formatLabel')}</Label>
                         <Select
                           value={rule.format ?? 'binary'}
                           onValueChange={(format) => updateRule(index, { format: format as 'binary' | 'source' })}
@@ -445,10 +459,10 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="binary" className="text-xs">
-                              binary (.srs 编译二进制)
+                              {t('admin:templateRules.formatBinary')}
                             </SelectItem>
                             <SelectItem value="source" className="text-xs">
-                              source (JSON 文本源)
+                              {t('admin:templateRules.formatSource')}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -478,11 +492,11 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                 setSource(next);
                 try {
                   const parsed: unknown = JSON.parse(next);
-                  if (!Array.isArray(parsed)) throw new Error('必须是 JSON 数组');
+                  if (!Array.isArray(parsed)) throw new Error(t('admin:templateRules.errorMustBeArray'));
                   setSourceError('');
                   onChange(parsed);
                 } catch (err) {
-                  setSourceError((err as Error).message || 'JSON 语法错误');
+                  setSourceError((err as Error).message || t('admin:templateRules.errorSyntax'));
                 }
               }}
             />
@@ -492,10 +506,10 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
               <div className="flex items-center justify-between gap-2 pb-1.5">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
-                  <span>分流规则 JSON 语法错误</span>
+                  <span>{t('admin:templateRules.syntaxErrorTitle')}</span>
                 </div>
                 <span className="text-[10px] text-muted-foreground">
-                  必须为 JSON 数组且格式合法
+                  {t('admin:templateRules.syntaxErrorDesc')}
                 </span>
               </div>
               <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">

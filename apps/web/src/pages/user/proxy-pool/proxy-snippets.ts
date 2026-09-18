@@ -45,11 +45,11 @@ export function buildProxyCodeSnippets(input: ProxySnippetInput): ProxyCodeSnipp
   const hostPort = `${host}:${port}`;
   const httpScheme = tls ? 'https' : 'http';
   const tlsSocksWarning = (isSocks && tls)
-    ? '# ⚠️ 注意：该节点已开启 TLS 加密，标准 SOCKS5 握手将因协议冲突失败，建议切换为 HTTP (HTTPS) 协议\n'
+    ? '# ⚠️ Warning: TLS is enabled on this node; standard SOCKS5 handshake will fail. Consider switching to HTTP (HTTPS) protocol.\n'
     : '';
 
   const pythonRequests = isSocks
-    ? `${tlsSocksWarning}# 需先安装 SOCKS 依赖：pip install "requests[socks]"
+    ? `${tlsSocksWarning}# Install SOCKS dependency first: pip install "requests[socks]"
 import requests
 
 proxies = {
@@ -58,7 +58,7 @@ proxies = {
 }
 resp = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=15)
 print(resp.json())`
-    : `# ${tls ? '节点启用 TLS 加密（标准 HTTPS 代理）' : '标准明文 HTTP 代理'}
+    : `# ${tls ? 'Node TLS enabled (Standard HTTPS Proxy)' : 'Standard HTTP Proxy'}
 import requests
 
 proxies = {
@@ -99,7 +99,7 @@ with sync_playwright() as p:
     browser.close()`;
 
   const nodeAxios = isSocks
-    ? `${tlsSocksWarning ? tlsSocksWarning.replace(/^#/, '//') : ''}// 需先安装：npm i axios socks-proxy-agent
+    ? `${tlsSocksWarning ? tlsSocksWarning.replace(/^#/, '//') : ''}// Install dependencies first: npm i axios socks-proxy-agent
 const axios = require('axios');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 
@@ -107,7 +107,7 @@ const agent = new SocksProxyAgent('socks5h://${username}:${password}@${hostPort}
 axios
   .get('https://httpbin.org/ip', { httpAgent: agent, httpsAgent: agent, proxy: false, timeout: 15000 })
   .then((res) => console.log(res.data));`
-    : `// 只需安装：npm i axios
+    : `// Install dependency first: npm i axios
 const axios = require('axios');
 
 axios
@@ -147,7 +147,7 @@ export function buildMultiProxyCodeSnippets(input: MultiProxySnippetInput): Prox
     })
   }));
 
-  const pythonRequests = `# 代理池轮换请求示例（需安装 requests；若走 SOCKS 需 pip install "requests[socks]"）
+  const pythonRequests = `# Proxy pool rotation example (requires requests; for SOCKS install requests[socks])
 import random
 import requests
 
@@ -155,21 +155,21 @@ PROXIES_POOL = [
 ${endpointUris.map((u) => `    "${u.uri}",  # ${u.name}`).join('\n')}
 ]
 
-# 1. 随机轮换模式：每次请求从代理池中随机选取一个节点
+# 1. Random rotation mode: randomly pick one proxy from the pool
 proxy_url = random.choice(PROXIES_POOL)
 proxies = {
     "http": proxy_url,
     "https": proxy_url,
 }
 resp = requests.get("https://httpbin.org/ip", proxies=proxies, timeout=15)
-print("当前出网 IP:", resp.json())
+print("Current egress IP:", resp.json())
 
-# 2. 批量测试模式（可选）：遍历所有节点验证连通性
+# 2. Batch test mode (optional): iterate through all nodes to test connectivity
 # for proxy in PROXIES_POOL:
 #     r = requests.get("https://httpbin.org/ip", proxies={"http": proxy, "https": proxy}, timeout=10)
 #     print(f"[{proxy}] -> {r.json()['origin']}")`;
 
-  const playwright = `# Playwright 代理池多开与轮换示例：pip install playwright
+  const playwright = `# Playwright proxy pool rotation example: pip install playwright
 import random
 from playwright.sync_api import sync_playwright
 
@@ -180,7 +180,7 @@ ${endpoints.map((ep) => {
 }).join('\n')}
 ]
 
-# 为每个浏览器实例随机分发代理
+# Randomly assign a proxy for each browser instance
 proxy_config = random.choice(PROXIES_POOL)
 
 with sync_playwright() as p:
@@ -191,7 +191,7 @@ with sync_playwright() as p:
     browser.close()`;
 
   const nodeAxios = isSocks
-    ? `// 需先安装：npm i axios socks-proxy-agent
+    ? `// Install dependencies first: npm i axios socks-proxy-agent
 const axios = require('axios');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 
@@ -199,13 +199,13 @@ const PROXIES_POOL = [
 ${endpoints.map((ep) => `  'socks5h://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${ep.host}:${ep.port}', // ${ep.name}`).join('\n')}
 ];
 
-// 随机轮换出网代理
+// Randomly rotate proxy
 const chosen = PROXIES_POOL[Math.floor(Math.random() * PROXIES_POOL.length)];
 const agent = new SocksProxyAgent(chosen);
 axios
   .get('https://httpbin.org/ip', { httpAgent: agent, httpsAgent: agent, proxy: false, timeout: 15000 })
-  .then((res) => console.log('当前出网 IP:', res.data));`
-    : `// 只需安装：npm i axios
+  .then((res) => console.log('Current egress IP:', res.data));`
+    : `// Install dependency first: npm i axios
 const axios = require('axios');
 
 const PROXIES_POOL = [
@@ -215,25 +215,25 @@ ${endpoints.map((ep) => {
 }).join('\n')}
 ];
 
-// 随机轮换出网代理
+// Randomly rotate proxy
 const chosen = PROXIES_POOL[Math.floor(Math.random() * PROXIES_POOL.length)];
 axios
   .get('https://httpbin.org/ip', { proxy: chosen, timeout: 15000 })
-  .then((res) => console.log('当前出网 IP:', res.data));`;
+  .then((res) => console.log('Current egress IP:', res.data));`;
 
-  const curl = `# 直连代理池：Bash 数组定义（已选 ${endpoints.length} 个出网节点）
+  const curl = `# Direct proxy pool: Bash array definition (${endpoints.length} endpoints selected)
 PROXIES=(
 ${endpointUris.map((u) => `  "${u.uri}" # ${u.name}`).join('\n')}
 )
 
-# 1. 批量测试模式：依次对所有已选节点测试连通性与出网 IP
-echo "=== 正在批量测试已选代理出网 IP ==="
+# 1. Batch test mode: sequentially test connectivity and egress IP for all selected proxies
+echo "=== Testing selected proxy egress IPs ==="
 for proxy in "\${PROXIES[@]}"; do
-  echo -n "测试代理 [$proxy] -> "
-  curl -s -x "$proxy" --max-time 10 https://httpbin.org/ip | grep "origin" || echo "连接失败"
+  echo -n "Testing proxy [$proxy] -> "
+  curl -s -x "$proxy" --max-time 10 https://httpbin.org/ip | grep "origin" || echo "Connection failed"
 done
 
-# 2. 单次随机轮换：从代理池中随机选取一个代理执行命令
+# 2. Single random rotation: randomly pick one proxy from pool to execute command
 RANDOM_PROXY="\${PROXIES[$RANDOM % \${#PROXIES[@]}]}"
 curl -x "$RANDOM_PROXY" https://httpbin.org/ip`;
 

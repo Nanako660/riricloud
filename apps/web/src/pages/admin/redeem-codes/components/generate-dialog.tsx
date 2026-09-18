@@ -1,3 +1,5 @@
+import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -7,15 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 
-const schema = z.object({
-  count: z.coerce.number().int().min(1, '至少生成 1 张').max(1000, '最多生成 1000 张'),
-  amountYuan: z.coerce.number().positive('面额必须大于 0').multipleOf(0.01, '最多保留两位小数'),
-  prefix: z.string().max(16).regex(/^[A-Za-z0-9-]*$/, '仅允许字母、数字和短横线').optional(),
-  expiresAt: z.string().optional(),
-  note: z.string().max(200).optional()
-});
-type FormValues = z.infer<typeof schema>;
-
 export interface GenerateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,7 +17,23 @@ export interface GenerateDialogProps {
 }
 
 export function GenerateDialog({ open, onOpenChange, onSubmit, pending }: GenerateDialogProps) {
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { count: 10, amountYuan: 10, prefix: '', expiresAt: '', note: '' } });
+  const { t } = useTranslation(['admin', 'common']);
+
+  const schema = React.useMemo(() => z.object({
+    count: z.coerce.number().int().min(1, t('admin:redeemCodes.valCountMin')).max(1000, t('admin:redeemCodes.valCountMax')),
+    amountYuan: z.coerce.number().positive(t('admin:redeemCodes.valAmountPositive')).multipleOf(0.01, t('admin:redeemCodes.valAmountDecimals')),
+    prefix: z.string().max(16).regex(/^[A-Za-z0-9-]*$/, t('admin:redeemCodes.valPrefixChars')).optional(),
+    expiresAt: z.string().optional(),
+    note: z.string().max(200).optional()
+  }), [t]);
+
+  type FormValues = z.infer<typeof schema>;
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { count: 10, amountYuan: 10, prefix: '', expiresAt: '', note: '' }
+  });
+
   const submit = (values: FormValues) => onSubmit({
     count: values.count,
     amount: Math.round(values.amountYuan * 100),
@@ -37,19 +46,74 @@ export function GenerateDialog({ open, onOpenChange, onSubmit, pending }: Genera
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent>
         <DialogHeader>
-          <DialogTitle>批量生成充值卡密</DialogTitle>
-          <DialogDescription>生成结果仅在弹窗中集中展示一次，请及时复制保存；之后可在列表中查看（默认掩码显示）。</DialogDescription>
+          <DialogTitle>{t('admin:redeemCodes.batchGenerate')}</DialogTitle>
+          <DialogDescription>{t('admin:redeemCodes.generateDialogDesc')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(submit)} className="grid gap-4 sm:grid-cols-2">
-            <FormField control={form.control} name="count" render={({ field }) => <FormItem><FormLabel>生成数量</FormLabel><FormControl><Input type="number" min={1} max={1000} {...field} /></FormControl><FormMessage /></FormItem>} />
-            <FormField control={form.control} name="amountYuan" render={({ field }) => <FormItem><FormLabel>单张面额（元）</FormLabel><FormControl><Input type="number" min={0.01} step="0.01" {...field} /></FormControl><FormMessage /></FormItem>} />
-            <FormField control={form.control} name="prefix" render={({ field }) => <FormItem><FormLabel>前缀</FormLabel><FormControl><Input placeholder="例如 RIRI" {...field} /></FormControl><FormMessage /></FormItem>} />
-            <FormField control={form.control} name="expiresAt" render={({ field }) => <FormItem><FormLabel>有效期</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormDescription>留空表示永久有效。</FormDescription><FormMessage /></FormItem>} />
-            <FormField control={form.control} name="note" render={({ field }) => <FormItem className="sm:col-span-2"><FormLabel>备注</FormLabel><FormControl><Input placeholder="活动充值卡" {...field} /></FormControl><FormMessage /></FormItem>} />
+            <FormField
+              control={form.control}
+              name="count"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:redeemCodes.countLabel')}</FormLabel>
+                  <FormControl><Input type="number" min={1} max={1000} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="amountYuan"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:redeemCodes.amountLabel')}</FormLabel>
+                  <FormControl><Input type="number" min={0.01} step="0.01" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="prefix"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:redeemCodes.prefixLabel')}</FormLabel>
+                  <FormControl><Input placeholder={t('admin:redeemCodes.prefixPlaceholder')} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="expiresAt"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:redeemCodes.expiresAtLabel')}</FormLabel>
+                  <FormControl><Input type="datetime-local" {...field} /></FormControl>
+                  <FormDescription>{t('admin:redeemCodes.expiresAtDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="note"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>{t('admin:redeemCodes.noteLabel')}</FormLabel>
+                  <FormControl><Input placeholder={t('admin:redeemCodes.notePlaceholder')} {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter className="sm:col-span-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-              <Button type="submit" disabled={pending}>{pending ? '生成中…' : '生成卡密'}</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common:actions.cancel')}
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? t('admin:redeemCodes.generating') : t('admin:redeemCodes.generate')}
+              </Button>
             </DialogFooter>
           </form>
         </Form>

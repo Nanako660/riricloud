@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Server } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/shared/copy-button';
 import {
@@ -30,7 +31,7 @@ import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
 import { InstallCommandsPicker } from './install-commands-picker';
 
 const createSchema = z.object({
-  name: z.string().max(32, '名称不超过 32 字符').optional(),
+  name: z.string().max(32, i18n.t('admin:nodes.valName32Max')).optional(),
   reachability: z.enum(['PUBLIC', 'NAT']),
   serverHost: z.string().optional(),
   communicationMode: z.enum(['WS', 'HTTP'])
@@ -40,7 +41,7 @@ const createSchema = z.object({
   }
   return true;
 }, {
-  message: '公网 VPS 必须输入服务器公网地址',
+  message: i18n.t('admin:nodes.valServerHostReq'),
   path: ['serverHost']
 });
 

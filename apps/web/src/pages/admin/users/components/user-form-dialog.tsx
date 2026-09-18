@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,6 +35,7 @@ const emptyCreateValues: CreateUserForm = {
 };
 
 export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOptions }: UserFormDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const { createUser, updateUser, updateSubscription, assignSubscription, resetSubscriptionToken } = useUserMutations();
   const publicSettings = usePublicSettings();
   const passwordMinLength = publicSettings.data?.passwordMinLength ?? 8;
@@ -122,20 +124,27 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
       <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
         <ResponsiveDialogContent>
           <DialogHeader>
-            <DialogTitle>{isEdit ? `管理用户 · ${user?.email}` : '创建用户'}</DialogTitle>
-            <DialogDescription>{isEdit ? '账号安全与订阅管理统一维护' : '创建用户可选择初始套餐或暂不绑定，套餐配额与时长由所选套餐决定。'}</DialogDescription>
+            <DialogTitle>{isEdit ? t('admin:userForm.manageTitle', { email: user?.email }) : t('admin:userForm.createTitle')}</DialogTitle>
+            <DialogDescription>{isEdit ? t('admin:userForm.manageDesc') : t('admin:userForm.createDesc')}</DialogDescription>
           </DialogHeader>
           {isEdit ? (
             <Tabs key={user?.id} defaultValue="account" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="account">账号安全</TabsTrigger>
-                <TabsTrigger value="subscription">订阅管理</TabsTrigger>
+                <TabsTrigger value="account">{t('admin:userForm.tabAccount')}</TabsTrigger>
+                <TabsTrigger value="subscription">{t('admin:userForm.tabSubscription')}</TabsTrigger>
               </TabsList>
               <TabsContent value="account">
                 <Form {...accountForm}>
                   <form className="space-y-4" onSubmit={accountForm.handleSubmit(submitAccount)}>
                     <EditAccountFields form={accountForm} isSelf={isSelf} />
-                    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={updateUser.isPending}>{updateUser.isPending ? '保存中…' : '保存账号'}</Button></DialogFooter>
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                        {t('common:actions.cancel')}
+                      </Button>
+                      <Button type="submit" disabled={updateUser.isPending}>
+                        {updateUser.isPending ? t('common:actions.saving') : t('admin:userForm.saveAccount')}
+                      </Button>
+                    </DialogFooter>
                   </form>
                 </Form>
               </TabsContent>
@@ -144,17 +153,19 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
                   <form className="space-y-4" onSubmit={subscriptionForm.handleSubmit(submitSubscription)}>
                     <UserSubscriptionFields form={subscriptionForm} plans={plans} lineOptions={lineOptions} subscription={user.subscription} onResetToken={() => setResetConfirmOpen(true)} resetPending={resetSubscriptionToken.isPending} />
                     <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+                      <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                        {t('common:actions.cancel')}
+                      </Button>
                       <Button
                         type="submit"
                         disabled={!canSaveSubscription || updateSubscription.isPending || assignSubscription.isPending}
                         variant={isRemovingSubscription ? 'destructive' : 'default'}
                       >
                         {updateSubscription.isPending || assignSubscription.isPending
-                          ? '保存中…'
+                          ? t('common:actions.saving')
                           : isRemovingSubscription
-                            ? '彻底取消订阅'
-                            : '保存订阅'}
+                            ? t('admin:userForm.removeSub')
+                            : t('admin:userForm.saveSub')}
                       </Button>
                     </DialogFooter>
                   </form>
@@ -165,7 +176,14 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
             <Form {...createForm}>
               <form className="space-y-4" onSubmit={createForm.handleSubmit(submitCreate)}>
                 <CreateUserFields form={createForm} plans={plans} />
-                <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={createUser.isPending}>{createUser.isPending ? '创建中…' : '创建用户'}</Button></DialogFooter>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    {t('common:actions.cancel')}
+                  </Button>
+                  <Button type="submit" disabled={createUser.isPending}>
+                    {createUser.isPending ? t('admin:userForm.creating') : t('admin:userForm.createAccount')}
+                  </Button>
+                </DialogFooter>
               </form>
             </Form>
           )}
@@ -173,21 +191,26 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
       </ResponsiveDialog>
       <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>重置订阅链接？</AlertDialogTitle><AlertDialogDescription>旧链接会立即失效，用户需要重新导入订阅。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:userForm.resetTokenConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:userForm.resetTokenConfirmDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (user) resetSubscriptionToken.mutate(user.id); setResetConfirmOpen(false); }}>确认重置</AlertDialogAction>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (user) resetSubscriptionToken.mutate(user.id); setResetConfirmOpen(false); }}>
+              {t('admin:userForm.confirmResetToken')}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={removeSubscriptionConfirmOpen} onOpenChange={setRemoveSubscriptionConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>移除用户订阅？</AlertDialogTitle>
-            <AlertDialogDescription>该操作会彻底取消当前订阅、移除套餐关联，并使旧订阅链接立即失效。</AlertDialogDescription>
+            <AlertDialogTitle>{t('admin:userForm.removeSubConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:userForm.removeSubConfirmDesc')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={updateSubscription.isPending}
@@ -201,7 +224,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
                 setRemoveSubscriptionConfirmOpen(false);
               }}
             >
-              确认移除
+              {t('admin:userForm.confirmRemove')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

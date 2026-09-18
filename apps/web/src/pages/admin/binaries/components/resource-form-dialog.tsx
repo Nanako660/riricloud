@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -20,22 +21,16 @@ function targetLabel(target: string) {
   return `${kind === 'agent' ? 'Agent' : 'Sing-box'} · ${OS_LABELS[os] ?? os} ${arch.toUpperCase()}`;
 }
 
-const baseSchema = z.object({
-  kind: z.enum(['AGENT', 'SINGBOX']),
-  upstreamVersion: z.string().trim().min(1, '请输入上游版本').max(64, '版本号最多 64 字符'),
-  revision: z.coerce
-    .number({ invalid_type_error: '修订号必须为数字' })
-    .int('修订号必须为整数')
-    .min(1, '修订号至少为 1')
-    .max(9999, '修订号最大 9999'),
-  target: z.string().min(1, '请选择平台'),
-  filename: z.string().trim().max(128, '文件名最多 128 字符').optional(),
-  sha256: z.string().trim().regex(/^[a-f0-9]{64}$/i, 'SHA-256 需为 64 位十六进制摘要'),
-  file: z.instanceof(File, { message: '请选择要上传的文件' }).optional(),
-  url: z.string().trim().url('请输入合法的 http(s) 下载地址').optional()
-});
-
-type ResourceFormValues = z.infer<typeof baseSchema>;
+interface ResourceFormValues {
+  kind: 'AGENT' | 'SINGBOX';
+  upstreamVersion: string;
+  revision: number;
+  target: string;
+  filename?: string;
+  sha256: string;
+  file?: File;
+  url?: string;
+}
 
 const EMPTY_VALUES: ResourceFormValues = {
   kind: 'SINGBOX',
@@ -56,16 +51,33 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
   pending: boolean;
   supportedTargets?: string[];
 }) {
+  const { t } = useTranslation(['admin', 'common']);
   const targets = resolveSupportedTargets(supportedTargets);
   const [hashState, setHashState] = React.useState<'idle' | 'computing' | 'done'>('idle');
+
+  const baseSchema = React.useMemo(() => z.object({
+    kind: z.enum(['AGENT', 'SINGBOX']),
+    upstreamVersion: z.string().trim().min(1, t('admin:binaries.valUpstreamRequired')).max(64, t('admin:binaries.valUpstreamMax')),
+    revision: z.coerce
+      .number({ invalid_type_error: t('admin:binaries.valRevisionNumber') })
+      .int(t('admin:binaries.valRevisionInt'))
+      .min(1, t('admin:binaries.valRevisionMin'))
+      .max(9999, t('admin:binaries.valRevisionMax')),
+    target: z.string().min(1, t('admin:binaries.valTargetRequired')),
+    filename: z.string().trim().max(128, t('admin:binaries.valFilenameMax')).optional(),
+    sha256: z.string().trim().regex(/^[a-f0-9]{64}$/i, t('admin:binaries.valSha256Invalid')),
+    file: z.instanceof(File, { message: t('admin:binaries.valFileRequired') }).optional(),
+    url: z.string().trim().url(t('admin:binaries.valUrlInvalid')).optional()
+  }), [t]);
+
   const form = useForm<ResourceFormValues>({
     resolver: zodResolver(
       baseSchema.superRefine((value, ctx) => {
         if (mode === 'upload' && !value.file) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['file'], message: '请选择要上传的文件' });
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['file'], message: t('admin:binaries.valFileRequired') });
         }
         if (mode === 'import' && !value.url) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: '请输入下载 URL' });
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: t('admin:binaries.valUrlRequired') });
         }
       })
     ),
@@ -102,7 +114,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
       setHashState('done');
     } catch {
       setHashState('idle');
-      toast.error('自动计算 SHA-256 失败，请手动粘贴');
+      toast.error(t('admin:binaries.autoHashFailed'));
     }
   };
 
@@ -110,8 +122,8 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="compact">
         <DialogHeader>
-          <DialogTitle>{mode === 'upload' ? '上传资源' : '远程导入资源'}</DialogTitle>
-          <DialogDescription>资源先以草稿保存，校验文件后再启用。</DialogDescription>
+          <DialogTitle>{mode === 'upload' ? t('admin:binaries.formUploadTitle') : t('admin:binaries.formImportTitle')}</DialogTitle>
+          <DialogDescription>{t('admin:binaries.formDesc')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form className="space-y-4" onSubmit={form.handleSubmit((values) => onSubmit(values))}>
@@ -121,14 +133,14 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="kind"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>资源类型</FormLabel>
+                    <FormLabel>{t('admin:binaries.kindLabel')}</FormLabel>
                     <Select value={field.value} onValueChange={(value) => handleKindChange(value as BinaryKind)}>
                       <FormControl>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="AGENT">RiriCloud Agent</SelectItem>
-                        <SelectItem value="SINGBOX">Sing-box 内核</SelectItem>
+                        <SelectItem value="AGENT">{t('admin:binaries.kindAgent')}</SelectItem>
+                        <SelectItem value="SINGBOX">{t('admin:binaries.kindSingbox')}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -140,7 +152,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="upstreamVersion"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>上游版本</FormLabel>
+                    <FormLabel>{t('admin:binaries.upstreamVersionLabel')}</FormLabel>
                     <FormControl>
                       <Input {...field} placeholder={kind === 'SINGBOX' ? '1.14.0' : '0.8.7'} />
                     </FormControl>
@@ -155,7 +167,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="target"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>平台</FormLabel>
+                    <FormLabel>{t('admin:binaries.targetLabel')}</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -175,7 +187,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="revision"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>资源修订号</FormLabel>
+                    <FormLabel>{t('admin:binaries.revisionLabel')}</FormLabel>
                     <FormControl>
                       <Input inputMode="numeric" {...field} />
                     </FormControl>
@@ -190,19 +202,19 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="file"
                 render={({ field: { value: _value, ...fieldProps } }) => (
                   <FormItem>
-                    <FormLabel>文件</FormLabel>
+                    <FormLabel>{t('admin:binaries.fileLabel')}</FormLabel>
                     <FormControl>
                       <Input type="file" {...fieldProps} onChange={handleFileChange} />
                     </FormControl>
                     <FormDescription>
                       {hashState === 'computing' ? (
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <Loader2 className="size-3 animate-spin" /> 正在计算 SHA-256…
+                          <Loader2 className="size-3 animate-spin" /> {t('admin:binaries.computingHash')}
                         </span>
                       ) : hashState === 'done' ? (
-                        <span className="text-emerald-600">已自动计算文件 SHA-256</span>
+                        <span className="text-emerald-600">{t('admin:binaries.computedHash')}</span>
                       ) : (
-                        '选择文件后将自动计算 SHA-256'
+                        t('admin:binaries.fileSelectDesc')
                       )}
                     </FormDescription>
                     <FormMessage />
@@ -215,7 +227,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                 name="url"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>下载 URL</FormLabel>
+                    <FormLabel>{t('admin:binaries.urlLabel')}</FormLabel>
                     <FormControl>
                       <Input type="url" {...field} placeholder="https://downloads.example.com/sing-box" />
                     </FormControl>
@@ -229,11 +241,11 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
               name="sha256"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>SHA-256</FormLabel>
+                  <FormLabel>{t('admin:binaries.sha256Label')}</FormLabel>
                   <FormControl>
-                    <Input className="font-mono text-xs" {...field} placeholder="64 位十六进制摘要" />
+                    <Input className="font-mono text-xs" {...field} placeholder={t('admin:binaries.sha256Placeholder')} />
                   </FormControl>
-                  <FormDescription>{mode === 'upload' ? '上传模式自动填充，可手动覆盖' : '可使用 sha256sum 等工具计算后粘贴'}</FormDescription>
+                  <FormDescription>{mode === 'upload' ? t('admin:binaries.sha256DescUpload') : t('admin:binaries.sha256DescImport')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -243,7 +255,7 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
               name="filename"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>文件名（可选）</FormLabel>
+                  <FormLabel>{t('admin:binaries.filenameLabel')}</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder={kind === 'AGENT' ? 'riri-agent' : 'sing-box'} />
                   </FormControl>
@@ -252,9 +264,9 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
               <Button type="submit" disabled={pending || hashState === 'computing'}>
-                {pending ? '处理中…' : mode === 'upload' ? '上传资源' : '导入资源'}
+                {pending ? t('admin:binaries.processing') : mode === 'upload' ? t('admin:binaries.formUploadTitle') : t('admin:binaries.formImportTitle')}
               </Button>
             </DialogFooter>
           </form>

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm, Controller } from 'react-hook-form';
@@ -31,33 +33,41 @@ import { PLAN_ICONS } from '@/pages/user/market/components/market-plan-constants
 import { Sparkles, Palette, Eye, HelpCircle, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const PRESET_FEATURES = [
-  '[zap] 1000Mbps 极速专线接入',
-  '[rocket] 4K / 8K 流媒体晚高峰零卡顿',
-  '[crown] 尊享 VIP 专线与原生节点',
-  '[shield] 企业级高匿专享防探测保护',
-  '[sparkles] 包含全格式智能托管',
-  '[star] 独享原生 IP 解锁流媒体',
-  '!7x24 小时 SLA 高可用服务保障'
+const PRESET_FEATURE_KEYS = ['zap', 'rocket', 'crown', 'shield', 'sparkles', 'star', 'sla'] as const;
+
+const PLAN_ICON_KEYS = [
+  'Zap',
+  'Rocket',
+  'Crown',
+  'Shield',
+  'Sparkles',
+  'Flame',
+  'Globe',
+  'Gauge',
+  'Gem',
+  'Server',
+  'Cpu',
+  'Plane'
+] as const;
+
+const THEME_OPTIONS: Array<{ key: PlanThemeColor; bgClass: string }> = [
+  { key: 'default', bgClass: 'bg-zinc-600' },
+  { key: 'amber', bgClass: 'bg-amber-500' },
+  { key: 'blue', bgClass: 'bg-sky-500' },
+  { key: 'purple', bgClass: 'bg-purple-500' },
+  { key: 'emerald', bgClass: 'bg-emerald-500' },
+  { key: 'rose', bgClass: 'bg-rose-500' },
+  { key: 'indigo', bgClass: 'bg-indigo-500' }
 ];
 
-const THEME_OPTIONS: Array<{ key: PlanThemeColor; name: string; bgClass: string }> = [
-  { key: 'default', name: '极简暗黑', bgClass: 'bg-zinc-600' },
-  { key: 'amber', name: '金珀香槟', bgClass: 'bg-amber-500' },
-  { key: 'blue', name: '极速冰蓝', bgClass: 'bg-sky-500' },
-  { key: 'purple', name: '星云薄暮', bgClass: 'bg-purple-500' },
-  { key: 'emerald', name: '碧翠翡冷', bgClass: 'bg-emerald-500' },
-  { key: 'rose', name: '炽焰宝石', bgClass: 'bg-rose-500' },
-  { key: 'indigo', name: '深邃星空', bgClass: 'bg-indigo-500' }
-];
-
-const schema = z.object({
-  name: z.string().min(1, '请输入套餐名称'),
-  description: z.string().optional(),
-  price: z.coerce.number().min(0).multipleOf(0.01, '最多保留两位小数'),
-  durationDays: z.coerce.number().int().min(1),
-  trafficLimitGB: z.coerce.number().positive('流量必须大于 0'),
-  trafficResetMode: z.enum(['NONE', 'CALENDAR_MONTH', 'SUBSCRIPTION_CYCLE']),
+const buildPlanSchema = () =>
+  z.object({
+    name: z.string().min(1, i18n.t('admin:planForm.validation.nameRequired')),
+    description: z.string().optional(),
+    price: z.coerce.number().min(0).multipleOf(0.01, i18n.t('admin:planForm.validation.priceDecimals')),
+    durationDays: z.coerce.number().int().min(1),
+    trafficLimitGB: z.coerce.number().positive(i18n.t('admin:planForm.validation.trafficPositive')),
+    trafficResetMode: z.enum(['NONE', 'CALENDAR_MONTH', 'SUBSCRIPTION_CYCLE']),
   lineMatchMode: z.enum(['ALL', 'TAGS', 'EXPLICIT']),
   lineTags: z.string().optional(),
   lineIds: z.string().optional(),
@@ -99,7 +109,7 @@ const schema = z.object({
   enableAurora: z.boolean().optional()
 });
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof buildPlanSchema>>;
 const GB = 1024 ** 3;
 
 interface PlanFormDialogProps {
@@ -117,10 +127,12 @@ export function PlanFormDialog({
   lineOptions,
   templateOptions
 }: PlanFormDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
+  const formSchema = useMemo(() => buildPlanSchema(), []);
   const [showAdvancedVisuals, setShowAdvancedVisuals] = useState(false);
   const { create, update } = usePlanMutations();
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       name: '',
       description: '',
@@ -297,8 +309,8 @@ export function PlanFormDialog({
   const watchedValues = form.watch();
   const previewPlan: UserPlan = {
     id: plan?.id || 'preview',
-    name: watchedValues.name || '示例套餐名称',
-    description: watchedValues.description || '全能代理高速网络订阅方案',
+    name: watchedValues.name || t('admin:planForm.previewDefaultName'),
+    description: watchedValues.description || t('admin:planForm.previewDefaultDesc'),
     price: Number(watchedValues.price) || 0,
     durationDays: Number(watchedValues.durationDays) || 30,
     trafficLimitBytes: Math.round((Number(watchedValues.trafficLimitGB) || 100) * GB),
@@ -336,9 +348,9 @@ export function PlanFormDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>{plan ? '编辑套餐' : '新建套餐'}</DialogTitle>
+          <DialogTitle>{plan ? t('admin:planForm.editTitle') : t('admin:planForm.createTitle')}</DialogTitle>
           <DialogDescription>
-            配置配额、有效期、线路范围、卡片视觉动效与实机展示效果。
+            {t('admin:planForm.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -348,28 +360,28 @@ export function PlanFormDialog({
             {/* 1. 基础配置 */}
             <div className="space-y-4 rounded-xl border p-4 bg-card">
               <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground">
-                基础与网络配额
+                {t('admin:planForm.sectionBasic')}
               </h4>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="plan-name">套餐名称</Label>
-                  <Input id="plan-name" placeholder="例如：极速专线月付套餐" {...form.register('name')} />
+                  <Label htmlFor="plan-name">{t('admin:planForm.name')}</Label>
+                  <Input id="plan-name" placeholder={t('admin:planForm.namePlaceholder')} {...form.register('name')} />
                   {form.formState.errors.name && (
                     <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="plan-description">描述信息</Label>
+                  <Label htmlFor="plan-description">{t('admin:planForm.descLabel')}</Label>
                   <Input
                     id="plan-description"
-                    placeholder="针对极速 4K 办公与流媒体设计的入门高性价比方案"
+                    placeholder={t('admin:planForm.descPlaceholder')}
                     {...form.register('description')}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-price">现价售价（元）</Label>
+                  <Label htmlFor="plan-price">{t('admin:planForm.price')}</Label>
                   <Input
                     id="plan-price"
                     type="number"
@@ -394,17 +406,17 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-days">有效期（天）</Label>
+                  <Label htmlFor="plan-days">{t('admin:planForm.durationDays')}</Label>
                   <Input id="plan-days" type="number" min="1" {...form.register('durationDays')} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-traffic">流量配额（GiB）</Label>
+                  <Label htmlFor="plan-traffic">{t('admin:planForm.trafficLimit')}</Label>
                   <Input id="plan-traffic" type="number" min="1" step="0.1" {...form.register('trafficLimitGB')} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>流量重置策略</Label>
+                  <Label>{t('admin:planForm.trafficResetMode')}</Label>
                   <Controller
                     control={form.control}
                     name="trafficResetMode"
@@ -414,9 +426,9 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="NONE">不自动重置</SelectItem>
-                          <SelectItem value="CALENDAR_MONTH">自然月重置</SelectItem>
-                          <SelectItem value="SUBSCRIPTION_CYCLE">订阅周期重置</SelectItem>
+                          <SelectItem value="NONE">{t('common:resetMode.NONE')}</SelectItem>
+                          <SelectItem value="CALENDAR_MONTH">{t('common:resetMode.CALENDAR_MONTH')}</SelectItem>
+                          <SelectItem value="SUBSCRIPTION_CYCLE">{t('common:resetMode.SUBSCRIPTION_CYCLE')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -424,26 +436,26 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-sort">排序权重</Label>
+                  <Label htmlFor="plan-sort">{t('admin:planForm.sortOrder')}</Label>
                   <Input id="plan-sort" type="number" min="0" placeholder="0" {...form.register('sortOrder')} />
-                  <p className="text-[11px] text-muted-foreground">数值越小在市场中排序越靠前</p>
+                  <p className="text-[11px] text-muted-foreground">{t('admin:planForm.sortOrderHint')}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-purchase-limit">每用户限购次数</Label>
+                  <Label htmlFor="plan-purchase-limit">{t('admin:planForm.purchaseLimit')}</Label>
                   <Input
                     id="plan-purchase-limit"
                     type="number"
                     min="1"
-                    placeholder="留空表示不限购"
+                    placeholder={t('admin:planForm.purchaseLimitPlaceholder')}
                     {...form.register('purchaseLimitPerUser')}
                   />
-                  <p className="text-[11px] text-muted-foreground">免费套餐默认限购 1 次；付费套餐留空默认不限购</p>
+                  <p className="text-[11px] text-muted-foreground">{t('admin:planForm.purchaseLimitHint')}</p>
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
                   <Label htmlFor="plan-allow-renewal" className="text-xs font-medium cursor-pointer truncate mr-1">
-                    允许续费
+                    {t('admin:planForm.allowRenewal')}
                   </Label>
                   <Controller
                     control={form.control}
@@ -455,24 +467,24 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-badge">营销角标文本（可选）</Label>
-                  <Input id="plan-badge" placeholder="例如：HOT、镇店之宝、8.5折" {...form.register('badgeText')} />
+                  <Label htmlFor="plan-badge">{t('admin:planForm.badgeText')}</Label>
+                  <Input id="plan-badge" placeholder={t('admin:planForm.badgeTextPlaceholder')} {...form.register('badgeText')} />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-speed-limit">带宽速率上限（Mbps）</Label>
+                  <Label htmlFor="plan-speed-limit">{t('admin:planForm.speedLimit')}</Label>
                   <Input
                     id="plan-speed-limit"
                     type="number"
                     min="1"
-                    placeholder="留空或 0 表示不限速"
+                    placeholder={t('admin:planForm.speedLimitPlaceholder')}
                     {...form.register('speedLimitMbps')}
                   />
-                  <p className="text-[11px] text-muted-foreground">客户端订阅峰值限速，如 100 Mbps</p>
+                  <p className="text-[11px] text-muted-foreground">{t('admin:planForm.speedLimitHint')}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>节点速率角标策略</Label>
+                  <Label>{t('admin:planForm.appendSpeedBadge')}</Label>
                   <Controller
                     control={form.control}
                     name="appendSpeedBadge"
@@ -482,14 +494,14 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="INHERIT">跟随系统全局设置</SelectItem>
-                          <SelectItem value="ENABLE">强制追加（例如 [100M]）</SelectItem>
-                          <SelectItem value="DISABLE">强制不追加角标</SelectItem>
+                          <SelectItem value="INHERIT">{t('admin:planForm.speedBadgeInherit')}</SelectItem>
+                          <SelectItem value="ENABLE">{t('admin:planForm.speedBadgeEnable')}</SelectItem>
+                          <SelectItem value="DISABLE">{t('admin:planForm.speedBadgeDisable')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
                   />
-                  <p className="text-[11px] text-muted-foreground">在下发的订阅节点名称末尾追加速率标识</p>
+                  <p className="text-[11px] text-muted-foreground">{t('admin:planForm.appendSpeedBadgeHint')}</p>
                 </div>
               </div>
             </div>
@@ -499,18 +511,18 @@ export function PlanFormDialog({
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground">
                   <Palette className="h-4 w-4 text-primary" />
-                  卡片视觉与流光动效配置
+                  {t('admin:planForm.sectionVisual')}
                 </h4>
                 <Badge variant="secondary" className="text-[11px] gap-1 font-normal">
                   <Sparkles className="h-3 w-3 text-amber-500" />
-                  完全可配置
+                  {t('admin:planForm.fullyConfigurable')}
                 </Badge>
               </div>
 
               {/* 视觉流派方案 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium text-foreground/90">视觉流派方案</Label>
+                  <Label className="text-xs font-medium text-foreground/90">{t('admin:planForm.cardStyleLabel')}</Label>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
@@ -530,8 +542,8 @@ export function PlanFormDialog({
                         : 'border-border/60 hover:border-border hover:bg-muted/40'
                     )}
                   >
-                    <span className="text-xs font-bold text-foreground">尊享流光合璧</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">旗舰双流光推荐</span>
+                    <span className="text-xs font-bold text-foreground">{t('admin:planForm.styles.fusion')}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{t('admin:planForm.styles.fusionDesc')}</span>
                   </button>
                   <button
                     type="button"
@@ -550,8 +562,8 @@ export function PlanFormDialog({
                         : 'border-border/60 hover:border-border hover:bg-muted/40'
                     )}
                   >
-                    <span className="text-xs font-bold text-foreground">全息黑曜 3D 闪卡</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">科技冷光黑卡</span>
+                    <span className="text-xs font-bold text-foreground">{t('admin:planForm.styles.holographic')}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{t('admin:planForm.styles.holographicDesc')}</span>
                   </button>
                   <button
                     type="button"
@@ -570,8 +582,8 @@ export function PlanFormDialog({
                         : 'border-border/60 hover:border-border hover:bg-muted/40'
                     )}
                   >
-                    <span className="text-xs font-bold text-foreground">赛博霓虹导光晶体</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">高对比发光边缘</span>
+                    <span className="text-xs font-bold text-foreground">{t('admin:planForm.styles.neon')}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{t('admin:planForm.styles.neonDesc')}</span>
                   </button>
                 </div>
               </div>
@@ -585,10 +597,10 @@ export function PlanFormDialog({
                 >
                   <span className="flex items-center gap-1.5 font-semibold">
                     <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    高级视觉微调
+                    {t('admin:planForm.advancedVisuals')}
                   </span>
                   <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
-                    <span>{showAdvancedVisuals ? '收起' : '展开微调'}</span>
+                    <span>{showAdvancedVisuals ? t('admin:planForm.collapse') : t('admin:planForm.expand')}</span>
                     <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', showAdvancedVisuals && 'rotate-180')} />
                   </div>
                 </button>
@@ -598,7 +610,7 @@ export function PlanFormDialog({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
                       <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
                         <Label htmlFor="plan-enable-tilt" className="text-xs cursor-pointer">
-                          3D 视差微倾斜
+                          {t('admin:planForm.enableTilt')}
                         </Label>
                         <Controller
                           control={form.control}
@@ -615,7 +627,7 @@ export function PlanFormDialog({
 
                       <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
                         <Label htmlFor="plan-enable-shine" className="text-xs cursor-pointer">
-                          1.5px 流光微边框
+                          {t('admin:planForm.enableShine')}
                         </Label>
                         <Controller
                           control={form.control}
@@ -632,7 +644,7 @@ export function PlanFormDialog({
 
                       <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
                         <Label htmlFor="plan-enable-holo" className="text-xs cursor-pointer">
-                          全息彩虹晶格折射
+                          {t('admin:planForm.enableHolo')}
                         </Label>
                         <Controller
                           control={form.control}
@@ -649,7 +661,7 @@ export function PlanFormDialog({
 
                       <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background">
                         <Label htmlFor="plan-enable-ambient" className="text-xs cursor-pointer">
-                          双层呼吸环境霓虹
+                          {t('admin:planForm.enableAmbient')}
                         </Label>
                         <Controller
                           control={form.control}
@@ -666,7 +678,7 @@ export function PlanFormDialog({
 
                       <div className="flex items-center justify-between rounded-lg border p-2.5 bg-background sm:col-span-2">
                         <Label htmlFor="plan-enable-aurora" className="text-xs cursor-pointer">
-                          流体极光内衬
+                          {t('admin:planForm.enableAurora')}
                         </Label>
                         <Controller
                           control={form.control}
@@ -687,7 +699,7 @@ export function PlanFormDialog({
 
               {/* 主题色系选择 */}
               <div className="space-y-2">
-                <Label className="text-xs font-medium text-foreground/90">主题色系</Label>
+                <Label className="text-xs font-medium text-foreground/90">{t('admin:planForm.themeColorLabel')}</Label>
                 <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
                   {THEME_OPTIONS.map((theme) => {
                     const isSelected = form.watch('themeColor') === theme.key;
@@ -704,7 +716,7 @@ export function PlanFormDialog({
                         )}
                       >
                         <span className={cn('h-4 w-4 rounded-full shadow-sm', theme.bgClass)} />
-                        <span className="text-[11px] leading-tight">{theme.name}</span>
+                        <span className="text-[11px] leading-tight">{t(`admin:planForm.themes.${theme.key}`)}</span>
                       </button>
                     );
                   })}
@@ -714,12 +726,12 @@ export function PlanFormDialog({
               {/* 专业 Lucide 图标网格 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium text-foreground/90">卡片专属专业图标</Label>
-                  <span className="text-[11px] text-muted-foreground">纯 Lucide 矢量图标，杜绝 emoji</span>
+                  <Label className="text-xs font-medium text-foreground/90">{t('admin:planForm.iconsLabel')}</Label>
+                  <span className="text-[11px] text-muted-foreground">{t('admin:planForm.iconsHint')}</span>
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {Object.entries(PLAN_ICONS).map(([key, info]) => {
-                    const IconComp = info.icon;
+                  {PLAN_ICON_KEYS.map((key) => {
+                    const IconComp = PLAN_ICONS[key].icon;
                     const isSelected = form.watch('icon') === key;
                     return (
                       <button
@@ -734,7 +746,7 @@ export function PlanFormDialog({
                         )}
                       >
                         <IconComp className="h-4 w-4" />
-                        <span className="text-[10px] leading-tight">{info.label}</span>
+                        <span className="text-[10px] leading-tight">{t(`admin:planForm.icons.${key}`)}</span>
                       </button>
                     );
                   })}
@@ -744,7 +756,7 @@ export function PlanFormDialog({
               {/* 流光光色与角标风格 */}
               <div className="grid gap-3 sm:grid-cols-2 pt-1">
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium">流光边框光色</Label>
+                  <Label className="text-xs font-medium">{t('admin:planForm.beamColorLabel')}</Label>
                   <Controller
                     control={form.control}
                     name="beamColor"
@@ -754,8 +766,8 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="theme">主题单色光晕</SelectItem>
-                          <SelectItem value="rainbow">北欧极光幻彩</SelectItem>
+                          <SelectItem value="theme">{t('admin:planForm.beamColorTheme')}</SelectItem>
+                          <SelectItem value="rainbow">{t('admin:planForm.beamColorRainbow')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -763,7 +775,7 @@ export function PlanFormDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium">角标视觉样式</Label>
+                  <Label className="text-xs font-medium">{t('admin:planForm.badgeVariantLabel')}</Label>
                   <Controller
                     control={form.control}
                     name="badgeVariant"
@@ -773,10 +785,10 @@ export function PlanFormDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="gradient">质感渐变高光</SelectItem>
-                          <SelectItem value="glow">微光柔和</SelectItem>
-                          <SelectItem value="outline">线框精致</SelectItem>
-                          <SelectItem value="default">经典纯色</SelectItem>
+                          <SelectItem value="gradient">{t('admin:planForm.badgeVariants.gradient')}</SelectItem>
+                          <SelectItem value="glow">{t('admin:planForm.badgeVariants.glow')}</SelectItem>
+                          <SelectItem value="outline">{t('admin:planForm.badgeVariants.outline')}</SelectItem>
+                          <SelectItem value="default">{t('admin:planForm.badgeVariants.default')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -787,31 +799,31 @@ export function PlanFormDialog({
               {/* 营销对比与文案定制 */}
               <div className="grid gap-3 sm:grid-cols-3 pt-1">
                 <div className="space-y-2">
-                  <Label htmlFor="plan-orig-price" className="text-xs">划线原价（元）</Label>
+                  <Label htmlFor="plan-orig-price" className="text-xs">{t('admin:planForm.originalPrice')}</Label>
                   <Input
                     id="plan-orig-price"
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="例如：68.00"
+                    placeholder={t('admin:planForm.originalPricePlaceholder')}
                     {...form.register('originalPrice')}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-discount-text" className="text-xs">折扣文案（可选）</Label>
+                  <Label htmlFor="plan-discount-text" className="text-xs">{t('admin:planForm.discountText')}</Label>
                   <Input
                     id="plan-discount-text"
-                    placeholder="例如：限时 7.5 折"
+                    placeholder={t('admin:planForm.discountTextPlaceholder')}
                     {...form.register('discountText')}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="plan-btn-text" className="text-xs">自定义按钮文案</Label>
+                  <Label htmlFor="plan-btn-text" className="text-xs">{t('admin:planForm.buttonText')}</Label>
                   <Input
                     id="plan-btn-text"
-                    placeholder="默认：立即订购"
+                    placeholder={t('admin:planForm.buttonTextPlaceholder')}
                     {...form.register('buttonText')}
                   />
                 </div>
@@ -821,7 +833,7 @@ export function PlanFormDialog({
               <div className="grid gap-3 sm:grid-cols-2 pt-1">
                 <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
                   <Label htmlFor="plan-shimmer" className="text-xs font-medium cursor-pointer truncate mr-1">
-                    按钮微光扫光
+                    {t('admin:planForm.shimmerButton')}
                   </Label>
                   <Controller
                     control={form.control}
@@ -834,7 +846,7 @@ export function PlanFormDialog({
 
                 <div className="flex items-center justify-between rounded-lg border p-2.5 bg-muted/20 h-9">
                   <Label htmlFor="plan-sync-sub" className="text-xs font-medium cursor-pointer truncate mr-1">
-                    同步特效至「我的订阅」
+                    {t('admin:planForm.syncToSubscription')}
                   </Label>
                   <Controller
                     control={form.control}
@@ -850,10 +862,10 @@ export function PlanFormDialog({
               <div className="rounded-lg border p-3 bg-muted/20 flex items-center justify-between">
                 <div>
                   <Label htmlFor="plan-featured" className="font-medium text-xs">
-                    设为主推热卖套餐
+                    {t('admin:planForm.isFeatured')}
                   </Label>
                   <p className="text-[11px] text-muted-foreground">
-                    主推套餐在套餐市场拥有高亮外框与景深阴影，引导用户优先选购
+                    {t('admin:planForm.isFeaturedHint')}
                   </p>
                 </div>
                 <Controller
@@ -869,68 +881,71 @@ export function PlanFormDialog({
             {/* 3. 权益特性清单与线路 */}
             <div className="space-y-4 rounded-xl border p-4 bg-card">
               <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground">
-                特性清单与线路匹配
+                {t('admin:planForm.sectionFeatures')}
               </h4>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Label htmlFor="plan-features" className="text-xs">自定义权益特性清单</Label>
+                    <Label htmlFor="plan-features" className="text-xs">{t('admin:planForm.featuresLabel')}</Label>
                     <TooltipProvider delayDuration={200}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
                             className="text-muted-foreground hover:text-foreground inline-flex items-center"
-                            aria-label="查看特性清单图标语法指南"
+                            aria-label={t('admin:planForm.featuresSyntaxGuide')}
                           >
                             <HelpCircle className="h-3.5 w-3.5" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-xs p-3 space-y-2">
-                          <p className="font-semibold text-xs">特性清单微标记语法指南</p>
+                          <p className="font-semibold text-xs">{t('admin:planForm.featuresSyntaxTitle')}</p>
                           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                            <div><code className="bg-muted px-1 rounded text-primary">[zap]</code> 极速闪电</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[rocket]</code> 冲刺火箭</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[crown]</code> 尊享王冠</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[shield]</code> 安全盾牌</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[sparkles]</code> 特惠星芒</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[star]</code> 金色星标</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[zap]</code> {t('admin:planForm.featuresSyntaxZap')}</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[rocket]</code> {t('admin:planForm.featuresSyntaxRocket')}</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[crown]</code> {t('admin:planForm.featuresSyntaxCrown')}</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[shield]</code> {t('admin:planForm.featuresSyntaxShield')}</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[sparkles]</code> {t('admin:planForm.featuresSyntaxSparkles')}</div>
+                            <div><code className="bg-muted px-1 rounded text-primary">[star]</code> {t('admin:planForm.featuresSyntaxStar')}</div>
                           </div>
                           <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/50">
-                            行首加 <code className="bg-muted px-1 rounded text-foreground">!</code> 如 <code className="bg-muted px-1 rounded text-foreground">!承诺</code> 可将整行重点加粗
+                            {t('admin:planForm.featuresSyntaxBold')}
                           </p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <span className="text-[11px] text-muted-foreground">每行一项</span>
+                  <span className="text-[11px] text-muted-foreground">{t('admin:planForm.oneItemPerLine')}</span>
                 </div>
                 <Textarea
                   id="plan-features"
                   rows={4}
-                  placeholder="[zap] 1000Mbps 极速专线接入&#10;[rocket] 4K / 8K 流媒体晚高峰零卡顿&#10;[crown] 尊享 VIP 专线与原生节点&#10;!7x24 小时 SLA 高可用服务保障"
+                  placeholder={t('admin:planForm.featuresPlaceholder')}
                   {...form.register('featuresText')}
                 />
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[11px] text-muted-foreground">快捷填入：</span>
-                  {PRESET_FEATURES.map((item) => (
-                    <Button
-                      key={item}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-6 text-[11px] px-2"
-                      onClick={() => addPresetFeature(item)}
-                    >
-                      + {item.replace(/\[\w+\]\s*/, '')}
-                    </Button>
-                  ))}
+                  <span className="text-[11px] text-muted-foreground">{t('admin:planForm.quickFill')}</span>
+                  {PRESET_FEATURE_KEYS.map((key) => {
+                    const item = t(`admin:planForm.presets.${key}`);
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => addPresetFeature(item)}
+                      >
+                        + {item.replace(/\[\w+\]\s*/, '').replace(/^!\s*/, '')}
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs">线路匹配模式</Label>
+                <Label className="text-xs">{t('admin:planForm.lineMatchMode')}</Label>
                 <Controller
                   control={form.control}
                   name="lineMatchMode"
@@ -940,9 +955,9 @@ export function PlanFormDialog({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ALL">全部可用线路</SelectItem>
-                        <SelectItem value="TAGS">按线路标签匹配</SelectItem>
-                        <SelectItem value="EXPLICIT">显式线路 ID</SelectItem>
+                        <SelectItem value="ALL">{t('common:matchMode.ALL')}</SelectItem>
+                        <SelectItem value="TAGS">{t('common:matchMode.TAGS')}</SelectItem>
+                        <SelectItem value="EXPLICIT">{t('common:matchMode.EXPLICIT')}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -951,8 +966,8 @@ export function PlanFormDialog({
 
               {form.watch('lineMatchMode') === 'TAGS' && (
                 <div className="space-y-2">
-                  <Label htmlFor="plan-line-tags" className="text-xs">线路标签</Label>
-                  <Input id="plan-line-tags" placeholder="vip, hk" {...form.register('lineTags')} />
+                  <Label htmlFor="plan-line-tags" className="text-xs">{t('admin:planForm.lineTagsLabel')}</Label>
+                  <Input id="plan-line-tags" placeholder={t('admin:planForm.lineTagsPlaceholder')} {...form.register('lineTags')} />
                   {lineTags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {lineTags.map((tag) => (
@@ -973,7 +988,7 @@ export function PlanFormDialog({
 
               {form.watch('lineMatchMode') === 'EXPLICIT' && (
                 <div className="space-y-2">
-                  <Label className="text-xs">指定线路</Label>
+                  <Label className="text-xs">{t('admin:planForm.explicitLinesLabel')}</Label>
                   <div className="max-h-36 space-y-2 overflow-y-auto rounded-md border p-3">
                     {lineOptions.length ? (
                       lineOptions.map((line) => (
@@ -992,14 +1007,14 @@ export function PlanFormDialog({
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-muted-foreground">暂无线路，请先在线路管理中创建。</p>
+                      <p className="text-xs text-muted-foreground">{t('admin:planForm.emptyLines')}</p>
                     )}
                   </div>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label className="text-xs">订阅模板</Label>
+                <Label className="text-xs">{t('admin:planForm.templateLabel')}</Label>
                 <Controller
                   control={form.control}
                   name="templateId"
@@ -1009,10 +1024,10 @@ export function PlanFormDialog({
                       onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="选择模板" />
+                        <SelectValue placeholder={t('admin:planForm.selectTemplate')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">使用默认模板</SelectItem>
+                        <SelectItem value="none">{t('admin:planForm.defaultTemplate')}</SelectItem>
                         {templateOptions.map((item) => (
                           <SelectItem key={item.id} value={item.id}>
                             {item.name}
@@ -1031,17 +1046,17 @@ export function PlanFormDialog({
                   render={({ field }) => <Switch id="plan-public" checked={field.value} onCheckedChange={field.onChange} />}
                 />
                 <Label htmlFor="plan-public" className="text-xs cursor-pointer">
-                  公开售卖（在套餐市场中向所有用户开放）
+                  {t('admin:planForm.isPublic')}
                 </Label>
               </div>
             </div>
 
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                取消
+                {t('common:actions.cancel')}
               </Button>
               <Button type="submit" disabled={busy}>
-                {busy ? '保存中…' : '保存套餐'}
+                {busy ? t('admin:planForm.saving') : t('admin:planForm.savePlan')}
               </Button>
             </DialogFooter>
           </form>
@@ -1051,10 +1066,10 @@ export function PlanFormDialog({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-primary" />
-                <h4 className="text-sm font-semibold text-foreground">实机卡片预览</h4>
+                <h4 className="text-sm font-semibold text-foreground">{t('admin:planForm.livePreview')}</h4>
               </div>
               <Badge variant="outline" className="text-[11px] gap-1 font-normal text-muted-foreground">
-                所见即所得
+                {t('admin:planForm.whatYouSeeIsWhatYouGet')}
               </Badge>
             </div>
 

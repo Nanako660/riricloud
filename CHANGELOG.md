@@ -13,6 +13,13 @@
 ## [Unreleased]
 
 ### Added
+- **前端二级交互组件与全模块多语言深度适配 (Full Subcomponents & Dialogs i18n)**：
+  - **节点与运维全链路**：节点详情（`detail.tsx`）、探针配置与执行弹窗（`probe-node-dialog.tsx`）、远程升级中心（`upgrade-node-dialog.tsx`）、部署与升级分发历史（`node-deployment-history.tsx`）、安装命令选择器（`install-commands-picker.tsx`）及创建/编辑表单（`node-form-dialog.tsx`）所有文案、ARIA 属性、诊断度量、状态徽标与 Toast 全面接入多语言；
+  - **线路管理网络调优与高级表单**：入站配置、高级设置、网络底座调优、客户端多路复用、协议高级伪装、TLS 密码套件与链路测速流程弹窗全向国际化，消除硬编码文本；
+  - **订阅模板全方位编辑器**：基本信息、策略组设计（`template-groups-editor.tsx`）、分流规则（`template-rules-editor.tsx`）、DNS 设置（`template-dns-editor.tsx`）、客户端高级覆写（`template-override-editor.tsx`）、源文件编辑（`template-source-editor.tsx`）及预览诊断抽屉（`template-preview-drawer.tsx`）全量完成 i18n 覆盖；
+  - **系统日志与观测中心**：日志指标卡、实时推流状态栏、级别/来源/节点过滤栏、详情抽屉、表格列及数据清理弹窗实现完整双语本地化；
+  - **资产与业务控制台**：卡密管理（生成/导出/统计/作废）、套餐管理（表单/流派动效/Lucide 图标/实机预览）、用户管理（创建/编辑/订阅履约/余额调整/流量明细）、流量统计（上下行速率走势/Donut 占比/用户与线路明细排行）、镜像站管理及资源中心（上传/导入/详情/审计/架构徽标）所有模态与下钻交互彻底中英双语对称；
+  - **全局通用交互底座多语言支持**：`Dialog`、`Sheet`、`SidebarTrigger` 辅助无障碍文本（`sr-only`）及通用图表系列权重排序实现语言中立与动态本地化。
 - **前端全站国际化 (i18n) 与多语言平滑切换支持**：
   - **模块化双语字典架构**：基于 `i18next` + `react-i18next` + `i18next-browser-languagedetector`，建立全站 `zh-CN`（简体中文，默认）与 `en-US`（English）双语本地化字典体系；按业务领域划分为 `common`（公共交互、通用表格、操作与状态）、`auth`（登录、注册、找回密码与人机验证）、`user`（套餐市场、我的订阅、个人中心、代理池）、`admin`（节点、线路、证书、模板、用户、套餐、卡密、日志、设置、镜像站、资源分发）及 `errors`（通用与领域错误码映射）5 大命名空间；
   - **编译期强类型安全保障**：扩展 `react-i18next` 的 `CustomTypeOptions`，实现全站翻译键名（Key Path）与插值变量（Interpolation Variables）的 TypeScript 静态强类型约束与智能补全，杜绝拼写错误、空插值与翻译死角；
