@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { PackagePlus, Pencil, Search, Sparkles, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ const resetLabels: Record<string, string> = {
 };
 
 export default function PlansPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const { data, isPending, isError } = useAdminPlans();
   const { data: templates } = useAdminTemplates();
   const { data: lineData } = useAdminLines();
@@ -82,7 +84,7 @@ export default function PlansPage() {
   if (isPending) {
     return (
       <PageContainer>
-        <PageHeader title="套餐管理" description="管理公开套餐、线路范围与订阅模板。" />
+        <PageHeader title={t('admin:plans.title')} description={t('admin:plans.subtitle')} />
         <Skeleton className="h-10 w-full max-w-sm" />
         <Card>
           <CardContent className="p-4 space-y-3">
@@ -98,15 +100,15 @@ export default function PlansPage() {
   if (isError) {
     return (
       <PageContainer>
-        <PageHeader title="套餐管理" description="管理公开套餐、线路范围与订阅模板。" />
-        <EmptyState title="无法加载套餐" description="请稍后刷新重试" />
+        <PageHeader title={t('admin:plans.title')} description={t('admin:plans.subtitle')} />
+        <EmptyState title={t('common:status.error')} description={t('admin:nodes.emptyFilteredDesc')} />
       </PageContainer>
     );
   }
 
   return (
     <PageContainer>
-      <PageHeader title="套餐管理" description="管理公开套餐、线路范围与订阅模板。" />
+      <PageHeader title={t('admin:plans.title')} description={t('admin:plans.subtitle')} />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
@@ -114,7 +116,7 @@ export default function PlansPage() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="搜索套餐名称、标签或描述…"
+              placeholder={t('admin:plans.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -125,12 +127,12 @@ export default function PlansPage() {
             onValueChange={(val) => setStatusFilter(val as 'ALL' | 'PUBLIC' | 'UNLISTED')}
           >
             <SelectTrigger className="w-full sm:w-32">
-              <SelectValue placeholder="状态筛选" />
+              <SelectValue placeholder={t('admin:plans.filterStatus')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部状态</SelectItem>
-              <SelectItem value="PUBLIC">仅公开</SelectItem>
-              <SelectItem value="UNLISTED">已下架</SelectItem>
+              <SelectItem value="ALL">{t('admin:plans.statusAll')}</SelectItem>
+              <SelectItem value="PUBLIC">{t('admin:plans.statusPublic')}</SelectItem>
+              <SelectItem value="UNLISTED">{t('admin:plans.statusUnlisted')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -143,7 +145,7 @@ export default function PlansPage() {
           }}
         >
           <PackagePlus className="h-4 w-4 mr-1.5" />
-          新建套餐
+          {t('admin:plans.addPlan')}
         </Button>
       </div>
 
@@ -153,13 +155,12 @@ export default function PlansPage() {
             <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[28%]">套餐信息</TableHead>
-                  <TableHead>资费与周期</TableHead>
-                  <TableHead>流量与重置</TableHead>
-                  <TableHead>线路范围</TableHead>
-                  <TableHead>绑定模板</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead className="w-[28%]">{t('admin:plans.colPlan')}</TableHead>
+                  <TableHead>{t('admin:plans.colPriceDuration')}</TableHead>
+                  <TableHead>{t('admin:plans.colTrafficLimit')}</TableHead>
+                  <TableHead>{t('admin:plans.colLinesTemplate')}</TableHead>
+                  <TableHead>{t('admin:plans.status')}</TableHead>
+                  <TableHead className="text-right">{t('common:table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -186,7 +187,7 @@ export default function PlansPage() {
                           <span className="text-xs text-muted-foreground tabular-nums">#{plan.sortOrder}</span>
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-1">
-                          {plan.description || '暂无描述'}
+                          {plan.description || t('admin:templates.noDesc')}
                         </p>
                       </div>
                     </TableCell>
@@ -195,7 +196,7 @@ export default function PlansPage() {
                         <span className="font-semibold text-foreground">
                           {plan.price === 0 ? '免费' : formatYuan(plan.price)}
                         </span>
-                        <span className="text-xs text-muted-foreground"> / {plan.durationDays} 天</span>
+                        <span className="text-xs text-muted-foreground"> / {t('common:time.days', { count: plan.durationDays })}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -232,7 +233,7 @@ export default function PlansPage() {
                           {plan.template.name}
                         </Badge>
                       ) : (
-                        <span className="text-xs text-muted-foreground">默认模板</span>
+                        <span className="text-xs text-muted-foreground">{t('admin:templates.dnsDefault')}</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -241,11 +242,11 @@ export default function PlansPage() {
                           variant="outline"
                           className="text-xs border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                         >
-                          公开售卖
+                          {t('admin:plans.statusActive')}
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="text-xs">
-                          已下架
+                          {t('admin:plans.statusDisabled')}
                         </Badge>
                       )}
                     </TableCell>
@@ -256,7 +257,7 @@ export default function PlansPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label="编辑套餐"
+                              aria-label={t('admin:plans.editPlan')}
                               onClick={() => {
                                 setEditing(plan);
                                 setOpen(true);
@@ -265,7 +266,7 @@ export default function PlansPage() {
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>编辑套餐</TooltipContent>
+                          <TooltipContent>{t('admin:plans.editPlan')}</TooltipContent>
                         </Tooltip>
 
                         <Tooltip>
@@ -273,13 +274,13 @@ export default function PlansPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label="删除套餐"
+                              aria-label={t('common:actions.delete')}
                               onClick={() => setDeleting(plan)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>删除套餐</TooltipContent>
+                          <TooltipContent>{t('common:actions.delete')}</TooltipContent>
                         </Tooltip>
                       </div>
                     </TableCell>
@@ -289,11 +290,11 @@ export default function PlansPage() {
             </Table>
           ) : (
             <EmptyState
-              title={search || statusFilter !== 'ALL' ? '未找到匹配套餐' : '还没有套餐'}
+              title={search || statusFilter !== 'ALL' ? t('admin:nodes.emptyFiltered') : t('admin:plans.emptyPlans')}
               description={
                 search || statusFilter !== 'ALL'
-                  ? '请尝试更换搜索词或筛选条件。'
-                  : '创建一个套餐后，用户就能在套餐市场中订购。'
+                  ? t('admin:nodes.emptyFilteredDesc')
+                  : t('admin:plans.subtitle')
               }
               className="border-0"
             />
@@ -315,11 +316,11 @@ export default function PlansPage() {
       <AlertDialog open={!!deleting} onOpenChange={(isOpen) => !isOpen && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除套餐「{deleting?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>已有订阅使用的套餐无法删除，建议改为下架。</AlertDialogDescription>
+            <AlertDialogTitle>{t('admin:plans.deleteDialogTitle', { name: deleting?.name ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:plans.deleteDialogDesc')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
@@ -330,7 +331,7 @@ export default function PlansPage() {
                 }
               }}
             >
-              确认删除
+              {t('common:actions.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

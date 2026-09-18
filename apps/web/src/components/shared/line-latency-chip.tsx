@@ -1,4 +1,5 @@
-import { cn, formatDateTime } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
+import { cn, formatRelativeTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -11,21 +12,6 @@ export interface LineLatencyChipProps {
   onClick?: () => void;
 }
 
-function formatRelativeTime(dateInput?: string | Date | null): string {
-  if (!dateInput) return '未测速';
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  const now = new Date();
-  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-  if (diffSec < 30) return '刚刚';
-  if (diffSec < 60) return `${diffSec} 秒前`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} 分钟前`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour} 小时前`;
-  return formatDateTime(date, undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: undefined });
-}
-
 export function LineLatencyChip({
   latencyMs,
   status,
@@ -34,6 +20,7 @@ export function LineLatencyChip({
   className,
   onClick
 }: LineLatencyChipProps) {
+  const { t } = useTranslation('common');
   const interactiveClass = onClick ? 'cursor-pointer hover:border-primary/50 hover:bg-muted/80 transition-colors' : 'cursor-help';
 
   // 未测速
@@ -47,12 +34,12 @@ export function LineLatencyChip({
             className={cn('inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground select-none', interactiveClass, className)}
           >
             <span className="size-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
-            <span>— 未测速</span>
+            <span>— {t('latency.notTested')}</span>
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs space-y-1 text-xs">
-          <p className="font-semibold">尚未测速</p>
-          {onClick && <p className="text-primary text-[11px]">点击发起即时测速并查看链路流程</p>}
+          <p className="font-semibold">{t('latency.notTestedTitle')}</p>
+          {onClick && <p className="text-primary text-[11px]">{t('latency.clickToTest')}</p>}
         </TooltipContent>
       </Tooltip>
     );
@@ -73,14 +60,14 @@ export function LineLatencyChip({
             )}
           >
             <span className="size-1.5 rounded-full bg-rose-500 shrink-0" />
-            <span>超时</span>
+            <span>{t('latency.timeout')}</span>
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs space-y-1 text-xs">
-          <p className="font-semibold text-rose-400">测速连接超时</p>
-          <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
+          <p className="font-semibold text-rose-400">{t('latency.timeoutTitle')}</p>
+          <p className="text-muted-foreground">{t('latency.testTime', { time: formatRelativeTime(testedAt) })}</p>
           {message && <p className="text-xs break-words opacity-80">{message}</p>}
-          {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路诊断详情</p>}
+          {onClick && <p className="text-primary text-[11px] pt-1">{t('latency.clickToDetails')}</p>}
         </TooltipContent>
       </Tooltip>
     );
@@ -101,14 +88,14 @@ export function LineLatencyChip({
             )}
           >
             <span className="size-1.5 rounded-full bg-rose-500 shrink-0" />
-            <span>失败</span>
+            <span>{t('latency.failed')}</span>
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs space-y-1 text-xs">
-          <p className="font-semibold text-rose-400">测速异常</p>
-          <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
+          <p className="font-semibold text-rose-400">{t('latency.errorTitle')}</p>
+          <p className="text-muted-foreground">{t('latency.testTime', { time: formatRelativeTime(testedAt) })}</p>
           {message && <p className="text-xs break-words opacity-80">{message}</p>}
-          {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路诊断详情</p>}
+          {onClick && <p className="text-primary text-[11px] pt-1">{t('latency.clickToDetails')}</p>}
         </TooltipContent>
       </Tooltip>
     );
@@ -131,6 +118,12 @@ export function LineLatencyChip({
       ? 'bg-amber-500'
       : 'bg-rose-500';
 
+  const qualityText = isFast
+    ? t('latency.excellent')
+    : isMedium
+      ? t('latency.normal')
+      : t('latency.high');
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -151,11 +144,11 @@ export function LineLatencyChip({
       <TooltipContent className="max-w-xs space-y-1 text-xs">
         <div className="flex items-center gap-2">
           <span className="font-semibold">{ms} ms</span>
-          <span className="text-muted-foreground">({isFast ? '延迟极佳' : isMedium ? '延迟一般' : '延迟较高'})</span>
+          <span className="text-muted-foreground">({qualityText})</span>
         </div>
-        <p className="text-muted-foreground">时间：{formatRelativeTime(testedAt)}</p>
+        <p className="text-muted-foreground">{t('latency.testTime', { time: formatRelativeTime(testedAt) })}</p>
         {message && <p className="text-xs break-words opacity-80">{message}</p>}
-        {onClick && <p className="text-primary text-[11px] pt-1">点击查看测试链路详情与即时测速</p>}
+        {onClick && <p className="text-primary text-[11px] pt-1">{t('latency.clickToTest')}</p>}
       </TooltipContent>
     </Tooltip>
   );

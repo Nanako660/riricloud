@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Archive, AlertTriangle, Eye, FileUp, History, MoreHorizontal, PackageOpen, Pencil, Power, RotateCcw, Search, Star, Trash2, XCircle } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -43,6 +44,7 @@ function statusBadgeVariant(status: BinaryStatus) {
 }
 
 export default function BinariesPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [kind, setKind] = React.useState<'ALL' | BinaryKind>('ALL');
@@ -110,15 +112,17 @@ export default function BinariesPage() {
   };
 
   const confirmTitle = confirmRequest
-    ? `${confirmRequest.action === 'delete' ? '删除' : '归档'} ${confirmRequest.ids.length} 项资源？`
+    ? (confirmRequest.action === 'delete'
+      ? t('admin:binaries.confirmDeleteTitle', { count: confirmRequest.ids.length })
+      : t('admin:binaries.confirmRetireTitle', { count: confirmRequest.ids.length }))
     : '';
   const confirmDescription = confirmRequest?.action === 'delete'
-    ? '将物理删除所选资源并清理其独占文件，不可恢复。仅已停用/已归档且无分发历史的资源会被删除（内置资源需先归档）；有分发历史或启用中的资源将被跳过并提示原因。'
-    : '归档后不会再被选择用于新的升级任务，历史分发记录会保留。';
+    ? t('admin:binaries.confirmDeleteDesc')
+    : t('admin:binaries.confirmRetireDesc');
 
   return (
     <PageContainer>
-      <PageHeader title="资源管理" description="独立管理 Agent 与 Sing-box 的可分发版本。" />
+      <PageHeader title={t('admin:binaries.title')} description={t('admin:binaries.subtitle')} />
 
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -126,7 +130,7 @@ export default function BinariesPage() {
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="搜索版本号或备注…"
+              placeholder={t('admin:binaries.searchPlaceholder')}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="pl-9"
@@ -134,20 +138,20 @@ export default function BinariesPage() {
           </div>
           <Select value={kind} onValueChange={(value) => { setKind(value as typeof kind); resetPageAndSelection(); }}>
             <SelectTrigger className="w-full sm:w-32">
-              <SelectValue placeholder="资源类型" />
+              <SelectValue placeholder={t('admin:binaries.filterKind')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部类型</SelectItem>
+              <SelectItem value="ALL">{t('admin:binaries.allKinds')}</SelectItem>
               <SelectItem value="AGENT">Agent</SelectItem>
               <SelectItem value="SINGBOX">Sing-box</SelectItem>
             </SelectContent>
           </Select>
           <Select value={platform} onValueChange={(value) => { setPlatform(value); resetPageAndSelection(); }}>
             <SelectTrigger className="w-full sm:w-36">
-              <SelectValue placeholder="平台" />
+              <SelectValue placeholder={t('admin:binaries.filterPlatform')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部平台</SelectItem>
+              <SelectItem value="ALL">{t('admin:binaries.allPlatforms')}</SelectItem>
               {platformOptions.map((item) => (
                 <SelectItem key={item} value={item}>{item}</SelectItem>
               ))}
@@ -155,10 +159,10 @@ export default function BinariesPage() {
           </Select>
           <Select value={status} onValueChange={(value) => { setStatus(value as typeof status); resetPageAndSelection(); }}>
             <SelectTrigger className="w-full sm:w-32">
-              <SelectValue placeholder="状态" />
+              <SelectValue placeholder={t('admin:binaries.filterStatus')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部状态</SelectItem>
+              <SelectItem value="ALL">{t('admin:binaries.allStatuses')}</SelectItem>
               {(['DRAFT', 'ACTIVE', 'DISABLED', 'RETIRED'] as const).map((item) => (
                 <SelectItem key={item} value={item}>{BINARY_STATUS_LABELS[item]}</SelectItem>
               ))}
@@ -167,13 +171,13 @@ export default function BinariesPage() {
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:flex-nowrap lg:w-auto">
           <Button variant="outline" className="w-full sm:w-auto" onClick={() => setAuditOpen(true)}>
-            <History className="mr-1.5 h-4 w-4" />操作审计
+            <History className="mr-1.5 h-4 w-4" />{t('admin:binaries.audit')}
           </Button>
           <Button variant="outline" className="w-full sm:w-auto" onClick={() => setFormMode('import')}>
-            <PackageOpen className="mr-1.5 h-4 w-4" />远程导入
+            <PackageOpen className="mr-1.5 h-4 w-4" />{t('admin:binaries.remoteImport')}
           </Button>
           <Button className="w-full sm:w-auto" onClick={() => setFormMode('upload')}>
-            <FileUp className="mr-1.5 h-4 w-4" />上传文件
+            <FileUp className="mr-1.5 h-4 w-4" />{t('admin:binaries.uploadFile')}
           </Button>
         </div>
       </div>
@@ -182,16 +186,16 @@ export default function BinariesPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
             <CardContent className="pt-5">
-              <p className="text-xs text-muted-foreground">登记体积（当前筛选）</p>
+              <p className="text-xs text-muted-foreground">{t('admin:binaries.registeredSize')}</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{bytes(data.summary.totalBytes)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">全部匹配资源及其平台资产的体积合计。</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('admin:binaries.registeredSizeDesc')}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-5">
-              <p className="text-xs text-muted-foreground">删除可释放空间</p>
+              <p className="text-xs text-muted-foreground">{t('admin:binaries.reclaimableSize')}</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{bytes(data.summary.reclaimableBytes)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">仅统计上传/导入的独占运行时文件；与发行包共享的静态文件不计入。</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('admin:binaries.reclaimableSizeDesc')}</p>
             </CardContent>
           </Card>
         </div>
@@ -199,27 +203,27 @@ export default function BinariesPage() {
 
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-          <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
+          <span className="text-sm font-medium">{t('common:table.selectedCount', { count: selectedIds.size })}</span>
           <div className="flex flex-wrap gap-1.5">
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={mutations.batchResources.isPending}
               onClick={() => runBatch('activate', [...selectedIds])}>
-              <Power className="size-3.5 text-emerald-600" />批量启用
+              <Power className="size-3.5 text-emerald-600" />{t('common:actions.enable')}
             </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={mutations.batchResources.isPending}
               onClick={() => runBatch('disable', [...selectedIds])}>
-              <XCircle className="size-3.5 text-amber-600" />批量停用
+              <XCircle className="size-3.5 text-amber-600" />{t('common:actions.disable')}
             </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={mutations.batchResources.isPending}
               onClick={() => setConfirmRequest({ action: 'retire', ids: [...selectedIds] })}>
-              <Archive className="size-3.5" />批量归档
+              <Archive className="size-3.5" />{t('admin:binaries.batchRetire')}
             </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1 text-xs text-destructive" disabled={mutations.batchResources.isPending}
               onClick={() => setConfirmRequest({ action: 'delete', ids: [...selectedIds] })}>
-              <Trash2 className="size-3.5" />批量删除
+              <Trash2 className="size-3.5" />{t('admin:binaries.batchDelete')}
             </Button>
           </div>
           <Button variant="ghost" size="sm" className="ml-auto h-8 text-xs" onClick={() => setSelectedIds(new Set())}>
-            取消选择
+            {t('common:actions.cancel')}
           </Button>
         </div>
       ) : null}
@@ -233,24 +237,24 @@ export default function BinariesPage() {
               <Skeleton className="h-12 w-full" />
             </div>
           ) : isError ? (
-            <EmptyState title="无法加载资源" description="请稍后刷新重试。" className="border-0" />
+            <EmptyState title={t('common:status.error')} description={t('common:actions.loading')} className="border-0" />
           ) : rows.length ? (
             <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
-                      aria-label="全选本页资源"
+                      aria-label={t('common:table.selectAll')}
                       checked={allVisibleSelected}
                       onCheckedChange={toggleSelectAll}
                     />
                   </TableHead>
-                  <TableHead className="w-[26%]">资源与版本</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="w-[24%]">平台资产覆盖</TableHead>
-                  <TableHead>总体积</TableHead>
-                  <TableHead>引用分发</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead className="w-[26%]">{t('admin:binaries.colResource')}</TableHead>
+                  <TableHead>{t('admin:binaries.colStatus')}</TableHead>
+                  <TableHead className="w-[24%]">{t('admin:binaries.colAssets')}</TableHead>
+                  <TableHead>{t('admin:binaries.colSize')}</TableHead>
+                  <TableHead>{t('admin:binaries.colDeployments')}</TableHead>
+                  <TableHead className="text-right">{t('admin:binaries.colActions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -271,12 +275,12 @@ export default function BinariesPage() {
                           </span>
                           {item.isDefault ? (
                             <Badge variant="outline" className="text-xs">
-                              <Star className="mr-1 size-3" />默认
+                              <Star className="mr-1 size-3" />{t('admin:binaries.defaultBadge')}
                             </Badge>
                           ) : null}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {sourceLabel(item.source)} · {item.assets.length} 个架构资产
+                          {sourceLabel(item.source)} · {t('admin:binaries.assetCount', { count: item.assets.length })}
                         </p>
                       </div>
                     </TableCell>
@@ -331,11 +335,11 @@ export default function BinariesPage() {
                       <div className="flex items-center justify-end gap-1.5">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="查看资源详情" onClick={() => setDetailId(item.id)}>
+                            <Button variant="ghost" size="icon" aria-label={t('admin:binaries.details')} onClick={() => setDetailId(item.id)}>
                               <Eye className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>查看详情与分发记录</TooltipContent>
+                          <TooltipContent>{t('admin:binaries.details')}</TooltipContent>
                         </Tooltip>
 
                         {item.status === 'DRAFT' || item.status === 'DISABLED' ? (
@@ -343,7 +347,7 @@ export default function BinariesPage() {
                             onClick={() => mutations.activate.mutate(item.id)}
                             disabled={mutations.activate.isPending}>
                             <Power className="h-3.5 w-3.5 text-emerald-600" />
-                            启用
+                            {t('common:actions.enable')}
                           </Button>
                         ) : null}
 
@@ -352,37 +356,37 @@ export default function BinariesPage() {
                             onClick={() => mutations.disable.mutate(item.id)}
                             disabled={mutations.disable.isPending}>
                             <XCircle className="h-3.5 w-3.5 text-amber-600" />
-                            停用
+                            {t('common:actions.disable')}
                           </Button>
                         ) : null}
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="更多操作">
+                            <Button variant="ghost" size="icon" aria-label={t('admin:binaries.colActions')}>
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => setEditing(item)}>
                               <Pencil className="mr-2 h-4 w-4" />
-                              编辑备注与兼容性
+                              {t('admin:binaries.editCompat')}
                             </DropdownMenuItem>
                             {item.status === 'ACTIVE' && !item.isDefault ? (
                               <DropdownMenuItem onClick={() => mutations.setDefault.mutate(item.id)} disabled={mutations.setDefault.isPending}>
                                 <Star className="mr-2 h-4 w-4" />
-                                设为默认版本
+                                {t('admin:binaries.setDefault')}
                               </DropdownMenuItem>
                             ) : null}
                             {item.status === 'RETIRED' ? (
                               <DropdownMenuItem onClick={() => mutations.restore.mutate(item.id)} disabled={mutations.restore.isPending}>
                                 <RotateCcw className="mr-2 h-4 w-4" />
-                                从归档恢复
+                                {t('admin:binaries.restoreArchived')}
                               </DropdownMenuItem>
                             ) : null}
                             {item.status !== 'RETIRED' ? (
                               <DropdownMenuItem onClick={() => setConfirmRequest({ action: 'retire', ids: [item.id] })}>
                                 <Archive className="mr-2 h-4 w-4" />
-                                归档资源
+                                {t('admin:binaries.retireResource')}
                               </DropdownMenuItem>
                             ) : null}
                             {item.status !== 'ACTIVE' && (item.source !== 'BUILTIN' || item.status === 'RETIRED') ? (
@@ -390,7 +394,7 @@ export default function BinariesPage() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmRequest({ action: 'delete', ids: [item.id] })}>
                                   <Trash2 className="mr-2 h-4 w-4" />
-                                  删除资源
+                                  {t('admin:binaries.deleteResource')}
                                 </DropdownMenuItem>
                               </>
                             ) : null}
@@ -404,7 +408,7 @@ export default function BinariesPage() {
             </Table>
           ) : (
             <EmptyState
-              title={debouncedSearch ? '没有匹配资源' : '暂无资源'}
+              title={debouncedSearch ? t('common:table.noResults') : t('admin:binaries.emptyBinaries')}
               description={debouncedSearch ? '请尝试调整搜索关键词或筛选条件。' : '上传或导入一个资源开始管理。'}
               className="border-0"
             />
@@ -414,12 +418,12 @@ export default function BinariesPage() {
 
       {data && data.total > 0 ? (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>共 {data.total} 项资源</span>
+          <span>{t('common:table.totalItems', { total: data.total })}</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => { setPage((prev) => prev - 1); setSelectedIds(new Set()); }}>
-              上一页
+              {t('common:table.previous')}
             </Button>
-            <span>第 {data.page} / {Math.max(1, Math.ceil(data.total / PAGE_SIZE))} 页</span>
+            <span>{t('common:table.pageInfo', { page: data.page, totalPages: Math.max(1, Math.ceil(data.total / PAGE_SIZE)) })}</span>
             <Button
               variant="outline"
               size="sm"
@@ -427,7 +431,7 @@ export default function BinariesPage() {
               disabled={page >= Math.ceil(data.total / PAGE_SIZE)}
               onClick={() => { setPage((prev) => prev + 1); setSelectedIds(new Set()); }}
             >
-              下一页
+              {t('common:table.next')}
             </Button>
           </div>
         </div>
@@ -470,14 +474,14 @@ export default function BinariesPage() {
             <AlertDialogDescription>{confirmDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
                 if (confirmRequest) runBatch(confirmRequest.action, confirmRequest.ids);
               }}
             >
-              {confirmRequest?.action === 'delete' ? '确认删除' : '确认归档'}
+              {confirmRequest?.action === 'delete' ? t('common:actions.confirmDelete') : t('common:actions.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

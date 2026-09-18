@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Activity, Medal, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,10 +15,6 @@ type RoleFilter = 'ALL' | 'ADMIN' | 'USER';
 
 const PAGE_SIZE = 10;
 
-function roleLabel(role: string) {
-  return role === 'ADMIN' ? '管理员' : '用户';
-}
-
 function rankClass(index: number) {
   if (index === 0) return 'text-amber-500';
   if (index === 1) return 'text-slate-400';
@@ -32,6 +29,7 @@ export function UserRankTable({
   items: UserTrafficRankItem[];
   onSelectUser: (user: UserTrafficRankItem) => void;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
   const [search, setSearch] = React.useState('');
   const [roleFilter, setRoleFilter] = React.useState<RoleFilter>('ALL');
   const [page, setPage] = React.useState(1);
@@ -49,7 +47,7 @@ export function UserRankTable({
   React.useEffect(() => setPage(1), [normalizedSearch, roleFilter]);
   React.useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
 
-  if (items.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">暂无用户流量记录</p>;
+  if (items.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">{t('admin:traffic.emptyUserRecords')}</p>;
 
   return (
     <div className="space-y-3">
@@ -57,21 +55,21 @@ export function UserRankTable({
         <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input
-            aria-label="搜索用户邮箱"
+            aria-label={t('admin:users.searchPlaceholder')}
             className="h-9 pl-8"
-            placeholder="搜索用户邮箱…"
+            placeholder={t('admin:users.searchPlaceholder')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
         <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as RoleFilter)}>
           <SelectTrigger aria-label="筛选用户角色" className="h-9 w-full sm:w-36">
-            <SelectValue placeholder="角色" />
+            <SelectValue placeholder={t('admin:users.filterRole')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">全部角色</SelectItem>
-            <SelectItem value="ADMIN">管理员</SelectItem>
-            <SelectItem value="USER">普通用户</SelectItem>
+            <SelectItem value="ALL">{t('admin:users.allRoles')}</SelectItem>
+            <SelectItem value="ADMIN">{t('admin:users.roleAdmin')}</SelectItem>
+            <SelectItem value="USER">{t('admin:users.roleUser')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -79,14 +77,14 @@ export function UserRankTable({
       <Table className="min-w-[1040px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-14 whitespace-nowrap">#</TableHead>
-            <TableHead className="whitespace-nowrap">用户</TableHead>
-            <TableHead className="whitespace-nowrap text-right">上行</TableHead>
-            <TableHead className="whitespace-nowrap text-right">下行</TableHead>
-            <TableHead className="whitespace-nowrap text-right">物理总量</TableHead>
-            <TableHead className="whitespace-nowrap text-right">折算计费量</TableHead>
-            <TableHead className="whitespace-nowrap">占比</TableHead>
-            <TableHead className="w-32 text-right">操作</TableHead>
+            <TableHead className="w-14 whitespace-nowrap">{t('admin:traffic.colRank')}</TableHead>
+            <TableHead className="whitespace-nowrap">{t('admin:traffic.tabUsers')}</TableHead>
+            <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colUpload')}</TableHead>
+            <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colDownload')}</TableHead>
+            <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colPhysicalTotal')}</TableHead>
+            <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colBilledTotal')}</TableHead>
+            <TableHead className="whitespace-nowrap">{t('admin:traffic.colPercentage')}</TableHead>
+            <TableHead className="w-32 text-right">{t('admin:traffic.userTrafficDetails')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -116,9 +114,9 @@ export function UserRankTable({
                   <div className="min-w-48">
                     <div className="max-w-64 truncate font-medium" title={item.email}>{item.email}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      <Badge variant={item.role === 'ADMIN' ? 'default' : 'secondary'}>{roleLabel(item.role)}</Badge>
-                      <Badge variant="outline">{item.planName ?? '无套餐'}</Badge>
-                      {!item.isActive && <Badge variant="destructive">已封禁</Badge>}
+                      <Badge variant={item.role === 'ADMIN' ? 'default' : 'secondary'}>{item.role === 'ADMIN' ? t('admin:users.roleAdmin') : t('admin:users.roleUser')}</Badge>
+                      <Badge variant="outline">{item.planName ?? t('admin:users.noSubscription')}</Badge>
+                      {!item.isActive && <Badge variant="destructive">{t('admin:users.statusDisabled')}</Badge>}
                     </div>
                   </div>
                 </TableCell>
@@ -145,21 +143,21 @@ export function UserRankTable({
                     }}
                   >
                     <Activity className="size-4" />
-                    流量明细
+                    {t('admin:traffic.userTrafficDetails')}
                   </Button>
                 </TableCell>
               </TableRow>
             );
           }) : (
             <TableRow>
-              <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground">没有匹配的用户</TableCell>
+              <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground">{t('common:table.noResults')}</TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
 
       <div className="flex flex-col gap-2 px-4 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">共 {filteredItems.length} 位用户</p>
+        <p className="text-sm text-muted-foreground">{t('common:table.totalItems', { total: filteredItems.length })}</p>
         <Pagination>
           <PaginationInfo page={page} totalPages={totalPages} />
           <PaginationPrevious onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} />

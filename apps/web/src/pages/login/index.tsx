@@ -1,12 +1,13 @@
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Cloud, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, extractErrorMessage } from '@/lib/api';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAuthStore } from '@/stores/auth';
 import { Button } from '@/components/ui/button';
@@ -14,13 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
-
-const loginSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
-  password: z.string().min(8, '密码至少 8 位')
-});
-
-type LoginForm = z.infer<typeof loginSchema>;
+import { LanguageSwitcher } from '@/components/layout/language-switcher';
 
 interface MeResponse {
   id: string;
@@ -29,12 +24,24 @@ interface MeResponse {
 }
 
 export default function LoginPage() {
+  const { t } = useTranslation(['auth', 'common', 'errors']);
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
   const infoQuery = usePublicSettings();
   const siteName = infoQuery.data?.siteName ?? 'RiriCloud';
   const logoUrl = infoQuery.data?.logoUrl;
   const siteDescription = infoQuery.data?.siteDescription?.trim();
+
+  const loginSchema = useMemo(
+    () =>
+      z.object({
+        email: z.string().email(t('auth:validation.emailInvalid')),
+        password: z.string().min(8, t('auth:validation.passwordLength'))
+      }),
+    [t]
+  );
+
+  type LoginForm = z.infer<typeof loginSchema>;
 
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -49,24 +56,30 @@ export default function LoginPage() {
     },
     onSuccess: ({ user }) => {
       setAuth(user);
-      toast.success('登录成功');
+      toast.success(t('auth:login.loginSuccess'));
       navigate('/', { replace: true });
     },
-    onError: (error: AxiosError<{ message?: string }>) => {
-      toast.error(error.response?.data?.message ?? '登录失败，请检查邮箱与密码');
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, t('errors:business.invalidCredentials')));
     }
   });
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher showLabel />
+      </div>
+
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
-            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6" />}
+            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6 text-primary" />}
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
-          <CardTitle>登录</CardTitle>
-          {siteDescription ? <CardDescription>{siteDescription}</CardDescription> : null}
+          <CardTitle>{t('auth:login.title')}</CardTitle>
+          <CardDescription>
+            {siteDescription || t('auth:login.subtitle')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -76,9 +89,9 @@ export default function LoginPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱</FormLabel>
+                    <FormLabel>{t('auth:login.emailLabel')}</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="请输入邮箱地址" autoComplete="username" {...field} />
+                      <Input type="email" placeholder={t('auth:login.emailPlaceholder')} autoComplete="username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -90,27 +103,27 @@ export default function LoginPage() {
                 render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center justify-between">
-                      <FormLabel>密码</FormLabel>
+                      <FormLabel>{t('auth:login.passwordLabel')}</FormLabel>
                       <Link className="text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline" to="/forgot-password">
-                        忘记密码？
+                        {t('auth:login.forgotPassword')}
                       </Link>
                     </div>
                     <FormControl>
-                      <Input type="password" placeholder="请输入登录密码" autoComplete="current-password" {...field} />
+                      <Input type="password" placeholder={t('auth:login.passwordPlaceholder')} autoComplete="current-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
-                {loginMutation.isPending ? <Loader2 className="animate-spin" /> : <LogIn />}
-                登录
+                {loginMutation.isPending ? <Loader2 className="animate-spin" /> : <LogIn className="size-4" />}
+                {loginMutation.isPending ? t('auth:login.signingIn') : t('auth:login.submitButton')}
               </Button>
               {infoQuery.data?.registrationEnabled ? (
                 <p className="text-muted-foreground text-center text-sm">
-                  还没有账号？
+                  {t('auth:login.noAccount')}{' '}
                   <Link className="text-primary underline-offset-4 hover:underline" to="/register">
-                    注册
+                    {t('auth:login.registerNow')}
                   </Link>
                 </p>
               ) : null}

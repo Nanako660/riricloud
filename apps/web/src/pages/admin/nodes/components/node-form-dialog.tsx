@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Server } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/shared/copy-button';
 import {
@@ -28,7 +29,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useNodeMutations, type CreateNodeResult } from '../use-nodes';
 import { InstallCommandsPicker } from './install-commands-picker';
 
-// 创建只收基础信息：协议/端口等入站配置进节点详情页单独管理
 const createSchema = z.object({
   name: z.string().max(32, '名称不超过 32 字符').optional(),
   reachability: z.enum(['PUBLIC', 'NAT']),
@@ -52,9 +52,9 @@ interface NodeFormDialogProps {
 }
 
 export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const navigate = useNavigate();
   const { createNode } = useNodeMutations();
-  // 创建成功后的 AgentToken / 安装命令展示（仅创建流程出现）
   const [created, setCreated] = useState<CreateNodeResult | null>(null);
 
   const createForm = useForm<CreateForm>({
@@ -62,7 +62,6 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
     defaultValues: { name: '', reachability: 'PUBLIC', serverHost: '', communicationMode: 'WS' }
   });
 
-  // 打开时重置到初始状态
   useFormResetOnKey({
     open,
     resetKey: 'create',
@@ -92,13 +91,12 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Server className="h-4 w-4" />
-                节点「{created.node.name}」已创建
+                {t('admin:nodes.addNode')}「{created.node.name}」
               </DialogTitle>
               <DialogDescription>
-                选择目标操作系统与部署方式，复制命令到目标主机执行完成 Agent 接入；入站协议请在节点详情页配置
+                {t('admin:nodes.installSubtitle')}
               </DialogDescription>
             </DialogHeader>
-            {/* min-w-0：Dialog 为 grid 布局，截断长文本固有宽度向上传递，避免内容撑出面板 */}
             <div className="min-w-0 space-y-3">
               <div className="flex items-center gap-2">
                 <code className="bg-muted/50 min-w-0 flex-1 truncate rounded-md border px-3 py-2 text-xs">{created.agentToken}</code>
@@ -120,16 +118,16 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                   navigate(`/admin/nodes/${created.node.id}`);
                 }}
               >
-                前往配置入站
+                {t('admin:nodes.details')}
               </Button>
-              <Button onClick={() => onOpenChange(false)}>完成</Button>
+              <Button onClick={() => onOpenChange(false)}>{t('common:actions.finish')}</Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>添加节点</DialogTitle>
-              <DialogDescription>创建后生成 AgentToken 与一键安装命令，入站协议随后在详情页配置</DialogDescription>
+              <DialogTitle>{t('admin:nodes.addNode')}</DialogTitle>
+              <DialogDescription>{t('admin:nodes.subtitle')}</DialogDescription>
             </DialogHeader>
             <Form {...createForm}>
               <form className="space-y-4" onSubmit={createForm.handleSubmit(onCreateSubmit)}>
@@ -138,11 +136,10 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>节点名称（可选）</FormLabel>
+                      <FormLabel>{t('admin:nodes.name')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="东京节点 01" {...field} />
+                        <Input placeholder="Tokyo Node 01" {...field} />
                       </FormControl>
-                      <FormDescription>留空时按服务器地址生成</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -152,7 +149,7 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                   name="reachability"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>网络可达性</FormLabel>
+                      <FormLabel>{t('admin:nodes.reachability')}</FormLabel>
                       <Select
                         value={field.value}
                         onValueChange={(val) => {
@@ -164,14 +161,14 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                       >
                         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="PUBLIC">公网 VPS (独立公网 IPv4 / IPv6，可作为直连或中继)</SelectItem>
-                          <SelectItem value="NAT">内网 NAT 主机 (家宽 NAS、软路由、无公网 IP，作为反向中继落地)</SelectItem>
+                          <SelectItem value="PUBLIC">{t('admin:nodes.reachabilityPublic')}</SelectItem>
+                          <SelectItem value="NAT">{t('admin:nodes.reachabilityNat')}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormDescription>
                         {field.value === 'NAT'
-                          ? '此主机无公网 IP，通过反向多路复用隧道由入口 VPS 中继纳管，仅作为中继落地节点。'
-                          : '具备公网 IP 的独立服务器，可作为直连节点或中继入口/落地节点。'}
+                          ? t('admin:nodes.serverHostNatDesc')
+                          : t('admin:nodes.serverHostPublicDesc')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -182,15 +179,14 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                   name="communicationMode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>通信模式</FormLabel>
+                      <FormLabel>{t('admin:nodes.commMode')}</FormLabel>
                       <Select value={field.value} onValueChange={field.onChange}>
                         <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                         <SelectContent>
-                          <SelectItem value="WS">WS / WSS 长连接</SelectItem>
-                          <SelectItem value="HTTP">HTTP / HTTPS 轮询</SelectItem>
+                          <SelectItem value="WS">{t('admin:nodes.commModeWs')}</SelectItem>
+                          <SelectItem value="HTTP">{t('admin:nodes.commModeHttp')}</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>HTTP 模式适合不支持 WebSocket 升级的网络环境</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -201,11 +197,11 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                     name="serverHost"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>服务器公网地址</FormLabel>
+                        <FormLabel>{t('admin:nodes.serverHost')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="203.0.113.10 或 vps.example.com" {...field} />
+                          <Input placeholder="203.0.113.10" {...field} />
                         </FormControl>
-                        <FormDescription>客户端或中继节点连接此主机的公网 IP 或域名</FormDescription>
+                        <FormDescription>{t('admin:nodes.serverHostPublicDesc')}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -216,11 +212,11 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                     name="serverHost"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>内网标识地址（可选）</FormLabel>
+                        <FormLabel>{t('admin:nodes.serverHost')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="127.0.0.1 或 nas.lan" {...field} />
+                          <Input placeholder="127.0.0.1" {...field} />
                         </FormControl>
-                        <FormDescription>无公网 IP 时用于控制台显示标识，默认填 127.0.0.1</FormDescription>
+                        <FormDescription>{t('admin:nodes.serverHostNatDesc')}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -228,10 +224,10 @@ export function NodeFormDialog({ open, onOpenChange }: NodeFormDialogProps) {
                 )}
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    取消
+                    {t('common:actions.cancel')}
                   </Button>
                   <Button type="submit" disabled={createNode.isPending}>
-                    {createNode.isPending ? '创建中…' : '创建'}
+                    {createNode.isPending ? t('common:actions.submitting') : t('common:actions.create')}
                   </Button>
                 </DialogFooter>
               </form>

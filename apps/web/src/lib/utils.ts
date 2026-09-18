@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import i18n from '@/i18n/config';
 
 // 统一 className 合并工具（shadcn/ui 规范）
 export function cn(...inputs: ClassValue[]) {
@@ -25,11 +26,30 @@ export function formatRate(bytesPerSecond: number | null | undefined, decimals =
 }
 
 export function formatCurrency(cents: number | null | undefined): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format((cents ?? 0) / 100);
+  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'CNY' }).format((cents ?? 0) / 100);
 }
 
 export function formatYuan(yuan: number | null | undefined): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(yuan ?? 0);
+  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'CNY' }).format(yuan ?? 0);
+}
+
+export function formatRelativeTime(date: Date | string | number | null | undefined): string {
+  if (!date) return '—';
+  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return '—';
+
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diffSec < 10) return i18n.t('common:time.justNow');
+  if (diffSec < 60) return i18n.t('common:time.secondsAgo', { count: diffSec });
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return i18n.t('common:time.minutesAgo', { count: diffMin });
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return i18n.t('common:time.hoursAgo', { count: diffHour });
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 30) return i18n.t('common:time.daysAgo', { count: diffDay });
+  return formatDate(d);
 }
 
 let defaultSystemTimezone = 'Asia/Shanghai';

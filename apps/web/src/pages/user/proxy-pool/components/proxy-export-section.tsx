@@ -12,7 +12,7 @@ import {
   Wand2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,8 +38,8 @@ interface ProxyExportSectionProps {
 
 const FORMAT_LABELS: Record<ProxyPoolExportFormat, string> = {
   text: 'IP:Port:User:Pass',
-  uri: 'URI 列表',
-  json: 'JSON 对象'
+  uri: 'URI',
+  json: 'JSON'
 };
 
 export function ProxyExportSection({
@@ -48,6 +48,7 @@ export function ProxyExportSection({
   endpointsPending,
   onOpenCreateKey
 }: ProxyExportSectionProps) {
+  const { t } = useTranslation(['user', 'common']);
   const publicSettings = usePublicSettings();
   const { rotateToken } = useProxyPoolMutations();
   const [keyId, setKeyId] = useState<string>('');
@@ -195,13 +196,13 @@ export function ProxyExportSection({
   const clearAllLines = () => setSelectedLineIds([]);
 
   const exportContent = !keyId
-    ? '请先创建并启用一条直连代理凭据'
+    ? t('user:proxyPool.createAndEnableKeyPrompt')
     : !selectedLineIds.length
-      ? '请至少选择一个节点端点'
+      ? t('user:proxyPool.atLeastOneEndpointPrompt')
       : exportQuery.isPending
-        ? '正在生成代理列表…'
+        ? t('user:proxyPool.generatingProxies')
         : exportQuery.isError
-          ? '导出失败，请检查凭据与节点可用性'
+          ? t('user:proxyPool.exportFailed')
           : (exportQuery.data ?? '');
 
   const copyExportContent = async () => {
@@ -210,17 +211,17 @@ export function ProxyExportSection({
     try {
       await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      toast.success(viewMode === 'export' ? '代理列表已复制到剪贴板' : '代码片段已复制到剪贴板');
+      toast.success(viewMode === 'export' ? t('user:proxyPool.listCopiedToast') : t('user:proxyPool.codeCopiedToast'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error('复制失败，请手动选择复制');
+      toast.error(t('user:proxyPool.copyFailedToast'));
     }
   };
 
   const downloadTxt = () => {
     const content = exportQuery.data ?? '';
     if (!content) {
-      toast.error('暂无生成的代理列表可下载');
+      toast.error(t('user:proxyPool.noListToDownload'));
       return;
     }
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -230,7 +231,7 @@ export function ProxyExportSection({
     a.download = `riricloud-proxies-${protocol}-${format}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('已下载代理列表文件');
+    toast.success(t('user:proxyPool.downloadedToast'));
   };
 
   if (!keys.length) {
@@ -238,12 +239,12 @@ export function ProxyExportSection({
       <Card className="border-dashed bg-muted/10">
         <CardContent className="py-12">
           <EmptyState
-            title="暂无可导出的凭据"
-            description="直连代理池需要先创建至少一条 Proxy Key 凭据方可提取代理列表与生成代码。"
+            title={t('user:proxyPool.noExportableKeyTitle')}
+            description={t('user:proxyPool.noExportableKeyDesc')}
             action={
               onOpenCreateKey ? (
                 <Button size="sm" onClick={onOpenCreateKey}>
-                  新建第一条凭据
+                  {t('user:proxyPool.createFirstKey')}
                 </Button>
               ) : undefined
             }
@@ -261,10 +262,10 @@ export function ProxyExportSection({
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
               <Wand2 className="size-4 text-sky-500" />
-              提取参数配置
+              {t('user:proxyPool.configTitle')}
             </CardTitle>
             <CardDescription className="text-xs">
-              选择使用的凭据、协议与导出格式，即时生成直连代理
+              {t('user:proxyPool.configDesc')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -275,11 +276,11 @@ export function ProxyExportSection({
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <KeyRound className="size-3.5" />
-                使用凭据
+                {t('user:proxyPool.credentialSelectLabel')}
               </label>
               <Select value={keyId} onValueChange={setKeyId}>
-                <SelectTrigger className="h-9 text-xs" aria-label="选择导出凭据">
-                  <SelectValue placeholder="选择凭据" />
+                <SelectTrigger className="h-9 text-xs" aria-label="Select export credential">
+                  <SelectValue placeholder={t('user:proxyPool.credentialSelectPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {activeKeys.map((item) => (
@@ -294,9 +295,9 @@ export function ProxyExportSection({
             {/* 2. 导出协议 */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground flex items-center justify-between">
-                <span>导出协议</span>
+                <span>{t('user:proxyPool.exportProtocolLabel')}</span>
                 {allSelectedAreTls && (
-                  <span className="text-[10px] text-sky-400/90 font-normal">已选节点均已启用 TLS</span>
+                  <span className="text-[10px] text-sky-400/90 font-normal">{t('user:proxyPool.allTlsTip')}</span>
                 )}
               </label>
               <div className="grid grid-cols-2 gap-1 rounded-md border bg-muted/40 p-0.5">
@@ -305,7 +306,7 @@ export function ProxyExportSection({
                   variant={protocol === 'socks5' ? 'default' : 'ghost'}
                   size="sm"
                   disabled={allSelectedAreTls}
-                  title={allSelectedAreTls ? '已选节点均已启用 TLS 加密，仅支持 HTTPS 代理' : undefined}
+                  title={allSelectedAreTls ? t('user:proxyPool.allTlsTitle') : undefined}
                   className={cn(
                     'h-7 text-xs font-medium',
                     allSelectedAreTls && 'cursor-not-allowed opacity-40'
@@ -328,7 +329,7 @@ export function ProxyExportSection({
 
             {/* 3. 导出格式 */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">导出格式</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('user:proxyPool.exportFormatLabel')}</label>
               <div className="grid grid-cols-3 gap-1 rounded-md border bg-muted/40 p-0.5">
                 {(Object.keys(FORMAT_LABELS) as ProxyPoolExportFormat[]).map((item) => (
                   <Button
@@ -351,7 +352,7 @@ export function ProxyExportSection({
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                 <Globe className="size-3.5 text-sky-500" />
-                选择出网节点（已选 {selectedLineIds.length}/{endpoints.length}）
+                {t('user:proxyPool.selectNodesTitle', { selected: selectedLineIds.length, total: endpoints.length })}
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -361,7 +362,7 @@ export function ProxyExportSection({
                   className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                   onClick={selectAllLines}
                 >
-                  全选
+                  {t('user:proxyPool.selectAll')}
                 </Button>
                 <Button
                   type="button"
@@ -370,13 +371,13 @@ export function ProxyExportSection({
                   className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                   onClick={clearAllLines}
                 >
-                  清空
+                  {t('user:proxyPool.clearAll')}
                 </Button>
               </div>
             </div>
 
             {endpointsPending ? (
-              <p className="py-4 text-center text-xs text-muted-foreground animate-pulse">正在加载节点…</p>
+              <p className="py-4 text-center text-xs text-muted-foreground animate-pulse">{t('user:proxyPool.loadingNodes')}</p>
             ) : endpoints.length ? (
               <div className="flex flex-wrap gap-2 pt-0.5">
                 {endpoints.map((endpoint) => {
@@ -440,7 +441,7 @@ export function ProxyExportSection({
               </div>
             ) : (
               <p className="py-3 text-center text-xs text-muted-foreground">
-                管理员尚未配置 Mixed 直连线路，暂无可用的直连代理节点。
+                {t('user:proxyPool.noNodesConfigured')}
               </p>
             )}
           </div>
@@ -473,7 +474,7 @@ export function ProxyExportSection({
                 onClick={() => setViewMode('export')}
               >
                 <ClipboardList className="size-3 mr-1" />
-                <span>提取结果</span>
+                <span>{t('user:proxyPool.tabTerminalExport')}</span>
                 <span className="hidden sm:inline text-zinc-300 ml-0.5">
                   ({format === 'text' ? 'TXT' : format === 'uri' ? 'URI' : 'JSON'})
                 </span>
@@ -489,7 +490,7 @@ export function ProxyExportSection({
                 onClick={() => setViewMode('code')}
               >
                 <Terminal className="size-3 mr-1" />
-                <span>自动化代码</span>
+                <span>{t('user:proxyPool.tabTerminalCode')}</span>
               </Button>
             </div>
           </div>
@@ -507,7 +508,7 @@ export function ProxyExportSection({
                   disabled={!exportQuery.data}
                 >
                   <Download className="size-3.5" />
-                  <span className="hidden sm:inline">下载 .txt</span>
+                  <span className="hidden sm:inline">{t('user:proxyPool.downloadTxt')}</span>
                 </Button>
                 <Button
                   type="button"
@@ -518,7 +519,7 @@ export function ProxyExportSection({
                   disabled={!exportQuery.data}
                 >
                   {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                  <span>{copied ? '已复制' : '复制结果'}</span>
+                  <span>{copied ? t('user:proxyPool.copied') : t('user:proxyPool.copyResult')}</span>
                 </Button>
               </>
             ) : (
@@ -531,7 +532,7 @@ export function ProxyExportSection({
                 disabled={!currentSnippet}
               >
                 {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
-                <span>{copied ? '已复制' : '复制代码'}</span>
+                <span>{copied ? t('user:proxyPool.copied') : t('user:proxyPool.copyCode')}</span>
               </Button>
             )}
           </div>
@@ -542,7 +543,7 @@ export function ProxyExportSection({
           <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs">
             <div className="flex items-center gap-1.5">
               <span className="rounded border border-zinc-700/60 bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
-                {format === 'text' ? 'TXT 文本' : format === 'uri' ? 'URI 链接' : 'JSON 格式'}
+                {format === 'text' ? 'TXT' : format === 'uri' ? 'URI' : 'JSON'}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -555,7 +556,7 @@ export function ProxyExportSection({
                 disabled={!exportQuery.data}
               >
                 <Download className="size-3" />
-                <span>下载 .txt</span>
+                <span>{t('user:proxyPool.downloadTxt')}</span>
               </Button>
               <Button
                 type="button"
@@ -566,7 +567,7 @@ export function ProxyExportSection({
                 disabled={!exportQuery.data}
               >
                 {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-                <span>{copied ? '已复制' : '复制结果'}</span>
+                <span>{copied ? t('user:proxyPool.copied') : t('user:proxyPool.copyResult')}</span>
               </Button>
             </div>
           </div>
@@ -606,14 +607,14 @@ export function ProxyExportSection({
                   disabled={!currentSnippet}
                 >
                   {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
-                  <span>{copied ? '已复制' : '复制代码'}</span>
+                  <span>{copied ? t('user:proxyPool.copied') : t('user:proxyPool.copyCode')}</span>
                 </Button>
               </div>
 
               {/* 桌面端出网节点切换器 (仅在桌面端且多于 1 个有效节点时在此行展示) */}
               {effectiveEndpoints.length > 1 && (
                 <div className="hidden sm:flex items-center gap-1.5 ml-auto shrink-0">
-                  <span className="text-[11px] text-zinc-500">出网节点:</span>
+                  <span className="text-[11px] text-zinc-500">{t('user:proxyPool.egressNode')}</span>
                   {effectiveEndpoints.length <= 2 ? (
                     <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs">
                       <Button
@@ -626,7 +627,7 @@ export function ProxyExportSection({
                         )}
                         onClick={() => setSelectedNodeView('all')}
                       >
-                        🎲 轮换 ({effectiveEndpoints.length})
+                        {t('user:proxyPool.rotationPool', { count: effectiveEndpoints.length })}
                       </Button>
                       {effectiveEndpoints.map((ep) => (
                         <Button
@@ -649,13 +650,13 @@ export function ProxyExportSection({
                     <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
                       <SelectTrigger
                         className="h-6 min-w-[120px] max-w-[170px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
-                        aria-label="选择代码出网节点视图"
+                        aria-label="Select egress node view"
                       >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
                         <SelectItem value="all" className="text-xs">
-                          🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                          {t('user:proxyPool.allRotationPool', { count: effectiveEndpoints.length })}
                         </SelectItem>
                         {effectiveEndpoints.map((ep) => (
                           <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
@@ -672,7 +673,7 @@ export function ProxyExportSection({
             {/* 移动端专属三级控制条 (仅在移动端且多于 1 个有效节点时展示出网节点选择) */}
             {effectiveEndpoints.length > 1 && (
               <div className="flex sm:hidden items-center justify-between gap-2 border-b border-zinc-800/80 bg-zinc-900/40 px-3 py-1.5 text-xs">
-                <span className="text-[11px] text-zinc-400 shrink-0">出网节点:</span>
+                <span className="text-[11px] text-zinc-400 shrink-0">{t('user:proxyPool.egressNode')}</span>
                 {effectiveEndpoints.length <= 2 ? (
                   <div className="flex items-center gap-1 rounded-md bg-zinc-800/80 p-0.5 text-xs overflow-x-auto no-scrollbar">
                     <Button
@@ -685,7 +686,7 @@ export function ProxyExportSection({
                       )}
                       onClick={() => setSelectedNodeView('all')}
                     >
-                      🎲 轮换 ({effectiveEndpoints.length})
+                      {t('user:proxyPool.rotationPool', { count: effectiveEndpoints.length })}
                     </Button>
                     {effectiveEndpoints.map((ep) => (
                       <Button
@@ -708,13 +709,13 @@ export function ProxyExportSection({
                   <Select value={selectedNodeView} onValueChange={setSelectedNodeView}>
                     <SelectTrigger
                       className="h-6 w-full max-w-[200px] border-zinc-700/80 bg-zinc-800/90 text-[11px] text-zinc-200"
-                      aria-label="选择代码出网节点视图"
+                      aria-label="Select egress node view"
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="border-zinc-700 bg-zinc-900 text-zinc-200">
                       <SelectItem value="all" className="text-xs">
-                        🎲 全部轮换池 ({effectiveEndpoints.length} 个)
+                        {t('user:proxyPool.allRotationPool', { count: effectiveEndpoints.length })}
                       </SelectItem>
                       {effectiveEndpoints.map((ep) => (
                         <SelectItem key={ep.lineId} value={ep.lineId} className="text-xs">
@@ -732,7 +733,7 @@ export function ProxyExportSection({
         {/* 终端内容视窗 */}
         {viewMode === 'code' && protocol === 'socks5' && selectedEndpoints.some((e) => e.tls) && (
           <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300">
-            <span>⚠️ 已选出网节点中有 {selectedEndpoints.filter((e) => e.tls).length} 个启用了 TLS 加密，原生 SOCKS5 无法直连，已自动从轮换池与代码中过滤。若需使用这些节点，请在上方将协议切换为 HTTP (HTTPS)。</span>
+            <span>{t('user:proxyPool.tlsWarning', { count: selectedEndpoints.filter((e) => e.tls).length })}</span>
           </div>
         )}
         <div className="max-h-80 min-h-36 overflow-auto p-4 font-mono text-xs leading-relaxed select-text">
@@ -740,7 +741,7 @@ export function ProxyExportSection({
             <pre className="whitespace-pre-wrap break-all text-zinc-200">{exportContent}</pre>
           ) : (
             <pre className="whitespace-pre-wrap text-emerald-400 dark:text-emerald-300">
-              {currentSnippet?.code || '请先选择至少一个节点端点。'}
+              {currentSnippet?.code || t('user:proxyPool.selectAtLeastOneNode')}
             </pre>
           )}
         </div>
@@ -751,10 +752,10 @@ export function ProxyExportSection({
         <div className="min-w-0 space-y-0.5">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <Server className="size-3.5 text-sky-500" />
-            自动化动态拉取 API（第三方爬虫框架 / 指纹浏览器）
+            {t('user:proxyPool.apiTitle')}
           </div>
           <p className="text-[11px] text-muted-foreground">
-            脚本携带 Token 可免 Cookie 直接拉取最新直连代理列表，支持定时轮询与节点热更新。
+            {t('user:proxyPool.apiDesc')}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -768,7 +769,7 @@ export function ProxyExportSection({
               onClick={() => rotateToken.mutate(currentKey.id)}
             >
               <RefreshCw className="size-3" />
-              {rotateToken.isPending ? '轮换中…' : '轮换 Token'}
+              {rotateToken.isPending ? t('user:proxyPool.rotatingToken') : t('user:proxyPool.rotateTokenButton')}
             </Button>
           ) : null}
           {automationUrl ? (
@@ -779,11 +780,11 @@ export function ProxyExportSection({
               className="h-7 gap-1 px-2.5 text-xs font-mono"
               onClick={async () => {
                 await navigator.clipboard.writeText(automationUrl);
-                toast.success('自动化拉取 API 已复制');
+                toast.success(t('user:proxyPool.apiUrlCopiedToast'));
               }}
             >
               <Copy className="size-3" />
-              复制 API URL
+              {t('user:proxyPool.copyApiUrl')}
             </Button>
           ) : null}
         </div>
@@ -793,13 +794,10 @@ export function ProxyExportSection({
       <div className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/10 p-3 text-xs text-muted-foreground">
         <ClipboardList className="mt-0.5 size-3.5 shrink-0 text-sky-500" />
         <p className="leading-relaxed">
-          <span className="font-medium text-foreground">指纹浏览器一键导入贴士：</span>
-          选择 <Badge variant="secondary" className="mx-0.5 font-mono text-[10px] px-1">TXT</Badge> 格式（
-          <code className="font-mono text-foreground font-semibold">IP:Port:User:Pass</code>
-          ）后直接点击“复制结果”，可在 AdsPower、Hubstudio、比特指纹浏览器中直接批量粘贴导入。
+          <span className="font-medium text-foreground">{t('user:proxyPool.fingerprintTipTitle')}</span>{' '}
+          {t('user:proxyPool.fingerprintTipDesc')}
         </p>
       </div>
     </div>
   );
 }
-

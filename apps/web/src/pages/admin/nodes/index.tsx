@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -16,21 +17,28 @@ import { useAdminNodes, useNodeMutations, type AdminNode } from './use-nodes';
 import { NodeFormDialog } from './components/node-form-dialog';
 
 function NodeStatusBadge({ node }: { node: AdminNode }) {
-  if (node.status === 'DISABLED') return <Badge variant="secondary">已禁用</Badge>;
-  if (node.status !== 'ONLINE') return <Badge variant="secondary">离线</Badge>;
-  return <Badge variant={node.communicationMode === 'HTTP' ? 'outline' : 'default'}>{node.communicationMode === 'HTTP' ? 'HTTP 轮询' : 'WS 在线'}</Badge>;
-}
-
-function formatLastSeen(value: string | null) {
-  return value ? formatDateTime(value) : '未上报';
+  const { t } = useTranslation(['admin']);
+  if (node.status === 'DISABLED') return <Badge variant="secondary">{t('admin:nodes.statusDisabled')}</Badge>;
+  if (node.status !== 'ONLINE') return <Badge variant="secondary">{t('admin:nodes.statusOffline')}</Badge>;
+  return (
+    <Badge variant={node.communicationMode === 'HTTP' ? 'outline' : 'default'}>
+      {node.communicationMode === 'HTTP' ? t('admin:nodes.modeHttp') : t('admin:nodes.modeWs')}
+    </Badge>
+  );
 }
 
 function NodeRate({ node }: { node: AdminNode }) {
   if (node.status !== 'ONLINE' || node.uploadRate == null || node.downloadRate == null) return <span>—</span>;
-  return <div className="space-y-0.5 whitespace-nowrap text-xs"><div className="text-chart-2">↑ {formatRate(node.uploadRate)}</div><div className="text-chart-1">↓ {formatRate(node.downloadRate)}</div></div>;
+  return (
+    <div className="space-y-0.5 whitespace-nowrap text-xs">
+      <div className="text-chart-2">↑ {formatRate(node.uploadRate)}</div>
+      <div className="text-chart-1">↓ {formatRate(node.downloadRate)}</div>
+    </div>
+  );
 }
 
 export default function AdminNodesPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const [formOpen, setFormOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState<AdminNode | null>(null);
   const [search, setSearch] = React.useState('');
@@ -63,7 +71,7 @@ export default function AdminNodesPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="节点管理" description="纳管状态、机器遥测与线路承载端口" />
+      <PageHeader title={t('admin:nodes.title')} description={t('admin:nodes.subtitle')} />
 
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -72,35 +80,36 @@ export default function AdminNodesPage() {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索节点名称或地址…"
+              placeholder={t('admin:nodes.searchPlaceholder')}
               className="pl-9"
             />
           </div>
           <Select value={status} onValueChange={(val) => setStatus(val as typeof status)}>
             <SelectTrigger className="w-full sm:w-32">
-              <SelectValue placeholder="通信状态" />
+              <SelectValue placeholder={t('admin:nodes.filterStatus')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部状态</SelectItem>
-              <SelectItem value="ONLINE">在线</SelectItem>
-              <SelectItem value="OFFLINE">离线</SelectItem>
-              <SelectItem value="DISABLED">已禁用</SelectItem>
+              <SelectItem value="ALL">{t('admin:nodes.statusAll')}</SelectItem>
+              <SelectItem value="ONLINE">{t('admin:nodes.statusOnline')}</SelectItem>
+              <SelectItem value="OFFLINE">{t('admin:nodes.statusOffline')}</SelectItem>
+              <SelectItem value="DISABLED">{t('admin:nodes.statusDisabled')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={kernel} onValueChange={(val) => setKernel(val as typeof kernel)}>
             <SelectTrigger className="w-full sm:w-32">
-              <SelectValue placeholder="内核状态" />
+              <SelectValue placeholder={t('admin:nodes.filterKernel')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部内核</SelectItem>
-              <SelectItem value="RUNNING">运行中</SelectItem>
-              <SelectItem value="STOPPED">已停止</SelectItem>
+              <SelectItem value="ALL">{t('admin:nodes.kernelAll')}</SelectItem>
+              <SelectItem value="RUNNING">{t('admin:nodes.kernelRunning')}</SelectItem>
+              <SelectItem value="STOPPED">{t('admin:nodes.kernelStopped')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="flex w-full flex-wrap gap-2 sm:flex-nowrap lg:w-auto">
           <Button size="sm" className="w-full gap-1.5 sm:w-auto" onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4" />添加节点
+            <Plus className="h-4 w-4" />
+            {t('admin:nodes.addNode')}
           </Button>
         </div>
       </div>
@@ -111,16 +120,16 @@ export default function AdminNodesPage() {
             <Table className="min-w-[980px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>节点</TableHead>
-                  <TableHead>地址</TableHead>
-                  <TableHead>承载线路</TableHead>
-                  <TableHead>端口</TableHead>
-                  <TableHead>内核</TableHead>
-                  <TableHead>通信状态</TableHead>
-                  <TableHead>CPU</TableHead>
-                  <TableHead>内存</TableHead>
-                  <TableHead>带宽</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead>{t('admin:nodes.colNode')}</TableHead>
+                  <TableHead>{t('admin:nodes.colHost')}</TableHead>
+                  <TableHead>{t('admin:nodes.colLines')}</TableHead>
+                  <TableHead>{t('admin:nodes.colPorts')}</TableHead>
+                  <TableHead>{t('admin:nodes.colKernel')}</TableHead>
+                  <TableHead>{t('admin:nodes.colStatus')}</TableHead>
+                  <TableHead>{t('admin:nodes.colCpu')}</TableHead>
+                  <TableHead>{t('admin:nodes.colMem')}</TableHead>
+                  <TableHead>{t('admin:nodes.colBandwidth')}</TableHead>
+                  <TableHead className="text-right">{t('admin:nodes.colActions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -133,11 +142,11 @@ export default function AdminNodesPage() {
                         </Link>
                         {node.reachability === 'NAT' ? (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
-                            NAT 落地
+                            {t('admin:nodes.natTag')}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground">
-                            公网 VPS
+                            {t('admin:nodes.publicTag')}
                           </Badge>
                         )}
                       </div>
@@ -145,7 +154,7 @@ export default function AdminNodesPage() {
                     <TableCell className="text-muted-foreground">
                       {node.reachability === 'NAT' ? (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          反向隧道穿透
+                          {t('admin:nodes.tunnelDesc')}
                           <span className="font-mono text-[11px] opacity-75">({node.serverHost})</span>
                         </span>
                       ) : (
@@ -165,14 +174,14 @@ export default function AdminNodesPage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-muted-foreground">未承载线路</span>
+                        <span className="text-xs text-muted-foreground">{t('admin:nodes.noLines')}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs tabular-nums">
                       {node.servicePorts.length
                         ? node.servicePorts.slice(0, 3).map((port) => (
                             <div key={`${port.lineId}-${port.role}`}>
-                              {port.port} · {port.role === 'DIRECT' ? '直连' : port.role === 'TRANSIT' ? '中转' : '落地'}
+                              {port.port} · {port.role === 'DIRECT' ? t('admin:nodes.roleDirect') : port.role === 'TRANSIT' ? t('admin:nodes.roleTransit') : t('admin:nodes.roleLanding')}
                             </div>
                           ))
                         : '—'}
@@ -184,21 +193,21 @@ export default function AdminNodesPage() {
                             <span className="text-xs text-muted-foreground cursor-help select-none">—</span>
                           </TooltipTrigger>
                           <TooltipContent className="text-xs">
-                            节点{node.status === 'DISABLED' ? '已禁用' : '离线'}，内核状态未知
+                            {t('admin:nodes.kernelOfflineNotice', { status: node.status === 'DISABLED' ? t('admin:nodes.statusDisabled') : t('admin:nodes.statusOffline') })}
                           </TooltipContent>
                         </Tooltip>
                       ) : node.kernelRunning == null ? (
                         <span className="text-xs text-muted-foreground">—</span>
                       ) : node.kernelRunning ? (
-                        <Badge>运行</Badge>
+                        <Badge>{t('admin:nodes.kernelRunningShort')}</Badge>
                       ) : (
-                        <Badge variant="destructive">停止</Badge>
+                        <Badge variant="destructive">{t('admin:nodes.kernelStoppedShort')}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1">
                         <NodeStatusBadge node={node} />
-                        <p className="text-xs text-muted-foreground">{formatLastSeen(node.lastSeenAt)}</p>
+                        <p className="text-xs text-muted-foreground">{node.lastSeenAt ? formatDateTime(node.lastSeenAt) : t('admin:nodes.notReported')}</p>
                       </div>
                     </TableCell>
                     <TableCell className="tabular-nums">
@@ -217,14 +226,14 @@ export default function AdminNodesPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label="重载配置"
+                              aria-label={t('admin:nodes.reloadConfig')}
                               disabled={reloadNode.isPending}
                               onClick={() => reloadNode.mutate(node.id)}
                             >
                               <RefreshCw className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>重载配置</TooltipContent>
+                          <TooltipContent>{t('admin:nodes.reloadConfig')}</TooltipContent>
                         </Tooltip>
                         {!node.isLocal && (
                           <Tooltip>
@@ -232,24 +241,24 @@ export default function AdminNodesPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                aria-label="删除"
+                                aria-label={t('common:actions.delete')}
                                 onClick={() => setDeleting(node)}
                               >
                                 <Trash2 className="text-destructive h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>删除</TooltipContent>
+                            <TooltipContent>{t('common:actions.delete')}</TooltipContent>
                           </Tooltip>
                         )}
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="详情" asChild>
+                            <Button variant="ghost" size="icon" aria-label={t('admin:nodes.details')} asChild>
                               <Link to={`/admin/nodes/${node.id}`}>
                                 <ChevronRight className="h-4 w-4" />
                               </Link>
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>详情</TooltipContent>
+                          <TooltipContent>{t('admin:nodes.details')}</TooltipContent>
                         </Tooltip>
                       </div>
                     </TableCell>
@@ -259,11 +268,11 @@ export default function AdminNodesPage() {
             </Table>
           ) : (
             <EmptyState
-              title={(nodes ?? []).length ? '未找到匹配节点' : '暂无节点'}
+              title={(nodes ?? []).length ? t('admin:nodes.emptyFiltered') : t('admin:nodes.emptyNodes')}
               description={
                 (nodes ?? []).length
-                  ? '请尝试调整搜索关键词或筛选条件。'
-                  : '添加首个节点后，在 VPS 上执行安装命令即可接入'
+                  ? t('admin:nodes.emptyFilteredDesc')
+                  : t('admin:nodes.subtitle')
               }
               className="border-0"
             />
@@ -276,18 +285,18 @@ export default function AdminNodesPage() {
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除节点 {deleting?.name}？</AlertDialogTitle>
+            <AlertDialogTitle>{t('admin:nodes.deleteDialogTitle', { name: deleting?.name ?? '' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              该节点的线路承载关系与流量记录将一并删除，在线 Agent 会被断开。
+              {t('admin:nodes.deleteDialogDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => deleting && deleteNode.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}
             >
-              删除
+              {t('common:actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

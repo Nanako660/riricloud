@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 import type { PlanCardConfig } from '@/pages/admin/plans/use-plans';
 
 export type TrafficResetMode = 'NONE' | 'CALENDAR_MONTH' | 'SUBSCRIPTION_CYCLE';
@@ -57,28 +58,28 @@ export function useUserSubscriptionMutations() {
   };
   const subscribe = useMutation({
     mutationFn: async (planId: string) => (await api.post('/user/subscription', { planId })).data,
-    onSuccess: () => { toast.success('套餐订购成功'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '订购失败'))
+    onSuccess: () => { toast.success(i18n.t('user:market.buySuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
   const upgrade = useMutation({
     mutationFn: async (planId: string) => (await api.post('/user/subscription/upgrade', { planId })).data,
-    onSuccess: () => { toast.success('套餐已升配'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '升配失败'))
+    onSuccess: () => { toast.success(i18n.t('common:status.success')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
   const renew = useMutation({
     mutationFn: async () => (await api.post('/user/subscription/renew')).data,
-    onSuccess: () => { toast.success('订阅续费成功'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '续费失败'))
+    onSuccess: () => { toast.success(i18n.t('common:status.success')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
   const cancel = useMutation({
     mutationFn: async () => (await api.post('/user/subscription/cancel')).data,
-    onSuccess: () => { toast.success('订阅已取消，到期前仍可使用'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '取消失败'))
+    onSuccess: () => { toast.success(i18n.t('common:status.success')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
   const resetToken = useMutation({
     mutationFn: async () => (await api.post<{ subscriptionToken: string }>('/user/subscription/reset-token')).data,
-    onSuccess: () => { toast.success('订阅链接已重置'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '重置失败'))
+    onSuccess: () => { toast.success(i18n.t('user:subscription.regenerateSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
   return { subscribe, upgrade, renew, cancel, resetToken };
 }

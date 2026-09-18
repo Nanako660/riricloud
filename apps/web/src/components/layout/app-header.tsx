@@ -3,6 +3,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { usePublicSettings } from '@/lib/public-settings';
 import { ThemeToggle } from './theme-toggle';
 import { UserMenu } from './user-menu';
+import { LanguageSwitcher } from './language-switcher';
 
 // 顶部操作栏：与左侧 Logo (h-14) 保持一致水平高度，位于主工作大卡片上方
 export function AppHeader() {
@@ -25,6 +26,7 @@ export function AppHeader() {
       </div>
       <div className="hidden md:flex flex-1" />
       <div className="flex items-center gap-2">
+        <LanguageSwitcher />
         <ThemeToggle />
         <UserMenu />
       </div>

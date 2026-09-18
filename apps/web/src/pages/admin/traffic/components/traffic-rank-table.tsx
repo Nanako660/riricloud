@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Medal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -13,20 +14,21 @@ function rankClass(index: number) {
 }
 
 export function TrafficRankTable({ items, compact = false }: { items: LineTrafficRankItem[]; compact?: boolean }) {
-  if (items.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">暂无线路流量记录</p>;
+  const { t } = useTranslation(['admin', 'common']);
+  if (items.length === 0) return <p className="py-10 text-center text-sm text-muted-foreground">{t('admin:traffic.emptyLineRecords')}</p>;
   return (
     <Table className={compact ? 'min-w-[700px]' : 'min-w-[920px]'}>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-12 whitespace-nowrap">#</TableHead>
-          <TableHead className="whitespace-nowrap">线路</TableHead>
-          <TableHead className="whitespace-nowrap">类型 / 协议</TableHead>
-          <TableHead className="whitespace-nowrap">倍率</TableHead>
-          <TableHead className="whitespace-nowrap text-right">上行</TableHead>
-          <TableHead className="whitespace-nowrap text-right">下行</TableHead>
-          <TableHead className="whitespace-nowrap text-right">物理总量</TableHead>
-          <TableHead className="whitespace-nowrap text-right">计费量</TableHead>
-          {!compact && <TableHead>占比</TableHead>}
+          <TableHead className="w-12 whitespace-nowrap">{t('admin:traffic.colRank')}</TableHead>
+          <TableHead className="whitespace-nowrap">{t('admin:traffic.tabLines')}</TableHead>
+          <TableHead className="whitespace-nowrap">{t('admin:traffic.colTypeProtocol')}</TableHead>
+          <TableHead className="whitespace-nowrap">{t('admin:traffic.colRate')}</TableHead>
+          <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colUpload')}</TableHead>
+          <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colDownload')}</TableHead>
+          <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colPhysicalTotal')}</TableHead>
+          <TableHead className="whitespace-nowrap text-right">{t('admin:traffic.colBilledTotal')}</TableHead>
+          {!compact && <TableHead>{t('admin:traffic.colPercentage')}</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>

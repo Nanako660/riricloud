@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Copy, Eye, FileCog, MoreHorizontal, Pencil, Search, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ import { useAdminTemplates, useTemplateMutations, type SubscriptionTemplate } fr
 import { TemplatePreviewDrawer } from './components/template-preview-drawer';
 
 export default function TemplatesPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const { data, isPending, isError } = useAdminTemplates();
   const { remove, duplicate } = useTemplateMutations();
   const [search, setSearch] = useState('');
@@ -43,16 +45,16 @@ export default function TemplatesPage() {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return data;
     return data.filter(
-      (t) =>
-        t.name.toLowerCase().includes(keyword) ||
-        (t.description && t.description.toLowerCase().includes(keyword))
+      (tpl) =>
+        tpl.name.toLowerCase().includes(keyword) ||
+        (tpl.description && tpl.description.toLowerCase().includes(keyword))
     );
   }, [data, search]);
 
   if (isPending) {
     return (
       <PageContainer>
-        <PageHeader title="订阅模板" description="可视化维护策略组、规则集、DNS 和高级覆写。" />
+        <PageHeader title={t('admin:templates.title')} description={t('admin:templates.subtitle')} />
         <Skeleton className="h-10 w-full max-w-sm" />
         <Card>
           <CardContent className="p-4 space-y-3">
@@ -68,29 +70,29 @@ export default function TemplatesPage() {
   if (isError) {
     return (
       <PageContainer>
-        <PageHeader title="订阅模板" description="可视化维护策略组、规则集、DNS 和高级覆写。" />
-        <EmptyState title="无法加载模板" description="请稍后刷新重试" />
+        <PageHeader title={t('admin:templates.title')} description={t('admin:templates.subtitle')} />
+        <EmptyState title={t('admin:templates.emptyTemplates')} description={t('admin:nodes.emptyFilteredDesc')} />
       </PageContainer>
     );
   }
 
   return (
     <PageContainer>
-      <PageHeader title="订阅模板" description="可视化维护策略组、规则集、DNS 和高级覆写。" />
+      <PageHeader title={t('admin:templates.title')} description={t('admin:templates.subtitle')} />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="搜索模板名称或描述…"
+            placeholder={t('admin:templates.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8"
           />
         </div>
         <Button className="w-full sm:w-auto" onClick={() => { setEditing(null); setOpen(true); }}>
-          <FileCog className="h-4 w-4 mr-1.5" />新建模板
+          <FileCog className="h-4 w-4 mr-1.5" />{t('admin:templates.addTemplate')}
         </Button>
       </div>
 
@@ -100,11 +102,11 @@ export default function TemplatesPage() {
             <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[30%]">模板信息</TableHead>
-                  <TableHead>策略与规则</TableHead>
-                  <TableHead>DNS 配置</TableHead>
-                  <TableHead>高级覆写</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead className="w-[30%]">{t('admin:templates.colTemplate')}</TableHead>
+                  <TableHead>{t('admin:templates.colGroupsRules')}</TableHead>
+                  <TableHead>{t('admin:templates.colDns')}</TableHead>
+                  <TableHead>{t('admin:templates.colOverride')}</TableHead>
+                  <TableHead className="text-right">{t('admin:templates.colActions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -114,31 +116,31 @@ export default function TemplatesPage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-foreground">{template.name}</span>
-                          {template.isBuiltin && <Badge variant="secondary" className="text-xs">内嵌</Badge>}
-                          {template.isDefault && <Badge className="text-xs">默认</Badge>}
+                          {template.isBuiltin && <Badge variant="secondary" className="text-xs">{t('admin:templates.isBuiltin')}</Badge>}
+                          {template.isDefault && <Badge className="text-xs">{t('admin:templates.isDefault')}</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-1">
-                          {template.description || '暂无描述'}
+                          {template.description || t('admin:templates.noDesc')}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-0.5 text-xs">
                         <div>
-                          <span className="text-muted-foreground">策略组：</span>
+                          <span className="text-muted-foreground">{t('admin:templates.proxyGroups')}</span>
                           <span className="font-medium tabular-nums">{template.proxyGroups.length}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">规则集：</span>
+                          <span className="text-muted-foreground">{t('admin:templates.ruleSets')}</span>
                           <span className="font-medium tabular-nums">{template.ruleSets.length}</span>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       {Object.keys(template.dnsConfig).length ? (
-                        <Badge variant="outline" className="text-xs">已配置</Badge>
+                        <Badge variant="outline" className="text-xs">{t('admin:templates.dnsConfigured')}</Badge>
                       ) : (
-                        <span className="text-xs text-muted-foreground">系统默认</span>
+                        <span className="text-xs text-muted-foreground">{t('admin:templates.dnsDefault')}</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -155,60 +157,52 @@ export default function TemplatesPage() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end items-center gap-1">
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label="预览模板"
                               onClick={() => setPreviewing(template)}
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>预览模板</TooltipContent>
+                          <TooltipContent>{t('admin:templates.preview')}</TooltipContent>
                         </Tooltip>
-
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label="编辑模板"
-                              onClick={() => {
-                                setEditing(template);
-                                setOpen(true);
-                              }}
+                              onClick={() => { setEditing(template); setOpen(true); }}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>编辑模板</TooltipContent>
+                          <TooltipContent>{t('admin:templates.editTemplate')}</TooltipContent>
                         </Tooltip>
-
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label="更多操作">
+                            <Button variant="ghost" size="icon">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
-                              disabled={duplicate.isPending}
                               onClick={() => duplicate.mutate(template.id)}
                             >
                               <Copy className="mr-2 h-4 w-4" />
-                              复制副本
+                              {t('admin:templates.duplicate')}
                             </DropdownMenuItem>
-                            {!template.isBuiltin && !template.isDefault && (
+                            {!template.isBuiltin && (
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
                                 onClick={() => setDeleting(template)}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                删除模板
+                                {t('admin:templates.delete')}
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
@@ -221,56 +215,45 @@ export default function TemplatesPage() {
             </Table>
           ) : (
             <EmptyState
-              title={search ? '未找到匹配模板' : '还没有订阅模板'}
-              description={search ? '请尝试更换搜索关键词。' : '创建模板后可绑定到套餐。'}
+              title={search ? t('admin:nodes.emptyFiltered') : t('admin:templates.emptyTemplates')}
+              description={search ? t('admin:nodes.emptyFilteredDesc') : t('admin:templates.subtitle')}
               className="border-0"
             />
           )}
         </CardContent>
       </Card>
 
-      <TemplateFormDialog open={open} onOpenChange={setOpen} template={editing} />
-
-      <TemplatePreviewDrawer
-        open={!!previewing}
-        onOpenChange={(next) => {
-          if (!next) setPreviewing(null);
-        }}
-        template={
-          previewing
-            ? {
-                name: previewing.name,
-                description: previewing.description,
-                proxyGroups: previewing.proxyGroups,
-                ruleSets: previewing.ruleSets,
-                dnsConfig: previewing.dnsConfig,
-                customInjectYaml: previewing.customInjectYaml,
-                customInjectJson: previewing.customInjectJson,
-                isDefault: previewing.isDefault
-              }
-            : null
-        }
+      <TemplateFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        template={editing}
       />
 
-      <AlertDialog open={!!deleting} onOpenChange={(isOpen) => !isOpen && setDeleting(null)}>
+      <TemplatePreviewDrawer
+        open={Boolean(previewing)}
+        onOpenChange={(v) => !v && setPreviewing(null)}
+        template={previewing}
+      />
+
+      <AlertDialog open={Boolean(deleting)} onOpenChange={(v) => !v && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除模板「{deleting?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>默认模板或被套餐使用的模板不能删除。</AlertDialogDescription>
+            <AlertDialogTitle>{t('admin:templates.deleteDialogTitle', { name: deleting?.name ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('admin:templates.deleteDialogDesc')}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
                 if (deleting) {
-                  remove.mutate(deleting.id, {
-                    onSuccess: () => setDeleting(null)
-                  });
+                  remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) });
                 }
               }}
             >
-              确认删除
+              {t('common:actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

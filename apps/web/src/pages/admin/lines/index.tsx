@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Activity, ArrowDown, ArrowUp, Copy, GitBranch, HelpCircle, Pencil, Plus, Search, Trash2, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -22,17 +23,8 @@ import { usePublicSettings } from '@/lib/public-settings';
 import { formatSpeedLimit, getSpeedTierBadgeClass } from '@/lib/speed-tier';
 import { useAdminLines, useLineMutations, type AdminLine } from './use-lines';
 
-const typeLabels: Record<LineType, string> = { DIRECT: '直连', RELAY: '中继' };
-const relayLabels: Record<RelayMode, string> = { BLIND_FORWARD: '盲转发', PROTOCOL_PROXY: '协议代理', TARGET_LINE: '桥接已有线路' };
-
-function relayDescription(line: AdminLine) {
-  if (line.relayMode === 'TARGET_LINE' && line.targetLine) {
-    return `中转桥接 ➔ [${line.targetLine.entryNode.name}] ${line.targetLine.protocolType}:${line.targetLine.entryPort}`;
-  }
-  return line.relayMode ? relayLabels[line.relayMode] : '';
-}
-
 export default function AdminLinesPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const [search, setSearch] = React.useState('');
   const [type, setType] = React.useState<'ALL' | LineType>('ALL');
   const [status, setStatus] = React.useState<'ALL' | LineStatus>('ALL');
@@ -42,6 +34,24 @@ export default function AdminLinesPage() {
   const [editing, setEditing] = React.useState<AdminLine | null>(null);
   const [deleting, setDeleting] = React.useState<AdminLine | null>(null);
   const [speedtestingLine, setSpeedtestingLine] = React.useState<AdminLine | null>(null);
+
+  const typeLabels: Record<LineType, string> = {
+    DIRECT: t('admin:lines.typeDirect'),
+    RELAY: t('admin:lines.typeRelay')
+  };
+  const relayLabels: Record<RelayMode, string> = {
+    BLIND_FORWARD: t('admin:lines.relayBlindForward'),
+    PROTOCOL_PROXY: t('admin:lines.relayProtocolProxy'),
+    TARGET_LINE: t('admin:lines.relayTargetBridge')
+  };
+
+  function relayDescription(line: AdminLine) {
+    if (line.relayMode === 'TARGET_LINE' && line.targetLine) {
+      return `中转桥接 ➔ [${line.targetLine.entryNode.name}] ${line.targetLine.protocolType}:${line.targetLine.entryPort}`;
+    }
+    return line.relayMode ? relayLabels[line.relayMode] : '';
+  }
+
   const query = React.useMemo(() => ({
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(type !== 'ALL' ? { type } : {}),
@@ -83,21 +93,35 @@ export default function AdminLinesPage() {
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const openEdit = (line: AdminLine) => { setEditing(line); setFormOpen(true); };
 
-  if (isPending) return <PageContainer><PageHeader title="线路管理" description="管理用户可见的直连与中继接入线路。" /><p className="text-sm text-muted-foreground">加载中…</p></PageContainer>;
-  if (isError) return <PageContainer><PageHeader title="线路管理" /><EmptyState title="无法加载线路" description="请稍后刷新重试" /></PageContainer>;
+  if (isPending) return <PageContainer><PageHeader title={t('admin:lines.title')} description={t('admin:lines.subtitle')} /><p className="text-sm text-muted-foreground">{t('common:actions.loading')}</p></PageContainer>;
+  if (isError) return <PageContainer><PageHeader title={t('admin:lines.title')} /><EmptyState title={t('admin:lines.emptyLines')} description={t('admin:lines.subtitle')} /></PageContainer>;
 
   return (
     <PageContainer>
-      <PageHeader title="线路管理" description="管理用户可见的直连与中继接入线路。" />
+      <PageHeader title={t('admin:lines.title')} description={t('admin:lines.subtitle')} />
       <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <div className="relative w-full min-w-0 flex-1 sm:min-w-52 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称或地址" className="pl-9" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('admin:nodes.searchPlaceholder')} className="pl-9" />
           </div>
-          <Input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="标签筛选" className="w-full sm:w-32" />
-          <Select value={type} onValueChange={(value) => setType(value as 'ALL' | LineType)}><SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部类型</SelectItem><SelectItem value="DIRECT">直连</SelectItem><SelectItem value="RELAY">中继</SelectItem></SelectContent></Select>
-          <Select value={status} onValueChange={(value) => setStatus(value as 'ALL' | LineStatus)}><SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ALL">全部状态</SelectItem><SelectItem value="ACTIVE">已启用</SelectItem><SelectItem value="DISABLED">已禁用</SelectItem></SelectContent></Select>
+          <Input value={tag} onChange={(event) => setTag(event.target.value)} placeholder={t('admin:lines.filterTag')} className="w-full sm:w-32" />
+          <Select value={type} onValueChange={(value) => setType(value as 'ALL' | LineType)}>
+            <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">{t('admin:lines.typeAll')}</SelectItem>
+              <SelectItem value="DIRECT">{t('admin:lines.typeDirect')}</SelectItem>
+              <SelectItem value="RELAY">{t('admin:lines.typeRelay')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={(value) => setStatus(value as 'ALL' | LineStatus)}>
+            <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">{t('admin:lines.statusAll')}</SelectItem>
+              <SelectItem value="ACTIVE">{t('admin:lines.statusActive')}</SelectItem>
+              <SelectItem value="DISABLED">{t('admin:lines.statusDisabled')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
           <Button
@@ -107,104 +131,145 @@ export default function AdminLinesPage() {
             className="w-full sm:w-auto"
           >
             <Activity className={cn('size-4', speedtestAll.isPending && 'animate-spin text-primary')} />
-            {speedtestAll.isPending ? '全量测速中…' : '全部测速'}
+            {speedtestAll.isPending ? t('admin:lines.speedtestingAll') : t('admin:lines.speedtestAll')}
           </Button>
-          <Button className="w-full sm:w-auto" onClick={openCreate}><Plus />新建线路</Button>
+          <Button className="w-full sm:w-auto" onClick={openCreate}><Plus />{t('admin:lines.createLine')}</Button>
         </div>
       </div>
-      {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm"><span>已选 {selected.size} 条</span><Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'ACTIVE' }, { onSuccess: () => setSelected(new Set()) })}>批量启用</Button><Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'DISABLED' }, { onSuccess: () => setSelected(new Set()) })}>批量禁用</Button></div>}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+          <span>{t('admin:lines.selectedCount', { count: selected.size })}</span>
+          <Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'ACTIVE' }, { onSuccess: () => setSelected(new Set()) })}>
+            {t('admin:lines.batchEnable')}
+          </Button>
+          <Button size="sm" variant="outline" disabled={batchStatus.isPending} onClick={() => batchStatus.mutate({ ids: [...selected], status: 'DISABLED' }, { onSuccess: () => setSelected(new Set()) })}>
+            {t('admin:lines.batchDisable')}
+          </Button>
+        </div>
+      )}
       <Card>
         <CardContent className="p-0">
-          {lines.length ? <Table className="min-w-[980px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选线路" /></TableHead>
-                <TableHead>线路</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>接入端点</TableHead>
-                <TableHead>节点拓扑</TableHead>
-                <TableHead>标签 / 倍率</TableHead>
-                <TableHead>
-                  <div className="flex items-center gap-1">
-                    <span>延迟</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="size-3.5 text-muted-foreground/70 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs space-y-1 text-xs">
-                        <p className="font-semibold">线路延迟测试原理</p>
-                        <p>由 Master 主控服务器直接发起探测，优先经 Sing-box 端到端代理访问 Cloudflare 204 资源测量完整耗时；未就绪时降级为入口 TCP 握手延时。</p>
-                        <p className="text-primary text-[11px]">点击延迟徽章或操作栏测速按钮可打开链路流程图与分段诊断。</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>{lines.map((line, index) => <TableRow key={line.id}>
-              <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>
-              <TableCell><div className="font-medium">{line.name}</div><div className="text-xs text-muted-foreground">Lv.{line.level}</div></TableCell>
-              <TableCell><Badge variant="outline" title={line.relayMode === 'TARGET_LINE' ? relayDescription(line) : undefined}>{typeLabels[line.type]}{line.relayMode ? ` · ${relayDescription(line)}` : ''}</Badge></TableCell>
-              <TableCell className="min-w-36"><div className="font-mono text-xs">{line.serverHost}:{line.serverPort}</div><div className="text-xs text-muted-foreground">{line.endpointOverrideEnabled ? '覆盖已启用' : '复用底层设置'}</div>{line.serverName && <div className="text-xs text-muted-foreground">SNI {line.serverName}</div>}{line.host && <div className="text-xs text-muted-foreground">Host {line.host}</div>}</TableCell>
-              <TableCell>
-                {line.type === 'DIRECT' ? (
-                  <>
-                    <div>{line.entryNode.name}</div>
-                    <div className="text-xs text-muted-foreground">{line.protocolType} · 监听 {line.entryPort}</div>
-                  </>
-                ) : line.relayMode === 'TARGET_LINE' ? (
-                  <>
+          {lines.length ? (
+            <Table className="min-w-[980px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10"><Checkbox checked={allSelected} onCheckedChange={(checked) => toggleAll(checked === true)} aria-label="全选" /></TableHead>
+                  <TableHead>{t('admin:lines.colLine')}</TableHead>
+                  <TableHead>{t('admin:lines.colType')}</TableHead>
+                  <TableHead>{t('admin:lines.colEndpoint')}</TableHead>
+                  <TableHead>{t('admin:lines.colTopology')}</TableHead>
+                  <TableHead>{t('admin:lines.colTagsRate')}</TableHead>
+                  <TableHead>
                     <div className="flex items-center gap-1">
-                      <span>{line.entryNode.name}</span>
-                      <span className="text-muted-foreground">➔</span>
-                      <span>{line.targetLine?.entryNode.name ?? '未绑定'}</span>
+                      <span>{t('admin:lines.colLatency')}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="size-3.5 text-muted-foreground/70 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs space-y-1 text-xs">
+                          <p className="font-semibold">{t('admin:lines.latencyHelpTitle')}</p>
+                          <p>{t('admin:lines.latencyHelpDesc')}</p>
+                          <p className="text-primary text-[11px]">{t('admin:lines.latencyHelpClick')}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {line.protocolType} ➔ {line.targetLine?.protocolType ?? '未知'} · 落地 {line.targetLine?.entryPort ?? '—'}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <span>{line.entryNode.name}</span>
-                      <span className="text-muted-foreground">➔</span>
-                      <span>{line.landingNode?.name ?? '未绑定'}</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {line.protocolType} · 落地 {line.landingPort ?? '—'}
-                    </div>
-                  </>
-                )}
-              </TableCell>
-              <TableCell><div className="flex max-w-40 flex-wrap gap-1">{Boolean(line.speedLimitMbps) && <Badge variant="outline" className={cn('gap-1', getSpeedTierBadgeClass(line.speedLimitMbps, publicSettings?.speedLimitColorTiers))}><Zap className="size-3" />{formatSpeedLimit(line.speedLimitMbps, unitConversion)}</Badge>}{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
-              <TableCell>
-                <LineLatencyChip
-                  latencyMs={line.lastLatencyMs}
-                  status={line.lastTestStatus}
-                  message={line.lastTestMessage}
-                  testedAt={line.lastTestedAt}
-                  onClick={() => setSpeedtestingLine(line)}
-                />
-              </TableCell>
-              <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge>{!line.isPublic && <span className="text-xs text-muted-foreground">不公开</span>}</div></TableCell>
-              <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label="上移" disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></Button><Button variant="ghost" size="icon" aria-label="下移" disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></Button><Button variant="ghost" size="icon" aria-label="即时测速" title="即时测速与链路流程" disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => setSpeedtestingLine(line)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></Button><Button variant="ghost" size="icon" aria-label="测试解析" disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></Button><Button variant="ghost" size="icon" aria-label="复制线路" disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></Button><Button variant="ghost" size="icon" aria-label="编辑线路" onClick={() => openEdit(line)}><Pencil /></Button><Button variant="ghost" size="icon" aria-label="删除线路" onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></Button></div></TableCell>
-            </TableRow>)}</TableBody>
-          </Table> : <EmptyState title="暂无线路" description="创建直连线路或中继线路后，套餐即可按线路匹配。" className="border-0" />}
+                  </TableHead>
+                  <TableHead>{t('admin:lines.colStatus')}</TableHead>
+                  <TableHead className="text-right">{t('admin:lines.colActions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {lines.map((line, index) => (
+                  <TableRow key={line.id}>
+                    <TableCell><Checkbox checked={selected.has(line.id)} onCheckedChange={(checked) => toggleSelected(line.id, checked === true)} aria-label={`选择${line.name}`} /></TableCell>
+                    <TableCell><div className="font-medium">{line.name}</div><div className="text-xs text-muted-foreground">Lv.{line.level}</div></TableCell>
+                    <TableCell><Badge variant="outline" title={line.relayMode === 'TARGET_LINE' ? relayDescription(line) : undefined}>{typeLabels[line.type]}{line.relayMode ? ` · ${relayDescription(line)}` : ''}</Badge></TableCell>
+                    <TableCell className="min-w-36"><div className="font-mono text-xs">{line.serverHost}:{line.serverPort}</div><div className="text-xs text-muted-foreground">{line.endpointOverrideEnabled ? t('admin:lines.overrideEnabled') : t('admin:lines.reuseUnderlying')}</div>{line.serverName && <div className="text-xs text-muted-foreground">SNI {line.serverName}</div>}{line.host && <div className="text-xs text-muted-foreground">Host {line.host}</div>}</TableCell>
+                    <TableCell>
+                      {line.type === 'DIRECT' ? (
+                        <>
+                          <div>{line.entryNode.name}</div>
+                          <div className="text-xs text-muted-foreground">{line.protocolType} · 监听 {line.entryPort}</div>
+                        </>
+                      ) : line.relayMode === 'TARGET_LINE' ? (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <span>{line.entryNode.name}</span>
+                            <span className="text-muted-foreground">➔</span>
+                            <span>{line.targetLine?.entryNode.name ?? t('admin:lines.unbound')}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {line.protocolType} ➔ {line.targetLine?.protocolType ?? '未知'} · 落地 {line.targetLine?.entryPort ?? '—'}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <span>{line.entryNode.name}</span>
+                            <span className="text-muted-foreground">➔</span>
+                            <span>{line.landingNode?.name ?? t('admin:lines.unbound')}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {line.protocolType} · 落地 {line.landingPort ?? '—'}
+                          </div>
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell><div className="flex max-w-40 flex-wrap gap-1">{Boolean(line.speedLimitMbps) && <Badge variant="outline" className={cn('gap-1', getSpeedTierBadgeClass(line.speedLimitMbps, publicSettings?.speedLimitColorTiers))}><Zap className="size-3" />{formatSpeedLimit(line.speedLimitMbps, unitConversion)}</Badge>}{line.tags.map((item) => <Badge key={item} variant="secondary">#{item}</Badge>)}<Badge variant="outline">{line.trafficRate}x</Badge></div></TableCell>
+                    <TableCell>
+                      <LineLatencyChip
+                        latencyMs={line.lastLatencyMs}
+                        status={line.lastTestStatus}
+                        message={line.lastTestMessage}
+                        testedAt={line.lastTestedAt}
+                        onClick={() => setSpeedtestingLine(line)}
+                      />
+                    </TableCell>
+                    <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? t('admin:lines.statusActive') : t('admin:lines.statusDisabled')}</Badge>{!line.isPublic && <span className="text-xs text-muted-foreground">{t('admin:lines.privateLine')}</span>}</div></TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.moveUp')} disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.moveDown')} disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.instantSpeedtest')} title={t('admin:lines.instantSpeedtestTitle')} disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => setSpeedtestingLine(line)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.testResolve')} disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.duplicateLine')} disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.editLine')} onClick={() => openEdit(line)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.deleteLine')} onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState title={t('admin:lines.emptyLines')} description={t('admin:lines.subtitle')} className="border-0" />
+          )}
         </CardContent>
       </Card>
       <LineFormDialog open={formOpen} onOpenChange={setFormOpen} line={editing} nodes={nodes ?? []} lines={lines} certificates={certificates?.data ?? []} pending={busy} onSubmit={(payload) => editing ? update.mutate({ id: editing.id, ...payload }, { onSuccess: () => setFormOpen(false) }) : create.mutate(payload, { onSuccess: () => setFormOpen(false) })} />
       <LineSpeedtestDialog open={!!speedtestingLine} onOpenChange={(open) => !open && setSpeedtestingLine(null)} line={speedtestingLine} />
-      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除线路「{deleting?.name}」？</AlertDialogTitle><AlertDialogDescription>删除后该线路不会再参与套餐匹配，已导入的订阅将在下次刷新时移除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleting && remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:lines.deleteDialogTitle', { name: deleting?.name ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:lines.deleteDialogDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => deleting && remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>
+              {t('common:actions.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex flex-col gap-1.5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span>直连线路直接连接单节点入站；中继线路由入口节点承接用户连接后转发至落地节点。</span>
+          <span>{t('admin:lines.footerDirectNote')}</span>
         </div>
         <div className="flex items-center gap-1.5 opacity-85">
           <Activity className="h-3.5 w-3.5 shrink-0" />
-          <span>延迟测试由 Master 向 Cloudflare 204 发起，支持端到端代理与 TCP 握手降级双模探测。</span>
+          <span>{t('admin:lines.footerSpeedtestNote')}</span>
         </div>
       </div>
     </PageContainer>

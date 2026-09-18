@@ -40,6 +40,7 @@ Linux 开发机使用系统环境安装 Node.js、pnpm 与 Go，不在仓库内�
 - **CodeMirror 6（`@uiw/react-codemirror` + `@codemirror/view` + `@codemirror/lang-json` / `@codemirror/lang-yaml` / `@codemirror/lang-css` / `@codemirror/lang-html`）**：节点详情页高级模式、系统设置页 CSS/HTML/JS 编辑器和订阅模板 YAML/JSON 编辑器，带语法高亮、行号与可控的内部滚动；`@uiw/react-codemirror` 为官方推荐的 React 封装，按路由懒加载分包。
 - **Recharts (via shadcn/ui Chart)**：用于呈现管理员流量统计与单用户流量下钻的流量/速率时序面积图、柱状图和线路 Donut 图；图表通过 CSS 语义 Token 适配明暗主题。
 - **next-themes**：暗黑/明亮主题平滑切换与系统偏好监听。
+- **i18next + react-i18next + i18next-browser-languagedetector**：全站国际化（i18n）解决方案，支持简体中文（zh-CN）与英语（en-US）双语切换、浏览器语言偏好探测与 localStorage 持久化；采用模块化命名空间架构（common、auth、user、admin、errors）与 TypeScript 强类型键校验，确保翻译健壮性与无未翻译死角。
 
 ---
 

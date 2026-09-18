@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, Loader2, Mail, Timer } from 'lucide-react';
@@ -22,24 +23,26 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
 import { CaptchaDialog, CaptchaInline, type CaptchaPayload } from '@/components/shared/captcha-challenge';
+import { LanguageSwitcher } from '@/components/layout/language-switcher';
 
-const buildRegisterSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
+const buildRegisterSchema = (minLength: number, policy: PasswordStrengthPolicy, t: (key: string, options?: Record<string, unknown>) => string) =>
   z
     .object({
-      email: z.string().email('请输入有效的邮箱地址'),
-      nickname: z.string().max(20, '昵称最多 20 个字符').optional(),
+      email: z.string().email(t('auth:validation.emailInvalid')),
+      nickname: z.string().max(20).optional(),
       password: passwordZodSchema(minLength, policy),
       confirmPassword: z.string(),
       verificationCode: z.string().optional()
     })
     .refine((v) => v.password === v.confirmPassword, {
-      message: '两次输入的密码不一致',
+      message: t('auth:validation.passwordMismatch'),
       path: ['confirmPassword']
     });
 
 type RegisterForm = z.infer<ReturnType<typeof buildRegisterSchema>>;
 
 export default function RegisterPage() {
+  const { t } = useTranslation(['auth', 'common', 'errors']);
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
   const infoQuery = usePublicSettings();
@@ -54,15 +57,15 @@ export default function RegisterPage() {
   const passwordComplexity = useMemo(() => passwordComplexityFromSettings(infoQuery.data), [infoQuery.data]);
   const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
   const passwordHint = passwordComplexityHint(passwordComplexity);
-  const passwordPlaceholder = `请设置 ${passwordMinLength}-64 位${passwordHint ? `，${passwordHint}` : ''}`;
+  const passwordPlaceholder = `${passwordMinLength}-64${passwordHint ? ` (${passwordHint})` : ''}`;
 
   useEffect(() => {
     if (infoQuery.data && !infoQuery.data.registrationEnabled) {
-      toast.error('当前站点未开放注册');
+      toast.error(t('auth:register.siteClosed'));
       navigate('/login', { replace: true });
     }
     // eslint-disable-next-line no-restricted-syntax -- 站点关闭注册时的一次性跳转判断，非表单草稿
-  }, [infoQuery.data, navigate]);
+  }, [infoQuery.data, navigate, t]);
 
   useEffect(() => {
     if (!cooldown) return;
@@ -70,7 +73,7 @@ export default function RegisterPage() {
     return () => window.clearInterval(timer);
   }, [cooldown]);
 
-  const registerSchema = useMemo(() => buildRegisterSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
+  const registerSchema = useMemo(() => buildRegisterSchema(passwordMinLength, passwordPolicy, t as (key: string) => string), [passwordMinLength, passwordPolicy, t]);
   const form = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: { email: '', nickname: '', password: '', confirmPassword: '', verificationCode: '' }
@@ -84,9 +87,9 @@ export default function RegisterPage() {
     onSuccess: () => {
       setCooldown(60);
       setCaptchaOpen(false);
-      toast.success('验证码已发送，请查收邮件');
+      toast.success(t('auth:register.codeSent'));
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '验证码发送失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('errors:business.sendCodeFailed')))
   });
 
   const registerMutation = useMutation({
@@ -103,10 +106,10 @@ export default function RegisterPage() {
     },
     onSuccess: ({ user }) => {
       setAuth(user);
-      toast.success('注册成功，欢迎使用');
+      toast.success(t('auth:register.registerSuccess'));
       navigate('/', { replace: true });
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '注册失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('common:status.failed')))
   });
 
   const requestCode = async () => {
@@ -121,11 +124,11 @@ export default function RegisterPage() {
 
   const onSubmit = (values: RegisterForm) => {
     if (!emailVerificationEnabled && captchaMode !== 'OFF' && !registerCaptcha) {
-      toast.error('请先完成人机验证');
+      toast.error(t('auth:captcha.required'));
       return;
     }
     if (emailVerificationEnabled && !values.verificationCode?.trim()) {
-      form.setError('verificationCode', { message: '请输入邮箱验证码' });
+      form.setError('verificationCode', { message: t('auth:validation.codeRequired') });
       return;
     }
     registerMutation.mutate(values);
@@ -135,33 +138,79 @@ export default function RegisterPage() {
   const siteDescription = infoQuery.data?.siteDescription?.trim();
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher showLabel />
+      </div>
+
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
-            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6" />}
+            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6 text-primary" />}
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
-          <CardTitle>注册</CardTitle>
-          {siteDescription ? <CardDescription>{siteDescription}</CardDescription> : null}
+          <CardTitle>{t('auth:register.title')}</CardTitle>
+          <CardDescription>
+            {siteDescription || t('auth:register.subtitle')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-              <FormField control={form.control} name="email" render={({ field }) => <FormItem><FormLabel>邮箱</FormLabel><FormControl><Input type="email" placeholder="请输入常用邮箱" autoComplete="username" {...field} /></FormControl><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="nickname" render={({ field }) => <FormItem><FormLabel>昵称（选填）</FormLabel><FormControl><Input placeholder="留空则使用默认昵称" autoComplete="nickname" {...field} /></FormControl><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="password" render={({ field }) => <FormItem><FormLabel>密码</FormLabel><FormControl><Input type="password" placeholder={passwordPlaceholder} autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="confirmPassword" render={({ field }) => <FormItem><FormLabel>确认密码</FormLabel><FormControl><Input type="password" placeholder="请再次输入密码" autoComplete="new-password" {...field} /></FormControl><FormMessage /></FormItem>} />
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('auth:register.emailLabel')}</FormLabel>
+                  <FormControl><Input type="email" placeholder={t('auth:register.emailPlaceholder')} autoComplete="username" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="nickname" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('auth:register.nicknameLabel')}</FormLabel>
+                  <FormControl><Input placeholder={t('auth:register.nicknamePlaceholder')} autoComplete="nickname" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('auth:register.passwordLabel')}</FormLabel>
+                  <FormControl><Input type="password" placeholder={passwordPlaceholder} autoComplete="new-password" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="confirmPassword" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('auth:register.confirmPasswordLabel')}</FormLabel>
+                  <FormControl><Input type="password" placeholder={t('auth:register.confirmPasswordPlaceholder')} autoComplete="new-password" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
               {emailVerificationEnabled ? (
-                <FormField control={form.control} name="verificationCode" render={({ field }) => <FormItem><FormLabel>邮箱验证码</FormLabel><div className="flex gap-2"><FormControl><Input inputMode="numeric" placeholder="6 位验证码" autoComplete="one-time-code" {...field} /></FormControl><Button type="button" variant="outline" className="shrink-0" onClick={() => void requestCode()} disabled={cooldown > 0 || sendCodeMutation.isPending}><Mail />{cooldown ? `${cooldown}s` : '获取验证码'}</Button></div><FormMessage /></FormItem>} />
+                <FormField control={form.control} name="verificationCode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('auth:register.verificationCodeLabel')}</FormLabel>
+                    <div className="flex gap-2">
+                      <FormControl><Input inputMode="numeric" placeholder={t('auth:register.verificationCodePlaceholder')} autoComplete="one-time-code" {...field} /></FormControl>
+                      <Button type="button" variant="outline" className="shrink-0" onClick={() => void requestCode()} disabled={cooldown > 0 || sendCodeMutation.isPending}>
+                        <Mail className="size-4" />{cooldown ? t('auth:register.resendIn', { seconds: cooldown }) : t('auth:register.sendCode')}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )} />
               ) : captchaMode !== 'OFF' ? (
                 <CaptchaInline mode={captchaMode} siteKey={siteKey} action="register" onChange={setRegisterCaptcha} />
               ) : null}
               <Button type="submit" className="w-full" disabled={registerMutation.isPending || infoQuery.isPending}>
-                {registerMutation.isPending ? <Loader2 className="animate-spin" /> : captchaMode !== 'OFF' && !emailVerificationEnabled ? <Timer /> : null}
-                注册
+                {registerMutation.isPending ? <Loader2 className="animate-spin" /> : captchaMode !== 'OFF' && !emailVerificationEnabled ? <Timer className="size-4" /> : null}
+                {registerMutation.isPending ? t('auth:register.registering') : t('auth:register.submitButton')}
               </Button>
-              <p className="text-muted-foreground text-center text-sm">已有账号？ <Link className="text-primary underline-offset-4 hover:underline" to="/login">返回登录</Link></p>
+              <p className="text-muted-foreground text-center text-sm">
+                {t('auth:register.hasAccount')}{' '}
+                <Link className="text-primary underline-offset-4 hover:underline" to="/login">
+                  {t('auth:register.loginNow')}
+                </Link>
+              </p>
             </form>
           </Form>
         </CardContent>

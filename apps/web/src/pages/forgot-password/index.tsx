@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Cloud, KeyRound, Loader2, Mail } from 'lucide-react';
@@ -21,23 +22,25 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
 import { CaptchaDialog, type CaptchaPayload } from '@/components/shared/captcha-challenge';
+import { LanguageSwitcher } from '@/components/layout/language-switcher';
 
-const buildForgotPasswordSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
+const buildForgotPasswordSchema = (minLength: number, policy: PasswordStrengthPolicy, t: (key: string) => string) =>
   z
     .object({
-      email: z.string().email('请输入有效的邮箱地址'),
-      verificationCode: z.string().min(6, '请输入 6 位验证码').max(6, '请输入 6 位验证码'),
+      email: z.string().email(t('auth:validation.emailInvalid')),
+      verificationCode: z.string().min(6, t('auth:validation.codeLength')).max(6, t('auth:validation.codeLength')),
       newPassword: passwordZodSchema(minLength, policy),
       confirmPassword: z.string()
     })
     .refine((v) => v.newPassword === v.confirmPassword, {
-      message: '两次输入的密码不一致',
+      message: t('auth:validation.passwordMismatch'),
       path: ['confirmPassword']
     });
 
 type ForgotPasswordForm = z.infer<ReturnType<typeof buildForgotPasswordSchema>>;
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation(['auth', 'common', 'errors']);
   const navigate = useNavigate();
   const infoQuery = usePublicSettings();
   const [captchaOpen, setCaptchaOpen] = useState(false);
@@ -51,7 +54,7 @@ export default function ForgotPasswordPage() {
   const passwordComplexity = useMemo(() => passwordComplexityFromSettings(infoQuery.data), [infoQuery.data]);
   const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
   const passwordHint = passwordComplexityHint(passwordComplexity);
-  const passwordPlaceholder = `请设置 ${passwordMinLength}-64 位${passwordHint ? `，${passwordHint}` : ''}`;
+  const passwordPlaceholder = `${passwordMinLength}-64${passwordHint ? ` (${passwordHint})` : ''}`;
 
   useEffect(() => {
     if (!cooldown) return;
@@ -59,7 +62,7 @@ export default function ForgotPasswordPage() {
     return () => window.clearInterval(timer);
   }, [cooldown]);
 
-  const forgotPasswordSchema = useMemo(() => buildForgotPasswordSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
+  const forgotPasswordSchema = useMemo(() => buildForgotPasswordSchema(passwordMinLength, passwordPolicy, t as (key: string) => string), [passwordMinLength, passwordPolicy, t]);
   const form = useForm<ForgotPasswordForm>({
     resolver: zodResolver(forgotPasswordSchema),
     defaultValues: { email: '', verificationCode: '', newPassword: '', confirmPassword: '' }
@@ -73,9 +76,9 @@ export default function ForgotPasswordPage() {
     onSuccess: () => {
       setCooldown(60);
       setCaptchaOpen(false);
-      toast.success('验证码已发送，请查收邮件');
+      toast.success(t('auth:register.codeSent'));
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '验证码发送失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('errors:business.sendCodeFailed')))
   });
 
   const resetPasswordMutation = useMutation({
@@ -87,10 +90,10 @@ export default function ForgotPasswordPage() {
       })).data;
     },
     onSuccess: () => {
-      toast.success('密码重置成功，请使用新密码登录');
+      toast.success(t('auth:forgotPassword.resetSuccess'));
       navigate('/login', { replace: true });
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '密码重置失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('errors:business.tokenExpired')))
   });
 
   const requestCode = async () => {
@@ -108,15 +111,19 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher showLabel />
+      </div>
+
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex items-center gap-2">
-            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6" />}
+            {logoUrl ? <img src={logoUrl} alt="" className="h-6 w-6 rounded object-contain" /> : <Cloud className="h-6 w-6 text-primary" />}
             <span className="text-lg font-semibold">{siteName}</span>
           </div>
-          <CardTitle>找回密码</CardTitle>
-          <CardDescription>输入绑定的邮箱与收到的验证码，设置新登录密码</CardDescription>
+          <CardTitle>{t('auth:forgotPassword.title')}</CardTitle>
+          <CardDescription>{t('auth:forgotPassword.subtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -126,9 +133,9 @@ export default function ForgotPasswordPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>注册邮箱</FormLabel>
+                    <FormLabel>{t('auth:forgotPassword.emailLabel')}</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="请输入绑定的邮箱" autoComplete="username" {...field} />
+                      <Input type="email" placeholder={t('auth:forgotPassword.emailPlaceholder')} autoComplete="username" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -140,10 +147,10 @@ export default function ForgotPasswordPage() {
                 name="verificationCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱验证码</FormLabel>
+                    <FormLabel>{t('auth:forgotPassword.verificationCodeLabel')}</FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
-                        <Input inputMode="numeric" placeholder="6 位验证码" autoComplete="one-time-code" {...field} />
+                        <Input inputMode="numeric" placeholder={t('auth:forgotPassword.verificationCodePlaceholder')} autoComplete="one-time-code" {...field} />
                       </FormControl>
                       <Button
                         type="button"
@@ -153,7 +160,7 @@ export default function ForgotPasswordPage() {
                         disabled={cooldown > 0 || sendCodeMutation.isPending}
                       >
                         <Mail className="size-4" />
-                        {cooldown ? `${cooldown}s` : '获取验证码'}
+                        {cooldown ? t('auth:register.resendIn', { seconds: cooldown }) : t('auth:register.sendCode')}
                       </Button>
                     </div>
                     <FormMessage />
@@ -166,7 +173,7 @@ export default function ForgotPasswordPage() {
                 name="newPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>新密码</FormLabel>
+                    <FormLabel>{t('auth:forgotPassword.newPasswordLabel')}</FormLabel>
                     <FormControl>
                       <Input type="password" placeholder={passwordPlaceholder} autoComplete="new-password" {...field} />
                     </FormControl>
@@ -180,9 +187,9 @@ export default function ForgotPasswordPage() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>确认新密码</FormLabel>
+                    <FormLabel>{t('auth:forgotPassword.confirmPasswordLabel')}</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="请再次输入新密码" autoComplete="new-password" {...field} />
+                      <Input type="password" placeholder={t('auth:forgotPassword.confirmPasswordPlaceholder')} autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -191,13 +198,12 @@ export default function ForgotPasswordPage() {
 
               <Button type="submit" className="w-full" disabled={resetPasswordMutation.isPending}>
                 {resetPasswordMutation.isPending ? <Loader2 className="animate-spin" /> : <KeyRound className="size-4" />}
-                重置密码
+                {resetPasswordMutation.isPending ? t('auth:forgotPassword.resetting') : t('auth:forgotPassword.submitButton')}
               </Button>
 
               <p className="text-muted-foreground text-center text-sm">
-                记起密码了？{' '}
                 <Link className="text-primary underline-offset-4 hover:underline" to="/login">
-                  返回登录
+                  {t('auth:forgotPassword.backToLogin')}
                 </Link>
               </p>
             </form>

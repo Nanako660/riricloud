@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Globe, Info, KeyRound, Network, Wand2, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { StatCard } from '@/components/shared/stat-card';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -9,8 +10,8 @@ import { ProxyKeySection } from './components/proxy-key-section';
 import { ProxyExportSection } from './components/proxy-export-section';
 import { type ProxyKey, useProxyPoolEndpoints, useProxyPoolKeys } from './use-proxy-pool';
 
-// 用户中心「直连代理」：独立于客户端翻墙订阅的 SOCKS5/HTTP 直连代理池
 export default function UserProxyPoolPage() {
+  const { t } = useTranslation(['user', 'common']);
   const keysQuery = useProxyPoolKeys();
   const endpointsQuery = useProxyPoolEndpoints();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -35,8 +36,14 @@ export default function UserProxyPoolPage() {
   if (keysQuery.isError) {
     return (
       <PageContainer>
-        <PageHeader title="直连代理" description="面向自动化环境的 SOCKS5 / HTTP 标准代理池。" />
-        <EmptyState title="无法加载直连代理凭据" description="请稍后刷新重试" />
+        <PageHeader
+          title={t('user:proxyPool.title')}
+          description={t('user:proxyPool.description')}
+        />
+        <EmptyState
+          title={t('user:proxyPool.loadErrorTitle')}
+          description={t('user:proxyPool.loadErrorDesc')}
+        />
       </PageContainer>
     );
   }
@@ -44,8 +51,8 @@ export default function UserProxyPoolPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="直连代理"
-        description="独立于客户端订阅的 SOCKS5 / HTTP 标准代理池，专为爬虫采集、指纹浏览器多开与自动化脚本打造。"
+        title={t('user:proxyPool.title')}
+        description={t('user:proxyPool.description')}
       />
 
       {/* 顶部轻量说明横幅 */}
@@ -53,36 +60,36 @@ export default function UserProxyPoolPage() {
         <Info className="size-4 shrink-0 text-sky-500" />
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <span className="truncate">
-            直连代理使用独立的 Proxy Key 凭据（<code className="font-mono font-medium text-foreground">pk_</code> 用户名 + 密码），与客户端翻墙订阅完全解耦。
+            {t('user:proxyPool.bannerText')}
           </span>
-          <span className="shrink-0 text-muted-foreground/80">流量计入主账户用量 · 超额自动熔断</span>
+          <span className="shrink-0 text-muted-foreground/80">{t('user:proxyPool.bannerSubtext')}</span>
         </div>
       </div>
 
       {/* 顶部微型指标仪表盘 */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
-          title="活跃凭据"
+          title={t('user:proxyPool.activeKeysStat')}
           value={`${activeKeys.length} / ${limit}`}
-          hint={keys.length >= limit ? '已达上限' : `已创建 ${keys.length} 条凭据`}
+          hint={keys.length >= limit ? t('user:proxyPool.limitReached') : t('user:proxyPool.createdKeysCount', { count: keys.length })}
           icon={<KeyRound className="text-emerald-500" />}
         />
         <StatCard
-          title="可用端点"
-          value={`${endpoints.length} 节点`}
-          hint={endpoints.length ? `${onlineEndpointsCount || endpoints.length} 在线可用` : '暂无可用线路'}
+          title={t('user:proxyPool.availableEndpointsStat')}
+          value={t('user:proxyPool.nodesCount', { count: endpoints.length })}
+          hint={endpoints.length ? t('user:proxyPool.onlineCount', { count: onlineEndpointsCount || endpoints.length }) : t('user:proxyPool.noLinesAvailable')}
           icon={<Globe className="text-sky-500" />}
         />
         <StatCard
-          title="协议支持"
-          value="Mixed 单端口"
-          hint="SOCKS5 + HTTP 双协议共存"
+          title={t('user:proxyPool.protocolSupportStat')}
+          value={t('user:proxyPool.singlePortMixed')}
+          hint={t('user:proxyPool.mixedProtocolsDesc')}
           icon={<Network className="text-violet-500" />}
         />
         <StatCard
-          title="计费联动"
-          value="主账户共享"
-          hint="统一扣减 · 超额自动阻断"
+          title={t('user:proxyPool.billingLinkStat')}
+          value={t('user:proxyPool.sharedAccount')}
+          hint={t('user:proxyPool.autoBlockDesc')}
           icon={<Zap className="text-amber-500" />}
         />
       </div>
@@ -93,11 +100,11 @@ export default function UserProxyPoolPage() {
           <TabsList className="grid h-9 w-full grid-cols-2 bg-muted/60 p-1 sm:w-auto">
             <TabsTrigger value="export" className="gap-1.5 text-xs sm:text-sm">
               <Wand2 className="size-3.5" />
-              代理提取与集成
+              {t('user:proxyPool.tabExport')}
             </TabsTrigger>
             <TabsTrigger value="keys" className="gap-1.5 text-xs sm:text-sm">
               <KeyRound className="size-3.5" />
-              凭据与白名单
+              {t('user:proxyPool.tabKeys')}
               {keys.length ? (
                 <span className="ml-1 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-medium leading-none">
                   {keys.length}
@@ -131,4 +138,3 @@ export default function UserProxyPoolPage() {
     </PageContainer>
   );
 }
-

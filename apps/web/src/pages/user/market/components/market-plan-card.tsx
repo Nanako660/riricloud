@@ -19,18 +19,13 @@ import { usePublicSettings } from '@/lib/public-settings';
 import { formatSpeedLimitWithUnit, getSpeedTierBadgeClass } from '@/lib/speed-tier';
 import type { PlanCardConfig, PlanCardStyle, PlanThemeColor } from '@/pages/admin/plans/use-plans';
 import type { UserPlan } from '@/pages/user/subscription/use-user-subscription';
+import { useTranslation } from 'react-i18next';
 import {
   PLAN_ICONS,
   THEME_COLOR_CONFIGS,
   RAINBOW_SHINE_GRADIENT,
   RAINBOW_HOLOGRAPHIC_FOIL
 } from './market-plan-constants';
-
-const RESET_LABELS = {
-  NONE: '不自动重置',
-  CALENDAR_MONTH: '自然月重置',
-  SUBSCRIPTION_CYCLE: '订阅周期重置'
-} as const;
 
 export interface MarketPlanCardProps {
   plan: UserPlan;
@@ -91,6 +86,7 @@ export function MarketPlanCard({
   actionSlot,
   isPreview = false
 }: MarketPlanCardProps) {
+  const { t } = useTranslation(['user', 'common']);
   const cardRef = useRef<HTMLDivElement>(null);
   const [mousePos, setMousePos] = useState({ x: -999, y: -999 });
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -133,25 +129,32 @@ export function MarketPlanCard({
   const hasDiscount = originalPrice != null && originalPrice > currentPrice;
   const discountText = cardConfig.discountText || (hasDiscount ? `立省 ${Math.round(((originalPrice - currentPrice) / originalPrice) * 100)}%` : null);
 
+  const resetText =
+    plan.trafficResetMode === 'CALENDAR_MONTH'
+      ? '自然月重置'
+      : plan.trafficResetMode === 'SUBSCRIPTION_CYCLE'
+      ? '订阅周期重置'
+      : t('common:time.permanent');
+
   // Button text
   const defaultActionText = isCurrent
-    ? '当前使用中'
+    ? t('user:market.currentPlanTag')
     : isLowerPriced
-      ? '暂不支持降级'
+      ? t('user:market.downgradeUnsupported')
       : isPurchaseExhausted
-        ? plan.purchaseLimitPerUser === 1 ? '已领取' : '已购完'
+        ? plan.purchaseLimitPerUser === 1 ? t('user:market.claimed') : t('user:market.limitReached')
       : activeSubscription
-        ? '立即升配'
-        : '立即订购';
+        ? t('user:market.upgradeButton')
+        : t('user:market.buyButton');
   const buttonLabel = (!isCurrent && !isLowerPriced && !isPurchaseExhausted && cardConfig.buttonText) ? cardConfig.buttonText : defaultActionText;
 
   // Features
   const features = plan.features && plan.features.length > 0 ? plan.features : [
-    `${formatBytes(plan.trafficLimitBytes)} 流量配额`,
-    plan.speedLimitMbps ? `[zap] ${plan.speedLimitMbps} Mbps 峰值速率` : '[zap] 全速专线无上限接入',
-    `流量规则：${RESET_LABELS[plan.trafficResetMode] || '自动重置'}`,
-    '全格式支持 (Clash Meta / Sing-box / 通用订阅)',
-    '智能授权接入所有高速节点'
+    t('user:market.trafficFeature', { traffic: formatBytes(plan.trafficLimitBytes) }),
+    plan.speedLimitMbps ? `[zap] ${t('user:market.speedFeature', { speed: plan.speedLimitMbps })}` : `[zap] ${t('user:market.unlimitedSpeedFeature')}`,
+    t('user:market.resetFeature', { reset: resetText }),
+    t('user:market.allFormatsFeature'),
+    t('user:market.allNodesFeature')
   ];
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -384,7 +387,7 @@ export function MarketPlanCard({
                 )}
                 {isCurrent && (
                   <Badge variant="default" className="text-xs">
-                    当前套餐
+                    {t('user:market.currentPlanTag')}
                   </Badge>
                 )}
                 {plan.badgeText && (
@@ -404,7 +407,7 @@ export function MarketPlanCard({
                 )}
                 {isPreview && (
                   <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed bg-muted/20">
-                    实机预览
+                    Preview
                   </Badge>
                 )}
               </div>
@@ -423,15 +426,15 @@ export function MarketPlanCard({
               <div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="text-2xl font-extrabold tracking-tight text-foreground">
-                    {currentPrice === 0 ? '免费' : formatCurrency(Math.round(currentPrice * 100))}
+                    {currentPrice === 0 ? t('user:market.free') : formatCurrency(Math.round(currentPrice * 100))}
                   </span>
                   <span className="text-xs font-normal text-muted-foreground">
-                    / {plan.durationDays} 天
+                    / {t('common:time.days', { count: plan.durationDays })}
                   </span>
                 </div>
                 {hasDiscount && (
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                    <span>原价</span>
+                    <span>{t('user:market.originalPrice')}</span>
                     <span className="line-through">{formatCurrency(Math.round(originalPrice * 100))}</span>
                   </div>
                 )}
