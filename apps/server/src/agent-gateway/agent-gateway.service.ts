@@ -977,7 +977,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
                 "billedBytes" = "TrafficHourlyMetric"."billedBytes" + excluded."billedBytes",
                 "updatedAt" = CURRENT_TIMESTAMP`,
               item.id,
-              item.bucketStart.toISOString(),
+              item.bucketStart.getTime(),
               item.nodeId,
               item.userId,
               item.lineId,

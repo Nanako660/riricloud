@@ -120,4 +120,16 @@ describe('TelemetryCleanupService', () => {
     expect(result.items[0]).toEqual(expect.objectContaining({ matchedCount: 2, oldest: '2026-01-01T00:00:00.000Z' }));
     expect(telemetry.nodeRateMetric.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
   });
+
+  it('支持获取数据库空间统计并执行 VACUUM 释放', async () => {
+    const stats = await service.getDatabaseStats();
+    expect(stats.databases).toHaveLength(2);
+    expect(stats).toHaveProperty('totalBytes');
+
+    const vacuumResult = await service.vacuumDatabases(['telemetry']);
+    expect(vacuumResult.results).toHaveLength(1);
+    expect(vacuumResult.results[0].target).toBe('telemetry');
+    expect(vacuumResult).toHaveProperty('totalReclaimedBytes');
+  });
 });
+

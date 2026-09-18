@@ -249,11 +249,22 @@ describe('AgentService SQLite traffic accounting', () => {
     const cursor = await prisma.trafficCursor.findUniqueOrThrow({ where: { nodeId_credential: { nodeId: 'node-1', credential: 'user-uuid-1' } } });
     await service.flushTrafficHourlyMetrics();
     const metrics = await telemetryPrisma.trafficHourlyMetric.findMany({ where: { nodeId: 'node-1', userId: 'user-1' } });
+    const metricsWithRange = await telemetryPrisma.trafficHourlyMetric.findMany({
+      where: {
+        nodeId: 'node-1',
+        userId: 'user-1',
+        bucketStart: {
+          gte: new Date(Date.now() - 24 * 3600 * 1000),
+          lt: new Date(Date.now() + 24 * 3600 * 1000)
+        }
+      }
+    });
 
     expect(user.trafficUsedBytes).toBe(firstUpload + firstDownload + 12n + 200n);
     expect(cursor.uploadTotal).toBe(firstUpload + 105n);
     expect(cursor.downloadTotal).toBe(firstDownload + 107n);
     expect(metrics).toHaveLength(1);
+    expect(metricsWithRange).toHaveLength(1);
     expect(metrics[0].upload).toBe(firstUpload + 5n + 100n);
     expect(metrics[0].download).toBe(firstDownload + 7n + 100n);
     expect(metrics[0].billedBytes).toBe(firstUpload + firstDownload + 12n + 200n);

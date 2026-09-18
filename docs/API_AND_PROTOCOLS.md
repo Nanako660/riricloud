@@ -188,7 +188,9 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /logs/stream?ticket=<ONE_TIME_TICKET>&level&source&nodeId&keyword`：SSE (Server-Sent Events) 实时推流通道（Live Tail）。⭐ 票据只允许消费一次且不得替代长期 JWT；支持动态按级别、来源端、节点和关键词实时推流最新日志事件。
 - `POST /logs/frontend`：前端批量上报异常与关键操作日志。⭐ 无需管理员鉴权（`@Public()`）；请求 `{ logs: [{ level, module, message, traceId?, metadata? }] }`；服务端自动补齐 Client IP、User Agent 与当前登录用户 ID，深度脱敏后缓冲入库并广播至 SSE 监听端。
 - `POST /admin/telemetry/cleanup/preview`：管理员预览历史观测数据清理。⭐ 请求 `{ targets: [{ kind: "trafficHourly"|"nodeRate"|"systemLog"|"legacyTraffic", mode: "retention"|"before"|"range"|"count"|"all", before?, from?, to?, keepLatest? }] }`；每类返回匹配数、估算字节、最早/最新时间、实际条件和当前策略，不执行删除。
-- `POST /admin/telemetry/cleanup`：管理员执行历史观测数据清理。⭐ 必须提交固定确认短语 `{ confirmationPhrase: "CLEAR_HISTORY" }`，服务端按目标逐表执行并返回 `SUCCEEDED`、`PARTIAL` 或 `FAILED` 及每类匹配/删除数、耗时和错误；完成后追加不可被本次清空删除的 `TelemetryCleanup` 审计日志。清理只触及四类观测数据，不修改额度、订阅用量、流量游标、节点实时状态或计费数据。
+- `POST /admin/telemetry/cleanup`：管理员执行历史观测数据清理。⭐ 必须提交固定确认短语 `{ confirmationPhrase: "CLEAR_HISTORY" }`，服务端按目标逐表执行并返回 `SUCCEEDED`、`PARTIAL` 或 `FAILED` 及每类匹配/删除数、耗时和错误；执行完毕后自动执行 WAL 截断与 `VACUUM` 物理收缩磁盘空间并返回 `vacuum` 释放详情；完成后追加不可被本次清空删除的 `TelemetryCleanup` 审计日志。清理只触及四类观测数据，不修改额度、订阅用量、流量游标、节点实时状态或计费数据。
+- `GET /admin/telemetry/cleanup/database-stats`：管理员获取 SQLite 数据库物理文件尺寸。⭐ 返回主业务库（`riri.db`）与观测库（`telemetry.db`）的主文件、WAL 与 SHM 尺寸及合计占用 `{ databases: [{ target, path, size, walSize, shmSize, totalSize }], totalBytes }`。
+- `POST /admin/telemetry/cleanup/vacuum`：管理员手动触发数据库碎片整理与空间收缩（VACUUM）。⭐ 可选指定 `{ targets?: ("main"|"telemetry")[] }`（默认全量）；依次执行 `PRAGMA wal_checkpoint(TRUNCATE)` 与 `VACUUM`，向操作系统归还物理磁盘空间；返回 `{ results: [{ target, path, bytesBefore, bytesAfter, reclaimedBytes }], totalReclaimedBytes, completedAt }`。
 - `DELETE /logs?retentionDays&maxRecords`：旧版系统日志清理兼容接口。⭐ 新管理端统一使用上述遥测清理接口；后台每小时根据 `logsRetentionDays` 与 `logsMaxCount` 清理系统日志，手动清空使用 `mode=all`，不再用 `retentionDays=0` 表示清空。
 - `GET /logs/export?format=json|csv&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员按当前过滤条件导出日志文件。⭐ 单次最多导出 5000 条，支持导出为 JSON 或 CSV 文件。
 

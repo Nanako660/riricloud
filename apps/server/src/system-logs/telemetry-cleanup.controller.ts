@@ -1,9 +1,9 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../common/roles.decorator';
-import { TelemetryCleanupDto } from './dto/telemetry-cleanup.dto';
+import { TelemetryCleanupDto, VacuumDatabaseDto } from './dto/telemetry-cleanup.dto';
 import { TelemetryCleanupService } from './telemetry-cleanup.service';
 
 @ApiTags('telemetry-cleanup')
@@ -13,10 +13,22 @@ import { TelemetryCleanupService } from './telemetry-cleanup.service';
 export class TelemetryCleanupController {
   constructor(private readonly cleanupService: TelemetryCleanupService) {}
 
+  @Get('database-stats')
+  @ApiOperation({ summary: '获取主业务库与时序库的磁盘空间占用详情' })
+  getDatabaseStats() {
+    return this.cleanupService.getDatabaseStats();
+  }
+
   @Post('preview')
   @ApiOperation({ summary: '预览历史遥测数据清理范围' })
   preview(@Body() dto: TelemetryCleanupDto) {
     return this.cleanupService.preview(dto);
+  }
+
+  @Post('vacuum')
+  @ApiOperation({ summary: '主动对 SQLite 数据库执行 VACUUM 与 WAL 截断整理' })
+  vacuum(@Body() dto?: VacuumDatabaseDto) {
+    return this.cleanupService.vacuumDatabases(dto?.targets);
   }
 
   @Post()
