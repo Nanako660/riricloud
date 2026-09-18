@@ -1227,11 +1227,15 @@ function buildSingboxClientMultiplex(multiplex?: InboundMultiplexConfig): Record
   if (multiplex.minStreams) res.min_streams = multiplex.minStreams;
   if (multiplex.padding !== undefined) res.padding = multiplex.padding;
   if (multiplex.brutal && multiplex.brutal.enabled) {
-    res.brutal = {
-      enabled: true,
-      ...(multiplex.brutal.upMbps ? { up_mbps: multiplex.brutal.upMbps } : {}),
-      ...(multiplex.brutal.downMbps ? { down_mbps: multiplex.brutal.downMbps } : {})
-    };
+    const upMbps = multiplex.brutal.upMbps ?? 0;
+    const downMbps = multiplex.brutal.downMbps ?? 0;
+    if (upMbps > 0 && downMbps > 0) {
+      res.brutal = {
+        enabled: true,
+        up_mbps: upMbps,
+        down_mbps: downMbps
+      };
+    }
   }
   return res;
 }

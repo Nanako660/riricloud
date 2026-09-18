@@ -193,6 +193,24 @@ export const lineFormSchema = z.object({
     });
   }
 
+  // 强校验：开启 TCP Brutal 时必须提供大于 0 的上行和下行速率期望
+  if (value.multiplexEnabled && value.multiplexBrutalEnabled) {
+    if (!value.multiplexBrutalUpMbps || value.multiplexBrutalUpMbps <= 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['multiplexBrutalUpMbps'],
+        message: '开启 TCP Brutal 强力拥塞控制时必须填写大于 0 的上行速率期望'
+      });
+    }
+    if (!value.multiplexBrutalDownMbps || value.multiplexBrutalDownMbps <= 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['multiplexBrutalDownMbps'],
+        message: '开启 TCP Brutal 强力拥塞控制时必须填写大于 0 的下行速率期望'
+      });
+    }
+  }
+
   // 规范互斥：Shadowsocks 中 UDP over TCP 与 Multiplex 互斥
   if (value.protocolType === 'SHADOWSOCKS' && value.ssUdpOverTcp && value.multiplexEnabled) {
     ctx.addIssue({
@@ -369,13 +387,13 @@ export function lineToFormValues(line: ApiLine): LineFormValues {
     proxyProtocolAcceptNoHeader: line.proxyProtocolAcceptNoHeader === true,
     multiplexEnabled: asRecord(params.multiplex).enabled === true,
     multiplexProtocol: (asString(asRecord(params.multiplex).protocol, 'smux') as LineFormValues['multiplexProtocol']),
-    multiplexMaxConnections: asNumber(asRecord(params.multiplex).max_connections),
-    multiplexMinStreams: asNumber(asRecord(params.multiplex).min_streams),
-    multiplexMaxStreams: asNumber(asRecord(params.multiplex).max_streams),
+    multiplexMaxConnections: asNumber(asRecord(params.multiplex).maxConnections ?? asRecord(params.multiplex).max_connections),
+    multiplexMinStreams: asNumber(asRecord(params.multiplex).minStreams ?? asRecord(params.multiplex).min_streams),
+    multiplexMaxStreams: asNumber(asRecord(params.multiplex).maxStreams ?? asRecord(params.multiplex).max_streams),
     multiplexPadding: asRecord(params.multiplex).padding === true,
     multiplexBrutalEnabled: asRecord(asRecord(params.multiplex).brutal).enabled === true,
-    multiplexBrutalUpMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).up_mbps),
-    multiplexBrutalDownMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).down_mbps),
+    multiplexBrutalUpMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).upMbps ?? asRecord(asRecord(params.multiplex).brutal).up_mbps),
+    multiplexBrutalDownMbps: asNumber(asRecord(asRecord(params.multiplex).brutal).downMbps ?? asRecord(asRecord(params.multiplex).brutal).down_mbps),
     vlessFlow: asString(params.flow),
     vmessAlterId: asNumber(params.alterId, 0),
     hy2UpMbps: asNumber(params.upMbps, 0),
@@ -486,15 +504,15 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
     params.multiplex = {
       enabled: true,
       protocol: values.multiplexProtocol,
-      ...(values.multiplexMaxConnections ? { max_connections: values.multiplexMaxConnections } : {}),
-      ...(values.multiplexMinStreams ? { min_streams: values.multiplexMinStreams } : {}),
-      ...(values.multiplexMaxStreams ? { max_streams: values.multiplexMaxStreams } : {}),
+      ...(values.multiplexMaxConnections ? { maxConnections: values.multiplexMaxConnections } : {}),
+      ...(values.multiplexMinStreams ? { minStreams: values.multiplexMinStreams } : {}),
+      ...(values.multiplexMaxStreams ? { maxStreams: values.multiplexMaxStreams } : {}),
       padding: values.multiplexPadding,
-      ...(values.multiplexBrutalEnabled ? {
+      ...(values.multiplexBrutalEnabled && (values.multiplexBrutalUpMbps ?? 0) > 0 && (values.multiplexBrutalDownMbps ?? 0) > 0 ? {
         brutal: {
           enabled: true,
-          up_mbps: values.multiplexBrutalUpMbps || 0,
-          down_mbps: values.multiplexBrutalDownMbps || 0
+          upMbps: values.multiplexBrutalUpMbps,
+          downMbps: values.multiplexBrutalDownMbps
         }
       } : {})
     };
@@ -529,7 +547,10 @@ export function buildParamsFromValues(values: LineFormValues): Record<string, un
       params.method = values.ssMethod.trim() || '2022-blake3-aes-128-gcm';
       if (values.ssPassword.trim()) params.password = values.ssPassword.trim();
       params.mode = values.ssMode;
-      if (values.ssUdpOverTcp) params.udp_over_tcp = true;
+      if (values.ssUdpOverTcp) {
+        params.udpOverTcp = true;
+        params.udp_over_tcp = true;
+      }
       break;
     case 'NAIVE':
       params.network = values.naiveNetwork;

@@ -230,21 +230,21 @@ export class LinesService {
 
     const protocolType = input.protocolType ?? (current?.protocolType as ProtocolType | undefined) ?? 'VLESS';
     if (!PROTOCOL_TYPES.includes(protocolType)) throw new BadRequestException('线路协议无效');
-    const existingParams = current ? revealInboundSecrets(this.parseObject(current.paramsJson)) : {};
+    const existingParams = current ? this.sanitizeCorruptParams(revealInboundSecrets(this.parseObject(current.paramsJson))) : {};
     const certificateId = input.certificateId !== undefined ? input.certificateId : current?.certificateId ?? null;
     const certificate = certificateId
       ? await this.prisma.certificate.findUnique({ where: { id: certificateId } })
       : null;
     if (certificateId && !certificate) throw new NotFoundException('证书不存在');
-    const mergedParams = this.deepMerge(existingParams, input.params ?? {});
+    const targetParams = this.mergeParamsWithSecrets(input.params, existingParams, protocolType);
     if (certificate) {
-      mergedParams.tls = {
-        ...this.parseObjectValue(mergedParams.tls),
+      targetParams.tls = {
+        ...this.parseObjectValue(targetParams.tls),
         certificate: [certificate.certificatePem],
         key: [certificate.privateKeyPem]
       };
     }
-    const params = protectInboundSecrets(normalizeInboundParams(protocolType, mergedParams));
+    const params = protectInboundSecrets(normalizeInboundParams(protocolType, targetParams));
     if (certificateId && (params.tls as { mode?: string } | undefined)?.mode !== 'tls') {
       throw new BadRequestException('证书只能关联标准 TLS 安全模式');
     }
@@ -506,27 +506,70 @@ export class LinesService {
     }
   }
 
-  private deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
-    const output = { ...target };
-    for (const key of Object.keys(source)) {
-      const sourceValue = source[key];
-      const targetValue = target[key];
-      if (
-        sourceValue && typeof sourceValue === 'object' && !Array.isArray(sourceValue) &&
-        targetValue && typeof targetValue === 'object' && !Array.isArray(targetValue)
-      ) {
-        output[key] = this.deepMerge(targetValue as Record<string, unknown>, sourceValue as Record<string, unknown>);
-      } else if (sourceValue !== undefined) {
-        output[key] = sourceValue;
+  private sanitizeCorruptParams(params: Record<string, unknown>): Record<string, unknown> {
+    if (params.multiplex && typeof params.multiplex === 'object' && !Array.isArray(params.multiplex)) {
+      const m = params.multiplex as Record<string, unknown>;
+      if (m.brutal && typeof m.brutal === 'object' && !Array.isArray(m.brutal)) {
+        const b = m.brutal as Record<string, unknown>;
+        const up = Number(b.upMbps ?? b.up_mbps ?? 0);
+        const down = Number(b.downMbps ?? b.down_mbps ?? 0);
+        if (b.enabled === true && (up <= 0 || down <= 0)) {
+          delete m.brutal;
+        }
       }
     }
-    return output;
+    return params;
+  }
+
+  private mergeParamsWithSecrets(
+    inputParams: Record<string, unknown> | undefined,
+    existingParams: Record<string, unknown>,
+    protocolType: ProtocolType
+  ): Record<string, unknown> {
+    if (inputParams === undefined) {
+      return { ...existingParams };
+    }
+    const target = { ...inputParams };
+
+    // 继承敏感密钥（若入参未提供且历史已存在）：
+    // 1. Reality 场景：前端脱敏不持有私钥，若未生成新密钥则继承历史 Reality 私钥
+    if (target.tls && typeof target.tls === 'object' && !Array.isArray(target.tls)) {
+      const tls = target.tls as Record<string, unknown>;
+      if (tls.mode === 'reality' && tls.reality && typeof tls.reality === 'object' && !Array.isArray(tls.reality)) {
+        const reality = tls.reality as Record<string, unknown>;
+        if (!reality.privateKey && existingParams.tls && typeof existingParams.tls === 'object') {
+          const existingTls = existingParams.tls as Record<string, unknown>;
+          const existingReality = existingTls.reality as Record<string, unknown> | undefined;
+          if (existingReality?.privateKey) {
+            reality.privateKey = existingReality.privateKey;
+          }
+        }
+      }
+    }
+
+    // 2. ShadowTLS 场景：内层 Shadowsocks 密码继承
+    if (protocolType === 'SHADOWTLS' && target.inner && typeof target.inner === 'object' && !Array.isArray(target.inner)) {
+      const inner = target.inner as Record<string, unknown>;
+      if (!inner.password && existingParams.inner && typeof existingParams.inner === 'object') {
+        const existingInner = existingParams.inner as Record<string, unknown>;
+        if (existingInner.password) {
+          inner.password = existingInner.password;
+        }
+      }
+    }
+
+    // 3. Shadowsocks 密码继承（若未填新密码则继承旧密码）
+    if (protocolType === 'SHADOWSOCKS' && !target.password && existingParams.password) {
+      target.password = existingParams.password;
+    }
+
+    return target;
   }
 
   private toView(line: LineWithRelations) {
     const serverHost = line.endpointOverrideEnabled && line.serverHost ? line.serverHost : line.entryNode.serverHost;
     const serverPort = line.endpointOverrideEnabled && line.serverPort ? line.serverPort : line.entryPort;
-    const params = sanitizeInboundParams(this.parseObject(line.paramsJson));
+    const params = sanitizeInboundParams(this.sanitizeCorruptParams(this.parseObject(line.paramsJson)));
     const landing = line.type === 'RELAY'
       ? (line.relayMode === 'TARGET_LINE' && line.targetLine
           ? { node: line.targetLine.entryNode, port: line.targetLine.entryPort }

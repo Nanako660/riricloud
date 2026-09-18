@@ -215,4 +215,58 @@ describe('subscription builders with lines', () => {
     expect(singbox.outbounds[0].udp_over_tcp).toBe(true);
     expect(singbox.outbounds[0].multiplex).toBeUndefined();
   });
+
+  it('Sing-box 订阅中正确输出合法 Brutal 配置并在缺失速率时防御性抑制', () => {
+    const validBrutalLine: SubLine = {
+      id: 'line-brutal-ok',
+      name: 'Brutal 合法节点',
+      type: 'DIRECT',
+      serverHost: 'node.example.com',
+      serverPort: 10086,
+      protocolType: 'SHADOWSOCKS',
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'pass',
+        udpOverTcp: false,
+        multiplex: {
+          enabled: true,
+          protocol: 'smux',
+          brutal: { enabled: true, upMbps: 50, downMbps: 100 }
+        }
+      }
+    };
+
+    const invalidBrutalLine: SubLine = {
+      id: 'line-brutal-bad',
+      name: 'Brutal 脏数据节点',
+      type: 'DIRECT',
+      serverHost: 'node.example.com',
+      serverPort: 10087,
+      protocolType: 'SHADOWSOCKS',
+      params: {
+        method: '2022-blake3-aes-128-gcm',
+        password: 'pass',
+        udpOverTcp: false,
+        multiplex: {
+          enabled: true,
+          protocol: 'smux',
+          brutal: { enabled: true, upMbps: 0, downMbps: 100 }
+        }
+      }
+    };
+
+    const singboxValid = JSON.parse(buildSingboxJson(user, [validBrutalLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect((singboxValid.outbounds[0].multiplex as Record<string, unknown>).brutal).toEqual({
+      enabled: true,
+      up_mbps: 50,
+      down_mbps: 100
+    });
+
+    const singboxInvalid = JSON.parse(buildSingboxJson(user, [invalidBrutalLine])) as {
+      outbounds: Array<Record<string, unknown>>;
+    };
+    expect((singboxInvalid.outbounds[0].multiplex as Record<string, unknown>).brutal).toBeUndefined();
+  });
 });
