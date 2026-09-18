@@ -10,6 +10,8 @@ import {
   buildServerMultiplex,
   buildSharedListenFields,
   generateRealityKeypair,
+  InboundMultiplexConfig,
+  normalizeMultiplex,
   normalizeShadowsocksPassword,
   normalizeInboundParams,
   protectInboundSecrets,
@@ -674,7 +676,81 @@ describe('线路网络底座与协议增强', () => {
     });
   });
 
-  it('buildServerMultiplex 正确输出 Inbound multiplex 配置', () => {
+  describe('normalizeMultiplex', () => {
+    it('在未启用或格式非法时返回 undefined', () => {
+      expect(normalizeMultiplex(undefined)).toBeUndefined();
+      expect(normalizeMultiplex(null)).toBeUndefined();
+      expect(normalizeMultiplex({ enabled: false })).toBeUndefined();
+      expect(normalizeMultiplex([])).toBeUndefined();
+    });
+
+    it('支持标准 camelCase 格式解析', () => {
+      const result = normalizeMultiplex({
+        enabled: true,
+        protocol: 'YAMUX',
+        maxConnections: 8,
+        minStreams: 4,
+        padding: true,
+        brutal: { enabled: true, upMbps: 50, downMbps: 100 }
+      });
+      expect(result).toEqual({
+        enabled: true,
+        protocol: 'yamux',
+        maxConnections: 8,
+        minStreams: 4,
+        maxStreams: undefined,
+        padding: true,
+        brutal: { enabled: true, upMbps: 50, downMbps: 100 }
+      });
+    });
+
+    it('兼容解析历史/前端传来的 snake_case 格式', () => {
+      const result = normalizeMultiplex({
+        enabled: true,
+        protocol: 'SMUX',
+        max_connections: 16,
+        min_streams: 2,
+        padding: false,
+        brutal: { enabled: true, up_mbps: 30, down_mbps: 60 }
+      });
+      expect(result).toEqual({
+        enabled: true,
+        protocol: 'smux',
+        maxConnections: 16,
+        minStreams: 2,
+        maxStreams: undefined,
+        padding: false,
+        brutal: { enabled: true, upMbps: 30, downMbps: 60 }
+      });
+    });
+
+    it('maxConnections 与 maxStreams 互斥拦截', () => {
+      expect(() => normalizeMultiplex({
+        enabled: true,
+        maxConnections: 4,
+        maxStreams: 16
+      })).toThrow(BadRequestException);
+    });
+
+    it('开启 Brutal 时若缺失速率或速率<=0 则抛出 BadRequestException 拦截', () => {
+      expect(() => normalizeMultiplex({
+        enabled: true,
+        brutal: { enabled: true, upMbps: 0, downMbps: 100 }
+      })).toThrow('TCP Brutal 强力拥塞控制必须配置大于 0 的上行速率期望');
+
+      expect(() => normalizeMultiplex({
+        enabled: true,
+        brutal: { enabled: true, upMbps: 50, downMbps: 0 }
+      })).toThrow('TCP Brutal 强力拥塞控制必须配置大于 0 的下行速率期望');
+
+      expect(() => normalizeMultiplex({
+        enabled: true,
+        brutal: { enabled: true }
+      })).toThrow('TCP Brutal 强力拥塞控制必须配置大于 0 的上行速率期望');
+    });
+  });
+
+  it('buildServerMultiplex 正确输出 Inbound multiplex 配置并在速率缺失时防御', () => {
     expect(buildServerMultiplex(undefined)).toBeUndefined();
     expect(buildServerMultiplex({ enabled: false })).toBeUndefined();
     expect(buildServerMultiplex({
@@ -685,6 +761,16 @@ describe('线路网络底座与协议增强', () => {
       enabled: true,
       padding: true,
       brutal: { enabled: true, up_mbps: 100, down_mbps: 200 }
+    });
+
+    // 防御脏数据：若 brutal 速率为 0 或缺失，坚决不输出破坏性 brutal 块，防止 sing-box 启动崩溃
+    expect(buildServerMultiplex({
+      enabled: true,
+      padding: true,
+      brutal: { enabled: true, upMbps: 0, downMbps: 100 } as unknown as InboundMultiplexConfig['brutal']
+    })).toEqual({
+      enabled: true,
+      padding: true
     });
   });
 

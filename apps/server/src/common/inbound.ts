@@ -536,21 +536,38 @@ export function normalizeMultiplex(raw: unknown): InboundMultiplexConfig | undef
   let brutal: InboundMultiplexBrutal | undefined;
   if (m.brutal && typeof m.brutal === 'object' && !Array.isArray(m.brutal)) {
     const b = m.brutal as Record<string, unknown>;
-    brutal = {
-      enabled: b.enabled === true,
-      upMbps: asPositiveNumber(b.upMbps, 0) || undefined,
-      downMbps: asPositiveNumber(b.downMbps, 0) || undefined
-    };
+    const brutalEnabled = b.enabled === true;
+    if (brutalEnabled) {
+      const upMbps = asPositiveNumber(b.upMbps ?? b.up_mbps, 0);
+      const downMbps = asPositiveNumber(b.downMbps ?? b.down_mbps, 0);
+      if (!upMbps || upMbps <= 0) {
+        throw new BadRequestException('TCP Brutal 强力拥塞控制必须配置大于 0 的上行速率期望 (upMbps)');
+      }
+      if (!downMbps || downMbps <= 0) {
+        throw new BadRequestException('TCP Brutal 强力拥塞控制必须配置大于 0 的下行速率期望 (downMbps)');
+      }
+      brutal = {
+        enabled: true,
+        upMbps,
+        downMbps
+      };
+    }
   }
+  const maxConnections = asPositiveNumber(m.maxConnections ?? m.max_connections, 0) || undefined;
+  const maxStreams = asPositiveNumber(m.maxStreams ?? m.max_streams, 0) || undefined;
+  if (maxConnections && maxStreams) {
+    throw new BadRequestException('Sing-box 官方规范中最大连接数 (maxConnections) 与最大并发流数 (maxStreams) 互斥，不能同时配置');
+  }
+
   const protocol = ['smux', 'yamux', 'h2mux'].includes(String(m.protocol).toLowerCase())
     ? (String(m.protocol).toLowerCase() as 'smux' | 'yamux' | 'h2mux')
     : 'smux';
   return {
     enabled: true,
     protocol,
-    maxConnections: asPositiveNumber(m.maxConnections, 0) || undefined,
-    minStreams: asPositiveNumber(m.minStreams, 0) || undefined,
-    maxStreams: asPositiveNumber(m.maxStreams, 0) || undefined,
+    maxConnections,
+    minStreams: asPositiveNumber(m.minStreams ?? m.min_streams, 0) || undefined,
+    maxStreams,
     padding: m.padding === true,
     brutal
   };
@@ -717,7 +734,7 @@ export function normalizeInboundParams(
         method,
         password,
         mode,
-        udpOverTcp: raw.udpOverTcp === true,
+        udpOverTcp: raw.udpOverTcp === true || raw.udp_over_tcp === true,
         ...(multiplex ? { multiplex } : {})
       };
       return params as unknown as Record<string, unknown>;
@@ -1016,11 +1033,15 @@ export function buildServerMultiplex(multiplex?: InboundMultiplexConfig): Record
   const res: Record<string, unknown> = { enabled: true };
   if (multiplex.padding !== undefined) res.padding = multiplex.padding;
   if (multiplex.brutal && multiplex.brutal.enabled) {
-    res.brutal = {
-      enabled: true,
-      ...(multiplex.brutal.upMbps ? { up_mbps: multiplex.brutal.upMbps } : {}),
-      ...(multiplex.brutal.downMbps ? { down_mbps: multiplex.brutal.downMbps } : {})
-    };
+    const upMbps = multiplex.brutal.upMbps ?? 0;
+    const downMbps = multiplex.brutal.downMbps ?? 0;
+    if (upMbps > 0 && downMbps > 0) {
+      res.brutal = {
+        enabled: true,
+        up_mbps: upMbps,
+        down_mbps: downMbps
+      };
+    }
   }
   return res;
 }

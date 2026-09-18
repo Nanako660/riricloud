@@ -249,4 +249,84 @@ describe('LinesService', () => {
     prisma.line.findUnique.mockResolvedValue(null);
     await expect(service.detail('missing')).rejects.toThrow(NotFoundException);
   });
+
+  describe('update 线路参数更新与多路复用彻底取消', () => {
+    it('更新线路取消勾选多路复用时，彻底从 paramsJson 中移除 multiplex 并不残留旧参数', async () => {
+      const lineWithMultiplex = {
+        ...rawLine,
+        id: 'line-ss-1',
+        protocolType: 'SHADOWSOCKS',
+        paramsJson: JSON.stringify({
+          method: '2022-blake3-aes-128-gcm',
+          password: 'old-password',
+          mode: 'shared',
+          multiplex: {
+            enabled: true,
+            protocol: 'smux',
+            padding: true,
+            brutal: { enabled: true, upMbps: 50, downMbps: 100 }
+          }
+        })
+      };
+
+      prisma.line.findUnique.mockResolvedValue(lineWithMultiplex);
+      prisma.line.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...lineWithMultiplex,
+        ...data
+      }));
+
+      // 前端取消勾选多路复用时，params 中不再包含 multiplex 键
+      await service.update('line-ss-1', {
+        name: '更新后的 SS 线路',
+        protocolType: 'SHADOWSOCKS',
+        params: {
+          method: '2022-blake3-aes-128-gcm',
+          password: 'old-password',
+          mode: 'shared'
+        }
+      });
+
+      expect(prisma.line.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'line-ss-1' },
+        data: expect.objectContaining({
+          paramsJson: expect.any(String)
+        })
+      }));
+
+      const updateCall = prisma.line.update.mock.calls[0][0] as { data: { paramsJson: string } };
+      const parsedUpdatedParams = JSON.parse(updateCall.data.paramsJson) as Record<string, unknown>;
+      expect(parsedUpdatedParams).not.toHaveProperty('multiplex');
+      expect(gateway.pushConfigToAll).toHaveBeenCalled();
+    });
+
+    it('编辑 Reality 线路未传入 privateKey 时自动继承原私钥', async () => {
+      prisma.line.findUnique.mockResolvedValue(rawLine);
+      prisma.line.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...rawLine,
+        ...data
+      }));
+
+      // 前端编辑时没有私钥，只传了公钥与 dest
+      await service.update('line-1', {
+        name: '更新的 Reality',
+        protocolType: 'VLESS',
+        params: {
+          flow: 'xtls-rprx-vision',
+          transport: { type: 'tcp' },
+          tls: {
+            enabled: true,
+            mode: 'reality',
+            serverName: 'www.apple.com',
+            reality: { dest: 'www.apple.com:443', serverNames: ['www.apple.com'], publicKey: 'public', shortIds: ['sid'] }
+          }
+        }
+      });
+
+      const updateCall = prisma.line.update.mock.calls[0][0] as { data: { paramsJson: string } };
+      const parsedUpdatedParams = JSON.parse(updateCall.data.paramsJson) as {
+        tls: { reality: { privateKey: string } }
+      };
+      expect(parsedUpdatedParams.tls.reality.privateKey).toBeDefined();
+    });
+  });
 });

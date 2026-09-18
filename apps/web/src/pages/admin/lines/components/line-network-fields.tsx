@@ -151,6 +151,7 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
                     form={form}
                     name="multiplexBrutalUpMbps"
                     label="Brutal 上行速率期望 (Mbps)"
+                    description="必填且须大于 0，内核以此评估上行发包带宽。"
                     placeholder="例如: 50"
                     min={1}
                     max={100000}
@@ -159,6 +160,7 @@ export function LineNetworkFields({ form }: { form: UseFormReturn<LineFormValues
                     form={form}
                     name="multiplexBrutalDownMbps"
                     label="Brutal 下行速率期望 (Mbps)"
+                    description="必填且须大于 0，内核以此评估下行带宽期望。"
                     placeholder="例如: 100"
                     min={1}
                     max={100000}

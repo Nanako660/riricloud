@@ -335,6 +335,10 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > Agent 本地日志轮转：`agentLogRotation` 是可选配置字段，`maxSizeMb` 范围为 1~1024，`maxFiles` 范围为 1~20 且包含当前日志文件。新 Agent 收到后动态应用；旧 Agent 忽略该字段并继续业务运行，Master 根据 `agent_log_rotation` 能力标记其需要升级。配置字段缺失时 Agent 使用本地 YAML/环境变量，最终回退到 50 MiB 与 5 个文件。
 
 > 物理端口限速 (`portSpeedLimits`)：可选映射 `{ [port]: limitMbps }`。Linux 边缘 Agent 收到后调用 `trafficshaper` 模块，通过 Linux `tc`（HTB 根队列与子类、u32 双向匹配）实施对应物理端口的出入双向流量整形；非 Linux 或无权限环境平滑跳过记 Warn；线路未配置限速时自动清理对应类规则。同时，入站生成支持 `tcp_fast_open`、`tcp_multi_path`、`udp_fragment`、`udp_timeout`、`proxy_protocol`，以及 `multiplex`、`masquerade`、`udp_over_tcp` 等 Sing-box 原生调优项。
+> 
+> 多路复用 (Multiplex) 与 TCP Brutal 协议契约：入站与出站 `multiplex` 配置支持 `protocol`（`smux`/`yamux`/`h2mux`）、`maxConnections` 与 `maxStreams` 互斥约束、`minStreams` 与 `padding`；`brutal` 拥塞控制在开启时强制要求正整数 `upMbps` 与 `downMbps` 速率期望。服务端构建器与客户端订阅构建器均内置防御守卫：若 `upMbps` 或 `downMbps` 缺失或非正数，坚决不向 Sing-box 配置中输出 `brutal` 块，杜绝内核报错 `brutal: invalid upload speed`。
+> 
+> 线路参数更新语义：线路更新接口（`PUT /api/lines/:id`）对 `params` 采取以提交参数为准的全量替换策略，彻底解决取消勾选（如停用多路复用、清空流控混淆等）时旧参数因递归深合并残留的问题；对于 Reality 私钥、ShadowTLS 内层密码等敏感机密，若更新入参未提供则按需安全继承历史数据。
 
 > 用户注入规则（与订阅输出一致，见 `docs/DATA_MODELS.md` §3.1）：vless/tuic 用 `User.uuid` 登录；hy2 密码取 `User.password ?? User.uuid`；ss 为入站共享密码不注入用户。各节点入站同时包含内部专用测速探针凭据（`INTERNAL_SPEEDTEST_UUID` / `INTERNAL_SPEEDTEST_SECRET`）。
 

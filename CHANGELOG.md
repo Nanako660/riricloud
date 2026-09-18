@@ -17,6 +17,12 @@
 ### Changed
 
 ### Fixed
+- **线路多路复用 (Multiplex) 与 TCP Brutal 强力拥塞控制配置报错与无法取消缺陷修复**：
+  - **参数命名断层修复**：前端表单与后端接口统一对齐标准 TypeScript `camelCase`（`maxConnections`、`minStreams`、`maxStreams`、`upMbps`、`downMbps`），并在服务端 `normalizeMultiplex` 与前端 `lineToFormValues` 中提供 camelCase 与 snake_case 双向兼容解析，解决因字段命名不一致导致 Brutal 速率丢失变为 `undefined` 的问题；
+  - **Sing-box 契约防御守卫**：在服务端入站生成器 `buildServerMultiplex` 与客户端订阅生成器 `buildSingboxClientMultiplex` 中增加防御守卫，仅在 `up_mbps > 0 && down_mbps > 0` 时才输出 `brutal` 块，彻底杜绝 Sing-box 官方内核因缺少速率触发致命崩溃 `brutal: invalid upload speed`；
+  - **线路参数全量替换与敏感私钥继承**：彻底重构 `LinesService.prepare` 的合并语义，由粗暴的递归 `deepMerge` 改为以新提交的参数为准全量替换，仅自动继承被脱敏保护的 Reality 私钥与内层 Shadowsocks 密码，彻底解决管理后台在取消勾选多路复用或清空混淆/伪装/流控参数时因深合并残留导致配置无法取消的顽疾；
+  - **前端表单强校验强化**：在 Zod Schema 的 `superRefine` 中增加联动校验，开启 TCP Brutal 时强制要求输入大于 0 的上行和下行速率期望，阻止非法空值提交并提供清晰的中文错误提示；
+  - **历史脏数据自愈**：在线路读取与参数展示阶段自动识别并清理历史残留的破损 Brutal 数据，实现无需停机迁移的平滑即时自愈。
 
 
 ## [0.8.17] - 2026-09-18
