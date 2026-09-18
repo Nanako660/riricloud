@@ -163,6 +163,7 @@ type Client struct {
 	logCollector     *logging.Collector
 	logRotator       *logging.RotatingWriter
 	shaper           *trafficshaper.Shaper
+	lastTrafficErrAt time.Time
 }
 
 func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
@@ -227,7 +228,13 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	kernel := c.singboxMgr.Status()
 	trafficSnapshots, err := c.traffic.Collect(ctx, c.singboxMgr.StatsAddress())
 	if err != nil {
-		c.log.WithError(err).Debug("collect sing-box user traffic failed")
+		now := time.Now()
+		if now.Sub(c.lastTrafficErrAt) >= time.Minute {
+			c.lastTrafficErrAt = now
+			c.log.WithError(err).Warn("collect sing-box user traffic failed")
+		} else {
+			c.log.WithError(err).Debug("collect sing-box user traffic failed (throttled)")
+		}
 	}
 	payload := pollPayload{
 		ProtocolVersion:  protocol.Version,

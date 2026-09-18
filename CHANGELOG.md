@@ -19,6 +19,26 @@
 ### Fixed
 
 
+## [0.8.17] - 2026-09-18
+
+### Added
+- **SQLite 物理数据库尺寸统计与手动碎片整理 (VACUUM)**：
+  - 新增 `GET /admin/telemetry/cleanup/database-stats` 接口，支持多维统计业务主库（`riri.db`）与观测库（`telemetry.db`）的主数据文件、WAL 预写日志与 SHM 共享内存的磁盘占用；
+  - 新增 `POST /admin/telemetry/cleanup/vacuum` 接口，支持按需对主库或遥测库执行 WAL checkpoint 截断与 `VACUUM`，向操作系统归还未使用的物理磁盘空间；
+  - 在管理端系统设置页「存储与日志」卡片与「历史观测数据清理」通用弹窗中集成数据库体积监控与手动整理压缩入口，执行后即时反馈释放的物理空间。
+
+### Changed
+- **遥测清理全链路物理磁盘空间即时收缩**：管理员执行历史数据清理后自动调用 WAL checkpoint 截断与 `VACUUM`，彻底解决 SQLite 仅标记 freelist 而不缩小文件的问题。
+- **Agent 流量采集异常日志级别与限流优化**：边缘端采集 Sing-box 流量统计失败时，日志由 `Debug` 提升为带 1 分钟节流的 `Warn` 级别，兼顾故障排查及时性与防止日志频繁刷屏。
+
+### Fixed
+- **修复小时流量聚合数据类型不匹配导致流量明细与时序走势空白**：
+  - 修复 `flushTrafficHourlyMetrics` 与迁移脚本中向 `TrafficHourlyMetric.bucketStart` 写入 ISO8601 字符串（TEXT）导致的 SQLite 类型错配问题，统一为 Unix 毫秒时间戳（INTEGER），恢复流量消耗明细、线路明细、用户排行与时序走势正常展示；
+  - 主控端在启动初始化阶段自动执行 `repairLegacyTextBucketStarts` 平滑自愈，将存量历史 TEXT 格式时间戳订正为 INTEGER 并安全合并主键冲突；
+  - 修复历史观测数据清理按时间删除小时流量记录时因类型错配导致删除 0 行的问题。
+
+
+
 ## [0.8.16] - 2026-09-18
 
 ### Added

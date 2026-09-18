@@ -57,3 +57,42 @@ export class TelemetryCleanupDto {
   @IsString()
   confirmationPhrase?: string;
 }
+
+export const VACUUM_TARGETS = ['main', 'telemetry'] as const;
+export type VacuumTarget = (typeof VACUUM_TARGETS)[number];
+
+export class VacuumDatabaseDto {
+  @IsOptional()
+  @IsArray()
+  @IsIn(VACUUM_TARGETS, { each: true })
+  targets?: VacuumTarget[];
+}
+
+export interface DatabaseFileStat {
+  target: 'main' | 'telemetry';
+  path: string;
+  size: number;
+  walSize: number;
+  shmSize: number;
+  totalSize: number;
+}
+
+export interface DatabaseStatsResponse {
+  databases: DatabaseFileStat[];
+  totalBytes: number;
+}
+
+export interface VacuumResultItem {
+  target: 'main' | 'telemetry';
+  path: string;
+  bytesBefore: number;
+  bytesAfter: number;
+  reclaimedBytes: number;
+}
+
+export interface VacuumResponse {
+  results: VacuumResultItem[];
+  totalReclaimedBytes: number;
+  completedAt: string;
+}
+

@@ -9,11 +9,11 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { useTheme } from 'next-themes';
 import { z } from 'zod';
-import { Clock, Code2, Database, Gauge, Globe2, Link2, Mail, Palette, RotateCcw, Save, Send, ShieldCheck, Trash2, UsersRound, type LucideIcon } from 'lucide-react';
+import { Clock, Code2, Database, Gauge, Globe2, Link2, Mail, Palette, RefreshCw, RotateCcw, Save, Send, ShieldCheck, Trash2, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
-import { formatDateTime } from '@/lib/utils';
+import { formatBytes, formatDateTime } from '@/lib/utils';
 import { usePublicSettings } from '@/lib/public-settings';
 import { useAdminPlans } from '@/pages/admin/plans/use-plans';
 import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
@@ -21,7 +21,7 @@ import { ProbePresetEditor } from './components/probe-preset-editor';
 import { probePresetTargetsSchema, toProbePresetFormValue, toProbePresetTarget, type ProbePresetTarget } from './components/probe-preset-schema';
 import { SpeedTierEditor } from './components/speed-tier-editor';
 import { DEFAULT_SPEED_TIERS, type SpeedTier } from '@/lib/speed-tier';
-import { TelemetryCleanupDialog } from '@/components/shared/telemetry-cleanup-dialog';
+import { DatabaseStatsResponse, TelemetryCleanupDialog, VacuumResponse } from '@/components/shared/telemetry-cleanup-dialog';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -220,6 +220,24 @@ export default function AdminSettingsPage() {
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: async () => (await api.get<SystemSettings>('/admin/settings')).data
+  });
+  const dbStatsQuery = useQuery({
+    queryKey: ['admin-database-stats'],
+    queryFn: async () => (await api.get<DatabaseStatsResponse>('/admin/telemetry/cleanup/database-stats')).data
+  });
+  const vacuumMutation = useMutation({
+    mutationFn: async () => (await api.post<VacuumResponse>('/admin/telemetry/cleanup/vacuum', {})).data,
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-database-stats'] });
+      if (data.totalReclaimedBytes > 0) {
+        toast.success(`整理完成，已成功释放 ${formatBytes(data.totalReclaimedBytes)} 磁盘空间`);
+      } else {
+        toast.success('整理完成，数据库当前无多余碎片空间');
+      }
+    },
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, '整理数据库失败'));
+    }
   });
   const defaultTemplate = templates.data?.find((t) => t.isDefault) ?? templates.data?.find((t) => t.id === settingsQuery.data?.defaultTemplateId);
   const form = useForm<SettingsForm>({
@@ -423,7 +441,48 @@ export default function AdminSettingsPage() {
                 <SettingsInput name="agentLogMaxSizeMb" label="单文件大小（MiB）" type="number" min={1} max={1024} />
                 <SettingsInput name="agentLogMaxFiles" label="日志文件总数" type="number" min={1} max={20} description="包含当前文件，默认 5 个。" />
               </CardContent></Card>
-              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Trash2} title="历史数据管理" description="预览并按数据类型清理历史观测数据。用户额度、订阅用量和流量游标不会被修改。" /></CardHeader><CardContent><Button type="button" variant="destructive" onClick={() => setCleanupOpen(true)}><Trash2 />打开清理中心</Button></CardContent></Card>
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Trash2} title="历史数据管理与碎片整理" description="预览并清理历史观测数据，或整理 SQLite 碎片收缩磁盘空间。用户额度、订阅用量和流量游标不会被修改。" /></CardHeader><CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">主业务数据库 (riri.db)</p>
+                    <p className="mt-1 text-base font-semibold tabular-nums">
+                      {dbStatsQuery.isLoading
+                        ? '读取中…'
+                        : formatBytes(dbStatsQuery.data?.databases.find((d) => d.target === 'main')?.totalSize ?? 0)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">观测时序库 (telemetry.db)</p>
+                    <p className="mt-1 text-base font-semibold tabular-nums">
+                      {dbStatsQuery.isLoading
+                        ? '读取中…'
+                        : formatBytes(dbStatsQuery.data?.databases.find((d) => d.target === 'telemetry')?.totalSize ?? 0)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">数据库文件总占用</p>
+                    <p className="mt-1 text-base font-semibold tabular-nums">
+                      {dbStatsQuery.isLoading
+                        ? '读取中…'
+                        : formatBytes(dbStatsQuery.data?.totalBytes ?? 0)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="destructive" onClick={() => setCleanupOpen(true)}>
+                    <Trash2 />打开清理中心
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={vacuumMutation.isPending}
+                    onClick={() => vacuumMutation.mutate()}
+                  >
+                    <RefreshCw className={vacuumMutation.isPending ? 'animate-spin' : ''} />
+                    {vacuumMutation.isPending ? '整理压缩中…' : '整理并压缩数据库 (VACUUM)'}
+                  </Button>
+                </div>
+              </CardContent></Card>
             </div></TabsContent>
 
              <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="min-w-0 space-y-6">

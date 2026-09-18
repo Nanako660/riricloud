@@ -21,8 +21,10 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     // 延迟 15 秒后执行首次存量数据自动平滑迁移与常规清理，避免拖慢应用启动
     setTimeout(() => {
-      void this.autoMigrateLegacyTrafficLogs().then(() => {
-        void this.runCleanup();
+      void this.repairLegacyTextBucketStarts().then(() => {
+        void this.autoMigrateLegacyTrafficLogs().then(() => {
+          void this.runCleanup();
+        });
       });
     }, 15_000);
 
@@ -158,7 +160,7 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
                 "billedBytes" = "billedBytes" + excluded."billedBytes",
                 "updatedAt" = CURRENT_TIMESTAMP`,
               randomUUID(),
-              item.bucketStart.toISOString(),
+              item.bucketStart.getTime(),
               item.nodeId,
               item.userId,
               item.lineId,
@@ -182,6 +184,80 @@ export class TrafficCleanupService implements OnModuleInit, OnModuleDestroy {
       return migratedCount;
     } catch (err) {
       this.logger.warn(`Auto migration of legacy traffic logs failed: ${String(err)}`);
+      return 0;
+    }
+  }
+
+  /**
+   * 自动平滑修复 TrafficHourlyMetric 中历史遗留的 TEXT 格式 bucketStart
+   * 转换为 INTEGER 毫秒时间戳，并处理同一主键冲突下的流量累加合并
+   */
+  async repairLegacyTextBucketStarts(batchSize = 500): Promise<number> {
+    try {
+      let totalRepaired = 0;
+      while (true) {
+        const rows = await this.telemetryPrisma.$queryRawUnsafe<Array<{
+          id: string;
+          bucketStart: string;
+          nodeId: string;
+          userId: string;
+          lineId: string;
+          proxyKeyId: string;
+          upload: bigint | number | string;
+          download: bigint | number | string;
+          billedBytes: bigint | number | string;
+        }>>(
+          `SELECT "id", "bucketStart", "nodeId", "userId", "lineId", "proxyKeyId", "upload", "download", "billedBytes"
+           FROM "TrafficHourlyMetric"
+           WHERE typeof("bucketStart") = 'text'
+           LIMIT ?`,
+          batchSize
+        );
+
+        if (!rows || rows.length === 0) break;
+
+        await this.telemetryPrisma.$transaction(async (tx) => {
+          for (const row of rows) {
+            const dateMs = new Date(row.bucketStart).getTime();
+            if (!Number.isFinite(dateMs)) {
+              continue;
+            }
+
+            const existing = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+              `SELECT "id" FROM "TrafficHourlyMetric"
+               WHERE "bucketStart" = ? AND "nodeId" = ? AND "userId" = ? AND "lineId" = ? AND "proxyKeyId" = ? AND "id" != ?`,
+              dateMs, row.nodeId, row.userId, row.lineId, row.proxyKeyId, row.id
+            );
+
+            if (existing && existing.length > 0) {
+              await tx.$executeRawUnsafe(
+                `UPDATE "TrafficHourlyMetric"
+                 SET "upload" = "upload" + ?, "download" = "download" + ?, "billedBytes" = "billedBytes" + ?, "updatedAt" = CURRENT_TIMESTAMP
+                 WHERE "id" = ?`,
+                row.upload.toString(), row.download.toString(), row.billedBytes.toString(), existing[0].id
+              );
+              await tx.$executeRawUnsafe(`DELETE FROM "TrafficHourlyMetric" WHERE "id" = ?`, row.id);
+            } else {
+              await tx.$executeRawUnsafe(
+                `UPDATE "TrafficHourlyMetric"
+                 SET "bucketStart" = ?, "updatedAt" = CURRENT_TIMESTAMP
+                 WHERE "id" = ?`,
+                dateMs, row.id
+              );
+            }
+          }
+        });
+
+        totalRepaired += rows.length;
+        if (rows.length < batchSize) break;
+      }
+
+      if (totalRepaired > 0) {
+        this.logger.log(`Auto repaired ${totalRepaired} legacy TrafficHourlyMetric records (converted TEXT to INTEGER timestamp)`);
+      }
+      return totalRepaired;
+    } catch (err) {
+      this.logger.warn(`Failed to repair legacy text bucketStarts in TrafficHourlyMetric: ${String(err)}`);
       return 0;
     }
   }

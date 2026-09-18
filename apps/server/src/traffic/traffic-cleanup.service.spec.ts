@@ -23,6 +23,7 @@ interface MockTelemetryPrisma {
   trafficHourlyMetric: {
     deleteMany: jest.Mock;
   };
+  $queryRawUnsafe: jest.Mock;
   $executeRawUnsafe: jest.Mock;
   $transaction: jest.Mock;
 }
@@ -45,6 +46,7 @@ describe('TrafficCleanupService', () => {
     trafficHourlyMetric: {
       deleteMany: jest.fn()
     },
+    $queryRawUnsafe: jest.fn(),
     $executeRawUnsafe: jest.fn(),
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(telemetryPrisma))
   };
@@ -148,6 +150,7 @@ describe('TrafficCleanupService', () => {
   it('onModuleInit 与 onModuleDestroy 能够正常注册和注销定时器并触发首次迁移与清理', async () => {
     jest.useFakeTimers();
     try {
+      const repairSpy = jest.spyOn(service, 'repairLegacyTextBucketStarts').mockResolvedValue(0);
       const autoMigrateSpy = jest.spyOn(service, 'autoMigrateLegacyTrafficLogs').mockResolvedValue(0);
       const runCleanupSpy = jest.spyOn(service, 'runCleanup').mockResolvedValue({
         deletedHourlyCount: 0,
@@ -156,11 +159,14 @@ describe('TrafficCleanupService', () => {
 
       service.onModuleInit();
 
-      // 前进 15 秒触发启动首次清理与迁移
+      // 前进 15 秒触发启动首次修复、迁移与清理
       jest.advanceTimersByTime(15_000);
-      expect(autoMigrateSpy).toHaveBeenCalledTimes(1);
+      expect(repairSpy).toHaveBeenCalledTimes(1);
 
       // 等待微任务 resolve
+      await Promise.resolve();
+      expect(autoMigrateSpy).toHaveBeenCalledTimes(1);
+
       await Promise.resolve();
       expect(runCleanupSpy).toHaveBeenCalledTimes(1);
 
@@ -175,4 +181,57 @@ describe('TrafficCleanupService', () => {
       jest.useRealTimers();
     }
   });
+
+  it('repairLegacyTextBucketStarts 能自动将存量 TEXT 记录平滑修复为 INTEGER 毫秒时间戳', async () => {
+    telemetryPrisma.$queryRawUnsafe
+      .mockResolvedValueOnce([
+        {
+          id: 'text-row-1',
+          bucketStart: '2026-09-18T06:00:00.000Z',
+          nodeId: 'node-1',
+          userId: 'user-1',
+          lineId: 'line-1',
+          proxyKeyId: '',
+          upload: 100n,
+          download: 200n,
+          billedBytes: 300n
+        },
+        {
+          id: 'text-row-2',
+          bucketStart: '2026-09-18T07:00:00.000Z',
+          nodeId: 'node-1',
+          userId: 'user-1',
+          lineId: 'line-1',
+          proxyKeyId: '',
+          upload: 50n,
+          download: 50n,
+          billedBytes: 100n
+        }
+      ])
+      .mockResolvedValueOnce([]) // row-1 冲突检查：无冲突
+      .mockResolvedValueOnce([{ id: 'existing-int-row' }]) // row-2 冲突检查：有冲突
+      .mockResolvedValueOnce([]); // 第二轮循环：无剩余行
+
+    const repaired = await service.repairLegacyTextBucketStarts(10);
+    expect(repaired).toBe(2);
+    // row-1 无冲突，直接更新 bucketStart 为数值
+    expect(telemetryPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE "TrafficHourlyMetric"'),
+      new Date('2026-09-18T06:00:00.000Z').getTime(),
+      'text-row-1'
+    );
+    // row-2 有冲突，合并累加并删除 text-row-2
+    expect(telemetryPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('upload'),
+      '50',
+      '50',
+      '100',
+      'existing-int-row'
+    );
+    expect(telemetryPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM "TrafficHourlyMetric"'),
+      'text-row-2'
+    );
+  });
 });
+

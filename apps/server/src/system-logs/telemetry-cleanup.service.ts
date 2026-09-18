@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import * as fs from 'node:fs';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
 import { SettingsService } from '../system/settings.service';
@@ -8,8 +9,13 @@ import {
   CLEANUP_TARGETS,
   type CleanupMode,
   type CleanupTargetKind,
+  type DatabaseFileStat,
+  type DatabaseStatsResponse,
   type TelemetryCleanupDto,
-  type TelemetryCleanupTargetDto
+  type TelemetryCleanupTargetDto,
+  type VacuumResponse,
+  type VacuumResultItem,
+  type VacuumTarget
 } from './dto/telemetry-cleanup.dto';
 
 export const CLEANUP_CONFIRMATION_PHRASE = 'CLEAR_HISTORY';
@@ -55,6 +61,7 @@ const TARGET_META: Record<CleanupTargetKind, {
 
 @Injectable()
 export class TelemetryCleanupService {
+  private readonly logger = new Logger(TelemetryCleanupService.name);
   private running = false;
 
   constructor(
@@ -117,6 +124,14 @@ export class TelemetryCleanupService {
       const failed = results.some((item) => item.success !== true);
       const status = failed ? (results.some((item) => item.success === true) ? 'PARTIAL' : 'FAILED') : 'SUCCEEDED';
       const completedAtIso = new Date().toISOString();
+
+      // 执行 VACUUM 与 WAL 截断真正释放物理磁盘空间
+      const vacuumTargets: VacuumTarget[] = ['telemetry'];
+      if (plans.some((p) => p.kind === 'legacyTraffic')) {
+        vacuumTargets.push('main');
+      }
+      const vacuum = await this.vacuumDatabases(vacuumTargets);
+
       const audit = {
         operatorId: operator.id,
         role: operator.role ?? 'ADMIN',
@@ -125,6 +140,7 @@ export class TelemetryCleanupService {
         startedAt: startedAtIso,
         completedAt: completedAtIso,
         targets: results,
+        vacuum,
         durationMs: Date.now() - startedAt
       };
       this.systemLogsService.enqueue({
@@ -132,13 +148,13 @@ export class TelemetryCleanupService {
         source: 'SERVER',
         level: status === 'SUCCEEDED' ? 'INFO' : 'WARN',
         module: 'TelemetryCleanup',
-        message: `历史观测数据清理${status === 'SUCCEEDED' ? '完成' : status === 'PARTIAL' ? '部分完成' : '失败'}`,
+        message: `历史观测数据清理${status === 'SUCCEEDED' ? '完成' : status === 'PARTIAL' ? '部分完成' : '失败'}（物理释放 ${vacuum.totalReclaimedBytes} 字节）`,
         metadata: audit,
         userId: operator.id,
         bypassMinIngestLevel: true
       });
       await this.systemLogsService.flush();
-      return { status, results, audit: { ...audit, durationMs: Date.now() - startedAt } };
+      return { status, results, vacuum, audit: { ...audit, durationMs: Date.now() - startedAt } };
     } finally {
       this.running = false;
     }
@@ -254,6 +270,33 @@ export class TelemetryCleanupService {
   private async deletePlan(plan: CleanupPlan): Promise<number> {
     const delegate = this.delegate(plan.kind);
     const result = await delegate.deleteMany({ where: plan.where });
+
+    // 若为 trafficHourly 且属于时间过滤模式，兼容清理可能残留的 TEXT 格式历史孤行
+    if (plan.kind === 'trafficHourly') {
+      try {
+        if (plan.mode === 'before' || plan.mode === 'retention') {
+          const cutoff = (plan.where['bucketStart'] as { lt?: Date })?.lt;
+          if (cutoff instanceof Date) {
+            await this.telemetryPrisma.$executeRawUnsafe(
+              `DELETE FROM "TrafficHourlyMetric" WHERE typeof("bucketStart") = 'text' AND "bucketStart" < ?`,
+              cutoff.toISOString()
+            );
+          }
+        } else if (plan.mode === 'range') {
+          const range = plan.where['bucketStart'] as { gte?: Date; lt?: Date };
+          if (range?.gte instanceof Date && range?.lt instanceof Date) {
+            await this.telemetryPrisma.$executeRawUnsafe(
+              `DELETE FROM "TrafficHourlyMetric" WHERE typeof("bucketStart") = 'text' AND "bucketStart" >= ? AND "bucketStart" < ?`,
+              range.gte.toISOString(),
+              range.lt.toISOString()
+            );
+          }
+        }
+      } catch {
+        // 非致命兼容尝试
+      }
+    }
+
     if (!plan.maxRecords) return result.count;
 
     const remaining = await delegate.count();
@@ -294,5 +337,87 @@ export class TelemetryCleanupService {
 
   private toIso(value: unknown): string | null {
     return value instanceof Date ? value.toISOString() : null;
+  }
+
+  private async getDatabaseFileStat(target: VacuumTarget): Promise<DatabaseFileStat> {
+    const client = target === 'main' ? this.prisma : this.telemetryPrisma;
+    let filePath = '';
+    try {
+      if (client && typeof (client as { $queryRawUnsafe?: unknown }).$queryRawUnsafe === 'function') {
+        const list = await client.$queryRawUnsafe<Array<{ file?: string }>>('PRAGMA database_list');
+        filePath = list[0]?.file ?? '';
+      }
+    } catch {
+      filePath = '';
+    }
+    if (!filePath || !fs.existsSync(filePath)) {
+      return { target, path: filePath, size: 0, walSize: 0, shmSize: 0, totalSize: 0 };
+    }
+    try {
+      const stat = fs.statSync(filePath);
+      const walPath = `${filePath}-wal`;
+      const walStat = fs.existsSync(walPath) ? fs.statSync(walPath) : null;
+      const shmPath = `${filePath}-shm`;
+      const shmStat = fs.existsSync(shmPath) ? fs.statSync(shmPath) : null;
+      const size = stat.size;
+      const walSize = walStat ? walStat.size : 0;
+      const shmSize = shmStat ? shmStat.size : 0;
+      return {
+        target,
+        path: filePath,
+        size,
+        walSize,
+        shmSize,
+        totalSize: size + walSize + shmSize
+      };
+    } catch {
+      return { target, path: filePath, size: 0, walSize: 0, shmSize: 0, totalSize: 0 };
+    }
+  }
+
+  async getDatabaseStats(): Promise<DatabaseStatsResponse> {
+    const [main, telemetry] = await Promise.all([
+      this.getDatabaseFileStat('main'),
+      this.getDatabaseFileStat('telemetry')
+    ]);
+    return {
+      databases: [main, telemetry],
+      totalBytes: main.totalSize + telemetry.totalSize
+    };
+  }
+
+  async vacuumDatabases(targets: VacuumTarget[] = ['main', 'telemetry']): Promise<VacuumResponse> {
+    const results: VacuumResultItem[] = [];
+    let totalReclaimed = 0;
+
+    for (const target of targets) {
+      const before = await this.getDatabaseFileStat(target);
+      const client = target === 'main' ? this.prisma : this.telemetryPrisma;
+      try {
+        if (client && typeof (client as { $queryRawUnsafe?: unknown }).$queryRawUnsafe === 'function') {
+          await client.$queryRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)');
+          await client.$queryRawUnsafe('VACUUM');
+          await client.$queryRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)');
+        }
+      } catch (err) {
+        this.logger.warn(`VACUUM failed for ${target} database: ${err}`);
+      }
+      const after = await this.getDatabaseFileStat(target);
+      const reclaimed = Math.max(0, before.totalSize - after.totalSize);
+      totalReclaimed += reclaimed;
+      results.push({
+        target,
+        path: before.path,
+        bytesBefore: before.totalSize,
+        bytesAfter: after.totalSize,
+        reclaimedBytes: reclaimed
+      });
+    }
+
+    return {
+      results,
+      totalReclaimedBytes: totalReclaimed,
+      completedAt: new Date().toISOString()
+    };
   }
 }
