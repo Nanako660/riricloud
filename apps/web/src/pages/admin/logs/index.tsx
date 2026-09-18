@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
@@ -26,6 +27,7 @@ const DEFAULT_FILTER: LogsFilter = {
 };
 
 export default function AdminLogsPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const [searchParams] = useSearchParams();
   const initialNodeId = searchParams.get('nodeId') || 'ALL';
   const initialLive = searchParams.get('live') === 'true';
@@ -110,12 +112,12 @@ export default function AdminLogsPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="系统日志"
-        description="全栈全链路可观测中心：统一汇聚 Master 服务端、Web 前端与边缘节点的系统日志与调用堆栈。"
+        title={t('admin:logs.title')}
+        description={t('admin:logs.subtitle')}
       />
 
       <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs text-muted-foreground">
-        正常 Sing-box 内核输出与连接访问活动默认不进入系统日志，也不会计入 WARN/ERROR 指标；仅真实 WARN/ERROR 或管理员临时开启的诊断日志会显示。INFO/DEBUG 诊断仅用于排查，不会默认提升为系统告警。流量统计与计费继续使用心跳和小时桶数据。
+        {t('admin:logs.infoBanner')}
       </div>
 
       {/* 顶部指标卡 */}

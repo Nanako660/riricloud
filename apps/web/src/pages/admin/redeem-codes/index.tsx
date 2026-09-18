@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Eraser, Eye, EyeOff, Plus, Search, Ticket, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { CopyButton } from '@/components/shared/copy-button';
@@ -21,10 +22,10 @@ import { GenerateDialog } from './components/generate-dialog';
 import { RedeemStatsCards } from './components/stats-cards';
 import { maskRedeemCode, useRedeemCodeMutations, useRedeemCodeStats, useRedeemCodes, type AdminRedeemCode, type RedeemCodeStatus } from './use-redeem-codes';
 
-const labels: Record<RedeemCodeStatus, string> = { UNUSED: '未使用', REDEEMED: '已兑换', REVOKED: '已作废', EXPIRED: '已过期' };
 const PAGE_SIZE = 20;
 
 export default function RedeemCodesPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const [status, setStatus] = useState<RedeemCodeStatus | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -36,6 +37,13 @@ export default function RedeemCodesPage() {
   const [batchRevokeOpen, setBatchRevokeOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
+
+  const labels: Record<RedeemCodeStatus, string> = {
+    UNUSED: t('admin:redeemCodes.statusUnused'),
+    REDEEMED: t('admin:redeemCodes.statusRedeemed'),
+    REVOKED: t('admin:redeemCodes.statusRevoked'),
+    EXPIRED: t('admin:redeemCodes.statusExpired')
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -64,48 +72,53 @@ export default function RedeemCodesPage() {
 
   return (
     <PageContainer>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><PageHeader title="卡密管理" description="生成充值卡密、查看兑换状态并作废未使用卡密。" /><Button className="w-full sm:w-auto" onClick={() => setGenerateOpen(true)}><Plus />批量生成</Button></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader title={t('admin:redeemCodes.title')} description={t('admin:redeemCodes.subtitle')} />
+        <Button className="w-full sm:w-auto" onClick={() => setGenerateOpen(true)}>
+          <Plus />{t('admin:redeemCodes.generate')}
+        </Button>
+      </div>
       <RedeemStatsCards stats={stats.data} isLoading={stats.isLoading} />
       <Card>
         <CardContent className="space-y-4 pt-6">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-8" placeholder="搜索卡密…" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <Input className="pl-8" placeholder={t('admin:redeemCodes.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-                <SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder={t('admin:redeemCodes.filterStatus')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">全部状态</SelectItem>
+                  <SelectItem value="ALL">{t('admin:redeemCodes.statusAll')}</SelectItem>
                   {Object.entries(labels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button type="button" variant="outline" size="icon" aria-label={revealed ? '隐藏卡密明文' : '显示卡密明文'} onClick={() => setRevealed((value) => !value)}>
+                  <Button type="button" variant="outline" size="icon" aria-label={revealed ? t('admin:redeemCodes.hidePlaintext') : t('admin:redeemCodes.showPlaintext')} onClick={() => setRevealed((value) => !value)}>
                     {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{revealed ? '隐藏卡密明文' : '显示卡密明文'}</TooltipContent>
+                <TooltipContent>{revealed ? t('admin:redeemCodes.hidePlaintext') : t('admin:redeemCodes.showPlaintext')}</TooltipContent>
               </Tooltip>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button type="button" variant="outline" disabled={exportCodes.isPending}><Download className="size-4" />导出</Button></DropdownMenuTrigger>
+                <DropdownMenuTrigger asChild><Button type="button" variant="outline" disabled={exportCodes.isPending}><Download className="size-4" />{t('admin:redeemCodes.export')}</Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => exportCodes.mutate('csv')}>导出 CSV（含审计字段）</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => exportCodes.mutate('txt')}>导出 TXT（仅卡密）</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportCodes.mutate('csv')}>{t('admin:redeemCodes.exportCsv')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportCodes.mutate('txt')}>{t('admin:redeemCodes.exportTxt')}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button type="button" variant="outline" onClick={() => setCleanupOpen(true)}><Eraser className="size-4" />清理过期</Button>
+              <Button type="button" variant="outline" onClick={() => setCleanupOpen(true)}><Eraser className="size-4" />{t('admin:redeemCodes.cleanupExpired')}</Button>
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Ticket className="size-4" />充值卡密金额以人民币元展示，服务端按分保存；列表默认掩码显示卡密。</div>
           {selectedIds.size > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-              <span>已选中 <span className="font-semibold text-foreground">{selectedIds.size}</span> 张未使用卡密</span>
+              <span>{t('admin:redeemCodes.selectedCount', { count: selectedIds.size })}</span>
               <div className="flex items-center gap-2">
-                <Button type="button" size="sm" variant="destructive" onClick={() => setBatchRevokeOpen(true)}><Trash2 className="size-4" />批量作废</Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>取消选择</Button>
+                <Button type="button" size="sm" variant="destructive" onClick={() => setBatchRevokeOpen(true)}><Trash2 className="size-4" />{t('admin:redeemCodes.batchRevoke')}</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>{t('common:actions.cancel')}</Button>
               </div>
             </div>
           )}
@@ -113,16 +126,16 @@ export default function RedeemCodesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={toggleAllPage} aria-label="全选本页未使用卡密" disabled={unusedRows.length === 0} /></TableHead>
-                  <TableHead>卡密</TableHead>
-                  <TableHead>面额</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>有效期</TableHead>
-                  <TableHead>兑换人</TableHead>
-                  <TableHead>兑换时间</TableHead>
+                  <TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={toggleAllPage} aria-label="全选本页" disabled={unusedRows.length === 0} /></TableHead>
+                  <TableHead>{t('admin:redeemCodes.colCode')}</TableHead>
+                  <TableHead>{t('admin:redeemCodes.colValue')}</TableHead>
+                  <TableHead>{t('admin:redeemCodes.colStatus')}</TableHead>
+                  <TableHead>{t('admin:redeemCodes.colValidity')}</TableHead>
+                  <TableHead>{t('admin:redeemCodes.usedBy')}</TableHead>
+                  <TableHead>{t('admin:redeemCodes.usedAt')}</TableHead>
                   <TableHead>备注</TableHead>
-                  <TableHead>创建时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead>{t('common:table.createdAt')}</TableHead>
+                  <TableHead className="text-right">{t('common:table.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,18 +150,18 @@ export default function RedeemCodesPage() {
                     </TableCell>
                     <TableCell className="tabular-nums">{formatCurrency(item.amount)}</TableCell>
                     <TableCell><Badge variant={item.status === 'REDEEMED' ? 'secondary' : item.status === 'UNUSED' ? 'default' : 'destructive'}>{labels[item.status]}</Badge></TableCell>
-                    <TableCell className="whitespace-nowrap text-xs">{item.expiresAt ? formatDateTime(item.expiresAt) : '永久'}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{item.expiresAt ? formatDateTime(item.expiresAt) : t('common:time.permanent')}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{item.redeemedBy ? item.redeemedBy.nickname || item.redeemedBy.email : '—'}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : '—'}</TableCell>
                     <TableCell>{item.note || '—'}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(item.createdAt)}</TableCell>
-                    <TableCell className="text-right">{item.status === 'UNUSED' && <Button variant="ghost" size="icon" aria-label="作废卡密" onClick={() => setRevokeTarget(item)}><Trash2 className="size-4 text-destructive" /></Button>}</TableCell>
+                    <TableCell className="text-right">{item.status === 'UNUSED' && <Button variant="ghost" size="icon" aria-label={t('admin:redeemCodes.revoke')} onClick={() => setRevokeTarget(item)}><Trash2 className="size-4 text-destructive" /></Button>}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          {!rows.length && <EmptyState title={query.isPending ? '加载中…' : '暂无卡密'} description={query.isPending ? '正在获取卡密数据。' : '生成充值卡密后会显示在这里。'} />}
+          {!rows.length && <EmptyState title={query.isPending ? t('common:actions.loading') : t('admin:redeemCodes.emptyCodes')} description={t('admin:redeemCodes.subtitle')} />}
           {rows.length > 0 && (
             <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
               <div>共 <span className="font-semibold text-foreground font-mono">{total.toLocaleString()}</span> 条记录</div>
@@ -162,10 +175,63 @@ export default function RedeemCodesPage() {
         </CardContent>
       </Card>
       <GenerateDialog open={generateOpen} onOpenChange={setGenerateOpen} pending={batch.isPending} onSubmit={(payload) => batch.mutate(payload, { onSuccess: (data) => { setGeneratedCodes(data.codes); setGenerateOpen(false); } })} />
-      <ResponsiveDialog open={generatedCodes.length > 0} onOpenChange={(value) => !value && setGeneratedCodes([])}><ResponsiveDialogContent><DialogHeader><DialogTitle>生成成功</DialogTitle><DialogDescription>请复制下面的卡密并妥善分发；关闭后可在列表中查看（默认掩码显示）。</DialogDescription></DialogHeader><div className="max-h-[50vh] overflow-y-auto rounded-md border bg-muted/30 p-3"><pre className="whitespace-pre-wrap break-all font-mono text-xs leading-6">{codesText}</pre></div><DialogFooter><CopyButton value={codesText} className="w-full sm:w-auto" /><Button variant="outline" onClick={() => setGeneratedCodes([])}>关闭</Button></DialogFooter></ResponsiveDialogContent></ResponsiveDialog>
-      <AlertDialog open={!!revokeTarget} onOpenChange={(value) => !value && setRevokeTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>作废这张卡密？</AlertDialogTitle><AlertDialogDescription>{revokeTarget?.code} 作废后无法兑换，且不可恢复。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { if (revokeTarget) revoke.mutate(revokeTarget.id, { onSuccess: () => { setRevokeTarget(null); setSelectedIds(new Set()); } }); }}>确认作废</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={batchRevokeOpen} onOpenChange={setBatchRevokeOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>批量作废 {selectedIds.size} 张卡密？</AlertDialogTitle><AlertDialogDescription>选中的未使用卡密将全部作废，作废后无法兑换且不可恢复。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={batchRevoke.isPending} onClick={() => batchRevoke.mutate([...selectedIds], { onSuccess: () => { setBatchRevokeOpen(false); setSelectedIds(new Set()); } })}>{batchRevoke.isPending ? '作废中…' : '确认作废'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清理过期卡密？</AlertDialogTitle><AlertDialogDescription>将删除已过期超过 30 天且仍未使用的卡密（当前过期未使用共 {stats.data?.byStatus.EXPIRED.count ?? 0} 张）。已兑换与已作废记录会保留用于审计，删除后不可恢复。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={cleanup.isPending} onClick={() => cleanup.mutate(30, { onSuccess: () => setCleanupOpen(false) })}>{cleanup.isPending ? '清理中…' : '确认清理'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <ResponsiveDialog open={generatedCodes.length > 0} onOpenChange={(value) => !value && setGeneratedCodes([])}>
+        <ResponsiveDialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('admin:redeemCodes.generatedTitle')}</DialogTitle>
+            <DialogDescription>{t('admin:redeemCodes.generatedDesc', { count: generatedCodes.length })}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto rounded-md border bg-muted/30 p-3">
+            <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-6">{codesText}</pre>
+          </div>
+          <DialogFooter>
+            <CopyButton value={codesText} className="w-full sm:w-auto" />
+            <Button variant="outline" onClick={() => setGeneratedCodes([])}>{t('common:actions.close')}</Button>
+          </DialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+      <AlertDialog open={!!revokeTarget} onOpenChange={(value) => !value && setRevokeTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:redeemCodes.confirmRevoke')}</AlertDialogTitle>
+            <AlertDialogDescription>{revokeTarget?.code} 作废后无法兑换，且不可恢复。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => { if (revokeTarget) revoke.mutate(revokeTarget.id, { onSuccess: () => { setRevokeTarget(null); setSelectedIds(new Set()); } }); }}>
+              {t('common:actions.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={batchRevokeOpen} onOpenChange={setBatchRevokeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:redeemCodes.batchRevokeTitle', { count: selectedIds.size })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:redeemCodes.batchRevokeDesc', { count: selectedIds.size })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={batchRevoke.isPending} onClick={() => batchRevoke.mutate([...selectedIds], { onSuccess: () => { setBatchRevokeOpen(false); setSelectedIds(new Set()); } })}>
+              {batchRevoke.isPending ? '作废中…' : t('common:actions.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:redeemCodes.cleanupTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:redeemCodes.cleanupDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={cleanup.isPending} onClick={() => cleanup.mutate(30, { onSuccess: () => setCleanupOpen(false) })}>
+              {cleanup.isPending ? '清理中…' : t('common:actions.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 }

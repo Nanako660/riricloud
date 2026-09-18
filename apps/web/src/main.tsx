@@ -7,6 +7,7 @@ import { router } from '@/router';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SiteRuntime } from '@/components/layout/site-runtime';
+import '@/i18n/config';
 import './index.css';
 
 const queryClient = new QueryClient({

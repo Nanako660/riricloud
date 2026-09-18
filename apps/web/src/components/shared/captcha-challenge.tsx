@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -29,6 +30,7 @@ interface CaptchaDialogProps {
 }
 
 export function CaptchaDialog({ open, mode, siteKey, action, onOpenChange, onVerified }: CaptchaDialogProps) {
+  const { t } = useTranslation(['auth', 'common', 'errors']);
   const [local, setLocal] = useState<LocalChallenge | null>(null);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,11 @@ export function CaptchaDialog({ open, mode, siteKey, action, onOpenChange, onVer
     try {
       setLocal((await api.get<LocalChallenge>('/captcha/local')).data);
     } catch {
-      setError('验证码加载失败，请刷新重试');
+      setError(t('errors:business.captchaUnavailable'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (open && mode === 'LOCAL') void loadLocal();
@@ -55,22 +57,24 @@ export function CaptchaDialog({ open, mode, siteKey, action, onOpenChange, onVer
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="compact">
         <DialogHeader>
-          <DialogTitle>完成人机验证</DialogTitle>
-          <DialogDescription>验证通过后才会发送邮件验证码。</DialogDescription>
+          <DialogTitle>{t('auth:captcha.title')}</DialogTitle>
+          <DialogDescription>
+            {t('auth:captcha.required')}
+          </DialogDescription>
         </DialogHeader>
         {mode === 'LOCAL' ? (
           <div className="space-y-3">
-            <div className="flex min-h-14 items-center justify-center rounded-md border bg-muted/20 p-2" aria-label="本地图形验证码">
-              {local ? <div dangerouslySetInnerHTML={{ __html: local.svg }} /> : <span className="text-sm text-muted-foreground">{loading ? '加载中…' : '暂无验证码'}</span>}
+            <div className="flex min-h-14 items-center justify-center rounded-md border bg-muted/20 p-2" aria-label={t('auth:captcha.title')}>
+              {local ? <div dangerouslySetInnerHTML={{ __html: local.svg }} /> : <span className="text-sm text-muted-foreground">{loading ? t('common:actions.loading') : t('common:status.unknown')}</span>}
             </div>
             <div className="flex gap-2">
-              <Input value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="输入图形验证码" autoComplete="off" />
-              <Button type="button" variant="outline" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label="刷新验证码" title="刷新验证码"><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
+              <Input value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={t('auth:captcha.placeholder')} autoComplete="off" />
+              <Button type="button" variant="outline" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')} title={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <DialogFooter>
               <Button type="button" onClick={() => { if (local && answer.trim()) { onVerified({ captchaToken: local.captchaToken, captchaAnswer: answer }); onOpenChange(false); } }} disabled={!local || !answer.trim() || loading}>
-                <ShieldCheck />验证并继续
+                <ShieldCheck className="mr-1.5 size-4" />{t('common:actions.confirm')}
               </Button>
             </DialogFooter>
           </div>
@@ -90,6 +94,7 @@ interface CaptchaInlineProps {
 }
 
 export function CaptchaInline({ mode, siteKey, action, onChange }: CaptchaInlineProps) {
+  const { t } = useTranslation(['auth', 'common']);
   const [local, setLocal] = useState<LocalChallenge | null>(null);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
@@ -116,13 +121,13 @@ export function CaptchaInline({ mode, siteKey, action, onChange }: CaptchaInline
   return (
     <div className="space-y-2 rounded-lg border p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">人机验证</p>
-        <Button type="button" variant="ghost" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label="刷新验证码" title="刷新验证码"><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
+        <p className="text-sm font-medium">{t('auth:captcha.title')}</p>
+        <Button type="button" variant="ghost" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')} title={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
       </div>
       <div className="flex min-h-14 items-center justify-center rounded-md bg-muted/20 p-2">
-        {local ? <div dangerouslySetInnerHTML={{ __html: local.svg }} /> : <span className="text-sm text-muted-foreground">{loading ? '加载中…' : '验证码加载失败'}</span>}
+        {local ? <div dangerouslySetInnerHTML={{ __html: local.svg }} /> : <span className="text-sm text-muted-foreground">{loading ? t('common:actions.loading') : t('common:status.failed')}</span>}
       </div>
-      <Input value={answer} onChange={(event) => { const value = event.target.value; setAnswer(value); onChange(local && value.trim() ? { captchaToken: local.captchaToken, captchaAnswer: value } : null); }} placeholder="输入图形验证码" autoComplete="off" />
+      <Input value={answer} onChange={(event) => { const value = event.target.value; setAnswer(value); onChange(local && value.trim() ? { captchaToken: local.captchaToken, captchaAnswer: value } : null); }} placeholder={t('auth:captcha.placeholder')} autoComplete="off" />
     </div>
   );
 }
@@ -134,12 +139,13 @@ interface TurnstileWidgetProps {
 }
 
 function TurnstileWidget({ siteKey, action, onToken }: TurnstileWidgetProps) {
+  const { t } = useTranslation(['auth', 'errors']);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!siteKey || !containerRef.current) {
-      setError('管理员尚未配置 Turnstile Site Key');
+      setError(t('errors:business.captchaUnavailable'));
       return;
     }
     let widgetId: string | undefined;
@@ -150,8 +156,8 @@ function TurnstileWidget({ siteKey, action, onToken }: TurnstileWidgetProps) {
         sitekey: siteKey,
         action,
         callback: onToken,
-        'expired-callback': () => setError('验证已过期，请重新验证'),
-        'error-callback': () => setError('Turnstile 加载失败，请检查网络')
+        'expired-callback': () => setError(t('errors:business.captchaExpired')),
+        'error-callback': () => setError(t('errors:business.captchaFailed'))
       });
     };
     const existing = document.getElementById('riricloud-turnstile-script') as HTMLScriptElement | null;
@@ -171,9 +177,9 @@ function TurnstileWidget({ siteKey, action, onToken }: TurnstileWidgetProps) {
       disposed = true;
       if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
     };
-  }, [action, onToken, siteKey]);
+  }, [action, onToken, siteKey, t]);
 
-  return <div className="space-y-2"><div ref={containerRef} className="min-h-[65px]" />{error ? <p className="text-sm text-destructive">{error}</p> : <p className="text-xs text-muted-foreground">由 Cloudflare 提供无感人机验证。</p>}</div>;
+  return <div className="space-y-2"><div ref={containerRef} className="min-h-[65px]" />{error ? <p className="text-sm text-destructive">{error}</p> : <p className="text-xs text-muted-foreground">{t('auth:captcha.turnstileWaiting')}</p>}</div>;
 }
 
 declare global {

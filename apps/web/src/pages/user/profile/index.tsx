@@ -22,6 +22,7 @@ import {
   User,
   Wallet
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,28 +57,28 @@ import { hasSupportContacts } from '@/lib/support';
 import { SupportDialog, SupportContactsInline } from '@/components/shared/support-dialog';
 import { useProfileMutations, useProfileUser, useWallet, useWalletTransactions } from './use-profile';
 
-const redeemSchema = z.object({ code: z.string().trim().min(6, '请输入有效卡密').max(128) });
+const redeemSchema = z.object({ code: z.string().trim().min(6, 'user:profile.redeemCodeMinError').max(128) });
 const buildPasswordSchema = (minLength: number, policy: PasswordStrengthPolicy) =>
   z
     .object({
-      oldPassword: z.string().min(8, '密码至少 8 位'),
+      oldPassword: z.string().min(8, 'user:profile.passwordMinLength'),
       newPassword: passwordZodSchema(minLength, policy),
       confirmPassword: z.string()
     })
     .refine((value) => value.newPassword === value.confirmPassword, {
       path: ['confirmPassword'],
-      message: '两次输入的密码不一致'
+      message: 'user:profile.passwordMismatch'
     });
 const nicknameSchema = z.object({
-  nickname: z.string().trim().min(2, '昵称至少 2 个字符').max(20, '昵称最多 20 个字符')
+  nickname: z.string().trim().min(2, 'user:profile.nicknameMinError').max(20, 'user:profile.nicknameMaxError')
 });
 const emailSchema = z.object({
-  newEmail: z.string().email('请输入有效的新邮箱'),
-  verificationCode: z.string().regex(/^\d{6}$/, '请输入 6 位验证码'),
-  currentPassword: z.string().min(8, '密码至少 8 位')
+  newEmail: z.string().email('user:profile.newEmailInvalid'),
+  verificationCode: z.string().regex(/^\d{6}$/, 'user:profile.verifyCodeInvalid'),
+  currentPassword: z.string().min(8, 'user:profile.passwordMinLength')
 });
 const verifyEmailSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, '请输入 6 位验证码')
+  code: z.string().regex(/^\d{6}$/, 'user:profile.verifyCodeInvalid')
 });
 
 type RedeemValues = z.infer<typeof redeemSchema>;
@@ -86,16 +87,8 @@ type NicknameValues = z.infer<typeof nicknameSchema>;
 type EmailValues = z.infer<typeof emailSchema>;
 type VerifyEmailValues = z.infer<typeof verifyEmailSchema>;
 
-const transactionLabels: Record<string, string> = {
-  SYSTEM_GIFT: '注册赠金',
-  REDEEM: '卡密充值',
-  PLAN_BUY: '订购套餐',
-  PLAN_RENEW: '续费套餐',
-  PLAN_UPGRADE: '升配套餐',
-  ADMIN_ADJUST: '管理员调账'
-};
-
 export default function ProfilePage() {
+  const { t } = useTranslation(['user', 'common']);
   const [page, setPage] = useState(1);
   const [resetOpen, setResetOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -114,6 +107,18 @@ export default function ProfilePage() {
   const passwordPolicy = useMemo(() => buildPasswordStrengthPolicy(passwordComplexity), [passwordComplexity]);
   const passwordSchema = useMemo(() => buildPasswordSchema(passwordMinLength, passwordPolicy), [passwordMinLength, passwordPolicy]);
   const { redeem, changePassword, resetUuid, updateProfile, sendEmailCode, changeEmail, sendCurrentEmailCode, verifyCurrentEmail } = useProfileMutations();
+
+  const transactionLabels: Record<string, string> = useMemo(
+    () => ({
+      SYSTEM_GIFT: t('user:profile.typeLabels.SYSTEM_GIFT'),
+      REDEEM: t('user:profile.typeLabels.REDEEM'),
+      PLAN_BUY: t('user:profile.typeLabels.PLAN_BUY'),
+      PLAN_RENEW: t('user:profile.typeLabels.PLAN_RENEW'),
+      PLAN_UPGRADE: t('user:profile.typeLabels.PLAN_UPGRADE'),
+      ADMIN_ADJUST: t('user:profile.typeLabels.ADMIN_ADJUST')
+    }),
+    [t]
+  );
 
   const redeemForm = useForm<RedeemValues>({
     resolver: zodResolver(redeemSchema),
@@ -161,7 +166,7 @@ export default function ProfilePage() {
   if (user.isPending || wallet.isPending) {
     return (
       <PageContainer>
-        <PageHeader title="个人中心" />
+        <PageHeader title={t('user:profile.title')} />
         <div className="space-y-4">
           <div className="h-32 rounded-xl border bg-muted/20 animate-pulse" />
           <div className="h-64 rounded-xl border bg-muted/20 animate-pulse" />
@@ -173,8 +178,11 @@ export default function ProfilePage() {
   if (user.isError || wallet.isError || !user.data || !wallet.data) {
     return (
       <PageContainer>
-        <PageHeader title="个人中心" />
-        <EmptyState title="无法加载个人信息" description="请稍后刷新重试" />
+        <PageHeader title={t('user:profile.title')} />
+        <EmptyState
+          title={t('user:profile.loadErrorTitle')}
+          description={t('user:profile.loadErrorDesc')}
+        />
       </PageContainer>
     );
   }
@@ -224,21 +232,24 @@ export default function ProfilePage() {
 
   return (
     <PageContainer>
-      <PageHeader title="个人中心" description="管理用户身份资料、登录凭证、账户资产与收支明细。" />
+      <PageHeader
+        title={t('user:profile.title')}
+        description={t('user:profile.description')}
+      />
 
       {isEmailUnverifiedBlocked && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
             <div className="flex-1 space-y-1">
-              <div className="font-semibold text-sm">邮箱未完成验证，订阅与代理服务暂不可用</div>
+              <div className="font-semibold text-sm">{t('user:profile.emailUnverifiedTitle')}</div>
               <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-                当前账号邮箱尚未通过验证。在完成邮箱验证前，您的订阅更新与节点连接暂不可用。
+                {t('user:profile.emailUnverifiedDesc')}
               </p>
               <div className="pt-1.5">
                 <Button size="sm" variant="default" className="h-8 gap-1.5 text-xs" onClick={() => setVerifyEmailOpen(true)}>
                   <MailCheck className="size-3.5" />
-                  立即验证当前邮箱
+                  {t('user:profile.verifyCurrentEmailNow')}
                 </Button>
               </div>
             </div>
@@ -260,7 +271,7 @@ export default function ProfilePage() {
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground truncate max-w-[220px] sm:max-w-[320px]">
-                    {user.data.nickname || '未设置昵称'}
+                    {user.data.nickname || t('user:profile.unnamedUser')}
                   </h2>
                   <Button
                     type="button"
@@ -271,7 +282,7 @@ export default function ProfilePage() {
                       nicknameForm.reset({ nickname: user.data.nickname || '' });
                       setNicknameOpen(true);
                     }}
-                    title="修改昵称"
+                    title={t('user:profile.editNickname')}
                   >
                     <Pencil className="size-3.5" />
                   </Button>
@@ -279,12 +290,12 @@ export default function ProfilePage() {
                     {user.data.role === 'ADMIN' ? (
                       <>
                         <ShieldCheck className="size-3 text-emerald-500" />
-                        <span>系统管理员</span>
+                        <span>{t('user:profile.adminRole')}</span>
                       </>
                     ) : (
                       <>
                         <User className="size-3" />
-                        <span>普通用户</span>
+                        <span>{t('user:profile.userRole')}</span>
                       </>
                     )}
                   </Badge>
@@ -310,7 +321,7 @@ export default function ProfilePage() {
                           className="gap-1 px-1.5 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 whitespace-nowrap shrink-0"
                         >
                           <CheckCircle2 className="size-2.5" />
-                          已验证
+                          {t('user:profile.emailVerified')}
                         </Badge>
                       ) : (
                         <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
@@ -319,14 +330,14 @@ export default function ProfilePage() {
                             className="gap-1 px-1.5 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 whitespace-nowrap shrink-0"
                           >
                             <AlertTriangle className="size-2.5" />
-                            未验证
+                            {t('user:profile.emailUnverified')}
                           </Badge>
                           <button
                             type="button"
                             className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:opacity-80 transition-opacity font-medium whitespace-nowrap shrink-0"
                             onClick={() => setVerifyEmailOpen(true)}
                           >
-                            立即验证
+                            {t('user:profile.verifyNow')}
                           </button>
                         </div>
                       )}
@@ -335,7 +346,7 @@ export default function ProfilePage() {
                         className="ml-0.5 text-xs text-primary underline underline-offset-2 hover:opacity-80 transition-opacity font-medium whitespace-nowrap shrink-0"
                         onClick={() => setEmailOpen(true)}
                       >
-                        更换
+                        {t('user:profile.changeEmailAction')}
                       </button>
                     </div>
                   </div>
@@ -343,7 +354,7 @@ export default function ProfilePage() {
                   {/* 数字 UID */}
                   {user.data.uid ? (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground/70">UID:</span>
+                      <span className="text-muted-foreground/70">{t('user:profile.uidLabel')}</span>
                       <span className="font-mono font-semibold text-foreground">{user.data.uid}</span>
                       <CopyButton value={String(user.data.uid)} className="h-6 px-1.5 text-[11px] gap-1" />
                     </div>
@@ -353,7 +364,7 @@ export default function ProfilePage() {
                   {user.data.createdAt ? (
                     <div className="flex items-center gap-1 text-muted-foreground/70">
                       <Calendar className="size-3.5 shrink-0" />
-                      <span>加入于 {formatDateTime(user.data.createdAt).split(' ')[0]}</span>
+                      <span>{t('user:profile.joinedAt', { date: formatDateTime(user.data.createdAt).split(' ')[0] })}</span>
                     </div>
                   ) : null}
                 </div>
@@ -368,11 +379,11 @@ export default function ProfilePage() {
         <TabsList className="grid w-full grid-cols-2 max-w-xs sm:max-w-sm bg-muted/60 p-1">
           <TabsTrigger value="security" className="gap-2">
             <ShieldCheck className="size-4" />
-            <span>账号与安全</span>
+            <span>{t('user:profile.tabSecurity')}</span>
           </TabsTrigger>
           <TabsTrigger value="wallet" className="gap-2">
             <Wallet className="size-4" />
-            <span>资产与财务</span>
+            <span>{t('user:profile.tabWallet')}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -384,9 +395,9 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <KeyRound className="size-4 text-primary" />
-                  修改登录密码
+                  {t('user:profile.changePasswordTitle')}
                 </CardTitle>
-                <CardDescription>修改后当前会话保持有效，下一次登录使用新密码。</CardDescription>
+                <CardDescription>{t('user:profile.changePasswordDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <Form {...passwordForm}>
@@ -399,7 +410,11 @@ export default function ProfilePage() {
                         render={({ field }) => (
                           <FormItem className="min-w-0">
                             <FormLabel>
-                              {name === 'oldPassword' ? '当前密码' : name === 'newPassword' ? '新密码' : '确认新密码'}
+                              {name === 'oldPassword'
+                                ? t('user:profile.oldPasswordLabel')
+                                : name === 'newPassword'
+                                  ? t('user:profile.newPasswordLabel')
+                                  : t('user:profile.confirmPasswordLabel')}
                             </FormLabel>
                             <FormControl>
                               <Input
@@ -415,7 +430,7 @@ export default function ProfilePage() {
                       />
                     ))}
                     <Button type="submit" disabled={changePassword.isPending}>
-                      {changePassword.isPending ? '保存中…' : '保存新密码'}
+                      {changePassword.isPending ? t('user:profile.savingPassword') : t('user:profile.savePasswordButton')}
                     </Button>
                   </form>
                 </Form>
@@ -428,21 +443,21 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <ShieldCheck className="size-4 text-primary" />
-                    代理连接凭据
+                    {t('user:profile.proxyCredentialTitle')}
                   </CardTitle>
-                  <CardDescription>用于客户端识别用户身份、获取订阅以及连接代理节点的密钥凭据。</CardDescription>
+                  <CardDescription>{t('user:profile.proxyCredentialDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>用户 UUID</span>
+                      <span>{t('user:profile.userUuidLabel')}</span>
                       <button
                         type="button"
                         onClick={() => setShowUuid((prev) => !prev)}
                         className="flex items-center gap-1 text-primary hover:underline font-medium"
                       >
                         {showUuid ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                        <span>{showUuid ? '隐藏明文' : '显示明文'}</span>
+                        <span>{showUuid ? t('user:profile.hidePlaintext') : t('user:profile.showPlaintext')}</span>
                       </button>
                     </div>
                     <div className="flex min-w-0 items-center gap-2">
@@ -458,9 +473,9 @@ export default function ProfilePage() {
                     <div className="flex items-start gap-2.5">
                       <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
                       <div className="space-y-1 text-xs">
-                        <p className="font-semibold text-destructive">重置代理凭据风险提示</p>
+                        <p className="font-semibold text-destructive">{t('user:profile.resetRiskTitle')}</p>
                         <p className="text-muted-foreground leading-relaxed">
-                          重置后旧代理凭据将立即在全网节点失效，所有正在使用旧凭据的客户端都需要重新在客户端导入新订阅链接。
+                          {t('user:profile.resetRiskDesc')}
                         </p>
                       </div>
                     </div>
@@ -471,7 +486,7 @@ export default function ProfilePage() {
                       onClick={() => setResetOpen(true)}
                       disabled={resetUuid.isPending}
                     >
-                      重置代理凭据
+                      {t('user:profile.resetProxyCredential')}
                     </Button>
                   </div>
                 </CardContent>
@@ -489,13 +504,13 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Wallet className="size-4 text-primary" />
-                  账户资产
+                  {t('user:profile.accountWalletTitle')}
                 </CardTitle>
-                <CardDescription>余额以人民币为单位，用于套餐订购与自动续费扣费。</CardDescription>
+                <CardDescription>{t('user:profile.accountWalletDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-xl border border-border/80 bg-muted/30 p-4 shadow-xs sm:p-5 dark:border-primary/20 dark:bg-gradient-to-br dark:from-primary/10 dark:via-primary/5 dark:to-transparent">
-                  <p className="text-xs font-medium text-muted-foreground">当前可用余额</p>
+                  <p className="text-xs font-medium text-muted-foreground">{t('user:profile.currentBalance')}</p>
                   <p className="mt-1 text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
                     {formatCurrency(wallet.data.balance)}
                   </p>
@@ -504,7 +519,7 @@ export default function ProfilePage() {
                   <div className="rounded-lg border bg-muted/20 p-3">
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>累计充值</span>
+                      <span>{t('user:profile.totalRecharge')}</span>
                     </p>
                     <p className="mt-1 text-lg font-semibold text-emerald-600 dark:text-emerald-400">
                       {formatCurrency(wallet.data.totalIncome)}
@@ -513,7 +528,7 @@ export default function ProfilePage() {
                   <div className="rounded-lg border bg-muted/20 p-3">
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <ArrowUpRight className="size-3.5 text-destructive" />
-                      <span>累计消费</span>
+                      <span>{t('user:profile.totalExpense')}</span>
                     </p>
                     <p className="mt-1 text-lg font-semibold text-destructive">
                       {formatCurrency(wallet.data.totalExpense)}
@@ -529,9 +544,9 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <CreditCard className="size-4 text-primary" />
-                    卡密充值
+                    {t('user:profile.redeemCardTitle')}
                   </CardTitle>
-                  <CardDescription>输入充值卡密，兑换成功后余额会即刻增加到账户可用余额中。</CardDescription>
+                  <CardDescription>{t('user:profile.redeemCardDesc')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Form {...redeemForm}>
@@ -541,17 +556,17 @@ export default function ProfilePage() {
                         name="code"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>充值卡密</FormLabel>
+                            <FormLabel>{t('user:profile.redeemCodeLabel')}</FormLabel>
                             <FormControl>
-                              <Input placeholder="输入充值卡密" autoComplete="off" {...field} />
+                              <Input placeholder={t('user:profile.redeemCodePlaceholder')} autoComplete="off" {...field} />
                             </FormControl>
-                            <FormDescription>卡密不区分大小写，兑换成功后无法撤回。</FormDescription>
+                            <FormDescription>{t('user:profile.redeemCodeDesc')}</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                       <Button type="submit" disabled={redeem.isPending}>
-                        {redeem.isPending ? '兑换中…' : '立即兑换'}
+                        {redeem.isPending ? t('user:profile.redeeming') : t('user:profile.redeemButton')}
                       </Button>
                     </form>
                   </Form>
@@ -565,20 +580,20 @@ export default function ProfilePage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Receipt className="size-4 text-primary" />
-                收支明细
+                {t('user:profile.transactionsTitle')}
               </CardTitle>
-              <CardDescription>记录每一次充值、套餐订购、自动续费与管理员调账流水。</CardDescription>
+              <CardDescription>{t('user:profile.transactionsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="min-w-0 space-y-4">
               <div className="overflow-x-auto rounded-md border">
                 <Table className="min-w-[680px]">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="whitespace-nowrap">时间</TableHead>
-                      <TableHead className="whitespace-nowrap">类型</TableHead>
-                      <TableHead className="min-w-[160px] whitespace-nowrap">说明</TableHead>
-                      <TableHead className="min-w-[110px] whitespace-nowrap text-right">变动金额</TableHead>
-                      <TableHead className="min-w-[110px] whitespace-nowrap text-right">变动后余额</TableHead>
+                      <TableHead className="whitespace-nowrap">{t('user:profile.timeColumn')}</TableHead>
+                      <TableHead className="whitespace-nowrap">{t('user:profile.typeColumn')}</TableHead>
+                      <TableHead className="min-w-[160px] whitespace-nowrap">{t('user:profile.descriptionColumn')}</TableHead>
+                      <TableHead className="min-w-[110px] whitespace-nowrap text-right">{t('user:profile.amountColumn')}</TableHead>
+                      <TableHead className="min-w-[110px] whitespace-nowrap text-right">{t('user:profile.balanceAfterColumn')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -613,7 +628,7 @@ export default function ProfilePage() {
               </div>
               {!transactions.data?.data.length && (
                 <div className="py-8">
-                  <EmptyState title="暂无收支记录" description="进行卡密充值或订购套餐后，账本流水将在此处展现。" />
+                  <EmptyState title={t('user:profile.noTransactionsTitle')} description={t('user:profile.noTransactionsDesc')} />
                 </div>
               )}
               <Pagination className="border-t pt-3">
@@ -639,9 +654,9 @@ export default function ProfilePage() {
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Headphones className="size-4 text-primary" />
-                客服与技术支持
+                {t('user:profile.supportTitle')}
               </CardTitle>
-              <CardDescription>遇到使用问题或需咨询，请通过官方支持渠道联系我们。</CardDescription>
+              <CardDescription>{t('user:profile.supportDesc')}</CardDescription>
             </div>
             <SupportDialog settings={publicSettings.data} />
           </CardHeader>
@@ -655,8 +670,8 @@ export default function ProfilePage() {
       <Dialog open={nicknameOpen} onOpenChange={setNicknameOpen}>
         <DialogContent size="compact">
           <DialogHeader>
-            <DialogTitle>修改用户昵称</DialogTitle>
-            <DialogDescription>设置个性化昵称，用于主控面板各处身份展示。</DialogDescription>
+            <DialogTitle>{t('user:profile.nicknameDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('user:profile.nicknameDialogDesc')}</DialogDescription>
           </DialogHeader>
           <Form {...nicknameForm}>
             <form onSubmit={nicknameForm.handleSubmit(onNickname)} className="space-y-4">
@@ -665,9 +680,9 @@ export default function ProfilePage() {
                 name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>用户昵称</FormLabel>
+                    <FormLabel>{t('user:profile.nicknameLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="输入 2-20 位昵称" {...field} />
+                      <Input placeholder={t('user:profile.nicknamePlaceholder')} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -675,10 +690,10 @@ export default function ProfilePage() {
               />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setNicknameOpen(false)}>
-                  取消
+                  {t('common:actions.cancel')}
                 </Button>
                 <Button type="submit" disabled={updateProfile.isPending}>
-                  {updateProfile.isPending ? '保存中…' : '保存'}
+                  {updateProfile.isPending ? t('user:profile.savingPassword') : t('user:profile.saveNickname')}
                 </Button>
               </DialogFooter>
             </form>
@@ -690,8 +705,8 @@ export default function ProfilePage() {
       <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
         <DialogContent size="compact">
           <DialogHeader>
-            <DialogTitle>更换登录邮箱</DialogTitle>
-            <DialogDescription>验证码会发送到新邮箱，换绑后使用新邮箱登录。</DialogDescription>
+            <DialogTitle>{t('user:profile.changeEmailDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('user:profile.changeEmailDialogDesc')}</DialogDescription>
           </DialogHeader>
           <Form {...emailForm}>
             <form onSubmit={emailForm.handleSubmit(onChangeEmail)} className="space-y-4">
@@ -700,9 +715,9 @@ export default function ProfilePage() {
                 name="newEmail"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>新邮箱</FormLabel>
+                    <FormLabel>{t('user:profile.newEmailLabel')}</FormLabel>
                     <FormControl>
-                      <Input type="email" autoComplete="email" placeholder="new@example.com" {...field} />
+                      <Input type="email" autoComplete="email" placeholder={t('user:profile.newEmailPlaceholder')} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -713,10 +728,10 @@ export default function ProfilePage() {
                 name="verificationCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱验证码</FormLabel>
+                    <FormLabel>{t('user:profile.verifyCodeLabel')}</FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
-                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" {...field} />
+                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder={t('user:profile.verifyCodePlaceholder')} {...field} />
                       </FormControl>
                       <Button
                         type="button"
@@ -726,7 +741,7 @@ export default function ProfilePage() {
                         disabled={emailCooldown > 0 || sendEmailCode.isPending}
                       >
                         <ShieldCheck className="size-4" />
-                        {emailCooldown ? `${emailCooldown}s` : '获取验证码'}
+                        {emailCooldown ? `${emailCooldown}s` : t('user:subscription.getCode')}
                       </Button>
                     </div>
                     <FormMessage />
@@ -738,7 +753,7 @@ export default function ProfilePage() {
                 name="currentPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>当前密码</FormLabel>
+                    <FormLabel>{t('user:profile.oldPasswordLabel')}</FormLabel>
                     <FormControl>
                       <Input type="password" autoComplete="current-password" {...field} />
                     </FormControl>
@@ -748,10 +763,10 @@ export default function ProfilePage() {
               />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEmailOpen(false)}>
-                  取消
+                  {t('common:actions.cancel')}
                 </Button>
                 <Button type="submit" disabled={changeEmail.isPending}>
-                  {changeEmail.isPending ? '提交中…' : '确认换绑'}
+                  {changeEmail.isPending ? t('user:profile.submittingEmail') : t('user:profile.confirmChangeEmail')}
                 </Button>
               </DialogFooter>
             </form>
@@ -763,9 +778,9 @@ export default function ProfilePage() {
       <Dialog open={verifyEmailOpen} onOpenChange={setVerifyEmailOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>验证当前邮箱</DialogTitle>
+            <DialogTitle>{t('user:profile.verifyEmailDialogTitle')}</DialogTitle>
             <DialogDescription>
-              验证码将发送至当前绑定邮箱：<span className="font-mono text-foreground font-medium">{user.data.email}</span>
+              {t('user:profile.verifyEmailDialogDesc')}<span className="font-mono text-foreground font-medium">{user.data.email}</span>
             </DialogDescription>
           </DialogHeader>
           <Form {...verifyEmailForm}>
@@ -775,10 +790,10 @@ export default function ProfilePage() {
                 name="code"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱验证码</FormLabel>
+                    <FormLabel>{t('user:profile.verifyCodeLabel')}</FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
-                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" {...field} />
+                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder={t('user:profile.verifyCodePlaceholder')} {...field} />
                       </FormControl>
                       <Button
                         type="button"
@@ -788,7 +803,7 @@ export default function ProfilePage() {
                         disabled={verifyCooldown > 0 || sendCurrentEmailCode.isPending}
                       >
                         <Mail className="size-4" />
-                        {verifyCooldown ? `${verifyCooldown}s` : '获取验证码'}
+                        {verifyCooldown ? `${verifyCooldown}s` : t('user:subscription.getCode')}
                       </Button>
                     </div>
                     <FormMessage />
@@ -797,10 +812,10 @@ export default function ProfilePage() {
               />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setVerifyEmailOpen(false)}>
-                  取消
+                  {t('common:actions.cancel')}
                 </Button>
                 <Button type="submit" disabled={verifyCurrentEmail.isPending}>
-                  {verifyCurrentEmail.isPending ? '验证中…' : '确认验证'}
+                  {verifyCurrentEmail.isPending ? t('user:profile.verifyingEmail') : t('user:profile.confirmVerifyEmail')}
                 </Button>
               </DialogFooter>
             </form>
@@ -812,18 +827,18 @@ export default function ProfilePage() {
       <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>重置代理凭据？</AlertDialogTitle>
+            <AlertDialogTitle>{t('user:profile.resetConfirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              旧代理凭据会立即失效，所有正在使用旧凭据的客户端都需要重新导入订阅。此操作不可撤销。
+              {t('user:profile.resetConfirmDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => resetUuid.mutate(undefined, { onSuccess: () => setResetOpen(false) })}
             >
-              确认重置
+              {t('user:profile.confirmReset')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

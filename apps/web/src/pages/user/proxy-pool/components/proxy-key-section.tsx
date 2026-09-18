@@ -13,6 +13,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { formatBytes, formatDateTime } from '@/lib/utils';
+import i18n from '@/i18n/config';
 import { type ProxyKey, useProxyPoolMutations } from '../use-proxy-pool';
 
 interface ProxyKeySectionProps {
@@ -50,13 +52,14 @@ interface ProxyKeySectionProps {
 async function copyText(value: string, label: string) {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success(`${label}已复制`);
+    toast.success(i18n.t('user:proxyPool.copiedToast', { label }));
   } catch {
-    toast.error('复制失败，请手动选择复制');
+    toast.error(i18n.t('user:proxyPool.copyFailedToast'));
   }
 }
 
 export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: ProxyKeySectionProps) {
+  const { t } = useTranslation(['user', 'common']);
   const { deleteKey, updateKey, rotatePassword, rotateToken } = useProxyPoolMutations();
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
 
@@ -67,18 +70,18 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
         <div>
           <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
             <KeyRound className="size-4 text-emerald-500" />
-            凭据与白名单管理
+            {t('user:proxyPool.keyManagementTitle')}
             <span className="text-xs font-normal text-muted-foreground">
               ({keys.length}/{limit})
             </span>
           </h3>
           <p className="text-xs text-muted-foreground">
-            为不同爬虫脚本、自动化任务或指纹浏览器分配独立凭据，支持单独绑定来源 IP 白名单与一键停用。
+            {t('user:proxyPool.keyManagementDesc')}
           </p>
         </div>
         <Button size="sm" className="gap-1.5 shrink-0" onClick={onCreate} disabled={keys.length >= limit}>
           <Plus className="size-4" />
-          新建凭据
+          {t('user:proxyPool.newKeyButton')}
         </Button>
       </div>
 
@@ -118,7 +121,7 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                         variant={item.isActive ? 'default' : 'secondary'}
                         className="h-5 px-1.5 text-[10px] font-normal shrink-0"
                       >
-                        {item.isActive ? '已启用' : '已停用'}
+                        {item.isActive ? t('user:proxyPool.statusActive') : t('user:proxyPool.statusInactive')}
                       </Badge>
                     </div>
 
@@ -127,12 +130,12 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                       {item.whitelistIps.length ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                           <ShieldCheck className="size-3" />
-                          已限制 {item.whitelistIps.length} 个 IP/网段
+                          {t('user:proxyPool.whitelistRestricted', { count: item.whitelistIps.length })}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
                           <ShieldAlert className="size-3 text-muted-foreground/70" />
-                          不限来源 IP
+                          {t('user:proxyPool.whitelistUnrestricted')}
                         </span>
                       )}
                     </div>
@@ -143,7 +146,7 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                     <Switch
                       checked={item.isActive}
                       disabled={updateKey.isPending}
-                      aria-label={`切换 ${item.name} 启用状态`}
+                      aria-label={`Switch ${item.name}`}
                       onCheckedChange={(checked) =>
                         updateKey.mutate({ id: item.id, name: item.name, isActive: checked })
                       }
@@ -151,22 +154,22 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-7" aria-label="更多操作">
+                        <Button variant="ghost" size="icon" className="size-7" aria-label="Actions">
                           <MoreHorizontal className="size-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem onSelect={() => onEdit(item)}>
                           <Pencil className="size-4 mr-2" />
-                          编辑名称与白名单
+                          {t('user:proxyPool.editKey')}
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => rotatePassword.mutate(item.id)}>
                           <RefreshCw className="size-4 mr-2" />
-                          轮换密码
+                          {t('user:proxyPool.rotatePassword')}
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => rotateToken.mutate(item.id)}>
                           <RefreshCw className="size-4 mr-2" />
-                          轮换拉取令牌
+                          {t('user:proxyPool.rotateToken')}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <AlertDialog>
@@ -176,20 +179,20 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                               onSelect={(event) => event.preventDefault()}
                             >
                               <Trash2 className="size-4 mr-2" />
-                              删除凭据
+                              {t('user:proxyPool.deleteKey')}
                             </DropdownMenuItem>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>删除「{item.name}」？</AlertDialogTitle>
+                              <AlertDialogTitle>{t('user:proxyPool.deleteConfirmTitle', { name: item.name })}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                删除后该凭据立即失效，所有节点配置会在数秒内重下发完成吊销，此操作不可撤销。
+                                {t('user:proxyPool.deleteConfirmDesc')}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
                               <AlertDialogAction variant="destructive" onClick={() => deleteKey.mutate(item.id)}>
-                                确认删除
+                                {t('user:proxyPool.confirmDelete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -204,7 +207,7 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                 {/* 紧凑等宽凭据胶囊 */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1 text-xs transition-colors hover:bg-muted/50">
-                    <span className="w-12 shrink-0 text-[11px] font-medium text-muted-foreground">用户名</span>
+                    <span className="w-12 shrink-0 text-[11px] font-medium text-muted-foreground">{t('user:proxyPool.usernameLabel')}</span>
                     <code className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-foreground select-all">
                       {item.username}
                     </code>
@@ -213,15 +216,15 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                       variant="ghost"
                       size="icon"
                       className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                      aria-label="复制用户名"
-                      onClick={() => void copyText(item.username, '用户名')}
+                      aria-label="Copy username"
+                      onClick={() => void copyText(item.username, t('user:proxyPool.usernameLabel'))}
                     >
                       <Copy className="size-3" />
                     </Button>
                   </div>
 
                   <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1 text-xs transition-colors hover:bg-muted/50">
-                    <span className="w-12 shrink-0 text-[11px] font-medium text-muted-foreground">密码</span>
+                    <span className="w-12 shrink-0 text-[11px] font-medium text-muted-foreground">{t('user:proxyPool.passwordLabel')}</span>
                     <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground select-all">
                       {revealed[item.id] ? item.password : '••••••••••••••••'}
                     </code>
@@ -231,7 +234,7 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                         variant="ghost"
                         size="icon"
                         className="size-6 text-muted-foreground hover:text-foreground"
-                        aria-label={revealed[item.id] ? '隐藏密码' : '显示密码'}
+                        aria-label={revealed[item.id] ? 'Hide password' : 'Show password'}
                         onClick={() => setRevealed((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
                       >
                         {revealed[item.id] ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
@@ -241,8 +244,8 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                         variant="ghost"
                         size="icon"
                         className="size-6 text-muted-foreground hover:text-foreground"
-                        aria-label="复制密码"
-                        onClick={() => void copyText(item.password, '密码')}
+                        aria-label="Copy password"
+                        onClick={() => void copyText(item.password, t('user:proxyPool.passwordLabel'))}
                       >
                         <Copy className="size-3" />
                       </Button>
@@ -266,8 +269,8 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
 
                 {/* 卡片微型底部：流量与活跃时间 */}
                 <div className="flex items-center justify-between border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
-                  <span>已用 {formatBytes(item.trafficUsedBytes)}</span>
-                  <span>活跃 {item.lastUsedAt ? formatDateTime(item.lastUsedAt) : '从未使用'}</span>
+                  <span>{t('user:proxyPool.usedTraffic', { bytes: formatBytes(item.trafficUsedBytes) })}</span>
+                  <span>{t('user:proxyPool.lastActive', { time: item.lastUsedAt ? formatDateTime(item.lastUsedAt) : t('user:proxyPool.neverUsed') })}</span>
                 </div>
               </CardContent>
             </Card>
@@ -277,11 +280,11 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
         <Card className="border-dashed bg-muted/10">
           <CardContent className="py-8">
             <EmptyState
-              title="还没有直连代理凭据"
-              description="创建第一条 Proxy Key 凭据后即可通过 SOCKS5 / HTTP 直连代理池访问网络。"
+              title={t('user:proxyPool.noKeysTitle')}
+              description={t('user:proxyPool.noKeysDesc')}
               action={
                 <Button size="sm" onClick={onCreate}>
-                  创建第一条凭据
+                  {t('user:proxyPool.createFirstKey')}
                 </Button>
               }
             />

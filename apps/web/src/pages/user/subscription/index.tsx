@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   XCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { AnnouncementCard } from '@/components/shared/announcement-card';
 import { ClientGuideCard } from '@/components/shared/client-guide-card';
@@ -57,11 +58,12 @@ import { THEME_COLOR_CONFIGS } from '@/pages/user/market/components/market-plan-
 import type { PlanCardConfig, PlanThemeColor } from '@/pages/admin/plans/use-plans';
 
 const verifyEmailSchema = z.object({
-  code: z.string().regex(/^\d{6}$/, '请输入 6 位验证码')
+  code: z.string().regex(/^\d{6}$/, 'user:subscription.codeFormatError')
 });
 type VerifyEmailValues = z.infer<typeof verifyEmailSchema>;
 
 export default function UserSubscriptionPage() {
+  const { t } = useTranslation(['user', 'common']);
   const { data, isPending, isError } = useUserSubscription();
   const user = useProfileUser();
   const publicSettings = usePublicSettings();
@@ -103,8 +105,8 @@ export default function UserSubscriptionPage() {
   if (isPending) {
     return (
       <PageContainer>
-        <PageHeader title="我的订阅" />
-        <p className="text-sm text-muted-foreground animate-pulse">加载中…</p>
+        <PageHeader title={t('user:subscription.title')} />
+        <p className="text-sm text-muted-foreground animate-pulse">{t('user:subscription.loading')}</p>
       </PageContainer>
     );
   }
@@ -112,8 +114,11 @@ export default function UserSubscriptionPage() {
   if (isError || !data) {
     return (
       <PageContainer>
-        <PageHeader title="我的订阅" />
-        <EmptyState title="无法加载订阅" description="请稍后刷新重试" />
+        <PageHeader title={t('user:subscription.title')} />
+        <EmptyState
+          title={t('user:subscription.loadErrorTitle')}
+          description={t('user:subscription.loadErrorDesc')}
+        />
       </PageContainer>
     );
   }
@@ -127,7 +132,10 @@ export default function UserSubscriptionPage() {
         />
       ) : (
         <>
-          <PageHeader title="我的订阅" description="管理当前套餐、订阅凭证与可用线路。" />
+          <PageHeader
+            title={t('user:subscription.title')}
+            description={t('user:subscription.description')}
+          />
           <AnnouncementCard />
           {data.subscription ? (
             <ActiveSubscriptionContent
@@ -145,9 +153,10 @@ export default function UserSubscriptionPage() {
       <Dialog open={verifyOpen} onOpenChange={setVerifyOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>验证当前邮箱</DialogTitle>
+            <DialogTitle>{t('user:subscription.verifyModalTitle')}</DialogTitle>
             <DialogDescription>
-              验证码将发送至你的当前登录邮箱：<span className="font-mono text-foreground font-medium">{user.data?.email}</span>
+              {t('user:subscription.verifyModalDesc')}{' '}
+              <span className="font-mono text-foreground font-medium">{user.data?.email}</span>
             </DialogDescription>
           </DialogHeader>
           <Form {...verifyForm}>
@@ -157,10 +166,15 @@ export default function UserSubscriptionPage() {
                 name="code"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱验证码</FormLabel>
+                    <FormLabel>{t('user:subscription.emailCodeLabel')}</FormLabel>
                     <div className="flex gap-2">
                       <FormControl>
-                        <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" {...field} />
+                        <Input
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder={t('user:subscription.emailCodePlaceholder')}
+                          {...field}
+                        />
                       </FormControl>
                       <Button
                         type="button"
@@ -170,19 +184,19 @@ export default function UserSubscriptionPage() {
                         disabled={verifyCooldown > 0 || sendCurrentEmailCode.isPending}
                       >
                         <Mail className="size-4" />
-                        {verifyCooldown ? `${verifyCooldown}s` : '获取验证码'}
+                        {verifyCooldown ? `${verifyCooldown}s` : t('user:subscription.getCode')}
                       </Button>
                     </div>
-                    <FormMessage />
+                    <FormMessage>{field.value && !/^\d{6}$/.test(field.value) ? t('user:subscription.codeFormatError') : undefined}</FormMessage>
                   </FormItem>
                 )}
               />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setVerifyOpen(false)}>
-                  取消
+                  {t('common:actions.cancel')}
                 </Button>
                 <Button type="submit" disabled={verifyCurrentEmail.isPending}>
-                  {verifyCurrentEmail.isPending ? '验证中…' : '确认验证'}
+                  {verifyCurrentEmail.isPending ? t('user:subscription.verifying') : t('user:subscription.confirmVerify')}
                 </Button>
               </DialogFooter>
             </form>
@@ -200,6 +214,8 @@ function EmailVerificationBlockState({
   email?: string;
   onVerifyClick: () => void;
 }) {
+  const { t } = useTranslation(['user', 'common']);
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center p-4 pb-12 sm:pb-20 -translate-y-6 sm:-translate-y-10 text-center space-y-6 max-w-lg mx-auto">
       <div className="relative flex size-20 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-sm">
@@ -208,17 +224,17 @@ function EmailVerificationBlockState({
 
       <div className="space-y-2.5">
         <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          邮箱未完成验证，订阅与代理服务暂不可用
+          {t('user:subscription.emailBlockedTitle')}
         </h2>
         <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
-          当前账号邮箱尚未通过验证。在完成邮箱验证前，您的订阅更新与节点连接暂不可用。
+          {t('user:subscription.emailBlockedDesc')}
         </p>
       </div>
 
       {email && (
         <div className="flex max-w-full items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
           <Mail className="size-4 shrink-0 text-muted-foreground/80" />
-          <span className="shrink-0">当前登录邮箱：</span>
+          <span className="shrink-0">{t('user:subscription.currentEmail')}</span>
           <span className="truncate font-mono font-medium text-foreground">{email}</span>
         </div>
       )}
@@ -226,11 +242,11 @@ function EmailVerificationBlockState({
       <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
         <Button size="default" className="gap-2 text-sm shadow-sm" onClick={onVerifyClick}>
           <MailCheck className="size-4" />
-          立即验证当前邮箱
+          {t('user:subscription.verifyEmailNow')}
         </Button>
         <Button size="default" variant="outline" asChild className="gap-2 text-sm">
           <Link to="/profile">
-            前往个人中心更换
+            {t('user:subscription.changeEmailInProfile')}
             <ArrowRight className="size-3.5" />
           </Link>
         </Button>
@@ -240,21 +256,24 @@ function EmailVerificationBlockState({
 }
 
 function NoSubscriptionCard() {
+  const { t } = useTranslation(['user', 'common']);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShoppingBag className="h-4 w-4" />开通订阅
+          <ShoppingBag className="h-4 w-4" />
+          {t('user:subscription.openSubscription')}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-5">
           <div>
-            <p className="font-medium">还没有有效订阅</p>
-            <p className="mt-1 text-sm text-muted-foreground">选择套餐后，系统会为你生成专属订阅链接和可用线路。</p>
+            <p className="font-medium">{t('user:subscription.noActiveSub')}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{t('user:subscription.noActiveSubDesc')}</p>
           </div>
           <Button asChild size="sm">
-            <Link to="/market">前往套餐市场</Link>
+            <Link to="/market">{t('user:subscription.goToMarket')}</Link>
           </Button>
         </div>
       </CardContent>
@@ -269,6 +288,7 @@ function ActiveSubscriptionContent({
   subscription: UserSubscription;
   lines: UserLine[];
 }) {
+  const { t } = useTranslation(['user', 'common']);
   const { cancel, resetToken, renew } = useUserSubscriptionMutations();
   const wallet = useWallet();
   const publicSettings = usePublicSettings();
@@ -311,13 +331,18 @@ function ActiveSubscriptionContent({
     (publicSettings.data?.subscriptionEffectsSyncEnabled ?? true) &&
     (cardConfig?.syncToSubscription ?? true);
 
-  let daysText = '永久有效';
-  let expireFormatted = '永久有效';
+  let daysText: string = t('user:subscription.permanent');
+  let expireFormatted: string = t('user:subscription.permanent');
   if (sub.expireAt) {
     const expireDate = new Date(sub.expireAt);
     const now = new Date();
     const diffDays = Math.ceil((expireDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    daysText = diffDays > 0 ? `剩余 ${diffDays} 天` : diffDays === 0 ? '今日到期' : '已过期';
+    daysText =
+      diffDays > 0
+        ? t('user:subscription.daysRemaining', { days: diffDays })
+        : diffDays === 0
+          ? t('user:subscription.expiresToday')
+          : t('user:subscription.expired');
     expireFormatted = formatDate(expireDate);
   }
 
@@ -409,8 +434,8 @@ function ActiveSubscriptionContent({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {formatBytes(sub.trafficLimitBytes)} 流量配额 · {sub.plan.durationDays} 天周期 ·{' '}
-                  {sub.plan.price === 0 ? '免费套餐' : formatCurrency(Math.round(sub.plan.price * 100))}
+                  {formatBytes(sub.trafficLimitBytes)} {t('user:subscription.trafficQuota')} · {t('user:subscription.cycleDays', { days: sub.plan.durationDays })} ·{' '}
+                  {sub.plan.price === 0 ? t('user:subscription.freePlan') : formatCurrency(Math.round(sub.plan.price * 100))}
                 </p>
               </div>
 
@@ -424,31 +449,38 @@ function ActiveSubscriptionContent({
                         className="w-full gap-1.5 sm:w-auto"
                         disabled={renew.isPending}
                       >
-                        <RefreshCw className="h-4 w-4" />续费此套餐
+                        <RefreshCw className="h-4 w-4" />
+                        {t('user:subscription.renewThisPlan')}
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>续费当前套餐？</AlertDialogTitle>
+                        <AlertDialogTitle>{t('user:subscription.renewDialogTitle')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          将扣除 {formatCurrency(Math.round(sub.plan.price * 100))}，周期顺延 {sub.plan.durationDays} 天并重置当期流量。
+                          {t('user:subscription.renewDialogDesc', {
+                            price: formatCurrency(Math.round(sub.plan.price * 100)),
+                            days: sub.plan.durationDays
+                          })}
                         </AlertDialogDescription>
                         {wallet.data && wallet.data.balance < Math.round(sub.plan.price * 100) && <QuickRedeemForm />}
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
                         <AlertDialogAction
                           disabled={!wallet.data || wallet.data.balance < Math.round(sub.plan.price * 100) || renew.isPending}
                           onClick={() => renew.mutate()}
                         >
-                          确认续费
+                          {t('user:subscription.confirmRenew')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
                 )}
                 <Button asChild size="sm" variant="outline" className="w-full shrink-0 gap-1.5 sm:w-auto">
-                  <Link to="/market"><ShoppingBag className="h-4 w-4" />升配或变更套餐</Link>
+                  <Link to="/market">
+                    <ShoppingBag className="h-4 w-4" />
+                    {t('user:subscription.upgradeOrChange')}
+                  </Link>
                 </Button>
               </div>
             </CardHeader>
@@ -473,10 +505,15 @@ function ActiveSubscriptionContent({
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <HardDrive className="h-3.5 w-3.5" />
-                    <span>剩余流量</span>
+                    <span>{t('user:subscription.remainingTraffic')}</span>
                   </div>
                   <p className="text-xl font-bold">{formatBytes(remainingBytes)}</p>
-                  <p className="truncate text-xs text-muted-foreground">已用 {formatBytes(sub.trafficUsedBytes)} / 总量 {formatBytes(sub.trafficLimitBytes)}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t('user:subscription.usedOfTotal', {
+                      used: formatBytes(sub.trafficUsedBytes),
+                      total: formatBytes(sub.trafficLimitBytes)
+                    })}
+                  </p>
                 </div>
 
                 <div
@@ -489,10 +526,12 @@ function ActiveSubscriptionContent({
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Gauge className="h-3.5 w-3.5" />
-                    <span>流量使用率</span>
+                    <span>{t('user:subscription.trafficRatio')}</span>
                   </div>
                   <p className="text-xl font-bold">{percent.toFixed(1)}%</p>
-                  <p className="truncate text-xs text-muted-foreground">已消耗 {percent.toFixed(1)}%</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t('user:subscription.trafficConsumed', { percent: percent.toFixed(1) })}
+                  </p>
                 </div>
 
                 <div
@@ -505,13 +544,19 @@ function ActiveSubscriptionContent({
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <RotateCcw className="h-3.5 w-3.5" />
-                    <span>流量重置</span>
+                    <span>{t('user:subscription.trafficReset')}</span>
                   </div>
                   <p className="text-base font-bold">
-                    {sub.trafficResetMode === 'CALENDAR_MONTH' ? '自然月重置' : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE' ? '订阅周期重置' : '不自动重置'}
+                    {sub.trafficResetMode === 'CALENDAR_MONTH'
+                      ? t('user:subscription.trafficResetCalendar')
+                      : sub.trafficResetMode === 'SUBSCRIPTION_CYCLE'
+                        ? t('user:subscription.trafficResetCycle')
+                        : t('user:subscription.trafficResetNever')}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {sub.nextTrafficResetAt ? `下次：${formatDateTime(sub.nextTrafficResetAt)}` : '流量累计不会自动清零'}
+                    {sub.nextTrafficResetAt
+                      ? t('user:subscription.nextResetTime', { time: formatDateTime(sub.nextTrafficResetAt) })
+                      : t('user:subscription.trafficResetNeverDesc')}
                   </p>
                 </div>
 
@@ -525,10 +570,14 @@ function ActiveSubscriptionContent({
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <CalendarClock className="h-3.5 w-3.5" />
-                    <span>账户到期</span>
+                    <span>{t('user:subscription.accountExpire')}</span>
                   </div>
                   <p className="text-xl font-bold">{daysText}</p>
-                  <p className="truncate text-xs text-muted-foreground">{sub.expireAt ? `到期时间：${expireFormatted}` : '无到期限制'}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {sub.expireAt
+                      ? t('user:subscription.expireTime', { time: expireFormatted })
+                      : t('user:subscription.noExpireLimit')}
+                  </p>
                 </div>
               </div>
 
@@ -537,17 +586,20 @@ function ActiveSubscriptionContent({
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm" className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive">
-                        <XCircle className="h-3.5 w-3.5" />取消当前订阅
+                        <XCircle className="h-3.5 w-3.5" />
+                        {t('user:subscription.cancelSubButton')}
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>取消当前订阅？</AlertDialogTitle>
-                        <AlertDialogDescription>取消后状态变为 CANCELED，但在到期时间前仍可正常使用代理服务。</AlertDialogDescription>
+                        <AlertDialogTitle>{t('user:subscription.cancelSubTitle')}</AlertDialogTitle>
+                        <AlertDialogDescription>{t('user:subscription.cancelSubDesc')}</AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>返回</AlertDialogCancel>
-                        <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>确认取消</AlertDialogAction>
+                        <AlertDialogCancel>{t('common:actions.back')}</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" onClick={() => cancel.mutate()}>
+                          {t('user:subscription.confirmCancel')}
+                        </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
@@ -561,23 +613,29 @@ function ActiveSubscriptionContent({
       <Card>
         <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row sm:items-center">
           <div className="min-w-0 space-y-0.5">
-            <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" />通用多格式订阅链接</CardTitle>
-            <p className="text-xs text-muted-foreground">支持 Clash Meta、Sing-box、Shadowrocket 等多客户端自动解析</p>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4" />
+              {t('user:subscription.universalLinkTitle')}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">{t('user:subscription.universalLinkDesc')}</p>
           </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="w-full shrink-0 gap-1 text-xs sm:w-auto" disabled={resetToken.isPending}>
-                <RefreshCw className="h-3.5 w-3.5" />{resetToken.isPending ? '重置中…' : '重置订阅链接'}
+                <RefreshCw className="h-3.5 w-3.5" />
+                {resetToken.isPending ? t('user:subscription.resettingLink') : t('user:subscription.resetLinkButton')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>重置订阅链接？</AlertDialogTitle>
-                <AlertDialogDescription>重置后旧链接立即失效，所有客户端都需要重新导入。建议仅在怀疑链接泄漏时使用。</AlertDialogDescription>
+                <AlertDialogTitle>{t('user:subscription.resetLinkTitle')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('user:subscription.resetLinkDesc')}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={() => resetToken.mutate()}>确认重置</AlertDialogAction>
+                <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+                <AlertDialogAction variant="destructive" onClick={() => resetToken.mutate()}>
+                  {t('user:subscription.confirmReset')}
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -587,13 +645,16 @@ function ActiveSubscriptionContent({
             <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono">{url}</code>
             <CopyButton value={url} />
           </div>
-          <p className="text-xs leading-relaxed text-muted-foreground">将该链接导入支持的代理客户端即可同步所有可用线路；套餐或线路变更时客户端将自动热更新。</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{t('user:subscription.universalLinkNotice')}</p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4" />可用线路（{lines.length}）</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GitBranch className="h-4 w-4" />
+            {t('user:subscription.availableLinesTitle', { count: lines.length })}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {lines.length ? (
@@ -601,7 +662,7 @@ function ActiveSubscriptionContent({
               {lines.map((line) => <LineCard key={line.id} line={line} />)}
             </div>
           ) : (
-            <p className="py-4 text-center text-xs text-muted-foreground">当前套餐尚未匹配到可用线路</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">{t('user:subscription.noMatchingLines')}</p>
           )}
         </CardContent>
       </Card>

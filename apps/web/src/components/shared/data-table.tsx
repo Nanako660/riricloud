@@ -35,6 +35,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shared/empty-state';
+import { useTranslation } from 'react-i18next';
 
 // 通用数据表格：排序/分页/行选择/列可见性（五能力封装，规范见 FRONTEND_UI_GUIDELINES §8.1）
 interface DataTableProps<TData, TValue> {
@@ -58,11 +59,12 @@ export function DataTable<TData extends { id: string }, TValue>({
   total,
   initialPageSize = 20,
   onSelectionChange,
-  emptyTitle = '暂无数据',
+  emptyTitle,
   emptyDescription,
   toolbar,
   tableClassName
 }: DataTableProps<TData, TValue>) {
+  const { t } = useTranslation('common');
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
@@ -76,7 +78,7 @@ export function DataTable<TData extends { id: string }, TValue>({
         <Checkbox
           checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="全选本页"
+          aria-label={t('table.selectAll')}
         />
       ),
       cell: ({ row }) => (
@@ -84,14 +86,14 @@ export function DataTable<TData extends { id: string }, TValue>({
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
           disabled={!row.getCanSelect()}
-          aria-label="选择该行"
+          aria-label={t('table.selectRow')}
         />
       ),
       enableSorting: false,
       enableHiding: false
     };
     return [selectColumn, ...columns];
-  }, [columns, selectable]);
+  }, [columns, selectable, t]);
 
   const table = useReactTable({
     data,
@@ -122,7 +124,7 @@ export function DataTable<TData extends { id: string }, TValue>({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="ml-auto gap-1.5">
                 <Settings2 className="h-4 w-4" />
-                列显示
+                {t('table.columns')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -188,7 +190,9 @@ export function DataTable<TData extends { id: string }, TValue>({
 
       <div className="flex items-center justify-between">
         <p className="text-muted-foreground text-sm">
-          共 {total ?? data.length} 条{total !== undefined && total > data.length ? `（当前载入 ${data.length} 条，可用搜索缩小范围）` : ''}
+          {total !== undefined && total > data.length
+            ? t('table.totalItemsLimited', { total, loaded: data.length })
+            : t('table.totalItems', { total: total ?? data.length })}
         </p>
         <Pagination>
           <PaginationInfo page={table.getState().pagination.pageIndex + 1} totalPages={totalPages} />

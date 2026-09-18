@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 
 export interface ProxyKey {
   id: string;
@@ -101,47 +102,47 @@ export function useProxyPoolMutations() {
   const createKey = useMutation({
     mutationFn: async (payload: ProxyKeyPayload) => (await api.post<{ key: ProxyKey }>('/user/proxy-pool/keys', payload)).data,
     onSuccess: () => {
-      toast.success('直连代理凭据已创建');
+      toast.success(i18n.t('user:proxyPool.createdSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '创建凭据失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('user:proxyPool.createFailed')))
   });
 
   const updateKey = useMutation({
     mutationFn: async ({ id, ...payload }: ProxyKeyPayload & { id: string; isActive?: boolean }) =>
       (await api.patch<{ key: ProxyKey }>(`/user/proxy-pool/keys/${id}`, payload)).data,
     onSuccess: () => {
-      toast.success('凭据已更新');
+      toast.success(i18n.t('user:proxyPool.updatedSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '更新凭据失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('user:proxyPool.updateFailed')))
   });
 
   const deleteKey = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/user/proxy-pool/keys/${id}`)).data,
     onSuccess: () => {
-      toast.success('凭据已删除，节点配置即时吊销');
+      toast.success(i18n.t('user:proxyPool.deletedSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '删除凭据失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('user:proxyPool.deleteFailed')))
   });
 
   const rotatePassword = useMutation({
     mutationFn: async (id: string) => (await api.post<{ key: ProxyKey }>(`/user/proxy-pool/keys/${id}/rotate-password`)).data,
     onSuccess: () => {
-      toast.success('密码已轮换，旧密码立即失效');
+      toast.success(i18n.t('user:proxyPool.rotatePasswordSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '轮换密码失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('user:proxyPool.rotatePasswordFailed')))
   });
 
   const rotateToken = useMutation({
     mutationFn: async (id: string) => (await api.post<{ key: ProxyKey }>(`/user/proxy-pool/keys/${id}/rotate-token`)).data,
     onSuccess: () => {
-      toast.success('拉取令牌已轮换，旧令牌立即失效');
+      toast.success(i18n.t('user:proxyPool.rotateTokenSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '轮换令牌失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('user:proxyPool.rotateTokenFailed')))
   });
 
   return { createKey, updateKey, deleteKey, rotatePassword, rotateToken };

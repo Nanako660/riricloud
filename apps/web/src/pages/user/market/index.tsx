@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ShoppingBag, ShieldCheck, Zap, Sparkles } from 'lucide-react';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -24,6 +25,7 @@ import { MarketPlanCard } from './components/market-plan-card';
 type CycleFilter = 'all' | 'monthly' | 'quarterly' | 'yearly';
 
 export default function MarketPage() {
+  const { t } = useTranslation(['user', 'common', 'errors']);
   const { data: current } = useUserSubscription();
   const { subscribe, upgrade } = useUserSubscriptionMutations();
   const wallet = useWallet();
@@ -60,9 +62,9 @@ export default function MarketPage() {
   if (plans.isPending) {
     return (
       <PageContainer>
-        <PageHeader title="套餐市场" />
+        <PageHeader title={t('user:market.title')} />
         <div className="flex items-center justify-center py-16">
-          <p className="text-sm text-muted-foreground animate-pulse">加载套餐市场方案中…</p>
+          <p className="text-sm text-muted-foreground animate-pulse">{t('common:actions.loading')}</p>
         </div>
       </PageContainer>
     );
@@ -71,8 +73,8 @@ export default function MarketPage() {
   if (plans.isError) {
     return (
       <PageContainer>
-        <PageHeader title="套餐市场" />
-        <EmptyState title="无法加载套餐" description="网络连接异常或服务暂不可用，请稍后刷新重试" />
+        <PageHeader title={t('user:market.title')} />
+        <EmptyState title={t('common:status.failed')} description={t('errors:network.offline')} />
       </PageContainer>
     );
   }
@@ -85,8 +87,8 @@ export default function MarketPage() {
     <PageContainer>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <PageHeader
-          title="套餐市场"
-          description="挑选符合你网络需求的方案。支持全协议订阅托管、多端自适应与晚高峰极速保障。"
+          title={t('user:market.title')}
+          description={t('user:market.subtitle')}
         />
 
         {/* 快捷周期切换器 */}
@@ -95,16 +97,16 @@ export default function MarketPage() {
             <Tabs value={cycle} onValueChange={(val) => setCycle(val as CycleFilter)}>
               <TabsList className="grid grid-cols-4 h-9">
                 <TabsTrigger value="all" className="text-xs px-2.5">
-                  全部 ({counts.all})
+                  {t('common:status.all')} ({counts.all})
                 </TabsTrigger>
                 <TabsTrigger value="monthly" className="text-xs px-2.5">
-                  月付 ({counts.monthly})
+                  1-30d ({counts.monthly})
                 </TabsTrigger>
                 <TabsTrigger value="quarterly" className="text-xs px-2.5">
-                  季/半年 ({counts.quarterly})
+                  31-180d ({counts.quarterly})
                 </TabsTrigger>
                 <TabsTrigger value="yearly" className="text-xs px-2.5">
-                  年付 ({counts.yearly})
+                  180d+ ({counts.yearly})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -118,19 +120,19 @@ export default function MarketPage() {
           <div className="flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary shrink-0" />
             <span>
-              当前在用套餐：
+              {t('user:market.currentPlanTag')}:{' '}
               <strong className="font-semibold text-foreground">
                 {current.subscription.plan.name}
               </strong>
               {current.subscription.expireAt && (
                 <span className="ml-1 text-[11px]">
-                  (于 {new Date(current.subscription.expireAt).toLocaleDateString()} 到期)
+                  ({t('user:subscription.expireAt')}: {new Date(current.subscription.expireAt).toLocaleDateString()})
                 </span>
               )}
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 text-foreground font-medium">
-            <span>当前余额：{formatCurrency(userBalanceCents)}</span>
+            <span>{t('user:profile.balance')}：{formatCurrency(userBalanceCents)}</span>
           </div>
         </div>
       )}
@@ -163,8 +165,8 @@ export default function MarketPage() {
 
       {!filteredPlans.length && (
         <EmptyState
-          title={cycle === 'all' ? '暂无公开套餐' : '该周期下暂无套餐'}
-          description={cycle === 'all' ? '请等待管理员上架套餐。' : '可切换至“全部”查看其他周期的方案。'}
+          title={t('user:market.emptyPlans')}
+          description={cycle === 'all' ? undefined : t('common:table.noResults')}
         />
       )}
 
@@ -172,16 +174,16 @@ export default function MarketPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <ShoppingBag className="h-4 w-4 text-primary" />
-          <span>套餐开通或变更后将即时生效，并自动同步至客户端全格式订阅及授权节点。</span>
+          <span>{t('user:subscription.linkCardSubtitle')}</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-            SLA 可用率保障
+            SLA 99.9%
           </span>
           <span className="flex items-center gap-1">
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            多节点负载均衡
+            HA Failover
           </span>
         </div>
       </div>
@@ -190,18 +192,18 @@ export default function MarketPage() {
       <AlertDialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{active ? '确认升配套餐？' : '确认订购套餐？'}</AlertDialogTitle>
+            <AlertDialogTitle>{active ? t('user:market.confirmUpgradeTitle') : t('user:market.confirmBuyTitle')}</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
                 {selected?.purchaseLimitPerUser !== null &&
                 (claimCounts.get(selected?.id ?? '') ?? 0) >= (selected?.purchaseLimitPerUser ?? Number.POSITIVE_INFINITY)
-                  ? '该套餐已达购买上限，请联系管理员补发。'
+                  ? t('errors:business.freePlanLimitReached')
                   : active
-                  ? `将扣除 ${formatCurrency(selectedCostCents)}，升级至「${selected?.name}」。新套餐即时生效，周期与配额即时重置。`
-                  : `将从你的账户余额中扣除 ${formatCurrency(selectedCostCents)} 订购「${selected?.name}」。`}
+                  ? t('user:market.confirmUpgradeDesc', { price: selected?.price ?? 0, planName: selected?.name ?? '' })
+                  : t('user:market.confirmBuyDesc', { price: selected?.price ?? 0, planName: selected?.name ?? '' })}
               </span>
               <span className="block text-xs">
-                当前余额：{formatCurrency(userBalanceCents)}；扣款后预计剩余：
+                {t('user:profile.balance')}：{formatCurrency(userBalanceCents)}；扣款后预计剩余：
                 <strong className={cn('ml-1 font-semibold', userBalanceCents < selectedCostCents ? 'text-destructive' : 'text-foreground')}>
                   {formatCurrency(userBalanceCents - selectedCostCents)}
                 </strong>
@@ -210,13 +212,13 @@ export default function MarketPage() {
 
             {isBalanceInsufficient && (
               <div className="pt-2">
-                <p className="text-xs text-destructive mb-2 font-medium">当前余额不足，请先兑换卡密或充值：</p>
+                <p className="text-xs text-destructive mb-2 font-medium">{t('user:market.insufficientBalance')}</p>
                 <QuickRedeemForm />
               </div>
             )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setSelected(null)}>取消</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setSelected(null)}>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={
                 !selected ||
@@ -242,10 +244,10 @@ export default function MarketPage() {
               }}
             >
               {subscribe.isPending || upgrade.isPending
-                ? '处理中…'
+                ? t('common:actions.operating')
                 : active
-                  ? '确认升配'
-                  : '确认订购'}
+                  ? t('user:market.upgradeButton')
+                  : t('user:market.buyButton')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

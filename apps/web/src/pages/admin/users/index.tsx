@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2, WalletCards } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { toast } from 'sonner';
@@ -29,40 +30,34 @@ import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscrip
 import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
 import { BalanceFormDialog } from './components/balance-form-dialog';
-
 import { formatBytes, formatCurrency, formatDate } from '@/lib/utils';
 
-// 状态色规范：激活=success、封禁=destructive（FRONTEND_UI_GUIDELINES §状态色）
 function StatusBadge({ isActive }: { isActive: boolean }) {
+  const { t } = useTranslation(['admin']);
   return isActive ? (
-    <Badge className="border-transparent bg-emerald-600 text-white hover:bg-emerald-600">已激活</Badge>
+    <Badge className="border-transparent bg-emerald-600 text-white hover:bg-emerald-600">
+      {t('admin:users.statusActive')}
+    </Badge>
   ) : (
-    <Badge variant="destructive">已封禁</Badge>
+    <Badge variant="destructive">{t('admin:users.statusDisabled')}</Badge>
   );
 }
 
-const subscriptionStatusOptions: Array<{ value: AdminUserSubscription['status'] | 'NONE'; label: string }> = [
-  { value: 'ACTIVE', label: '有效 (ACTIVE)' },
-  { value: 'CANCELED', label: '已取消 (CANCELED)' },
-  { value: 'EXPIRED', label: '已过期 (EXPIRED)' },
-  { value: 'REVOKED', label: '已吊销 (REVOKED)' },
-  { value: 'NONE', label: '无订阅 (NONE)' }
-];
-
-const subscriptionBadgeLabels: Record<AdminUserSubscription['status'], string> = {
-  ACTIVE: '有效',
-  CANCELED: '已取消',
-  EXPIRED: '已过期',
-  REVOKED: '已吊销'
-};
-
 function SubscriptionStatusBadge({ status }: { status: AdminUserSubscription['status'] | null }) {
-  if (!status) return <Badge variant="outline">无订阅</Badge>;
+  const { t } = useTranslation(['admin']);
+  if (!status) return <Badge variant="outline">{t('admin:users.noSubscription')}</Badge>;
   const variant = status === 'ACTIVE' ? 'default' : status === 'REVOKED' ? 'destructive' : 'secondary';
-  return <Badge variant={variant}>{subscriptionBadgeLabels[status] ?? status}</Badge>;
+  const labels: Record<AdminUserSubscription['status'], string> = {
+    ACTIVE: t('admin:users.statusActive'),
+    CANCELED: '已取消',
+    EXPIRED: '已过期',
+    REVOKED: '已吊销'
+  };
+  return <Badge variant={variant}>{labels[status] ?? status}</Badge>;
 }
 
 export default function AdminUsersPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const selfId = useAuthStore((s) => s.user?.id);
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -81,8 +76,8 @@ export default function AdminUsersPage() {
   const [adjusting, setAdjusting] = React.useState<AdminUser | null>(null);
 
   React.useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const { data, isPending } = useAdminUsers({
@@ -102,27 +97,27 @@ export default function AdminUsersPage() {
     () => [
       {
         accessorKey: 'uid',
-        header: 'UID',
+        header: t('admin:users.uid'),
         cell: ({ row }) => <span className="font-mono tabular-nums">{row.original.uid ?? '—'}</span>
       },
       {
         accessorKey: 'nickname',
-        header: '昵称',
+        header: t('admin:users.nickname'),
         cell: ({ row }) => <span className="max-w-32 truncate font-medium">{row.original.nickname || '—'}</span>
       },
       {
         accessorKey: 'email',
-        header: '邮箱',
+        header: t('admin:users.email'),
         cell: ({ row }) => (
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="truncate font-medium">{row.original.email}</span>
             {row.original.emailVerifiedAt ? (
               <Badge variant="outline" className="px-1 py-0 text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 shrink-0">
-                已验证
+                {t('admin:users.verified')}
               </Badge>
             ) : (
               <Badge variant="outline" className="px-1 py-0 text-[10px] text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 shrink-0">
-                未验证
+                {t('admin:users.unverified')}
               </Badge>
             )}
           </div>
@@ -130,33 +125,33 @@ export default function AdminUsersPage() {
       },
       {
         id: 'plan',
-        header: '当前套餐',
+        header: t('admin:users.plan'),
         cell: ({ row }) => row.original.subscription?.plan ? (
           <Badge variant="outline">{row.original.subscription.plan.name}</Badge>
-        ) : <span className="text-muted-foreground">未绑定</span>
+        ) : <span className="text-muted-foreground">{t('admin:users.unbound')}</span>
       },
       {
         accessorKey: 'balance',
-        header: '账户余额',
+        header: t('admin:users.balance'),
         cell: ({ row }) => <span className="whitespace-nowrap font-medium tabular-nums">{formatCurrency(row.original.balance)}</span>
       },
       {
         id: 'subscriptionStatus',
-        header: '订阅状态',
+        header: t('admin:users.filterSubscription'),
         cell: ({ row }) => <SubscriptionStatusBadge status={row.original.subscription?.status ?? null} />
       },
       {
         accessorKey: 'role',
-        header: '角色',
+        header: t('admin:users.role'),
         cell: ({ row }) => (
           <Badge variant={row.original.role === 'ADMIN' ? 'default' : 'secondary'}>
-            {row.original.role === 'ADMIN' ? '管理员' : '用户'}
+            {row.original.role === 'ADMIN' ? t('admin:users.roleAdmin') : t('admin:users.roleUser')}
           </Badge>
         )
       },
       {
         id: 'quota',
-        header: '配额使用',
+        header: t('admin:users.trafficUsed'),
         cell: ({ row }) => {
           const { trafficLimitBytes: limit, trafficUsedBytes: used } = row.original;
           const percent = limit > 0 ? Math.min(Math.round((used / limit) * 100), 100) : 0;
@@ -172,22 +167,22 @@ export default function AdminUsersPage() {
       },
       {
         accessorKey: 'expireAt',
-        header: '有效期',
+        header: t('admin:users.expireAt'),
         cell: ({ row }) =>
           row.original.expireAt ? (
             <span className="tabular-nums">{formatDate(row.original.expireAt)}</span>
           ) : (
-            <span className="text-muted-foreground">永久</span>
+            <span className="text-muted-foreground">{t('common:time.permanent')}</span>
           )
       },
       {
         accessorKey: 'isActive',
-        header: '状态',
+        header: t('admin:users.status'),
         cell: ({ row }) => <StatusBadge isActive={row.original.isActive} />
       },
       {
         accessorKey: 'createdAt',
-        header: '创建时间',
+        header: t('common:table.createdAt'),
         cell: ({ row }) => (
           <span className="text-muted-foreground tabular-nums">
             {formatDate(row.original.createdAt)}
@@ -196,7 +191,7 @@ export default function AdminUsersPage() {
       },
       {
         id: 'actions',
-        header: '操作',
+        header: t('common:table.actions'),
         enableHiding: false,
         cell: ({ row }) => {
           const u = row.original;
@@ -205,23 +200,27 @@ export default function AdminUsersPage() {
             <div className="flex justify-end gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="流量明细" onClick={() => setTrafficUser(u)}>
+                  <Button variant="ghost" size="icon" aria-label={t('admin:users.trafficDetails')} onClick={() => setTrafficUser(u)}>
                     <Activity className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>流量明细</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="调整余额" onClick={() => setAdjusting(u)}><WalletCards className="h-4 w-4" /></Button></TooltipTrigger>
-                <TooltipContent>调整余额</TooltipContent>
+                <TooltipContent>{t('admin:users.trafficDetails')}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="编辑" onClick={() => { setEditing(u); setFormOpen(true); }}>
+                  <Button variant="ghost" size="icon" aria-label={t('admin:users.adjustBalance')} onClick={() => setAdjusting(u)}>
+                    <WalletCards className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('admin:users.adjustBalance')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label={t('admin:users.editUser')} onClick={() => { setEditing(u); setFormOpen(true); }}>
                     <Pencil className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>编辑</TooltipContent>
+                <TooltipContent>{t('admin:users.editUser')}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -229,7 +228,7 @@ export default function AdminUsersPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="重置订阅链接"
+                      aria-label={t('admin:users.resetToken')}
                       disabled={!u.subscription || resetSubscriptionToken.isPending}
                       onClick={() => setResetting(u)}
                     >
@@ -237,7 +236,7 @@ export default function AdminUsersPage() {
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>{u.subscription ? '重置订阅链接' : '该用户暂无有效订阅'}</TooltipContent>
+                <TooltipContent>{u.subscription ? t('admin:users.resetToken') : t('admin:users.noSubscription')}</TooltipContent>
               </Tooltip>
               {!isSelf ? (
                 <>
@@ -246,7 +245,7 @@ export default function AdminUsersPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label={u.isActive ? '封禁' : '解封'}
+                        aria-label={u.isActive ? t('admin:users.banUser') : t('admin:users.unbanUser')}
                         disabled={bulkActive.isPending}
                         onClick={() =>
                           bulkActive.mutate({ ids: [u.id], isActive: !u.isActive })
@@ -255,15 +254,15 @@ export default function AdminUsersPage() {
                         {u.isActive ? <ShieldOff className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{u.isActive ? '封禁' : '解封'}</TooltipContent>
+                    <TooltipContent>{u.isActive ? t('admin:users.banUser') : t('admin:users.unbanUser')}</TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label="删除" onClick={() => setDeleting(u)}>
+                      <Button variant="ghost" size="icon" aria-label={t('common:actions.delete')} onClick={() => setDeleting(u)}>
                         <Trash2 className="text-destructive h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>删除</TooltipContent>
+                    <TooltipContent>{t('common:actions.delete')}</TooltipContent>
                   </Tooltip>
                 </>
               ) : null}
@@ -272,11 +271,10 @@ export default function AdminUsersPage() {
         }
       }
     ],
-    [bulkActive, resetSubscriptionToken, selfId]
+    [bulkActive, resetSubscriptionToken, selfId, t]
   );
 
   const onBulkBan = async (isActive: boolean) => {
-    // 自身不可被操作
     const ids = selected.filter((u) => u.id !== selfId).map((u) => u.id);
     if (ids.length === 0) {
       toast.warning('没有可操作的用户（不能操作自己）');
@@ -295,7 +293,7 @@ export default function AdminUsersPage() {
 
   return (
     <PageContainer>
-      <PageHeader title="用户管理" description="配额、有效期、角色与封禁管理" />
+      <PageHeader title={t('admin:users.title')} description={t('admin:users.subtitle')} />
 
       {isPending ? (
         <div className="space-y-2">
@@ -309,60 +307,74 @@ export default function AdminUsersPage() {
           total={data?.total}
           onSelectionChange={setSelected}
           tableClassName="min-w-[1160px]"
-          emptyTitle="暂无用户"
-          emptyDescription="点击右上角「创建用户」添加"
+          emptyTitle={t('admin:users.emptyUsers')}
+          emptyDescription={t('admin:users.subtitle')}
           toolbar={
             <>
               <div className="relative w-full sm:w-64">
                 <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" />
-                <Input className="pl-8" placeholder="搜索 UID、昵称或邮箱…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <Input className="pl-8" placeholder={t('admin:users.searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as typeof roleFilter)}>
-                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="角色" /></SelectTrigger>
-                <SelectContent><SelectItem value="ALL">全部角色</SelectItem><SelectItem value="USER">用户</SelectItem><SelectItem value="ADMIN">管理员</SelectItem></SelectContent>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder={t('admin:users.filterRole')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{t('admin:users.allRoles')}</SelectItem>
+                  <SelectItem value="USER">{t('admin:users.roleUser')}</SelectItem>
+                  <SelectItem value="ADMIN">{t('admin:users.roleAdmin')}</SelectItem>
+                </SelectContent>
               </Select>
               <Select value={activeFilter} onValueChange={(value) => setActiveFilter(value as typeof activeFilter)}>
-                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="账号状态" /></SelectTrigger>
-                <SelectContent><SelectItem value="ALL">全部账号</SelectItem><SelectItem value="true">已激活</SelectItem><SelectItem value="false">已封禁</SelectItem></SelectContent>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder={t('admin:users.filterStatus')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{t('admin:users.allStatuses')}</SelectItem>
+                  <SelectItem value="true">{t('admin:users.statusActive')}</SelectItem>
+                  <SelectItem value="false">{t('admin:users.statusDisabled')}</SelectItem>
+                </SelectContent>
               </Select>
               <Select value={emailVerifiedFilter} onValueChange={(value) => setEmailVerifiedFilter(value as typeof emailVerifiedFilter)}>
-                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="邮箱验证" /></SelectTrigger>
-                <SelectContent><SelectItem value="ALL">全部邮箱</SelectItem><SelectItem value="true">已验证</SelectItem><SelectItem value="false">未验证</SelectItem></SelectContent>
+                <SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder={t('admin:users.filterVerified')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">{t('admin:users.allVerified')}</SelectItem>
+                  <SelectItem value="true">{t('admin:users.verified')}</SelectItem>
+                  <SelectItem value="false">{t('admin:users.unverified')}</SelectItem>
+                </SelectContent>
               </Select>
               <Select value={subscriptionFilter} onValueChange={(value) => setSubscriptionFilter(value as typeof subscriptionFilter)}>
-                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="订阅状态" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder={t('admin:users.filterSubscription')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">全部订阅</SelectItem>
-                  {subscriptionStatusOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
+                  <SelectItem value="ALL">{t('admin:users.allSubscriptions')}</SelectItem>
+                  <SelectItem value="ACTIVE">{t('admin:users.statusActive')}</SelectItem>
+                  <SelectItem value="CANCELED">已取消</SelectItem>
+                  <SelectItem value="EXPIRED">已过期</SelectItem>
+                  <SelectItem value="REVOKED">已吊销</SelectItem>
+                  <SelectItem value="NONE">{t('admin:users.noSubscription')}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={planFilter} onValueChange={setPlanFilter}>
-                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="套餐" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder={t('admin:users.filterPlan')} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">全部套餐</SelectItem>
-                  <SelectItem value="NONE">无套餐</SelectItem>
+                  <SelectItem value="ALL">{t('admin:users.allPlans')}</SelectItem>
+                  <SelectItem value="NONE">{t('admin:users.unbound')}</SelectItem>
                   {(plans ?? []).map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Button size="sm" className="w-full gap-1.5 sm:w-auto" onClick={() => { setEditing(null); setFormOpen(true); }}>
                 <Plus className="h-4 w-4" />
-                创建用户
+                {t('admin:users.addUser')}
               </Button>
               {selected.length > 0 ? (
                 <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
                   <Button size="sm" variant="outline" className="gap-1.5" disabled={bulkActive.isPending} onClick={() => void onBulkBan(false)}>
                     <ShieldOff className="h-4 w-4" />
-                    批量封禁（{selected.length}）
+                    {t('admin:users.batchBan')}（{selected.length}）
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5" disabled={bulkActive.isPending} onClick={() => void onBulkBan(true)}>
                     <ShieldCheck className="h-4 w-4" />
-                    批量解封
+                    {t('admin:users.batchActivate')}
                   </Button>
                   <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setBulkDeleting(true)}>
                     <Trash2 className="h-4 w-4" />
-                    批量删除
+                    {t('admin:users.batchDelete')}
                   </Button>
                 </div>
               ) : null}
@@ -378,15 +390,15 @@ export default function AdminUsersPage() {
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除用户 {deleting?.email}？</AlertDialogTitle>
+            <AlertDialogTitle>{t('admin:users.deleteConfirm', { email: deleting?.email ?? '' })}</AlertDialogTitle>
             <AlertDialogDescription>
               该用户的流量记录将一并删除，此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void onConfirmDelete()}>
-              删除
+              {t('common:actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -395,13 +407,13 @@ export default function AdminUsersPage() {
       <AlertDialog open={!!resetting} onOpenChange={(open) => !open && setResetting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>重置用户订阅链接？</AlertDialogTitle>
+            <AlertDialogTitle>{t('admin:users.resetToken')}？</AlertDialogTitle>
             <AlertDialogDescription>{resetting?.email} 的旧链接会立即失效，需要重新导入订阅。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (resetting) resetSubscriptionToken.mutate(resetting.id, { onSuccess: () => setResetting(null) }); }}>
-              确认重置
+              {t('common:actions.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -410,13 +422,13 @@ export default function AdminUsersPage() {
       <AlertDialog open={bulkDeleting} onOpenChange={setBulkDeleting}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>批量删除 {selected.length} 个用户？</AlertDialogTitle>
+            <AlertDialogTitle>{t('admin:users.batchDeleteTitle', { count: selected.length })}</AlertDialogTitle>
             <AlertDialogDescription>
-              将删除：{selected.map((u) => u.email).join('、')}。相关流量记录一并删除，不可撤销。
+              {t('admin:users.batchDeleteDesc', { count: selected.length })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={async () => {
@@ -428,7 +440,7 @@ export default function AdminUsersPage() {
                 setBulkDeleting(false);
               }}
             >
-              全部删除
+              {t('common:actions.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

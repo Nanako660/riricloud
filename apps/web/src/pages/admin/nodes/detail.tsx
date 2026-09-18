@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
+import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -74,19 +75,40 @@ function GeneratedConfigPreview({ node }: { node: { id: string; lines: NodeLine[
 }
 
 function ProbeSnapshotCard({ snapshot }: { snapshot: ProbeSnapshot | null }) {
-  if (!snapshot) return <p className="text-sm text-muted-foreground">尚未完成网络诊断。</p>;
-  return <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">{snapshot.success ? '诊断通过' : '诊断存在异常'}</p><span className="text-xs text-muted-foreground">{formatDateTime(snapshot.completedAt)}</span></div>{snapshot.results.map((result, index) => <div key={`${result.type}-${result.target}-${index}`} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{result.type.toUpperCase()} · {result.target}</span><Badge variant={result.success ? 'default' : 'destructive'}>{result.success ? '正常' : '失败'}</Badge></div><p className="mt-1 text-xs text-muted-foreground">延迟：{result.latencyMs != null ? `${result.latencyMs} ms` : '—'} · 丢包：{result.packetLossPercent ?? (result.success ? 0 : 100)}%{result.addresses?.length ? ` · 地址：${result.addresses.join(', ')}` : ''}</p>{result.message && <p className="mt-1 break-words text-xs text-destructive">{result.message}</p>}</div>)}</div>;
+  const { t } = useTranslation(['admin']);
+  if (!snapshot) return <p className="text-sm text-muted-foreground">{t('admin:nodes.emptyFilteredDesc')}</p>;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{snapshot.success ? '诊断通过' : '诊断存在异常'}</p>
+        <span className="text-xs text-muted-foreground">{formatDateTime(snapshot.completedAt)}</span>
+      </div>
+      {snapshot.results.map((result, index) => (
+        <div key={`${result.type}-${result.target}-${index}`} className="rounded-md border p-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-medium">{result.type.toUpperCase()} · {result.target}</span>
+            <Badge variant={result.success ? 'default' : 'destructive'}>{result.success ? '正常' : '失败'}</Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            延迟：{result.latencyMs != null ? `${result.latencyMs} ms` : '—'} · 丢包：{result.packetLossPercent ?? (result.success ? 0 : 100)}%{result.addresses?.length ? ` · 地址：${result.addresses.join(', ')}` : ''}
+          </p>
+          {result.message && <p className="mt-1 break-words text-xs text-destructive">{result.message}</p>}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onOpenChange: (open: boolean) => void; node: AdminNode }) {
+  const { t } = useTranslation(['admin', 'common']);
   const uninstallCommand = node.uninstallCommand ?? 'sudo /usr/local/bin/riri-agent uninstall --purge --yes';
   const windowsUninstallCommand = node.windowsUninstallCommand ?? '& "$env:ProgramFiles\\RiriCloud\\riri-agent.exe" uninstall --purge --yes';
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="compact">
         <DialogHeader>
-          <DialogTitle>Agent 安装与部署</DialogTitle>
-          <DialogDescription>选择目标操作系统与部署方式，复制命令到目标主机执行；原生安装注册系统服务，免安装运行适合临时验证或无法注册服务的环境。</DialogDescription>
+          <DialogTitle>{t('admin:nodes.installTitle')}</DialogTitle>
+          <DialogDescription>{t('admin:nodes.installSubtitle')}</DialogDescription>
         </DialogHeader>
         <div className="min-w-0 space-y-4">
           <InstallCommandsPicker key={open ? node.id : 'closed'} commands={node.installCommands} defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'} nodeOsArch={node.osArch} nodeId={node.id} />
@@ -106,7 +128,7 @@ function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onO
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>关闭</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.close')}</Button>
         </DialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
@@ -118,7 +140,7 @@ function formatDiagnosticRemaining(expiresAt: string | null, now: number): strin
   const remaining = Math.max(0, new Date(expiresAt).getTime() - now);
   const minutes = Math.floor(remaining / 60_000);
   const seconds = Math.floor((remaining % 60_000) / 1_000);
-  return `${minutes} 分 ${seconds.toString().padStart(2, '0')} 秒`;
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
 }
 
 function SingboxDiagnosticsCard({
@@ -134,6 +156,7 @@ function SingboxDiagnosticsCard({
   onEnable: (level: 'INFO' | 'DEBUG') => void;
   onDisable: () => void;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
   const [level, setLevel] = React.useState<'INFO' | 'DEBUG'>('INFO');
   const [now, setNow] = React.useState(() => Date.now());
   const active = node.singboxLogMode !== 'NORMAL' && Boolean(node.singboxLogModeUntil);
@@ -148,33 +171,59 @@ function SingboxDiagnosticsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-4 w-4" />Sing-box 诊断日志</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldAlert className="h-4 w-4" />
+          {t('admin:nodes.diagLogTitle')}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {active ? (
           <div className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1 text-sm">
-              <div className="flex items-center gap-2"><Badge variant="outline">{node.singboxLogMode}</Badge><span>诊断采集进行中</span></div>
-              <p className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3 w-3" />剩余 {formatDiagnosticRemaining(node.singboxLogModeUntil, now)}，结束后自动恢复 NORMAL</p>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{node.singboxLogMode}</Badge>
+                <span>{t('admin:nodes.diagLogActive')}</span>
+              </div>
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Clock3 className="h-3 w-3" />
+                {t('admin:nodes.diagLogRemaining', { time: formatDiagnosticRemaining(node.singboxLogModeUntil, now) })}
+              </p>
             </div>
-            <Button variant="outline" size="sm" disabled={disabling} onClick={onDisable}>停止诊断</Button>
+            <Button variant="outline" size="sm" disabled={disabling} onClick={onDisable}>
+              {t('admin:nodes.stopDiag')}
+            </Button>
           </div>
         ) : (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0 flex-1 space-y-2">
-              <p className="text-sm text-muted-foreground">正常模式只上传真实 WARN/ERROR。诊断会临时重启 Sing-box，并可能记录域名、IP 等敏感连接信息。</p>
-              {!node.supportsSingboxLogCapture && <p className="text-xs text-muted-foreground">当前 Agent 不支持诊断日志，请先升级 Agent。</p>}
-              {node.status !== 'ONLINE' && <p className="text-xs text-muted-foreground">节点离线时不可开启临时诊断。</p>}
+              <p className="text-sm text-muted-foreground">{t('admin:nodes.diagLogDesc')}</p>
+              {!node.supportsSingboxLogCapture && <p className="text-xs text-muted-foreground">{t('admin:nodes.diagUnsupported')}</p>}
+              {node.status !== 'ONLINE' && <p className="text-xs text-muted-foreground">{t('admin:nodes.diagOffline')}</p>}
               <Select value={level} onValueChange={(value) => setLevel(value as 'INFO' | 'DEBUG')}>
-                <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="诊断级别" /></SelectTrigger>
-                <SelectContent><SelectItem value="INFO">INFO（推荐）</SelectItem><SelectItem value="DEBUG">DEBUG（更详细）</SelectItem></SelectContent>
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue placeholder={t('admin:nodes.diagLevel')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="INFO">{t('admin:nodes.diagLevelInfo')}</SelectItem>
+                  <SelectItem value="DEBUG">{t('admin:nodes.diagLevelDebug')}</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <AlertDialog>
-              <AlertDialogTrigger asChild><Button size="sm" disabled={!available || enabling}>{enabling ? '下发中…' : '开启诊断日志'}</Button></AlertDialogTrigger>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" disabled={!available || enabling}>
+                  {enabling ? t('admin:nodes.enablingDiag') : t('admin:nodes.enableDiag')}
+                </Button>
+              </AlertDialogTrigger>
               <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>开启 {level} 诊断日志？</AlertDialogTitle><AlertDialogDescription>该操作会重启 Sing-box，诊断持续 30 分钟并自动关闭。连接详情可能包含域名和 IP，系统会执行脱敏处理。</AlertDialogDescription></AlertDialogHeader>
-                <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => onEnable(level)}>确认开启</AlertDialogAction></AlertDialogFooter>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('admin:nodes.diagConfirmTitle', { level })}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('admin:nodes.diagConfirmDesc')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onEnable(level)}>{t('admin:nodes.confirmEnable')}</AlertDialogAction>
+                </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           </div>
@@ -185,6 +234,7 @@ function SingboxDiagnosticsCard({
 }
 
 export default function NodeDetailPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -201,8 +251,6 @@ export default function NodeDetailPage() {
     defaultValues: { name: '', reachability: 'PUBLIC', serverHost: '', configOverride: '' }
   });
 
-  // 详情接口每 5 秒轮询（内核状态与错误回执需实时可见），但草稿只在该节点首次到达时初始化一次，
-  // 后续轮询不得覆盖管理员正在编辑的名称、对外地址与覆盖配置
   useFormResetOnKey({
     resetKey: node?.id ?? null,
     reset: () => form.reset({
@@ -216,9 +264,16 @@ export default function NodeDetailPage() {
   const override = form.watch('configOverride');
 
   if (isPending) return <PageContainer><Skeleton className="h-8 w-48" /><Skeleton className="h-12 w-full" /><Skeleton className="h-72 w-full" /></PageContainer>;
-  if (isError || !node) return <PageContainer><EmptyState title="节点不存在" description="该节点可能已被删除" /><Button variant="outline" size="sm" asChild><Link to="/admin/nodes">返回节点列表</Link></Button></PageContainer>;
+  if (isError || !node) return (
+    <PageContainer>
+      <EmptyState title={t('admin:nodes.nodeNotFound')} description={t('admin:nodes.nodeNotFoundDesc')} />
+      <Button variant="outline" size="sm" asChild>
+        <Link to="/admin/nodes">{t('admin:nodes.backToNodes')}</Link>
+      </Button>
+    </PageContainer>
+  );
 
-  const statusLabel = node.status === 'ONLINE' ? (node.communicationMode === 'HTTP' ? 'HTTP 轮询' : 'WS 在线') : node.status === 'DISABLED' ? '已禁用' : '离线';
+  const statusLabel = node.status === 'ONLINE' ? (node.communicationMode === 'HTTP' ? t('admin:nodes.modeHttp') : t('admin:nodes.modeWs')) : node.status === 'DISABLED' ? t('admin:nodes.statusDisabled') : t('admin:nodes.statusOffline');
   const saveBasic = async () => {
     if (!(await form.trigger(['name', 'reachability', 'serverHost']))) return;
     const values = form.getValues();
@@ -233,26 +288,277 @@ export default function NodeDetailPage() {
     const value = form.getValues('configOverride').trim();
     if (value) {
       try { const parsed: unknown = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); }
-      catch { toast.error('覆盖配置须为合法 JSON 对象'); return; }
+      catch { toast.error(t('admin:nodes.invalidJson')); return; }
     }
     updateNode.mutate({ id: node.id, configOverride: value || null });
   };
   const remove = () => deleteNode.mutate(node.id, { onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes'] }); navigate('/admin/nodes'); } });
   const wait = (taskId: string, label: string) => { void waitForTask({ nodeId: node.id, taskId, label }); };
 
-  return <PageContainer>
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex min-w-0 items-center gap-3"><Button variant="ghost" size="icon" asChild aria-label="返回"><Link to="/admin/nodes"><ArrowLeft className="h-4 w-4" /></Link></Button><div className="min-w-0"><h1 className="truncate text-2xl font-semibold tracking-tight">{node.name}</h1><p className="truncate text-sm text-muted-foreground">{node.serverHost}</p></div><Badge variant={node.status === 'ONLINE' ? 'default' : 'secondary'}>{statusLabel}</Badge><Badge variant={node.reachability === 'NAT' ? 'secondary' : 'outline'}>{node.reachability === 'NAT' ? '内网 NAT' : '公网'}</Badge></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" asChild><Link to={`/admin/logs?nodeId=${node.id}&live=true`}><FileText />实时日志</Link></Button><Button variant="outline" size="sm" disabled={reloadNode.isPending} onClick={() => reloadNode.mutate(node.id)}><RefreshCw />重载内核</Button><Button variant="outline" size="sm" disabled={restartAgent.isPending} onClick={() => restartAgent.mutate(node.id, { onSuccess: (data) => data.requested && wait(data.taskId, 'Agent 重启') })}><RotateCcw />重启 Agent</Button><Button variant="outline" size="sm" onClick={() => setProbeOpen(true)}><Network />网络探针</Button><Button variant="outline" size="sm" onClick={() => setUpgradeOpen(true)}><Wrench />升级中心</Button><Button variant="outline" size="sm" onClick={() => setInstallOpen(true)}><Server />安装命令</Button></div></div>
-    {node.configError && <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"><span className="font-medium">内核最近错误：</span>{node.configError}</div>}
-    <SingboxDiagnosticsCard node={node} enabling={enableLogDiagnostics.isPending} disabling={disableLogDiagnostics.isPending} onEnable={(level) => enableLogDiagnostics.mutate({ id: node.id, level })} onDisable={() => disableLogDiagnostics.mutate(node.id)} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">线路承载</p><p className="mt-1 text-2xl font-semibold">{node.lines.length}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">派生端口</p><p className="mt-1 text-2xl font-semibold">{node.servicePorts.length}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">CPU</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}</p></CardContent></Card><Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">内存</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}</p></CardContent></Card></div>
-    {node.status === 'ONLINE' && !node.supportsAgentLogRotation ? <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">当前 Agent 不支持本地日志轮转，请先升级 Agent；节点业务不受影响。</div> : null}
-    <Tabs defaultValue="lines"><TabsList className="w-full justify-start overflow-x-auto"><TabsTrigger value="lines">线路承载</TabsTrigger><TabsTrigger value="basic">基础与遥测</TabsTrigger><TabsTrigger value="advanced">高级与运维</TabsTrigger></TabsList>
-      <TabsContent value="lines" className="space-y-4"><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4" />当前承载线路（{node.lines.length}）</CardTitle></CardHeader><CardContent className="p-0">{node.lines.length ? <Table className="min-w-[720px]"><TableHeader><TableRow><TableHead>线路</TableHead><TableHead>协议</TableHead><TableHead>角色</TableHead><TableHead>入口端口</TableHead><TableHead>落地端口</TableHead><TableHead>状态</TableHead></TableRow></TableHeader><TableBody>{node.lines.map((line) => <TableRow key={line.id}><TableCell className="font-medium">{line.name}</TableCell><TableCell><Badge variant="outline">{line.protocolType}</Badge></TableCell><TableCell>{line.role === 'DIRECT' ? '直连' : line.role === 'ENTRY' ? '中转入口' : '落地'}{line.type === 'RELAY' && <span className="ml-1 text-xs text-muted-foreground">· {line.relayMode === 'BLIND_FORWARD' ? '盲转发' : line.relayMode === 'TARGET_LINE' ? '桥接已有线路' : '协议代理'}</span>}</TableCell><TableCell className="tabular-nums">{line.entryNodeId === node.id ? line.entryPort : '—'}</TableCell><TableCell className="tabular-nums">{line.landingNodeId === node.id ? (line.landingPort ?? '—') : '—'}</TableCell><TableCell><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? '启用' : '禁用'}</Badge></TableCell></TableRow>)}</TableBody></Table> : <EmptyState title="暂无承载线路" description="请在线路管理中创建并选择该节点。" className="border-0" />}</CardContent></Card><Card><CardHeader><CardTitle className="text-base">派生监听端口</CardTitle></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2">{node.servicePorts.length ? node.servicePorts.map((port) => <div key={`${port.lineId}-${port.role}`} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"><span className="truncate">{port.lineName}</span><span className="font-mono text-xs text-muted-foreground">{port.port} · {port.role === 'DIRECT' ? '直连' : port.role === 'TRANSIT' ? '中转' : '落地'}</span></div>) : <p className="text-sm text-muted-foreground">暂无派生端口</p>}</CardContent></Card></TabsContent>
-      <TabsContent value="basic" className="space-y-4"><Card><CardHeader><CardTitle className="text-base">基础信息</CardTitle></CardHeader><CardContent className="space-y-4"><Form {...form}><div className="grid gap-4 sm:grid-cols-2"><FormField control={form.control} name="name" render={({ field }) => (<FormItem><FormLabel>节点名称</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} /><FormField control={form.control} name="reachability" render={({ field }) => (<FormItem><FormLabel>网络可达性</FormLabel><Select value={field.value} onValueChange={(val: 'PUBLIC' | 'NAT') => { field.onChange(val); if (val === 'NAT' && !form.getValues('serverHost')) { form.setValue('serverHost', '127.0.0.1'); } }}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="PUBLIC">公网 VPS (具备公网 IP，可作直连或中继)</SelectItem><SelectItem value="NAT">内网 NAT 主机 (无公网 IP，作为反向中继落地)</SelectItem></SelectContent></Select><FormMessage /></FormItem>)} /><FormField control={form.control} name="serverHost" render={({ field }) => (<FormItem className="sm:col-span-2"><FormLabel>服务器对外地址</FormLabel><FormControl><Input placeholder={form.watch('reachability') === 'NAT' ? '127.0.0.1 (NAT 节点可选填本地 IP 或留空)' : '198.51.100.1 或 node.example.com'} {...field} /></FormControl><FormDescription>{form.watch('reachability') === 'NAT' ? '内网 NAT 主机无需公网 IP，此地址仅供本地标识，反向隧道由中继入口建立。' : '具备公网 IP 的服务器必须填写真实对外 IP 或解析域名。'}</FormDescription><FormMessage /></FormItem>)} /></div><Button size="sm" disabled={updateNode.isPending} onClick={saveBasic}>保存基础信息</Button></Form></CardContent></Card><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" />Agent 接入与画像</CardTitle></CardHeader><CardContent className="space-y-3">{node.pendingVersionConfirm && <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400"><span className="font-medium">升级版本未确认：</span>升级任务已于 {formatDateTime(node.pendingVersionConfirm.completedAt)} 完成，但 Agent 心跳仍上报 {node.agentVersion || '未上报'}（目标 {node.pendingVersionConfirm.expectedVersion}）。Agent 重启可能失败，请检查节点日志，或使用右上角“重启 Agent”。</div>}<p className="text-sm text-muted-foreground">AgentToken 仅在创建节点或轮换凭证时显示一次，详情接口不会再次返回凭证。遗失后请轮换 Token 并重新安装 Agent。</p>{node.isLocal ? <p className="text-sm text-muted-foreground">主控本机节点的凭证由主控配置管理，请通过主控配置重置，不支持普通节点轮换。</p> : <RotateTokenDialog node={node} />}<div className="grid gap-2 text-sm sm:grid-cols-2"><span className="text-muted-foreground">通信模式：<strong className="font-medium text-foreground">{node.communicationMode === 'HTTP' ? 'HTTP / HTTPS 轮询' : 'WS / WSS 长连接'}</strong></span><span className="text-muted-foreground">轮询建议：<strong className="font-medium text-foreground">{node.pollIntervalSecs} 秒</strong></span><span className="text-muted-foreground">Agent 版本：<strong className="font-medium text-foreground">{node.agentVersion || '未上报'}</strong></span><span className="text-muted-foreground">系统架构：<strong className="font-medium text-foreground">{node.osArch || '未上报'}</strong></span><span className="text-muted-foreground">Sing-box：<strong className="font-medium text-foreground">{node.kernelVersion || '未上报'}</strong></span><span className="text-muted-foreground">最近上报：<strong className="font-medium text-foreground">{node.lastSeenAt ? formatDateTime(node.lastSeenAt) : '未上报'}</strong></span></div><p className="text-sm text-muted-foreground">内核状态：{node.status !== 'ONLINE' ? '未知 (节点离线)' : node.kernelRunning == null ? '未知' : node.kernelRunning ? '运行中' : '未运行'}</p></CardContent></Card><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Cpu className="h-4 w-4" />实时遥测</CardTitle></CardHeader><CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-5"><span>CPU：{node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}</span><span>内存：{node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}</span><span>上行：{nodeRate(node.status, node.uploadRate)}</span><span>下行：{nodeRate(node.status, node.downloadRate)}</span><span>合计：{nodeTotalRate(node)}</span><p className="sm:col-span-2 lg:col-span-5">节点网络吞吐，不参与计费；掉线节点不显示旧速率。</p></CardContent></Card></TabsContent>
-      <TabsContent value="advanced" className="space-y-4"><Card><CardHeader><CardTitle className="text-base">最近网络质量诊断快照</CardTitle></CardHeader><CardContent><ProbeSnapshotCard snapshot={node.lastProbeResult} /></CardContent></Card><NodeDeploymentHistory nodeId={node.id} /><Card><CardHeader><CardTitle className="text-base">生成配置预览</CardTitle></CardHeader><CardContent><GeneratedConfigPreview node={node} /></CardContent></Card><Card><CardHeader><CardTitle className="text-base">覆盖配置（JSON）</CardTitle></CardHeader><CardContent className="min-w-0 space-y-3"><CodeMirror value={override} height="360px" theme={resolvedTheme === 'dark' ? 'dark' : 'light'} extensions={[json()]} onChange={(value) => form.setValue('configOverride', value, { shouldDirty: true })} className="min-w-0 overflow-hidden rounded-md border" /><div className="flex flex-wrap gap-2"><Button size="sm" disabled={updateNode.isPending} onClick={saveOverride}>保存覆盖配置</Button><Button size="sm" variant="outline" disabled={!override} onClick={() => form.setValue('configOverride', '', { shouldDirty: true })}>清空</Button></div><Separator /><p className="text-xs text-muted-foreground">顶层对象深合并，数组整体替换；提供 inbounds、outbounds 或 route 可接管对应配置片段。</p></CardContent></Card>{node.configError && <Card><CardHeader><CardTitle className="text-base text-destructive">内核最近一次错误日志抽样</CardTitle></CardHeader><CardContent className="space-y-3"><pre className="max-h-64 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-3 font-mono text-xs leading-relaxed text-destructive">{node.configError}</pre><CopyButton value={node.configError} /></CardContent></Card>}{node.isLocal ? <Card className="border-muted bg-muted/20"><CardHeader><CardTitle className="text-base">系统节点</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">主控本机节点是系统保留节点，不支持删除；线路仍通过统一线路管理维护。</p></CardContent></Card> : <Card className="border-destructive/40 bg-destructive/5"><CardHeader><CardTitle className="flex items-center gap-2 text-base text-destructive"><Trash2 className="h-4 w-4" />危险操作区</CardTitle></CardHeader><CardContent className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center"><p className="text-xs text-muted-foreground">删除后该节点的线路承载关系与流量记录将永久清空。</p><AlertDialog><AlertDialogTrigger asChild><Button variant="destructive" size="sm" className="w-full sm:w-auto">删除节点</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>确认删除节点？</AlertDialogTitle><AlertDialogDescription>在线 Agent 会立即断开，相关线路将不再可用。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={remove}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></CardContent></Card>}</TabsContent>
-    </Tabs>
-    <InstallCommandDialog open={installOpen} onOpenChange={setInstallOpen} node={node} />
-    <UpgradeNodeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} pending={upgradeNode.isPending} importing={importBinary.isPending} node={node} binaryInfo={binaryInfo} resources={binaryResources?.data} onSubmit={(values) => upgradeNode.mutate({ id: node.id, ...values }, { onSuccess: (data: { taskId: string; requested: boolean }) => data.requested && wait(data.taskId, '升级任务') })} onImport={(values) => importBinary.mutate(values)} />
-    <ProbeNodeDialog open={probeOpen} onOpenChange={setProbeOpen} pending={probeNode.isPending} snapshot={node.lastProbeResult} onSubmit={(values) => probeNode.mutate({ id: node.id, ...values }, { onSuccess: (data: { taskId: string; requested: boolean }) => data.requested && wait(data.taskId, '探针任务') })} />
-  </PageContainer>;
+  return (
+    <PageContainer>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" asChild aria-label={t('common:actions.back')}>
+            <Link to="/admin/nodes"><ArrowLeft className="h-4 w-4" /></Link>
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">{node.name}</h1>
+            <p className="truncate text-sm text-muted-foreground">{node.serverHost}</p>
+          </div>
+          <Badge variant={node.status === 'ONLINE' ? 'default' : 'secondary'}>{statusLabel}</Badge>
+          <Badge variant={node.reachability === 'NAT' ? 'secondary' : 'outline'}>
+            {node.reachability === 'NAT' ? t('admin:nodes.natTag') : t('admin:nodes.publicTag')}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/admin/logs?nodeId=${node.id}&live=true`}><FileText />{t('admin:nodes.liveLogs')}</Link>
+          </Button>
+          <Button variant="outline" size="sm" disabled={reloadNode.isPending} onClick={() => reloadNode.mutate(node.id)}>
+            <RefreshCw />{t('admin:nodes.restartKernel')}
+          </Button>
+          <Button variant="outline" size="sm" disabled={restartAgent.isPending} onClick={() => restartAgent.mutate(node.id, { onSuccess: (data) => data.requested && wait(data.taskId, t('admin:nodes.restartAgent')) })}>
+            <RotateCcw />{t('admin:nodes.restartAgent')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setProbeOpen(true)}>
+            <Network />{t('admin:nodes.probe')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setUpgradeOpen(true)}>
+            <Wrench />{t('admin:nodes.upgradeCenter')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setInstallOpen(true)}>
+            <Server />{t('admin:nodes.installCommands')}
+          </Button>
+        </div>
+      </div>
+      {node.configError && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+          <span className="font-medium">{t('admin:nodes.recentKernelError')}</span>
+          {node.configError}
+        </div>
+      )}
+      <SingboxDiagnosticsCard node={node} enabling={enableLogDiagnostics.isPending} disabling={disableLogDiagnostics.isPending} onEnable={(level) => enableLogDiagnostics.mutate({ id: node.id, level })} onDisable={() => disableLogDiagnostics.mutate(node.id)} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">{t('admin:nodes.statLines')}</p><p className="mt-1 text-2xl font-semibold">{node.lines.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">{t('admin:nodes.statPorts')}</p><p className="mt-1 text-2xl font-semibold">{node.servicePorts.length}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">{t('admin:nodes.statCpu')}</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}</p></CardContent></Card>
+        <Card><CardContent className="pt-5"><p className="text-xs text-muted-foreground">{t('admin:nodes.statMem')}</p><p className="mt-1 text-2xl font-semibold">{node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}</p></CardContent></Card>
+      </div>
+      {node.status === 'ONLINE' && !node.supportsAgentLogRotation ? (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          {t('admin:nodes.logRotationNotice')}
+        </div>
+      ) : null}
+      <Tabs defaultValue="lines">
+        <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="lines">{t('admin:nodes.tabLines')}</TabsTrigger>
+          <TabsTrigger value="basic">{t('admin:nodes.tabBasic')}</TabsTrigger>
+          <TabsTrigger value="advanced">{t('admin:nodes.tabAdvanced')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="lines" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <GitBranch className="h-4 w-4" />
+                {t('admin:nodes.currentLines', { count: node.lines.length })}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {node.lines.length ? (
+                <Table className="min-w-[720px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('admin:lines.colLine')}</TableHead>
+                      <TableHead>{t('admin:lines.protocol')}</TableHead>
+                      <TableHead>{t('admin:lines.type')}</TableHead>
+                      <TableHead>{t('admin:lines.entryPort')}</TableHead>
+                      <TableHead>{t('admin:lines.landingPort')}</TableHead>
+                      <TableHead>{t('admin:lines.status')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {node.lines.map((line) => (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-medium">{line.name}</TableCell>
+                        <TableCell><Badge variant="outline">{line.protocolType}</Badge></TableCell>
+                        <TableCell>
+                          {line.role === 'DIRECT' ? t('admin:nodes.roleDirect') : line.role === 'ENTRY' ? t('admin:nodes.roleTransit') : t('admin:nodes.roleLanding')}
+                          {line.type === 'RELAY' && <span className="ml-1 text-xs text-muted-foreground">· {line.relayMode === 'BLIND_FORWARD' ? t('admin:lines.relayBlindForward') : line.relayMode === 'TARGET_LINE' ? t('admin:lines.relayTargetBridge') : t('admin:lines.relayProtocolProxy')}</span>}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{line.entryNodeId === node.id ? line.entryPort : '—'}</TableCell>
+                        <TableCell className="tabular-nums">{line.landingNodeId === node.id ? (line.landingPort ?? '—') : '—'}</TableCell>
+                        <TableCell><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? t('admin:lines.statusActive') : t('admin:lines.statusDisabled')}</Badge></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <EmptyState title={t('admin:lines.emptyLines')} description={t('admin:nodes.emptyFilteredDesc')} className="border-0" />
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-base">{t('admin:nodes.derivedPorts')}</CardTitle></CardHeader>
+            <CardContent className="grid gap-2 sm:grid-cols-2">
+              {node.servicePorts.length ? node.servicePorts.map((port) => (
+                <div key={`${port.lineId}-${port.role}`} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span className="truncate">{port.lineName}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {port.port} · {port.role === 'DIRECT' ? t('admin:nodes.roleDirect') : port.role === 'TRANSIT' ? t('admin:nodes.roleTransit') : t('admin:nodes.roleLanding')}
+                  </span>
+                </div>
+              )) : <p className="text-sm text-muted-foreground">{t('admin:nodes.noDerivedPorts')}</p>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="basic" className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">{t('admin:nodes.basicInfo')}</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <Form {...form}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField control={form.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('admin:nodes.name')}</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="reachability" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('admin:nodes.reachability')}</FormLabel>
+                      <Select value={field.value} onValueChange={(val: 'PUBLIC' | 'NAT') => { field.onChange(val); if (val === 'NAT' && !form.getValues('serverHost')) { form.setValue('serverHost', '127.0.0.1'); } }}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="PUBLIC">{t('admin:nodes.reachabilityPublic')}</SelectItem>
+                          <SelectItem value="NAT">{t('admin:nodes.reachabilityNat')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="serverHost" render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>{t('admin:nodes.serverHost')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={form.watch('reachability') === 'NAT' ? '127.0.0.1' : '198.51.100.1'} {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {form.watch('reachability') === 'NAT' ? t('admin:nodes.serverHostNatDesc') : t('admin:nodes.serverHostPublicDesc')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <Button size="sm" disabled={updateNode.isPending} onClick={saveBasic}>{t('admin:nodes.saveBasic')}</Button>
+              </Form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-4 w-4" />
+                {t('admin:nodes.agentProfile')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {node.pendingVersionConfirm && (
+                <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
+                  {t('admin:nodes.versionMismatchWarning', {
+                    time: formatDateTime(node.pendingVersionConfirm.completedAt),
+                    current: node.agentVersion || t('admin:nodes.notReported'),
+                    expected: node.pendingVersionConfirm.expectedVersion
+                  })}
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">{t('admin:nodes.tokenNotice')}</p>
+              {node.isLocal ? (
+                <p className="text-sm text-muted-foreground">{t('admin:nodes.localNodeNotice')}</p>
+              ) : (
+                <RotateTokenDialog node={node} />
+              )}
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <span className="text-muted-foreground">{t('admin:nodes.commMode')}<strong className="font-medium text-foreground">{node.communicationMode === 'HTTP' ? t('admin:nodes.commModeHttp') : t('admin:nodes.commModeWs')}</strong></span>
+                <span className="text-muted-foreground">{t('admin:nodes.pollInterval')}<strong className="font-medium text-foreground">{node.pollIntervalSecs}s</strong></span>
+                <span className="text-muted-foreground">{t('admin:nodes.version')}: <strong className="font-medium text-foreground">{node.agentVersion || t('admin:nodes.notReported')}</strong></span>
+                <span className="text-muted-foreground">{t('admin:nodes.osArch')}: <strong className="font-medium text-foreground">{node.osArch || t('admin:nodes.notReported')}</strong></span>
+                <span className="text-muted-foreground">{t('admin:nodes.kernelVersion')}: <strong className="font-medium text-foreground">{node.kernelVersion || t('admin:nodes.notReported')}</strong></span>
+                <span className="text-muted-foreground">{t('admin:nodes.lastHeartbeat')}: <strong className="font-medium text-foreground">{node.lastSeenAt ? formatDateTime(node.lastSeenAt) : t('admin:nodes.notReported')}</strong></span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {t('admin:nodes.kernelRunningStatus')}{node.status !== 'ONLINE' ? t('admin:nodes.unknown') : node.kernelRunning == null ? t('admin:nodes.unknown') : node.kernelRunning ? t('admin:nodes.kernelRunning') : t('admin:nodes.kernelStopped')}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Cpu className="h-4 w-4" />{t('admin:nodes.realtimeTelemetry')}</CardTitle></CardHeader>
+            <CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-5">
+              <span>{t('admin:nodes.statCpu')} {node.status === 'ONLINE' && node.cpuUsage != null ? `${node.cpuUsage.toFixed(1)}%` : '—'}</span>
+              <span>{t('admin:nodes.statMem')} {node.status === 'ONLINE' && node.memoryUsage != null ? `${node.memoryUsage.toFixed(1)}%` : '—'}</span>
+              <span>{t('admin:nodes.statUp')}{nodeRate(node.status, node.uploadRate)}</span>
+              <span>{t('admin:nodes.statDown')}{nodeRate(node.status, node.downloadRate)}</span>
+              <span>{t('admin:nodes.statTotal')}{nodeTotalRate(node)}</span>
+              <p className="sm:col-span-2 lg:col-span-5">{t('admin:nodes.telemetryNote')}</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="advanced" className="space-y-4">
+          <Card><CardHeader><CardTitle className="text-base">{t('admin:nodes.probeSnapshot')}</CardTitle></CardHeader><CardContent><ProbeSnapshotCard snapshot={node.lastProbeResult} /></CardContent></Card>
+          <NodeDeploymentHistory nodeId={node.id} />
+          <Card><CardHeader><CardTitle className="text-base">{t('admin:nodes.configPreview')}</CardTitle></CardHeader><CardContent><GeneratedConfigPreview node={node} /></CardContent></Card>
+          <Card>
+            <CardHeader><CardTitle className="text-base">{t('admin:nodes.configOverride')}</CardTitle></CardHeader>
+            <CardContent className="min-w-0 space-y-3">
+              <CodeMirror value={override} height="360px" theme={resolvedTheme === 'dark' ? 'dark' : 'light'} extensions={[json()]} onChange={(value) => form.setValue('configOverride', value, { shouldDirty: true })} className="min-w-0 overflow-hidden rounded-md border" />
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" disabled={updateNode.isPending} onClick={saveOverride}>{t('admin:nodes.saveOverride')}</Button>
+                <Button size="sm" variant="outline" disabled={!override} onClick={() => form.setValue('configOverride', '', { shouldDirty: true })}>{t('admin:nodes.clear')}</Button>
+              </div>
+              <Separator />
+              <p className="text-xs text-muted-foreground">{t('admin:nodes.configOverrideDesc')}</p>
+            </CardContent>
+          </Card>
+          {node.configError && (
+            <Card>
+              <CardHeader><CardTitle className="text-base text-destructive">{t('admin:nodes.recentKernelError')}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <pre className="max-h-64 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-3 font-mono text-xs leading-relaxed text-destructive">{node.configError}</pre>
+                <CopyButton value={node.configError} />
+              </CardContent>
+            </Card>
+          )}
+          {node.isLocal ? (
+            <Card className="border-muted bg-muted/20">
+              <CardHeader><CardTitle className="text-base">{t('admin:nodes.systemNode')}</CardTitle></CardHeader>
+              <CardContent><p className="text-sm text-muted-foreground">{t('admin:nodes.systemNodeDesc')}</p></CardContent>
+            </Card>
+          ) : (
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base text-destructive"><Trash2 className="h-4 w-4" />{t('admin:nodes.dangerZone')}</CardTitle></CardHeader>
+              <CardContent className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                <p className="text-xs text-muted-foreground">{t('admin:nodes.dangerDesc')}</p>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild><Button variant="destructive" size="sm" className="w-full sm:w-auto">{t('admin:nodes.deleteNode')}</Button></AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('admin:nodes.confirmDelete')}</AlertDialogTitle>
+                      <AlertDialogDescription>{t('admin:nodes.confirmDeleteDesc')}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" onClick={remove}>{t('common:actions.confirm')}</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+      <InstallCommandDialog open={installOpen} onOpenChange={setInstallOpen} node={node} />
+      <UpgradeNodeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} pending={upgradeNode.isPending} importing={importBinary.isPending} node={node} binaryInfo={binaryInfo} resources={binaryResources?.data} onSubmit={(values) => upgradeNode.mutate({ id: node.id, ...values }, { onSuccess: (data: { taskId: string; requested: boolean }) => data.requested && wait(data.taskId, t('admin:nodes.upgradeTitle')) })} onImport={(values) => importBinary.mutate(values)} />
+      <ProbeNodeDialog open={probeOpen} onOpenChange={setProbeOpen} pending={probeNode.isPending} snapshot={node.lastProbeResult} onSubmit={(values) => probeNode.mutate({ id: node.id, ...values }, { onSuccess: (data: { taskId: string; requested: boolean }) => data.requested && wait(data.taskId, t('admin:nodes.probeTitle')) })} />
+    </PageContainer>
+  );
 }

@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { KeyRound } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -27,13 +28,13 @@ function isValidIpOrCidr(value: string): boolean {
 }
 
 const schema = z.object({
-  name: z.string().trim().min(1, '请输入凭据名称').max(60, '名称最多 60 个字符'),
+  name: z.string().trim().min(1, 'user:proxyPool.keyNameRequired').max(60, 'user:proxyPool.keyNameMax'),
   whitelistIps: z
     .string()
-    .max(2000, '白名单内容过长')
+    .max(2000, 'user:proxyPool.whitelistTooLong')
     .refine(
       (value) => value.split(/[\s,;]+/).filter(Boolean).every(isValidIpOrCidr),
-      '白名单条目须为 IPv4/IPv6 地址或 CIDR 网段，多条以逗号或换行分隔'
+      'user:proxyPool.whitelistError'
     )
 });
 
@@ -47,6 +48,7 @@ interface ProxyKeyDialogProps {
 
 // 凭据新增/编辑弹窗（全量 shadcn Form 控件，无裸 HTML 交互标签）
 export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogProps) {
+  const { t } = useTranslation(['user', 'common']);
   const { createKey, updateKey } = useProxyPoolMutations();
   const form = useForm<ProxyKeyFormValues>({
     resolver: zodResolver(schema),
@@ -82,12 +84,12 @@ export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogPr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="size-4" />
-            {editing ? '编辑直连代理凭据' : '新建直连代理凭据'}
+            {editing ? t('user:proxyPool.editKeyTitle') : t('user:proxyPool.createKeyTitle')}
           </DialogTitle>
           <DialogDescription>
             {editing
-              ? '修改备注名称或来源 IP 白名单；白名单变更会立即重下发节点配置。'
-              : '系统将自动生成高熵用户名（pk_ 前缀）与独立密码；用户名与密码可安全公开给自动化脚本。'}
+              ? t('user:proxyPool.editKeyDesc')
+              : t('user:proxyPool.createKeyDesc')}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -97,9 +99,9 @@ export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogPr
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>凭据名称</FormLabel>
+                  <FormLabel>{t('user:proxyPool.keyName')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="例如：爬虫项目 A / AdsPower 环境 3" autoComplete="off" {...field} />
+                    <Input placeholder={t('user:proxyPool.keyNamePlaceholder')} autoComplete="off" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -110,7 +112,7 @@ export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogPr
               name="whitelistIps"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>来源 IP 白名单（可选）</FormLabel>
+                  <FormLabel>{t('user:proxyPool.whitelistLabel')}</FormLabel>
                   <FormControl>
                     <Textarea
                       rows={4}
@@ -120,7 +122,7 @@ export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogPr
                     />
                   </FormControl>
                   <FormDescription>
-                    留空表示不限制来源；填写后仅允许白名单内的 IP/CIDR 使用该凭据，其余来源连接将被直接拒绝。
+                    {t('user:proxyPool.whitelistDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -128,10 +130,10 @@ export function ProxyKeyDialog({ open, onOpenChange, editing }: ProxyKeyDialogPr
             />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                取消
+                {t('common:actions.cancel')}
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? '保存中…' : editing ? '保存修改' : '创建凭据'}
+                {isPending ? t('user:proxyPool.saving') : editing ? t('user:proxyPool.saveChanges') : t('user:proxyPool.createKeyButton')}
               </Button>
             </DialogFooter>
           </form>

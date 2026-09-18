@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Copy, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Wifi } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -21,8 +22,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useAdminNodes } from '@/pages/admin/nodes/use-nodes';
 import { useMirrorMutations, useAdminMirrors, type ApiMirror, type MirrorAccessMode, type MirrorPayload } from './use-mirrors';
-
-const accessLabels: Record<MirrorAccessMode, string> = { ADMIN: '管理员', SHARE: '分享 Token', PUBLIC: '公开' };
 
 const mirrorFormSchema = z.object({
   name: z.string().trim().min(1, '请输入镜像站名称').max(64, '名称最多 64 个字符'),
@@ -55,6 +54,7 @@ function mirrorToFormValues(mirror: ApiMirror): MirrorFormValues {
 }
 
 function MirrorForm({ open, editing, nodes, pending, onOpenChange, onSubmit }: { open: boolean; editing: ApiMirror | null; nodes: ReturnType<typeof useAdminNodes>['data']; pending: boolean; onOpenChange: (open: boolean) => void; onSubmit: (payload: MirrorPayload) => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const availableNodes = React.useMemo(
     () => (nodes ?? []).filter((node) => node.communicationMode === 'WS' && node.status === 'ONLINE' && node.supportsMirrorProxy),
     [nodes]
@@ -64,15 +64,12 @@ function MirrorForm({ open, editing, nodes, pending, onOpenChange, onSubmit }: {
     defaultValues: emptyMirrorFormValues()
   });
 
-  // 仅在“打开弹窗 / 切换编辑对象”时初始化草稿：出网节点列表每 5 秒轮询，
-  // 但绝不允许它的刷新回写用户正在输入的内容（规范见 FRONTEND_UI_GUIDELINES §5）
   useFormResetOnKey({
     open,
     resetKey: editing?.id ?? 'create',
     reset: () => form.reset(editing ? mirrorToFormValues(editing) : emptyMirrorFormValues())
   });
 
-  // 实时数据只做非破坏性补默认值：用户尚未选择节点时补第一个可用节点
   React.useEffect(() => {
     if (!open) return;
     const firstAvailable = availableNodes[0]?.id;
@@ -94,77 +91,86 @@ function MirrorForm({ open, editing, nodes, pending, onOpenChange, onSubmit }: {
     ...(values.accessMode === 'SHARE' && values.shareExpiresAt ? { shareExpiresAt: new Date(values.shareExpiresAt).toISOString() } : {})
   }));
 
-  return <ResponsiveDialog open={open} onOpenChange={onOpenChange}><ResponsiveDialogContent size="wide"><DialogHeader><DialogTitle>{editing ? '编辑镜像站' : '新增镜像站'}</DialogTitle><DialogDescription>固定一个公开上游，并指定具备 WS 镜像能力的出网节点。</DialogDescription></DialogHeader>
-    <Form {...form}>
-      <form className="space-y-4" onSubmit={submit}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField control={form.control} name="name" render={({ field }) => (
-            <FormItem><FormLabel>名称</FormLabel><FormControl><Input placeholder="GitHub Raw" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-          <FormField control={form.control} name="slug" render={({ field }) => (
-            <FormItem><FormLabel>Slug</FormLabel><FormControl><Input placeholder="github-raw" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-        </div>
-        <FormField control={form.control} name="upstreamBaseUrl" render={({ field }) => (
-          <FormItem><FormLabel>上游基址</FormLabel><FormControl><Input type="url" placeholder="https://raw.githubusercontent.com" {...field} /></FormControl><FormMessage /></FormItem>
-        )} />
-        <FormField control={form.control} name="allowedOrigins" render={({ field }) => (
-          <FormItem>
-            <FormLabel>允许的上游域名</FormLabel>
-            <FormControl><Textarea rows={3} placeholder={'raw.githubusercontent.com\nobjects.githubusercontent.com'} {...field} /></FormControl>
-            <FormDescription>每行一个域名，重定向只能落在这些域名内。</FormDescription>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField control={form.control} name="nodeId" render={({ field }) => (
-            <FormItem>
-              <FormLabel>出网节点</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl><SelectTrigger><SelectValue placeholder="选择在线 WS 节点" /></SelectTrigger></FormControl>
-                <SelectContent>{availableNodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.name} · {node.serverHost}</SelectItem>)}</SelectContent>
-              </Select>
-              {!availableNodes.length && <p className="text-xs text-destructive">暂无可用节点，请先升级支持镜像代理的 Agent。</p>}
-              {selectedNodeMissing && <p className="text-xs text-destructive">当前选择的节点已离线或不再支持镜像代理，请重新选择。</p>}
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="accessMode" render={({ field }) => (
-            <FormItem>
-              <FormLabel>访问策略</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="ADMIN">管理员会话</SelectItem>
-                  <SelectItem value="SHARE">分享 Token</SelectItem>
-                  <SelectItem value="PUBLIC">公开访问</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )} />
-        </div>
-        {accessMode === 'SHARE' && (
-          <FormField control={form.control} name="shareExpiresAt" render={({ field }) => (
-            <FormItem><FormLabel>分享有效期（可选）</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
-          )} />
-        )}
-        <FormField control={form.control} name="enabled" render={({ field }) => (
-          <FormItem className="flex items-center justify-between rounded-md border p-3">
-            <div><FormLabel>启用镜像站</FormLabel><FormDescription>首次上线建议先使用管理员或分享模式验证。</FormDescription></div>
-            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-          </FormItem>
-        )} />
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button type="submit" disabled={!availableNodes.length || pending}>{pending ? '保存中…' : editing ? '保存镜像站' : '创建镜像站'}</Button>
-        </DialogFooter>
-      </form>
-    </Form>
-  </ResponsiveDialogContent></ResponsiveDialog>;
+  return (
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent size="wide">
+        <DialogHeader>
+          <DialogTitle>{editing ? t('admin:mirrors.editMirror') : t('admin:mirrors.addMirror')}</DialogTitle>
+          <DialogDescription>{t('admin:mirrors.formDesc')}</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form className="space-y-4" onSubmit={submit}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem><FormLabel>{t('admin:mirrors.name')}</FormLabel><FormControl><Input placeholder="GitHub Raw" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="slug" render={({ field }) => (
+                <FormItem><FormLabel>{t('admin:mirrors.slug')}</FormLabel><FormControl><Input placeholder="github-raw" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="upstreamBaseUrl" render={({ field }) => (
+              <FormItem><FormLabel>{t('admin:mirrors.upstream')}</FormLabel><FormControl><Input type="url" placeholder="https://raw.githubusercontent.com" {...field} /></FormControl><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="allowedOrigins" render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('admin:mirrors.allowedOrigins')}</FormLabel>
+                <FormControl><Textarea rows={3} placeholder={'raw.githubusercontent.com\nobjects.githubusercontent.com'} {...field} /></FormControl>
+                <FormDescription>{t('admin:mirrors.allowedOriginsDesc')}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField control={form.control} name="nodeId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:mirrors.outboundNode')}</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder={t('admin:mirrors.selectNode')} /></SelectTrigger></FormControl>
+                    <SelectContent>{availableNodes.map((node) => <SelectItem key={node.id} value={node.id}>{node.name} · {node.serverHost}</SelectItem>)}</SelectContent>
+                  </Select>
+                  {!availableNodes.length && <p className="text-xs text-destructive">{t('admin:mirrors.noAvailableNodes')}</p>}
+                  {selectedNodeMissing && <p className="text-xs text-destructive">{t('admin:mirrors.nodeUnavailable')}</p>}
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="accessMode" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('admin:mirrors.accessPolicy')}</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="ADMIN">{t('admin:mirrors.modeAdminSession')}</SelectItem>
+                      <SelectItem value="SHARE">{t('admin:mirrors.modeShareToken')}</SelectItem>
+                      <SelectItem value="PUBLIC">{t('admin:mirrors.modePublicAccess')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            {accessMode === 'SHARE' && (
+              <FormField control={form.control} name="shareExpiresAt" render={({ field }) => (
+                <FormItem><FormLabel>{t('admin:mirrors.shareExpiresAt')}</FormLabel><FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            )}
+            <FormField control={form.control} name="enabled" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-md border p-3">
+                <div><FormLabel>{t('admin:mirrors.enableMirror')}</FormLabel><FormDescription>{t('admin:mirrors.enableMirrorDesc')}</FormDescription></div>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
+              <Button type="submit" disabled={!availableNodes.length || pending}>{pending ? t('common:actions.saving') : editing ? t('common:actions.save') : t('common:actions.create')}</Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+  );
 }
 
 export default function AdminMirrorsPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const { data, isPending, isError } = useAdminMirrors();
   const { data: nodes } = useAdminNodes();
   const mutations = useMirrorMutations();
@@ -173,14 +179,206 @@ export default function AdminMirrorsPage() {
   const [deleting, setDeleting] = React.useState<ApiMirror | null>(null);
   const [shareToken, setShareToken] = React.useState<string | null>(null);
   const [testResult, setTestResult] = React.useState<Record<string, unknown> | null>(null);
+
+  const accessLabels: Record<MirrorAccessMode, string> = {
+    ADMIN: t('admin:mirrors.modeAdmin'),
+    SHARE: t('admin:mirrors.modeShare'),
+    PUBLIC: t('admin:mirrors.modePublic')
+  };
+
   const openCreate = () => { setEditing(null); setFormOpen(true); };
   const submit = (payload: MirrorPayload) => {
     const onSuccess = (result: { shareToken?: string }) => { if (result.shareToken) setShareToken(result.shareToken); setFormOpen(false); };
     if (editing) mutations.update.mutate({ id: editing.id, ...payload }, { onSuccess });
     else mutations.create.mutate(payload, { onSuccess });
   };
-  if (isPending) return <PageContainer><PageHeader title="镜像站" description="通过指定节点实时访问固定上游资源。" /><p className="text-sm text-muted-foreground">加载中…</p></PageContainer>;
-  if (isError) return <PageContainer><PageHeader title="镜像站" /><EmptyState title="无法加载镜像站" description="请稍后刷新重试。" /></PageContainer>;
+
+  if (isPending) {
+    return (
+      <PageContainer>
+        <PageHeader title={t('admin:mirrors.title')} description={t('admin:mirrors.subtitle')} />
+        <p className="text-sm text-muted-foreground">{t('common:actions.loading')}</p>
+      </PageContainer>
+    );
+  }
+
+  if (isError) {
+    return (
+      <PageContainer>
+        <PageHeader title={t('admin:mirrors.title')} />
+        <EmptyState title="无法加载镜像站" description="请稍后刷新重试。" />
+      </PageContainer>
+    );
+  }
+
   const items = data?.items ?? [];
-  return <PageContainer><PageHeader title="镜像站" description="通过指定节点实时访问 GitHub Raw、API 和 Release 等公开资源。" /><div className="flex flex-wrap justify-end gap-2"><Button onClick={openCreate}><Plus />新增镜像站</Button></div><Card><CardContent className="min-w-0 p-0">{items.length ? <Table className="min-w-[980px]"><TableHeader><TableRow><TableHead>镜像站</TableHead><TableHead>上游</TableHead><TableHead>出网节点</TableHead><TableHead>访问策略</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader><TableBody>{items.map((mirror) => <TableRow key={mirror.id}><TableCell><div className="font-medium">{mirror.name}</div><div className="font-mono text-xs text-muted-foreground">/mirror/{mirror.slug}</div></TableCell><TableCell className="max-w-64 truncate text-sm">{mirror.upstreamBaseUrl}</TableCell><TableCell><div>{mirror.node.name}</div><div className="flex items-center gap-1 text-xs text-muted-foreground"><Wifi className="size-3" />{mirror.node.status === 'ONLINE' && mirror.node.supportsMirrorProxy ? 'WS 镜像可用' : '暂不可用'}</div></TableCell><TableCell><Badge variant={mirror.accessMode === 'PUBLIC' ? 'outline' : 'secondary'}>{accessLabels[mirror.accessMode]}</Badge></TableCell><TableCell><Badge variant={mirror.enabled ? 'default' : 'secondary'}>{mirror.enabled ? '已启用' : '已停用'}</Badge>{mirror.lastErrorCode && <div className="mt-1 text-xs text-destructive">{mirror.lastErrorCode}</div>}</TableCell><TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label="测试镜像站" title="测试镜像站" disabled={mutations.test.isPending} onClick={() => mutations.test.mutate(mirror.id, { onSuccess: setTestResult })}><RefreshCw /></Button>{mirror.accessMode === 'SHARE' && <Button variant="ghost" size="icon" aria-label="轮换分享 Token" title="轮换分享 Token" onClick={() => mutations.rotate.mutate(mirror.id, { onSuccess: (result) => setShareToken(result.shareToken) })}><RotateCcw /></Button>}<Button variant="ghost" size="icon" aria-label="编辑镜像站" title="编辑镜像站" onClick={() => { setEditing(mirror); setFormOpen(true); }}><Pencil /></Button><Button variant="ghost" size="icon" aria-label="删除镜像站" title="删除镜像站" onClick={() => setDeleting(mirror)}><Trash2 className="text-destructive" /></Button></div></TableCell></TableRow>)}</TableBody></Table> : <EmptyState title="暂无镜像站" description="创建镜像站后即可通过指定节点实时访问固定上游。" className="border-0" />}</CardContent></Card><MirrorForm open={formOpen} editing={editing} nodes={nodes} pending={mutations.create.isPending || mutations.update.isPending} onOpenChange={setFormOpen} onSubmit={submit} /><AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除「{deleting?.name}」？</AlertDialogTitle><AlertDialogDescription>删除后镜像地址和分享 Token 立即失效，进行中的请求会被终止。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => deleting && mutations.remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog><ResponsiveDialog open={!!shareToken} onOpenChange={(open) => !open && setShareToken(null)}><ResponsiveDialogContent size="compact"><DialogHeader><DialogTitle>分享地址 Token</DialogTitle><DialogDescription>明文 Token 只在本次操作中展示；关闭后请使用轮换功能重新生成。</DialogDescription></DialogHeader><div className="space-y-2"><Label>Token</Label><div className="flex gap-2"><Input readOnly value={shareToken ?? ''} className="font-mono text-xs" /><Button size="icon" aria-label="复制 Token" title="复制 Token" onClick={() => shareToken && void navigator.clipboard.writeText(`${window.location.origin}/mirror/share/${shareToken}`)}><Copy /></Button></div><p className="break-all text-xs text-muted-foreground">{window.location.origin}/mirror/share/{shareToken}</p></div><DialogFooter><Button onClick={() => setShareToken(null)}>关闭</Button></DialogFooter></ResponsiveDialogContent></ResponsiveDialog><ResponsiveDialog open={!!testResult} onOpenChange={(open) => !open && setTestResult(null)}><ResponsiveDialogContent size="compact"><DialogHeader><DialogTitle>镜像测试结果</DialogTitle><DialogDescription>测试只发送受限 HEAD 请求，不会保存上游响应体。</DialogDescription></DialogHeader><div className="grid gap-2 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">结果</span><span>{testResult?.success ? '成功' : '失败'}</span></div>{Object.entries(testResult ?? {}).filter(([key]) => key !== 'success').map(([key, value]) => <div key={key} className="flex justify-between gap-4"><span className="text-muted-foreground">{key}</span><span className="break-all text-right">{String(value)}</span></div>)}</div><DialogFooter><Button onClick={() => setTestResult(null)}>关闭</Button></DialogFooter></ResponsiveDialogContent></ResponsiveDialog></PageContainer>;
+
+  return (
+    <PageContainer>
+      <PageHeader title={t('admin:mirrors.title')} description={t('admin:mirrors.subtitle')} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button onClick={openCreate}><Plus />{t('admin:mirrors.addMirror')}</Button>
+      </div>
+      <Card>
+        <CardContent className="min-w-0 p-0">
+          {items.length ? (
+            <Table className="min-w-[980px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('admin:mirrors.colMirror')}</TableHead>
+                  <TableHead>{t('admin:mirrors.colUpstream')}</TableHead>
+                  <TableHead>{t('admin:mirrors.colNode')}</TableHead>
+                  <TableHead>{t('admin:mirrors.colAccess')}</TableHead>
+                  <TableHead>{t('admin:mirrors.colStatus')}</TableHead>
+                  <TableHead className="text-right">{t('admin:mirrors.colActions')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((mirror) => (
+                  <TableRow key={mirror.id}>
+                    <TableCell>
+                      <div className="font-medium">{mirror.name}</div>
+                      <div className="font-mono text-xs text-muted-foreground">/mirror/{mirror.slug}</div>
+                    </TableCell>
+                    <TableCell className="max-w-64 truncate text-sm">{mirror.upstreamBaseUrl}</TableCell>
+                    <TableCell>
+                      <div>{mirror.node.name}</div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Wifi className="size-3" />
+                        {mirror.node.status === 'ONLINE' && mirror.node.supportsMirrorProxy ? t('admin:mirrors.wsAvailable') : t('admin:mirrors.wsUnavailable')}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={mirror.accessMode === 'PUBLIC' ? 'outline' : 'secondary'}>{accessLabels[mirror.accessMode]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={mirror.enabled ? 'default' : 'secondary'}>
+                        {mirror.enabled ? t('common:status.enabled') : t('common:status.disabled')}
+                      </Badge>
+                      {mirror.lastErrorCode && <div className="mt-1 text-xs text-destructive">{mirror.lastErrorCode}</div>}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('admin:mirrors.testMirror')}
+                          title={t('admin:mirrors.testMirror')}
+                          disabled={mutations.test.isPending}
+                          onClick={() => mutations.test.mutate(mirror.id, { onSuccess: setTestResult })}
+                        >
+                          <RefreshCw />
+                        </Button>
+                        {mirror.accessMode === 'SHARE' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t('admin:mirrors.rotateToken')}
+                            title={t('admin:mirrors.rotateToken')}
+                            onClick={() => mutations.rotate.mutate(mirror.id, { onSuccess: (result) => setShareToken(result.shareToken) })}
+                          >
+                            <RotateCcw />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('admin:mirrors.editMirror')}
+                          title={t('admin:mirrors.editMirror')}
+                          onClick={() => { setEditing(mirror); setFormOpen(true); }}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t('common:actions.delete')}
+                          title={t('common:actions.delete')}
+                          onClick={() => setDeleting(mirror)}
+                        >
+                          <Trash2 className="text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState title={t('admin:mirrors.emptyMirrors')} description={t('admin:mirrors.subtitle')} className="border-0" />
+          )}
+        </CardContent>
+      </Card>
+
+      <MirrorForm
+        open={formOpen}
+        editing={editing}
+        nodes={nodes}
+        pending={mutations.create.isPending || mutations.update.isPending}
+        onOpenChange={setFormOpen}
+        onSubmit={submit}
+      />
+
+      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin:mirrors.deleteDialogTitle', { name: deleting?.name ?? '' })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:mirrors.deleteDialogDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => deleting && mutations.remove.mutate(deleting.id, { onSuccess: () => setDeleting(null) })}>
+              {t('common:actions.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <ResponsiveDialog open={!!shareToken} onOpenChange={(open) => !open && setShareToken(null)}>
+        <ResponsiveDialogContent size="compact">
+          <DialogHeader>
+            <DialogTitle>{t('admin:mirrors.shareTokenTitle')}</DialogTitle>
+            <DialogDescription>{t('admin:mirrors.shareTokenDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Token</Label>
+            <div className="flex gap-2">
+              <Input readOnly value={shareToken ?? ''} className="font-mono text-xs" />
+              <Button size="icon" aria-label={t('common:actions.copy')} title={t('common:actions.copy')} onClick={() => shareToken && void navigator.clipboard.writeText(`${window.location.origin}/mirror/share/${shareToken}`)}>
+                <Copy />
+              </Button>
+            </div>
+            <p className="break-all text-xs text-muted-foreground">{window.location.origin}/mirror/share/{shareToken}</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShareToken(null)}>{t('common:actions.close')}</Button>
+          </DialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog open={!!testResult} onOpenChange={(open) => !open && setTestResult(null)}>
+        <ResponsiveDialogContent size="compact">
+          <DialogHeader>
+            <DialogTitle>{t('admin:mirrors.testResultTitle')}</DialogTitle>
+            <DialogDescription>{t('admin:mirrors.testResultDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">{t('admin:mirrors.result')}</span>
+              <span>{testResult?.success ? t('admin:mirrors.success') : t('admin:mirrors.failure')}</span>
+            </div>
+            {Object.entries(testResult ?? {}).filter(([key]) => key !== 'success').map(([key, value]) => (
+              <div key={key} className="flex justify-between gap-4">
+                <span className="text-muted-foreground">{key}</span>
+                <span className="break-all text-right">{String(value)}</span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setTestResult(null)}>{t('common:actions.close')}</Button>
+          </DialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    </PageContainer>
+  );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, type InputHTMLAttributes } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { Link } from 'react-router-dom';
 import { useForm, useFormContext, type FieldPath } from 'react-hook-form';
@@ -210,6 +211,7 @@ const settingsSchema = z.object({
 export type SettingsForm = z.infer<typeof settingsSchema>;
 
 export default function AdminSettingsPage() {
+  const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const publicSettings = usePublicSettings();
   const plans = useAdminPlans();
@@ -297,22 +299,22 @@ export default function AdminSettingsPage() {
   });
 
   if (settingsQuery.isPending) {
-    return <PageContainer><PageHeader title="系统设置" /><Skeleton className="h-[520px] w-full" /></PageContainer>;
+    return <PageContainer><PageHeader title={t('admin:settings.title')} /><Skeleton className="h-[520px] w-full" /></PageContainer>;
   }
 
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader title="系统设置" description="统一管理站点品牌、注册策略、订阅分发与 Agent 运维参数。" />
+        <PageHeader title={t('admin:settings.title')} description={t('admin:settings.subtitle')} />
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <AlertDialog>
-            <AlertDialogTrigger asChild><Button type="button" variant="outline" className="w-full sm:w-auto" disabled={resetMutation.isPending}><RotateCcw />重置默认值</Button></AlertDialogTrigger>
+            <AlertDialogTrigger asChild><Button type="button" variant="outline" className="w-full sm:w-auto" disabled={resetMutation.isPending}><RotateCcw />{t('admin:settings.resetDefaults')}</Button></AlertDialogTrigger>
             <AlertDialogContent>
-              <AlertDialogHeader><AlertDialogTitle>恢复全部默认设置？</AlertDialogTitle><AlertDialogDescription>所有自定义站点、注册、订阅和运维参数都会恢复为内置安全默认值，保存后立即生效。</AlertDialogDescription></AlertDialogHeader>
-              <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetMutation.mutate()}>确认恢复</AlertDialogAction></AlertDialogFooter>
+              <AlertDialogHeader><AlertDialogTitle>{t('admin:settings.resetConfirmTitle')}</AlertDialogTitle><AlertDialogDescription>{t('admin:settings.resetConfirmDesc')}</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetMutation.mutate()}>{t('admin:settings.resetConfirm')}</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button type="button" className="w-full sm:w-auto" disabled={saveMutation.isPending} onClick={() => form.handleSubmit((values) => saveMutation.mutate(values))()}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button>
+          <Button type="button" className="w-full sm:w-auto" disabled={saveMutation.isPending} onClick={() => form.handleSubmit((values) => saveMutation.mutate(values))()}><Save />{saveMutation.isPending ? t('admin:settings.saving') : t('admin:settings.saveSettingsButton')}</Button>
         </div>
       </div>
 
@@ -320,12 +322,12 @@ export default function AdminSettingsPage() {
         <form className="min-w-0" onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}>
           <Tabs defaultValue="branding" className="min-w-0 max-w-full w-full space-y-4">
             <TabsList className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto p-1">
-              <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />基础与品牌</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="users"><UsersRound className="h-4 w-4 shrink-0" />注册与用户</TabsTrigger>
-               <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />订阅与分发</TabsTrigger>
-               <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />Agent 运维</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="storage"><Database className="h-4 w-4 shrink-0" />存储与日志</TabsTrigger>
-               <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />安全与高级</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />{t('admin:settings.generalTab')}</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="users"><UsersRound className="h-4 w-4 shrink-0" />{t('admin:settings.authTab')}</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />{t('admin:settings.subscriptionTab')}</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />{t('admin:settings.agentTab')}</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="storage"><Database className="h-4 w-4 shrink-0" />{t('admin:settings.databaseTab')}</TabsTrigger>
+               <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />{t('admin:settings.securityTab')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="branding"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">

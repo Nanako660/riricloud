@@ -13,10 +13,18 @@
 ## [Unreleased]
 
 ### Added
+- **前端全站国际化 (i18n) 与多语言平滑切换支持**：
+  - **模块化双语字典架构**：基于 `i18next` + `react-i18next` + `i18next-browser-languagedetector`，建立全站 `zh-CN`（简体中文，默认）与 `en-US`（English）双语本地化字典体系；按业务领域划分为 `common`（公共交互、通用表格、操作与状态）、`auth`（登录、注册、找回密码与人机验证）、`user`（套餐市场、我的订阅、个人中心、代理池）、`admin`（节点、线路、证书、模板、用户、套餐、卡密、日志、设置、镜像站、资源分发）及 `errors`（通用与领域错误码映射）5 大命名空间；
+  - **编译期强类型安全保障**：扩展 `react-i18next` 的 `CustomTypeOptions`，实现全站翻译键名（Key Path）与插值变量（Interpolation Variables）的 TypeScript 静态强类型约束与智能补全，杜绝拼写错误、空插值与翻译死角；
+  - **顶栏语言切换器组件 (`LanguageSwitcher`)**：在全局顶部导航栏集成小巧精致的语言切换器下拉菜单，支持持久化存储至 `localStorage`（`riricloud-locale`），并与浏览器首选语言探测深度协同，实现无需刷新页面的平滑即时双语切换。
 
 ### Changed
+- **全站用户界面文案精细化重构与品质跃升**：
+  - **全面消除硬编码中文**：全面重构前端所有页面（认证中心、用户门户、管理员控制台）、复合组件（`PageContainer`、`DataTable`、`EmptyState`、`CopyButton`、`LineLatencyChip`、`SupportDialog`、`Pagination` 等）及各种模态弹窗，全量替换硬编码文本、表单占位符（Placeholder）、验证错误文案、二次确认弹窗提示和 Toast 反馈为响应式国际化调用；
+  - **专业化文案深度对齐**：英文表述全面对齐国际顶级云原生与开发者控制台惯例文案，消除机翻感与生硬语病；中文表述精炼统一，增强专业术语与操作反馈的清晰度与优雅度。
 
 ### Fixed
+
 
 
 ## [0.8.18] - 2026-09-18

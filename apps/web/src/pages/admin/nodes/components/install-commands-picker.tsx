@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/shared/copy-button';
@@ -15,10 +16,8 @@ type InstallMode = 'ws' | 'http';
 
 interface InstallCommandsPickerProps {
   commands?: NodeInstallCommands | null;
-  // 旧版主控响应兜底：创建结果中的 installCommand（bash / WS 模式）
   fallbackCommand?: string;
   defaultMode?: InstallMode;
-  // 节点已上报的运行平台（linux/amd64 等），用于匹配主控二进制可用性
   nodeOsArch?: string | null;
   nodeId?: string;
 }
@@ -43,6 +42,7 @@ const deployHint: Record<DeployType, Record<'posix' | 'windows', string>> = {
 };
 
 export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode = 'ws', nodeOsArch, nodeId }: InstallCommandsPickerProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [deployType, setDeployType] = useState<DeployType>('native');
   const [targetOs, setTargetOs] = useState<TargetOs>('linux');
   const [mode, setMode] = useState<InstallMode>(defaultMode);
@@ -50,7 +50,6 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
   const [downloadingScript, setDownloadingScript] = useState(false);
   const { data: binaryInfo } = useAdminBinaryInfo();
 
-  // 平台可用性：节点上报架构仅在 OS 匹配时复用（与服务端 resolveTargetPlatform 口径一致），否则回退 amd64
   const platformAvailability = useMemo(() => {
     if (deployType === 'docker') return null;
     const reported = nodeOsArch?.split('/')[1];
@@ -140,10 +139,10 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
     <div className="min-w-0 space-y-3">
       <Tabs value={deployType} onValueChange={(value) => setDeployType(value as DeployType)}>
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="native">原生安装</TabsTrigger>
-          <TabsTrigger value="portable">免安装运行</TabsTrigger>
-          <TabsTrigger value="docker">Docker</TabsTrigger>
-          <TabsTrigger value="offline">离线安装包</TabsTrigger>
+          <TabsTrigger value="native">{t('admin:nodes.deployNative')}</TabsTrigger>
+          <TabsTrigger value="portable">{t('admin:nodes.deployPortable')}</TabsTrigger>
+          <TabsTrigger value="docker">{t('admin:nodes.deployDocker')}</TabsTrigger>
+          <TabsTrigger value="offline">{t('admin:nodes.deployOffline')}</TabsTrigger>
         </TabsList>
       </Tabs>
       <div className="flex flex-wrap items-center gap-2">
@@ -177,11 +176,8 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
             className="gap-2"
           >
             <Download className="h-4 w-4" />
-            {downloadingScript ? '正在下载...' : `下载专属安装脚本 (${targetOs === 'windows' ? 'riri-install.bat' : 'riri-install.sh'})`}
+            {downloadingScript ? t('admin:nodes.downloadingScript') : t('admin:nodes.downloadScript', { name: targetOs === 'windows' ? 'riri-install.bat' : 'riri-install.sh' })}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            {targetOs === 'windows' ? '内嵌凭据与自提权，双击或在 CMD / PowerShell 中直接执行' : '内嵌凭据与自动提权，传输至目标机器后直接运行'}
-          </span>
         </div>
       ) : null}
       {deployType === 'offline' && nodeId ? (
@@ -194,13 +190,14 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
             className="gap-2"
           >
             <Download className="h-4 w-4" />
-            {downloading ? '正在打包下载...' : `下载 ${targetOs === 'windows' ? 'Windows' : targetOs === 'macos' ? 'macOS' : 'Linux'} 离线安装包`}
+            {downloading ? t('admin:nodes.downloadingOfflinePkg') : t('admin:nodes.downloadOfflinePkg', { os: targetOs === 'windows' ? 'Windows' : targetOs === 'macos' ? 'macOS' : 'Linux' })}
           </Button>
-          <span className="text-xs text-muted-foreground">由主控打包预填配置与安装脚本（.zip / .tar.gz）</span>
         </div>
       ) : null}
       <div className="space-y-1">
-        <Label className="text-muted-foreground text-xs">{deployType === 'offline' ? '终端一键获取与离线安装命令' : '安装命令'}</Label>
+        <Label className="text-muted-foreground text-xs">
+          {deployType === 'offline' ? t('admin:nodes.offlineCmdLabel') : t('admin:nodes.installCmdLabel')}
+        </Label>
         <div className="flex min-w-0 items-start gap-2">
           <code className="min-w-0 flex-1 whitespace-pre-wrap break-all rounded-md border bg-muted/40 p-3 font-mono text-xs">{currentCommand}</code>
           <CopyButton value={currentCommand} />
@@ -209,9 +206,13 @@ export function InstallCommandsPicker({ commands, fallbackCommand, defaultMode =
       <p className="text-xs text-muted-foreground">{hint}</p>
       {platformAvailability ? (
         platformAvailability.available ? (
-          <p className="text-xs text-emerald-600 dark:text-emerald-400">主控已内置 {platformAvailability.target} 二进制，可直接从主控下载安装。</p>
+          <p className="text-xs text-emerald-600 dark:text-emerald-400">
+            {t('admin:nodes.masterHasBinary', { target: platformAvailability.target })}
+          </p>
         ) : (
-          <p className="text-xs text-amber-600 dark:text-amber-400">主控未内置 {platformAvailability.target} 二进制，原生安装将由脚本自动从 GitHub Release（或加速镜像）下载；免安装模式请先自行获取二进制。</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {t('admin:nodes.masterNoBinary', { target: platformAvailability.target })}
+          </p>
         )
       ) : null}
     </div>

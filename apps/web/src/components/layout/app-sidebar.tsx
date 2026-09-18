@@ -18,8 +18,11 @@ import {
   useSidebar
 } from '@/components/ui/sidebar';
 
+import { useTranslation } from 'react-i18next';
+
 // 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
+  const { t } = useTranslation('common');
   const user = useAuthStore((s) => s.user);
   const sessionQuery = useCurrentUser();
   const isAdmin = (sessionQuery.data ?? user)?.role === 'ADMIN';
@@ -30,41 +33,41 @@ export function AppSidebar() {
 
   const groups = [
     {
-      label: '控制台',
+      label: t('nav.console'),
       items: [
-        { to: '/subscription', label: '我的订阅', icon: WalletCards, end: false },
-        { to: '/proxy-pool', label: '直连代理', icon: Network, end: false },
-        { to: '/market', label: '套餐市场', icon: ShoppingBag, end: false },
-        { to: '/profile', label: '个人中心', icon: Wallet, end: false }
+        { to: '/subscription', label: t('nav.mySubscription'), icon: WalletCards, end: false },
+        { to: '/proxy-pool', label: t('nav.directProxy'), icon: Network, end: false },
+        { to: '/market', label: t('nav.market'), icon: ShoppingBag, end: false },
+        { to: '/profile', label: t('nav.profile'), icon: Wallet, end: false }
       ]
     },
     ...(isAdmin
       ? [
           {
-            label: '业务运营',
+            label: t('nav.business'),
             items: [
-              { to: '/admin/users', label: '用户管理', icon: Users, end: false },
-              { to: '/admin/plans', label: '套餐管理', icon: Package, end: false },
-              { to: '/admin/redeem-codes', label: '卡密管理', icon: Ticket, end: false }
+              { to: '/admin/users', label: t('nav.users'), icon: Users, end: false },
+              { to: '/admin/plans', label: t('nav.plans'), icon: Package, end: false },
+              { to: '/admin/redeem-codes', label: t('nav.redeemCodes'), icon: Ticket, end: false }
             ]
           },
           {
-            label: '网络与节点',
+            label: t('nav.network'),
             items: [
-              { to: '/admin/nodes', label: '节点管理', icon: Server, end: false },
-              { to: '/admin/lines', label: '线路管理', icon: GitBranch, end: false },
-              { to: '/admin/certificates', label: '证书管理', icon: KeyRound, end: false },
-              { to: '/admin/templates', label: '订阅模板', icon: LayoutTemplate, end: false },
-              { to: '/admin/binaries', label: '资源管理', icon: Binary, end: false },
-              { to: '/admin/mirrors', label: '镜像站', icon: Waypoints, end: false }
+              { to: '/admin/nodes', label: t('nav.nodes'), icon: Server, end: false },
+              { to: '/admin/lines', label: t('nav.lines'), icon: GitBranch, end: false },
+              { to: '/admin/certificates', label: t('nav.certificates'), icon: KeyRound, end: false },
+              { to: '/admin/templates', label: t('nav.templates'), icon: LayoutTemplate, end: false },
+              { to: '/admin/binaries', label: t('nav.binaries'), icon: Binary, end: false },
+              { to: '/admin/mirrors', label: t('nav.mirrors'), icon: Waypoints, end: false }
             ]
           },
           {
-            label: '监控与系统',
+            label: t('nav.monitoring'),
             items: [
-              { to: '/admin/traffic', label: '流量统计', icon: Activity, end: false },
-              { to: '/admin/logs', label: '系统日志', icon: ScrollText, end: false },
-              { to: '/admin/settings', label: '系统设置', icon: Settings, end: false }
+              { to: '/admin/traffic', label: t('nav.traffic'), icon: Activity, end: false },
+              { to: '/admin/logs', label: t('nav.logs'), icon: ScrollText, end: false },
+              { to: '/admin/settings', label: t('nav.settings'), icon: Settings, end: false }
             ]
           }
         ]
@@ -112,7 +115,7 @@ export function AppSidebar() {
                 trigger={
                   <SidebarMenuButton className="w-full justify-start rounded-lg px-3 py-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground">
                     <Headphones className="size-4" />
-                    <span>联系客服与帮助</span>
+                    <span>{t('nav.support')}</span>
                   </SidebarMenuButton>
                 }
               />

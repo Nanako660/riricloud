@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth';
 import { frontendLogger } from '@/lib/logger';
+import { getLocalizedErrorMessage } from '@/i18n/error-mapping';
 
 // 统一 API 客户端：组件内禁止裸 fetch/自建 axios 实例（CODE_REVIEW W1）
 export const api = axios.create({
@@ -48,24 +49,20 @@ api.interceptors.response.use(
     // 401：登录态失效，清理并跳转登录页（避免在登录页自身弹跳转循环）
     if (status === 401 && useAuthStore.getState().user) {
       useAuthStore.getState().logout();
-      toast.error('登录已过期，请重新登录');
+      toast.error(getLocalizedErrorMessage(error, '登录已过期，请重新登录'));
       if (window.location.pathname !== '/login') {
         window.location.assign('/login');
       }
     } else if (status && status >= 500) {
-      toast.error(message);
+      toast.error(getLocalizedErrorMessage(error, message));
     }
     return Promise.reject(error);
   }
 );
 
-// 统一错误消息提取（表单与 mutation 复用）
-export function extractErrorMessage(error: unknown, fallback = '操作失败'): string {
-  if (axios.isAxiosError(error)) {
-    if (error.response?.status === 413) return '请求内容过大，请减少提交内容后重试';
-    return error.response?.data?.message ?? fallback;
-  }
-  return fallback;
+// 统一错误消息提取（表单与 mutation 复用，支持多语言映射）
+export function extractErrorMessage(error: unknown, fallback?: string): string {
+  return getLocalizedErrorMessage(error, fallback);
 }
 
 export type LineType = 'DIRECT' | 'RELAY';

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { ExternalLink, Headphones, Mail, MessageCircle, MessageSquare } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { type PublicSystemSettings } from '@/lib/public-settings';
 import { hasSupportContacts } from '@/lib/support';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/shared/copy-button';
-
 
 export function SupportDialog({
   settings,
@@ -14,6 +14,7 @@ export function SupportDialog({
   settings?: Partial<PublicSystemSettings> | null;
   trigger?: React.ReactNode;
 }) {
+  const { t } = useTranslation('common');
   const [open, setOpen] = useState(false);
   if (!hasSupportContacts(settings)) return null;
 
@@ -23,7 +24,7 @@ export function SupportDialog({
         {trigger ?? (
           <Button variant="outline" size="sm" className="gap-2">
             <Headphones className="size-4" />
-            <span>联系客服</span>
+            <span>{t('nav.support')}</span>
           </Button>
         )}
       </DialogTrigger>
@@ -31,10 +32,10 @@ export function SupportDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Headphones className="size-5 text-primary" />
-            联系客服与技术支持
+            {t('supportDialog.title')}
           </DialogTitle>
           <DialogDescription>
-            遇到节点配置、订阅异常或需要咨询，请通过官方支持渠道联系：
+            {t('supportDialog.desc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -46,13 +47,13 @@ export function SupportDialog({
                   <MessageCircle className="size-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Telegram 客服 / 群组</p>
-                  <p className="text-xs text-muted-foreground">实时交流与问题反馈</p>
+                  <p className="text-sm font-medium">{t('supportDialog.telegramTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('supportDialog.telegramDesc')}</p>
                 </div>
               </div>
               <Button asChild size="sm" variant="outline">
                 <a href={settings.supportTelegramUrl.trim()} target="_blank" rel="noreferrer">
-                  前往 <ExternalLink className="size-3.5" />
+                  {t('supportDialog.goTo')} <ExternalLink className="size-3.5 ml-1" />
                 </a>
               </Button>
             </div>
@@ -65,13 +66,13 @@ export function SupportDialog({
                   <MessageSquare className="size-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Discord 社区</p>
-                  <p className="text-xs text-muted-foreground">技术答疑与公告推送</p>
+                  <p className="text-sm font-medium">{t('supportDialog.discordTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('supportDialog.discordDesc')}</p>
                 </div>
               </div>
               <Button asChild size="sm" variant="outline">
                 <a href={settings.supportDiscordUrl.trim()} target="_blank" rel="noreferrer">
-                  加入 <ExternalLink className="size-3.5" />
+                  {t('supportDialog.join')} <ExternalLink className="size-3.5 ml-1" />
                 </a>
               </Button>
             </div>
@@ -84,14 +85,14 @@ export function SupportDialog({
                   <Mail className="size-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">客服邮箱</p>
+                  <p className="text-sm font-medium">{t('supportDialog.emailTitle')}</p>
                   <p className="text-xs text-muted-foreground">{settings.supportEmail.trim()}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <CopyButton value={settings.supportEmail.trim()} />
                 <Button asChild size="sm" variant="outline">
-                  <a href={`mailto:${settings.supportEmail.trim()}`}>发送</a>
+                  <a href={`mailto:${settings.supportEmail.trim()}`}>{t('supportDialog.send')}</a>
                 </Button>
               </div>
             </div>
@@ -104,13 +105,13 @@ export function SupportDialog({
                   <ExternalLink className="size-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">帮助与支持中心</p>
-                  <p className="text-xs text-muted-foreground">工单系统或外部文档</p>
+                  <p className="text-sm font-medium">{t('supportDialog.centerTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('supportDialog.centerDesc')}</p>
                 </div>
               </div>
               <Button asChild size="sm" variant="outline">
                 <a href={settings.supportCustomUrl.trim()} target="_blank" rel="noreferrer">
-                  访问 <ExternalLink className="size-3.5" />
+                  {t('supportDialog.visit')} <ExternalLink className="size-3.5 ml-1" />
                 </a>
               </Button>
             </div>
@@ -128,6 +129,7 @@ export function SupportContactsInline({
   settings?: Partial<PublicSystemSettings> | null;
   className?: string;
 }) {
+  const { t } = useTranslation('common');
   if (!hasSupportContacts(settings)) return null;
 
   return (
@@ -171,7 +173,7 @@ export function SupportContactsInline({
           className="inline-flex items-center gap-1 hover:text-foreground hover:underline underline-offset-4"
         >
           <ExternalLink className="size-3.5" />
-          <span>帮助支持</span>
+          <span>{t('supportDialog.helpSupport')}</span>
         </a>
       )}
     </div>
