@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { formatBytes, formatRate } from '@/lib/utils';
@@ -6,6 +7,7 @@ import type { LineTrafficRankItem, RateSeriesPoint, TrafficTimeSeriesPoint, User
 const chartColors = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 export function TrafficTrendChart({ data, compact = false }: { data: TrafficTimeSeriesPoint[]; compact?: boolean }) {
+  const { t } = useTranslation(['admin', 'common']);
   return (
     <ChartContainer className={compact ? 'h-52' : 'h-full min-h-[300px]'}>
       <ResponsiveContainer width="100%" height="100%">
@@ -15,8 +17,8 @@ export function TrafficTrendChart({ data, compact = false }: { data: TrafficTime
             <XAxis dataKey="displayTime" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} interval="preserveStartEnd" />
             <YAxis hide />
             <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatBytes(value)} />} />
-            <Bar dataKey="download" name="下行" fill="hsl(var(--chart-1))" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="upload" name="上行" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="download" name={t('admin:traffic.chartDown')} fill="hsl(var(--chart-1))" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="upload" name={t('admin:traffic.chartUp')} fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
           </BarChart>
         ) : (
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: -4 }}>
@@ -35,8 +37,8 @@ export function TrafficTrendChart({ data, compact = false }: { data: TrafficTime
             <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={formatBytes} width={56} />
             <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatBytes(value)} />} />
             <ChartLegend verticalAlign="top" height={28} />
-            <Area type="monotone" dataKey="download" name="下行" stroke="hsl(var(--chart-1))" fill="url(#traffic-download-gradient)" strokeWidth={2} />
-            <Area type="monotone" dataKey="upload" name="上行" stroke="hsl(var(--chart-2))" fill="url(#traffic-upload-gradient)" strokeWidth={2} />
+            <Area type="monotone" dataKey="download" name={t('admin:traffic.chartDown')} stroke="hsl(var(--chart-1))" fill="url(#traffic-download-gradient)" strokeWidth={2} />
+            <Area type="monotone" dataKey="upload" name={t('admin:traffic.chartUp')} stroke="hsl(var(--chart-2))" fill="url(#traffic-upload-gradient)" strokeWidth={2} />
           </AreaChart>
         )}
       </ResponsiveContainer>
@@ -58,7 +60,7 @@ function maskEmail(email: string) {
   return `${maskedLocal}@${domain}`;
 }
 
-function buildUserDonutData(data: UserTrafficRankItem[], totalPhysical: number): DonutItem[] {
+function buildUserDonutData(data: UserTrafficRankItem[], totalPhysical: number, otherUsersLabel: string): DonutItem[] {
   const topUsers = data.slice(0, 5).map((item) => ({
     key: item.userId,
     name: maskEmail(item.email),
@@ -71,7 +73,7 @@ function buildUserDonutData(data: UserTrafficRankItem[], totalPhysical: number):
     ...topUsers,
     {
       key: 'other-users',
-      name: '其他用户',
+      name: otherUsersLabel,
       total: otherTotal,
       percentage: totalPhysical > 0 ? Math.round((otherTotal / totalPhysical) * 10000) / 100 : 0
     }
@@ -87,8 +89,9 @@ export function TrafficDonutChart({
   mode?: 'line' | 'user';
   totalPhysical?: number;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
   const chartData: DonutItem[] = mode === 'user'
-    ? buildUserDonutData(data as UserTrafficRankItem[], totalPhysical ?? 0)
+    ? buildUserDonutData(data as UserTrafficRankItem[], totalPhysical ?? 0, t('admin:traffic.otherUsers'))
     : (data as LineTrafficRankItem[]).map((item) => ({
       key: item.lineId ?? item.lineName,
       name: item.lineName,
@@ -96,14 +99,14 @@ export function TrafficDonutChart({
       percentage: item.percentage
     }));
   const total = mode === 'user' ? totalPhysical ?? 0 : chartData.reduce((sum, item) => sum + item.total, 0);
-  if (total <= 0) return <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">暂无{mode === 'user' ? '用户' : '线路'}流量</div>;
+  if (total <= 0) return <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{mode === 'user' ? t('admin:traffic.noUserTraffic') : t('admin:traffic.noLineTraffic')}</div>;
 
   return (
     <div className="flex h-full flex-col justify-between space-y-4">
       <ChartContainer className="relative h-48 w-full">
         <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center text-center">
           <span className="text-lg font-semibold tabular-nums leading-tight">{formatBytes(total)}</span>
-          <span className="mt-0.5 text-xs text-muted-foreground">物理流量</span>
+          <span className="mt-0.5 text-xs text-muted-foreground">{t('admin:traffic.physicalTrafficLabel')}</span>
         </div>
         <ResponsiveContainer width="100%" height="100%" className="relative z-10">
           <PieChart>
@@ -130,6 +133,7 @@ export function TrafficDonutChart({
 }
 
 export function RateTrendChart({ data }: { data: RateSeriesPoint[] }) {
+  const { t } = useTranslation(['admin', 'common']);
   return (
     <ChartContainer className="h-80">
       <ResponsiveContainer width="100%" height="100%">
@@ -139,10 +143,10 @@ export function RateTrendChart({ data }: { data: RateSeriesPoint[] }) {
           <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={formatRate} width={64} />
           <ChartTooltip content={<ChartTooltipContent formatter={(value) => formatRate(value)} />} />
           <ChartLegend verticalAlign="top" height={28} />
-          <Area type="monotone" dataKey="downloadRate" name="平均下行" stroke="hsl(var(--chart-1))" fill="hsl(var(--chart-1))" fillOpacity={0.14} strokeWidth={2} />
-          <Area type="monotone" dataKey="uploadRate" name="平均上行" stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.12} strokeWidth={2} />
-          <Line type="monotone" dataKey="peakDownloadRate" name="峰值下行" stroke="hsl(var(--chart-1))" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
-          <Line type="monotone" dataKey="peakUploadRate" name="峰值上行" stroke="hsl(var(--chart-2))" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
+          <Area type="monotone" dataKey="downloadRate" name={t('admin:traffic.chartAvgDown')} stroke="hsl(var(--chart-1))" fill="hsl(var(--chart-1))" fillOpacity={0.14} strokeWidth={2} />
+          <Area type="monotone" dataKey="uploadRate" name={t('admin:traffic.chartAvgUp')} stroke="hsl(var(--chart-2))" fill="hsl(var(--chart-2))" fillOpacity={0.12} strokeWidth={2} />
+          <Line type="monotone" dataKey="peakDownloadRate" name={t('admin:traffic.chartPeakDown')} stroke="hsl(var(--chart-1))" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
+          <Line type="monotone" dataKey="peakUploadRate" name={t('admin:traffic.chartPeakUp')} stroke="hsl(var(--chart-2))" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
         </AreaChart>
       </ResponsiveContainer>
     </ChartContainer>

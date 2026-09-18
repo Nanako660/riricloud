@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { json } from '@codemirror/lang-json';
 import { yaml } from '@codemirror/lang-yaml';
 import YAML from 'yaml';
@@ -30,6 +31,7 @@ export function TemplateSourceEditor({
   onChange,
   onTestRender
 }: TemplateSourceEditorProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [lang, setLang] = useState<'json' | 'yaml'>('yaml');
   const [source, setSource] = useState(() => YAML.stringify(template, { indent: 2 }));
   const [internalError, setInternalError] = useState('');
@@ -55,34 +57,34 @@ export function TemplateSourceEditor({
   // 本地语法与结构实时状态
   const status = useMemo(() => {
     if (!source.trim()) {
-      return { valid: false, message: '源文件内容不能为空' };
+      return { valid: false, message: t('admin:templateSource.errorEmpty') };
     }
     try {
       const parsed = lang === 'json' ? JSON.parse(source) : YAML.parse(source);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { valid: false, message: '根节点必须是对象' };
+        return { valid: false, message: t('admin:templateSource.errorRootMustBeObject') };
       }
       if (parsed.proxyGroups && !Array.isArray(parsed.proxyGroups)) {
-        return { valid: false, message: 'proxyGroups 必须是数组格式' };
+        return { valid: false, message: t('admin:templateSource.errorProxyGroupsArray') };
       }
       if (parsed.ruleSets && !Array.isArray(parsed.ruleSets)) {
-        return { valid: false, message: 'ruleSets 必须是数组格式' };
+        return { valid: false, message: t('admin:templateSource.errorRuleSetsArray') };
       }
       if (parsed.dnsConfig && (typeof parsed.dnsConfig !== 'object' || Array.isArray(parsed.dnsConfig))) {
-        return { valid: false, message: 'dnsConfig 必须是对象格式' };
+        return { valid: false, message: t('admin:templateSource.errorDnsConfigObject') };
       }
-      return { valid: true, message: `${lang.toUpperCase()} 格式合法且结构完整` };
+      return { valid: true, message: t('admin:templateSource.validMessage', { lang: lang.toUpperCase() }) };
     } catch (err) {
-      return { valid: false, message: (err as Error).message || `${lang.toUpperCase()} 语法错误` };
+      return { valid: false, message: (err as Error).message || t('admin:templateSource.syntaxError', { lang: lang.toUpperCase() }) };
     }
-  }, [source, lang]);
+  }, [source, lang, t]);
 
   const handleToggleLang = (targetLang: 'json' | 'yaml') => {
     if (targetLang === lang) return;
     try {
       const parsed = lang === 'json' ? JSON.parse(source) : YAML.parse(source);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        toast.error('根节点必须是对象，无法转换');
+        toast.error(t('admin:templateSource.cannotConvertNonObject'));
         return;
       }
       const converted = targetLang === 'json'
@@ -91,9 +93,9 @@ export function TemplateSourceEditor({
       setLang(targetLang);
       setSource(converted);
       setInternalError('');
-      toast.success(`已切换至 ${targetLang.toUpperCase()} 源码编辑模式`);
+      toast.success(t('admin:templateSource.switchedLang', { lang: targetLang.toUpperCase() }));
     } catch {
-      toast.error(`当前 ${lang.toUpperCase()} 存在语法错误，请修复后再切换格式`);
+      toast.error(t('admin:templateSource.syntaxErrorCannotSwitch', { lang: lang.toUpperCase() }));
     }
   };
 
@@ -102,7 +104,7 @@ export function TemplateSourceEditor({
     try {
       const parsed = lang === 'json' ? JSON.parse(nextSource) : YAML.parse(nextSource);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('根节点必须是对象');
+        throw new Error(t('admin:templateSource.errorRootMustBeObject'));
       }
       setInternalError('');
 
@@ -123,7 +125,7 @@ export function TemplateSourceEditor({
       // 即时反向回填表单
       onChange(nextPayload);
     } catch (err) {
-      setInternalError((err as Error).message || '语法错误');
+      setInternalError((err as Error).message || t('admin:templateSource.syntaxError', { lang: lang.toUpperCase() }));
     }
   };
 
@@ -139,18 +141,18 @@ export function TemplateSourceEditor({
         setSource(pretty);
       }
       setInternalError('');
-      toast.success(`源文件已美化排版 (${lang.toUpperCase()})`);
+      toast.success(t('admin:templateSource.formatSuccess', { lang: lang.toUpperCase() }));
     } catch {
-      toast.error(`当前 ${lang.toUpperCase()} 存在语法错误，无法自动格式化`);
+      toast.error(t('admin:templateSource.formatError', { lang: lang.toUpperCase() }));
     }
   };
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(source);
-      toast.success(`完整模板 ${lang.toUpperCase()} 源码已复制至剪贴板`);
+      toast.success(t('admin:templateSource.copySuccess', { lang: lang.toUpperCase() }));
     } catch {
-      toast.error('复制失败');
+      toast.error(t('admin:templateSource.copyFailed'));
     }
   };
 
@@ -161,7 +163,7 @@ export function TemplateSourceEditor({
       setSource(YAML.stringify(template, { indent: 2 }));
     }
     setInternalError('');
-    toast.info('已还原为当前表单草稿状态');
+    toast.info(t('admin:templateSource.restoredDraft'));
   };
 
   return (
@@ -174,11 +176,11 @@ export function TemplateSourceEditor({
             <TabsList className="h-8">
               <TabsTrigger value="yaml" className="h-7 gap-1.5 px-3 text-xs">
                 <FileCode className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
-                YAML 源码
+                {t('admin:templateSource.yamlTab')}
               </TabsTrigger>
               <TabsTrigger value="json" className="h-7 gap-1.5 px-3 text-xs">
                 <FileCode className="h-3.5 w-3.5 text-primary" />
-                JSON 源码
+                {t('admin:templateSource.jsonTab')}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -195,7 +197,7 @@ export function TemplateSourceEditor({
             ) : (
               <AlertCircle className="h-3 w-3" />
             )}
-            <span>{status.valid ? '格式正常' : '语法错误'}</span>
+            <span>{status.valid ? t('admin:templateSource.statusValid') : t('admin:templateSource.statusError')}</span>
           </Badge>
 
           {/* 美化排版 */}
@@ -206,10 +208,10 @@ export function TemplateSourceEditor({
             className="h-7 gap-1 px-2 text-xs"
             onClick={handleFormat}
             disabled={!status.valid}
-            title={`美化排版 ${lang.toUpperCase()}`}
+            title={t('admin:templateSource.beautifyTitle', { lang: lang.toUpperCase() })}
           >
             <Wand2 className="h-3.5 w-3.5 text-primary" />
-            美化
+            {t('admin:templateSource.beautify')}
           </Button>
 
           {/* 复制 */}
@@ -219,10 +221,10 @@ export function TemplateSourceEditor({
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
             onClick={handleCopy}
-            title="复制源码"
+            title={t('admin:templateSource.copyTitle')}
           >
             <Copy className="h-3.5 w-3.5" />
-            复制
+            {t('admin:templateSource.copy')}
           </Button>
 
           {/* 还原 */}
@@ -232,10 +234,10 @@ export function TemplateSourceEditor({
             size="sm"
             className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={handleReset}
-            title="还原为当前草稿"
+            title={t('admin:templateSource.resetTitle')}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            还原
+            {t('admin:templateSource.reset')}
           </Button>
 
           {/* 快速渲染与内核校验测试 */}
@@ -246,10 +248,10 @@ export function TemplateSourceEditor({
               size="sm"
               className="h-7 gap-1.5 text-xs text-primary hover:text-primary"
               onClick={onTestRender}
-              title="使用当前源文件拉起客户端配置渲染与双内核校验"
+              title={t('admin:templateSource.quickRenderTitle')}
             >
               <Eye className="h-3.5 w-3.5" />
-              快速渲染与校验
+              {t('admin:templateSource.quickRender')}
             </Button>
           )}
         </div>
@@ -257,8 +259,7 @@ export function TemplateSourceEditor({
 
       {/* 说明文案条 */}
       <div className="text-[11px] text-muted-foreground">
-        此处为订阅模板的单一源文档（支持 JSON / YAML 无损切换）。合法的修改将
-        <strong>即时双向同步</strong> 至策略组、分流规则、DNS 与覆写 Tab；语法错误时自动启用隔离保护，防止脏数据污染。
+        {t('admin:templateSource.infoNotice')}
       </div>
 
       {/* 全高全宽 CodeMirror 编辑器 */}
@@ -285,10 +286,10 @@ export function TemplateSourceEditor({
           <div className="flex items-center justify-between gap-2 pb-1.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
-              <span>{lang.toUpperCase()} 语法诊断错误</span>
+              <span>{t('admin:templateSource.syntaxErrorTitle', { lang: lang.toUpperCase() })}</span>
             </div>
             <span className="text-[10px] text-muted-foreground">
-              已启用安全隔离保护 · 不会同步脏数据
+              {t('admin:templateSource.syntaxErrorIsolation')}
             </span>
           </div>
           <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">

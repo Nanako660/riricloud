@@ -1,6 +1,8 @@
+import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -10,17 +12,10 @@ import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { validateCompatibilityText } from '../binary-labels';
 import type { BinaryResource } from '../use-binaries';
 
-const editSchema = z.object({
-  notes: z.string().max(2000, '备注最多 2000 字符'),
-  compatibilityText: z.string().superRefine((text, ctx) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const result = validateCompatibilityText(trimmed);
-    if (!result.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.message });
-  })
-});
-
-type ResourceEditValues = z.infer<typeof editSchema>;
+interface ResourceEditValues {
+  notes: string;
+  compatibilityText: string;
+}
 
 export function ResourceEditDialog({ resource, open, onOpenChange, onSubmit, pending }: {
   resource: BinaryResource | null;
@@ -29,6 +24,18 @@ export function ResourceEditDialog({ resource, open, onOpenChange, onSubmit, pen
   onSubmit: (value: { notes: string | null; compatibility?: Record<string, unknown> }) => void;
   pending: boolean;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
+
+  const editSchema = React.useMemo(() => z.object({
+    notes: z.string().max(2000, t('admin:binaries.notesMax')),
+    compatibilityText: z.string().superRefine((text, ctx) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const result = validateCompatibilityText(trimmed);
+      if (!result.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.message });
+    })
+  }), [t]);
+
   const form = useForm<ResourceEditValues>({
     resolver: zodResolver(editSchema),
     defaultValues: { notes: '', compatibilityText: '' }
@@ -57,8 +64,8 @@ export function ResourceEditDialog({ resource, open, onOpenChange, onSubmit, pen
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="compact">
         <DialogHeader>
-          <DialogTitle>编辑资源信息{resource ? ` · ${resource.version}` : ''}</DialogTitle>
-          <DialogDescription>修改备注与兼容性约束；版本与修订号为资源身份标识，不可修改。</DialogDescription>
+          <DialogTitle>{resource ? t('admin:binaries.editTitle', { version: resource.version }) : t('admin:binaries.editTitleFallback')}</DialogTitle>
+          <DialogDescription>{t('admin:binaries.editDesc')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -77,9 +84,9 @@ export function ResourceEditDialog({ resource, open, onOpenChange, onSubmit, pen
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>备注</FormLabel>
+                  <FormLabel>{t('admin:binaries.notesLabel')}</FormLabel>
                   <FormControl>
-                    <Textarea rows={3} {...field} placeholder="例如：定制构建，启用 v2ray api" />
+                    <Textarea rows={3} {...field} placeholder={t('admin:binaries.notesPlaceholder')} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -90,20 +97,20 @@ export function ResourceEditDialog({ resource, open, onOpenChange, onSubmit, pen
               name="compatibilityText"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>兼容性约束（JSON）</FormLabel>
+                  <FormLabel>{t('admin:binaries.compatLabel')}</FormLabel>
                   <FormControl>
                     <Textarea rows={5} className="font-mono text-xs" {...field} placeholder='{"minAgentProtocolVersion": 2}' />
                   </FormControl>
                   <FormDescription>
-                    留空表示不修改。支持 minAgentProtocolVersion / maxAgentProtocolVersion（数字）与 minAgentVersion / maxAgentVersion / cronetVersion（字符串）。节点升级时会按此校验。
+                    {t('admin:binaries.compatDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-              <Button type="submit" disabled={pending}>{pending ? '保存中…' : '保存修改'}</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
+              <Button type="submit" disabled={pending}>{pending ? t('common:actions.loading') : t('admin:binaries.saveChanges')}</Button>
             </DialogFooter>
           </form>
         </Form>

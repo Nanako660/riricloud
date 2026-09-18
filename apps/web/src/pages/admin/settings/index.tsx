@@ -1,5 +1,6 @@
-import { useEffect, useState, type InputHTMLAttributes } from 'react';
+import { useEffect, useMemo, useState, type InputHTMLAttributes } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { Link } from 'react-router-dom';
 import { useForm, useFormContext, type FieldPath } from 'react-hook-form';
@@ -47,16 +48,16 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 
-const COMMON_TIMEZONES = [
-  { value: 'Asia/Shanghai', label: 'Asia/Shanghai（北京 / 上海 / 香港 / 台北 · UTC+8）' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo（东京 / 首尔 · UTC+9）' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore（新加坡 · UTC+8）' },
-  { value: 'UTC', label: 'UTC（协调世界时 · UTC+0）' },
-  { value: 'Europe/London', label: 'Europe/London（伦敦 · UTC+0/+1）' },
-  { value: 'Europe/Paris', label: 'Europe/Paris（巴黎 / 柏林 · UTC+1/+2）' },
-  { value: 'America/New_York', label: 'America/New_York（纽约 / 美东 · UTC-5/-4）' },
-  { value: 'America/Los_Angeles', label: 'America/Los_Angeles（洛杉矶 / 美西 · UTC-8/-7）' },
-  { value: 'Australia/Sydney', label: 'Australia/Sydney（悉尼 / 墨尔本 · UTC+10/+11）' }
+const TIMEZONE_CONFIGS = [
+  { value: 'Asia/Shanghai', key: 'admin:settings.tzShanghai' as const },
+  { value: 'Asia/Tokyo', key: 'admin:settings.tzTokyo' as const },
+  { value: 'Asia/Singapore', key: 'admin:settings.tzSingapore' as const },
+  { value: 'UTC', key: 'admin:settings.tzUtc' as const },
+  { value: 'Europe/London', key: 'admin:settings.tzLondon' as const },
+  { value: 'Europe/Paris', key: 'admin:settings.tzParis' as const },
+  { value: 'America/New_York', key: 'admin:settings.tzNewYork' as const },
+  { value: 'America/Los_Angeles', key: 'admin:settings.tzLosAngeles' as const },
+  { value: 'Australia/Sydney', key: 'admin:settings.tzSydney' as const }
 ];
 
 function isValidTimezone(value: string): boolean {
@@ -137,78 +138,80 @@ interface SystemSettings {
   agentLogMaxFiles: number;
 }
 
-const settingsSchema = z.object({
-  siteName: z.string().trim().min(1, '站点名不能为空').max(32),
-  siteDescription: z.string().max(120),
-  publicBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的全站访问 URL'),
-  systemTimezone: z.string().trim().min(1, '时区不能为空').refine(isValidTimezone, '请输入有效的 IANA 时区标识（例如 Asia/Shanghai 或 UTC）'),
-  logoUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Logo URL'),
-  faviconUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Favicon URL'),
-  siteAnnouncement: z.string().max(10000),
-  footerCopyright: z.string().max(200),
-  supportTelegramUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Telegram URL'),
-  supportDiscordUrl: z.string().refine(isBlankOrUrl, '请输入有效的 Discord URL'),
-  supportEmail: z.string().refine((value) => !value || z.string().email().safeParse(value).success, '请输入有效的客服邮箱'),
-  supportCustomUrl: z.string().refine(isBlankOrUrl, '请输入有效的支持 URL'),
-  registrationEnabled: z.boolean(),
-  defaultPlanId: z.string(),
-  defaultBalanceYuan: z.coerce.number().min(0, '余额不能为负数').multipleOf(0.01, '最多保留两位小数'),
-  emailDomainMode: z.enum(['none', 'whitelist', 'blacklist']),
-  emailDomainListText: z.string().max(16000),
-  passwordMinLength: z.coerce.number().int().min(8).max(64),
-  passwordRequireLowercase: z.boolean(),
-  passwordRequireUppercase: z.boolean(),
-  passwordRequireDigit: z.boolean(),
-  passwordRequireSpecial: z.boolean(),
-  subscriptionBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的订阅基准 URL'),
-  subscriptionShortLinksEnabled: z.boolean(),
-  subscriptionEffectsSyncEnabled: z.boolean(),
-  subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
-  appendSubscriptionSpeedBadge: z.boolean(),
-  speedLimitUnitConversionEnabled: z.boolean(),
-  speedLimitColorTiers: z.array(z.object({
-    maxMbps: z.number().int().min(1).nullable().optional(),
-    color: z.string().min(1)
-  })),
-  defaultTemplateId: z.string(),
-  publicLinesEnabled: z.boolean(),
-  includeUsageHeaders: z.boolean(),
-  heartbeatTimeoutSecs: z.coerce.number().int().min(5).max(3600),
-  configSyncDebounceMs: z.coerce.number().int().min(0).max(10000),
-  defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
-  binaryDownloadBaseUrl: z.string().refine(isBlankOrUrl, '请输入有效的二进制分发 URL'),
-  githubRepoUrl: z.string().refine(isBlankOrUrl, '请输入有效的 GitHub 仓库 URL'),
-  githubMirrorUrlsText: z.string().max(16000),
-  probePresetTargets: probePresetTargetsSchema,
-  jwtSessionDays: z.coerce.number().int().min(1).max(30),
-  customCss: z.string().max(50000),
-  customHeadHtml: z.string().max(20000),
-  lineSpeedtestEnabled: z.boolean(),
-  lineSpeedtestIntervalMins: z.coerce.number().int().min(1).max(1440),
-  lineSpeedtestTargetUrl: z.string().refine(isBlankOrUrl, '请输入有效的测速目标 URL'),
-  lineSpeedtestTimeoutMs: z.coerce.number().int().min(500).max(30000),
-  smtpEnabled: z.boolean(),
-  smtpHost: z.string().max(255),
-  smtpPort: z.coerce.number().int().min(1).max(65535),
-  smtpSecure: z.boolean(),
-  smtpUser: z.string().max(255),
-  smtpPass: z.string().max(512),
-  smtpFrom: z.string().max(255),
-  emailVerificationEnabled: z.boolean(),
-  enforceEmailVerification: z.boolean(),
-  captchaMode: z.enum(['OFF', 'LOCAL', 'TURNSTILE']),
-  turnstileSiteKey: z.string().max(255),
-  turnstileSecretKey: z.string().max(512),
-  logsRetentionDays: z.coerce.number().int().min(1).max(3650),
-  logsMaxCount: z.coerce.number().int().min(1000).max(1000000),
-  logsMinIngestLevel: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']),
-  trafficHourlyRetentionDays: z.coerce.number().int().min(1).max(3650),
-  nodeRateRetentionDays: z.coerce.number().int().min(1).max(3650),
-  agentLogMaxSizeMb: z.coerce.number().int().min(1).max(1024),
-  agentLogMaxFiles: z.coerce.number().int().min(1).max(20)
-});
+function createSettingsSchema() {
+  return z.object({
+    siteName: z.string().trim().min(1, i18n.t('admin:settings.valSiteNameReq')).max(32),
+    siteDescription: z.string().max(120),
+    publicBaseUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valPublicBaseUrl')),
+    systemTimezone: z.string().trim().min(1, i18n.t('admin:settings.valTimezoneReq')).refine(isValidTimezone, i18n.t('admin:settings.valTimezoneInvalid')),
+    logoUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valLogoUrl')),
+    faviconUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valFaviconUrl')),
+    siteAnnouncement: z.string().max(10000),
+    footerCopyright: z.string().max(200),
+    supportTelegramUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valTgUrl')),
+    supportDiscordUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valDiscordUrl')),
+    supportEmail: z.string().refine((value) => !value || z.string().email().safeParse(value).success, i18n.t('admin:settings.valEmail')),
+    supportCustomUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valCustomSupportUrl')),
+    registrationEnabled: z.boolean(),
+    defaultPlanId: z.string(),
+    defaultBalanceYuan: z.coerce.number().min(0, i18n.t('admin:settings.valBalanceNegative')).multipleOf(0.01, i18n.t('admin:settings.valBalanceDecimals')),
+    emailDomainMode: z.enum(['none', 'whitelist', 'blacklist']),
+    emailDomainListText: z.string().max(16000),
+    passwordMinLength: z.coerce.number().int().min(8).max(64),
+    passwordRequireLowercase: z.boolean(),
+    passwordRequireUppercase: z.boolean(),
+    passwordRequireDigit: z.boolean(),
+    passwordRequireSpecial: z.boolean(),
+    subscriptionBaseUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valSubBaseUrl')),
+    subscriptionShortLinksEnabled: z.boolean(),
+    subscriptionEffectsSyncEnabled: z.boolean(),
+    subscriptionUpdateIntervalHours: z.coerce.number().int().min(1).max(168),
+    appendSubscriptionSpeedBadge: z.boolean(),
+    speedLimitUnitConversionEnabled: z.boolean(),
+    speedLimitColorTiers: z.array(z.object({
+      maxMbps: z.number().int().min(1).nullable().optional(),
+      color: z.string().min(1)
+    })),
+    defaultTemplateId: z.string(),
+    publicLinesEnabled: z.boolean(),
+    includeUsageHeaders: z.boolean(),
+    heartbeatTimeoutSecs: z.coerce.number().int().min(5).max(3600),
+    configSyncDebounceMs: z.coerce.number().int().min(0).max(10000),
+    defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
+    binaryDownloadBaseUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valBinaryDownloadUrl')),
+    githubRepoUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valGithubRepoUrl')),
+    githubMirrorUrlsText: z.string().max(16000),
+    probePresetTargets: probePresetTargetsSchema,
+    jwtSessionDays: z.coerce.number().int().min(1).max(30),
+    customCss: z.string().max(50000),
+    customHeadHtml: z.string().max(20000),
+    lineSpeedtestEnabled: z.boolean(),
+    lineSpeedtestIntervalMins: z.coerce.number().int().min(1).max(1440),
+    lineSpeedtestTargetUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valSpeedtestTargetUrl')),
+    lineSpeedtestTimeoutMs: z.coerce.number().int().min(500).max(30000),
+    smtpEnabled: z.boolean(),
+    smtpHost: z.string().max(255),
+    smtpPort: z.coerce.number().int().min(1).max(65535),
+    smtpSecure: z.boolean(),
+    smtpUser: z.string().max(255),
+    smtpPass: z.string().max(512),
+    smtpFrom: z.string().max(255),
+    emailVerificationEnabled: z.boolean(),
+    enforceEmailVerification: z.boolean(),
+    captchaMode: z.enum(['OFF', 'LOCAL', 'TURNSTILE']),
+    turnstileSiteKey: z.string().max(255),
+    turnstileSecretKey: z.string().max(512),
+    logsRetentionDays: z.coerce.number().int().min(1).max(3650),
+    logsMaxCount: z.coerce.number().int().min(1000).max(1000000),
+    logsMinIngestLevel: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']),
+    trafficHourlyRetentionDays: z.coerce.number().int().min(1).max(3650),
+    nodeRateRetentionDays: z.coerce.number().int().min(1).max(3650),
+    agentLogMaxSizeMb: z.coerce.number().int().min(1).max(1024),
+    agentLogMaxFiles: z.coerce.number().int().min(1).max(20)
+  });
+}
 
-export type SettingsForm = z.infer<typeof settingsSchema>;
+export type SettingsForm = z.infer<ReturnType<typeof createSettingsSchema>>;
 
 export default function AdminSettingsPage() {
   const { t } = useTranslation(['admin', 'common']);
@@ -232,18 +235,22 @@ export default function AdminSettingsPage() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['admin-database-stats'] });
       if (data.totalReclaimedBytes > 0) {
-        toast.success(`整理完成，已成功释放 ${formatBytes(data.totalReclaimedBytes)} 磁盘空间`);
+        toast.success(t('admin:settings.vacuumSuccessReclaimed', { bytes: formatBytes(data.totalReclaimedBytes) }));
       } else {
-        toast.success('整理完成，数据库当前无多余碎片空间');
+        toast.success(t('admin:settings.vacuumSuccessClean'));
       }
     },
     onError: (error) => {
-      toast.error(extractErrorMessage(error, '整理数据库失败'));
+      toast.error(extractErrorMessage(error, t('admin:settings.vacuumFailed')));
     }
   });
   const defaultTemplate = templates.data?.find((t) => t.isDefault) ?? templates.data?.find((t) => t.id === settingsQuery.data?.defaultTemplateId);
+  const dynamicSettingsSchema = useMemo(() => {
+    void t;
+    return createSettingsSchema();
+  }, [t]);
   const form = useForm<SettingsForm>({
-    resolver: zodResolver(settingsSchema),
+    resolver: zodResolver(dynamicSettingsSchema),
     defaultValues: toForm({
       siteName: '', siteDescription: '', publicBaseUrl: '', logoUrl: '', faviconUrl: '', siteAnnouncement: '', footerCopyright: '',
       supportTelegramUrl: '', supportDiscordUrl: '', supportEmail: '', supportCustomUrl: '', registrationEnabled: false,
@@ -276,26 +283,26 @@ export default function AdminSettingsPage() {
     mutationFn: async (values: SettingsForm) => (await api.put<SystemSettings>('/admin/settings', toPayload(values))).data,
     onSuccess: (settings) => {
       form.reset(toForm(settings));
-      toast.success('设置已保存');
+      toast.success(t('admin:settings.saveSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['system', 'public-info'] });
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '保存失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('admin:settings.saveFailed')))
   });
   const resetMutation = useMutation({
     mutationFn: async () => (await api.post<SystemSettings>('/admin/settings/reset', {})).data,
     onSuccess: (settings) => {
       form.reset(toForm(settings));
-      toast.success('已恢复全部默认值');
+      toast.success(t('admin:settings.resetSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['system', 'public-info'] });
     },
-    onError: (error) => toast.error(extractErrorMessage(error, '重置失败'))
+    onError: (error) => toast.error(extractErrorMessage(error, t('admin:settings.resetFailed')))
   });
   const smtpTestMutation = useMutation({
     mutationFn: async (email: string) => (await api.post<{ success: boolean; messageId?: string; durationMs?: number }>('/admin/settings/smtp/test', { email })).data,
-    onSuccess: (result) => { setSmtpTestOpen(false); toast.success(`测试邮件已发送${result.durationMs ? `（${result.durationMs}ms）` : ''}`); },
-    onError: (error) => toast.error(extractErrorMessage(error, 'SMTP 测试失败'))
+    onSuccess: (result) => { setSmtpTestOpen(false); toast.success(t('admin:settings.smtpTestSuccess', { duration: result.durationMs ? `（${result.durationMs}ms）` : '' })); },
+    onError: (error) => toast.error(extractErrorMessage(error, t('admin:settings.smtpTestFailed')))
   });
 
   if (settingsQuery.isPending) {
@@ -330,100 +337,100 @@ export default function AdminSettingsPage() {
                <TabsTrigger className="shrink-0" value="advanced"><ShieldCheck className="h-4 w-4 shrink-0" />{t('admin:settings.securityTab')}</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="branding"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Palette} title="基础与品牌" description="这些信息会同步到登录页、侧边栏、页脚和用户订阅控制台。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-               <SettingsInput name="siteName" label="站点名称" placeholder="RiriCloud" />
-               <SettingsInput name="siteDescription" label="副标题描述" placeholder="留空则不显示副标题" />
-               <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="publicBaseUrl" label="全站访问 URL（主入口基准 URL）" placeholder="https://panel.example.com" description="面板对外完整基准 URL（例如 https://panel.example.com）。订阅基准 URL 与二进制分发基准 URL 留空时均默认继承此地址。" /><SetOriginButton name="publicBaseUrl" /></div>
+            <TabsContent value="branding"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Palette} title={t('admin:settings.sectionBranding')} description={t('admin:settings.sectionBrandingDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+               <SettingsInput name="siteName" label={t('admin:settings.fieldSiteName')} placeholder="RiriCloud" />
+               <SettingsInput name="siteDescription" label={t('admin:settings.fieldSiteDesc')} placeholder={t('admin:settings.placeholderSiteDesc')} />
+               <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="publicBaseUrl" label={t('admin:settings.fieldPublicBaseUrl')} placeholder="https://panel.example.com" description={t('admin:settings.descPublicBaseUrl')} /><SetOriginButton name="publicBaseUrl" /></div>
               <TimezoneSettingField />
-              <SettingsInput name="logoUrl" label="Logo URL" placeholder="https://cdn.example.com/logo.svg" description="留空时使用默认云朵图标。" />
-              <SettingsInput name="faviconUrl" label="Favicon URL" placeholder="https://cdn.example.com/favicon.ico" />
-              <SettingsTextarea name="siteAnnouncement" label="全局公告横幅" className="md:col-span-2" rows={5} description="支持标题、粗体、列表、行内代码和安全的 HTTPS 链接 Markdown。" />
-              <SettingsInput name="footerCopyright" label="页脚版权" placeholder="© 2026 RiriCloud" description="展示于侧边栏底部与登录页页脚；留空时自动回退为版本与站点名称。" />
-              <SettingsInput name="supportEmail" label="客服邮箱" placeholder="support@example.com" />
-              <SettingsInput name="supportTelegramUrl" label="Telegram 客服 / 群组" placeholder="https://t.me/riricloud" />
-              <SettingsInput name="supportDiscordUrl" label="Discord 客服 / 群组" placeholder="https://discord.gg/example" />
-              <SettingsInput name="supportCustomUrl" label="自定义支持链接" placeholder="https://example.com/support" />
+              <SettingsInput name="logoUrl" label={t('admin:settings.fieldLogoUrl')} placeholder="https://cdn.example.com/logo.svg" description={t('admin:settings.descLogoUrl')} />
+              <SettingsInput name="faviconUrl" label={t('admin:settings.fieldFaviconUrl')} placeholder="https://cdn.example.com/favicon.ico" />
+              <SettingsTextarea name="siteAnnouncement" label={t('admin:settings.fieldSiteAnnouncement')} className="md:col-span-2" rows={5} description={t('admin:settings.descSiteAnnouncement')} />
+              <SettingsInput name="footerCopyright" label={t('admin:settings.fieldFooterCopyright')} placeholder={t('admin:settings.placeholderFooterCopyright')} description={t('admin:settings.descFooterCopyright')} />
+              <SettingsInput name="supportEmail" label={t('admin:settings.fieldSupportEmail')} placeholder="support@example.com" />
+              <SettingsInput name="supportTelegramUrl" label={t('admin:settings.fieldSupportTg')} placeholder="https://t.me/riricloud" />
+              <SettingsInput name="supportDiscordUrl" label={t('admin:settings.fieldSupportDiscord')} placeholder="https://discord.gg/example" />
+              <SettingsInput name="supportCustomUrl" label={t('admin:settings.fieldSupportCustom')} placeholder="https://example.com/support" />
             </CardContent></Card></TabsContent>
 
-            <TabsContent value="users"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={UsersRound} title="注册与用户策略" description="控制新用户注册条件和首次登录时的默认权益。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-              <SettingsSwitch name="registrationEnabled" label="开放注册" description="关闭后公开注册接口和注册页入口都会拒绝新用户。" className="md:col-span-2" />
-              <SettingsSelect name="defaultPlanId" label="新用户默认套餐" options={[{ value: 'none', label: '不自动绑定套餐' }, ...(plans.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }))]} description="绑定后注册会立即生成有效订阅和订阅链接。" />
-              <SettingsInput name="defaultBalanceYuan" label="新用户注册初始余额（元）" type="number" min={0} description="注册赠金会记录为 SYSTEM_GIFT 流水。" />
+            <TabsContent value="users"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={UsersRound} title={t('admin:settings.sectionUsers')} description={t('admin:settings.sectionUsersDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+              <SettingsSwitch name="registrationEnabled" label={t('admin:settings.fieldRegistrationEnabled')} description={t('admin:settings.descRegistrationEnabled')} className="md:col-span-2" />
+              <SettingsSelect name="defaultPlanId" label={t('admin:settings.fieldDefaultPlanId')} options={[{ value: 'none', label: t('admin:settings.optNoAutoPlan') }, ...(plans.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }))]} description={t('admin:settings.descDefaultPlanId')} />
+              <SettingsInput name="defaultBalanceYuan" label={t('admin:settings.fieldDefaultBalanceYuan')} type="number" min={0} description={t('admin:settings.descDefaultBalanceYuan')} />
               <div className="rounded-lg border border-dashed bg-muted/30 p-3.5 text-xs text-muted-foreground md:col-span-2 space-y-1 min-w-0">
-                <p className="font-medium text-foreground">关于新用户流量与有效期：</p>
-                <p>新用户注册后的流量配额与账号有效期完全统一由「新用户默认套餐」决定。若选择「不自动绑定套餐」，新注册用户初始配额为 0 且无到期限制，用户可通过赠送的初始余额在「套餐市场」自选开通。</p>
+                <p className="font-medium text-foreground">{t('admin:settings.noticeNewUserTrafficTitle')}</p>
+                <p>{t('admin:settings.noticeNewUserTrafficDesc')}</p>
               </div>
-              <SettingsInput name="passwordMinLength" label="密码最小长度" type="number" min={8} max={64} description="密码长度下限（8-64 位），与下方复杂度要求共同构成密码策略。" />
+              <SettingsInput name="passwordMinLength" label={t('admin:settings.fieldPasswordMinLength')} type="number" min={8} max={64} description={t('admin:settings.descPasswordMinLength')} />
               <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm">
-                <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">密码复杂度要求</h3><p className="text-xs text-muted-foreground">注册、找回密码、修改密码与管理员建户等所有设置密码场景统一生效；全部关闭时仅校验长度。</p></div></div>
+                <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">{t('admin:settings.sectionPasswordComplexity')}</h3><p className="text-xs text-muted-foreground">{t('admin:settings.descPasswordComplexity')}</p></div></div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <SettingsSwitch name="passwordRequireLowercase" label="必须包含小写字母" description="要求密码中出现 a-z 中的至少一个字符。" />
-                  <SettingsSwitch name="passwordRequireUppercase" label="必须包含大写字母" description="要求密码中出现 A-Z 中的至少一个字符。" />
-                  <SettingsSwitch name="passwordRequireDigit" label="必须包含数字" description="要求密码中出现 0-9 中的至少一个字符。" />
-                  <SettingsSwitch name="passwordRequireSpecial" label="必须包含特殊字符" description="除字母、数字和空格外的字符，例如 !@#$%。空格不算特殊字符。" />
+                  <SettingsSwitch name="passwordRequireLowercase" label={t('admin:settings.fieldPasswordRequireLowercase')} description={t('admin:settings.descPasswordRequireLowercase')} />
+                  <SettingsSwitch name="passwordRequireUppercase" label={t('admin:settings.fieldPasswordRequireUppercase')} description={t('admin:settings.descPasswordRequireUppercase')} />
+                  <SettingsSwitch name="passwordRequireDigit" label={t('admin:settings.fieldPasswordRequireDigit')} description={t('admin:settings.descPasswordRequireDigit')} />
+                  <SettingsSwitch name="passwordRequireSpecial" label={t('admin:settings.fieldPasswordRequireSpecial')} description={t('admin:settings.descPasswordRequireSpecial')} />
                 </div>
               </div>
-              <SettingsSelect name="emailDomainMode" label="邮箱域名过滤模式" options={[{ value: 'none', label: '不限制' }, { value: 'whitelist', label: '白名单，仅允许列表域名' }, { value: 'blacklist', label: '黑名单，拒绝列表域名' }]} />
-               <SettingsTextarea name="emailDomainListText" label="邮箱域名列表" rows={5} className="md:col-span-2" description="每行一个域名，例如 example.com；不需要填写 @。" />
+              <SettingsSelect name="emailDomainMode" label={t('admin:settings.fieldEmailDomainMode')} options={[{ value: 'none', label: t('admin:settings.optEmailDomainNone') }, { value: 'whitelist', label: t('admin:settings.optEmailDomainWhitelist') }, { value: 'blacklist', label: t('admin:settings.optEmailDomainBlacklist') }]} />
+               <SettingsTextarea name="emailDomainListText" label={t('admin:settings.fieldEmailDomainListText')} rows={5} className="md:col-span-2" description={t('admin:settings.descEmailDomainListText')} />
                <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm">
-                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-start gap-2"><Mail className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">邮件服务（SMTP）</h3><p className="text-xs text-muted-foreground">用于发送注册和换绑邮箱验证码，密码字段保持脱敏。</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSmtpTestOpen(true)} disabled={smtpTestMutation.isPending}><Send />发送测试邮件</Button></div>
-                 <SettingsSwitch name="smtpEnabled" label="启用 SMTP 发信" description="关闭后邮箱验证码不会发送。" />
-                 <div className="grid min-w-0 gap-4 sm:grid-cols-2"><SettingsInput name="smtpHost" label="SMTP 服务器" placeholder="smtp.example.com" /><SettingsInput name="smtpPort" label="端口" type="number" min={1} max={65535} /><SettingsSwitch name="smtpSecure" label="使用 SSL/TLS" description="465 端口通常开启，587 端口通常关闭并使用 STARTTLS。" /><SettingsInput name="smtpUser" label="账号" placeholder="noreply@example.com" /><SettingsInput name="smtpPass" label="密码" type="password" placeholder="留空保留当前密码" /><SettingsInput name="smtpFrom" label="发信人地址" placeholder="RiriCloud <noreply@example.com>" /></div>
-                 <SettingsSwitch name="emailVerificationEnabled" label="启用注册邮箱验证" description="注册时必须完成 6 位邮箱验证码验证，验证码有效期 5 分钟。" />
-                 <SettingsSwitch name="enforceEmailVerification" label="强制邮箱验证（限制订阅与节点连接）" description="开启后，未验证邮箱的用户将无法拉取订阅配置与连接节点（管理员账号豁免）。适用于要求存量用户补全验证或防滥用场景。" />
+                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-start gap-2"><Mail className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">{t('admin:settings.sectionSmtp')}</h3><p className="text-xs text-muted-foreground">{t('admin:settings.descSmtp')}</p></div></div><Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setSmtpTestOpen(true)} disabled={smtpTestMutation.isPending}><Send />{t('admin:settings.btnSendSmtpTest')}</Button></div>
+                 <SettingsSwitch name="smtpEnabled" label={t('admin:settings.fieldSmtpEnabled')} description={t('admin:settings.descSmtpEnabled')} />
+                 <div className="grid min-w-0 gap-4 sm:grid-cols-2"><SettingsInput name="smtpHost" label={t('admin:settings.fieldSmtpHost')} placeholder="smtp.example.com" /><SettingsInput name="smtpPort" label={t('admin:settings.fieldSmtpPort')} type="number" min={1} max={65535} /><SettingsSwitch name="smtpSecure" label={t('admin:settings.fieldSmtpSecure')} description={t('admin:settings.descSmtpSecure')} /><SettingsInput name="smtpUser" label={t('admin:settings.fieldSmtpUser')} placeholder="noreply@example.com" /><SettingsInput name="smtpPass" label={t('admin:settings.fieldSmtpPass')} type="password" placeholder={t('admin:settings.placeholderSmtpPass')} /><SettingsInput name="smtpFrom" label={t('admin:settings.fieldSmtpFrom')} placeholder="RiriCloud <noreply@example.com>" /></div>
+                 <SettingsSwitch name="emailVerificationEnabled" label={t('admin:settings.fieldEmailVerificationEnabled')} description={t('admin:settings.descEmailVerificationEnabled')} />
+                 <SettingsSwitch name="enforceEmailVerification" label={t('admin:settings.fieldEnforceEmailVerification')} description={t('admin:settings.descEnforceEmailVerification')} />
                </div>
-               <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">人机验证（CAPTCHA）</h3><p className="text-xs text-muted-foreground">在获取注册验证码前拦截自动化请求；本地图形验证码无需外部服务。</p></div></div><SettingsSelect name="captchaMode" label="验证模式" options={[{ value: 'OFF', label: '关闭' }, { value: 'LOCAL', label: '本地图形验证码' }, { value: 'TURNSTILE', label: 'Cloudflare Turnstile' }]} />{form.watch('captchaMode') === 'TURNSTILE' ? <div className="grid gap-4 sm:grid-cols-2"><SettingsInput name="turnstileSiteKey" label="Site Key" placeholder="0x4AAAAAAA..." /><SettingsInput name="turnstileSecretKey" label="Secret Key" type="password" placeholder="留空保留当前密钥" /></div> : null}</div>
+               <div className="md:col-span-2 space-y-4 rounded-lg border p-4 shadow-sm"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" /><div><h3 className="text-sm font-semibold">{t('admin:settings.sectionCaptcha')}</h3><p className="text-xs text-muted-foreground">{t('admin:settings.descCaptcha')}</p></div></div><SettingsSelect name="captchaMode" label={t('admin:settings.fieldCaptchaMode')} options={[{ value: 'OFF', label: t('admin:settings.optCaptchaOff') }, { value: 'LOCAL', label: t('admin:settings.optCaptchaLocal') }, { value: 'TURNSTILE', label: t('admin:settings.optCaptchaTurnstile') }]} />{form.watch('captchaMode') === 'TURNSTILE' ? <div className="grid gap-4 sm:grid-cols-2"><SettingsInput name="turnstileSiteKey" label={t('admin:settings.fieldTurnstileSiteKey')} placeholder="0x4AAAAAAA..." /><SettingsInput name="turnstileSecretKey" label={t('admin:settings.fieldTurnstileSecretKey')} type="password" placeholder={t('admin:settings.placeholderTurnstileSecretKey')} /></div> : null}</div>
              </CardContent></Card></TabsContent>
 
-            <TabsContent value="subscription"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Globe2} title="订阅与客户端分发" description="配置客户端获取订阅的地址、更新节奏与默认模板。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-               <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="subscriptionBaseUrl" label="订阅基准 URL（覆盖项，可选）" placeholder="https://sub.example.com" description="客户端获取订阅的独立基准域名或反代路径。留空时自动继承「全站访问 URL」，若全站 URL 亦留空则使用当前访问地址。" /><SetOriginButton name="subscriptionBaseUrl" /></div>
-              <SettingsSwitch name="subscriptionShortLinksEnabled" label="使用 Nginx 伪静态短链接" description="开启后展示 https://domain.com/<UUID>；请先在 Nginx 中配置对应 rewrite 规则。" />
-              <SettingsSwitch name="subscriptionEffectsSyncEnabled" label="启用「我的订阅」卡片特效同步" description="开启后，用户端「我的订阅」主卡片将自动同步当前套餐的主题色彩底色、流体极光与晶体漫射微边框；关闭后使用经典极简原生卡片。" />
-              <SettingsInput name="subscriptionUpdateIntervalHours" label="客户端更新周期（小时）" type="number" min={1} max={168} />
+            <TabsContent value="subscription"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Globe2} title={t('admin:settings.sectionSubscription')} description={t('admin:settings.sectionSubscriptionDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+               <div className="space-y-2 md:col-span-2 min-w-0"><SettingsInput name="subscriptionBaseUrl" label={t('admin:settings.fieldSubscriptionBaseUrl')} placeholder="https://sub.example.com" description={t('admin:settings.descSubscriptionBaseUrl')} /><SetOriginButton name="subscriptionBaseUrl" /></div>
+              <SettingsSwitch name="subscriptionShortLinksEnabled" label={t('admin:settings.fieldSubscriptionShortLinksEnabled')} description={t('admin:settings.descSubscriptionShortLinksEnabled')} />
+              <SettingsSwitch name="subscriptionEffectsSyncEnabled" label={t('admin:settings.fieldSubscriptionEffectsSyncEnabled')} description={t('admin:settings.descSubscriptionEffectsSyncEnabled')} />
+              <SettingsInput name="subscriptionUpdateIntervalHours" label={t('admin:settings.fieldSubscriptionUpdateIntervalHours')} type="number" min={1} max={168} />
               <div className="rounded-lg border bg-muted/20 p-4 space-y-2 md:col-span-2 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 min-w-0">
                   <div className="space-y-0.5 min-w-0">
-                    <p className="text-sm font-medium">全局默认订阅模板</p>
+                    <p className="text-sm font-medium">{t('admin:settings.cardGlobalDefaultTemplate')}</p>
                     <p className="text-xs text-muted-foreground break-words">
-                      当前默认：<span className="font-semibold text-foreground">{defaultTemplate ? defaultTemplate.name : '未设置默认模板（回退系统内嵌规则）'}</span>
+                      {t('admin:settings.currentDefaultLabel')}<span className="font-semibold text-foreground">{defaultTemplate ? defaultTemplate.name : t('admin:settings.noDefaultTemplate')}</span>
                       {defaultTemplate?.description ? ` — ${defaultTemplate.description}` : ''}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" className="shrink-0" asChild>
-                    <Link to="/admin/templates">前往模板管理设置</Link>
+                    <Link to="/admin/templates">{t('admin:settings.btnManageTemplates')}</Link>
                   </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">全局默认订阅模板用于未单独绑定专有模板的套餐及普通订阅分发；标记与管理统一在「订阅模板」页面维护。</p>
+                <p className="text-[11px] text-muted-foreground">{t('admin:settings.descGlobalDefaultTemplate')}</p>
               </div>
-              <SettingsSwitch name="publicLinesEnabled" label="公开线路列表" description="关闭后用户订阅和线路页不再返回公开线路。" />
-              <SettingsSwitch name="includeUsageHeaders" label="注入用量响应头" description="向订阅响应附加 Subscription-Userinfo。" />
-              <SettingsSwitch name="appendSubscriptionSpeedBadge" label="默认追加节点速率角标" description="开启后，在套餐或线路配置了限速时，下发订阅的节点名称末尾自动追加例如 [50M] 速率标签（套餐可单独覆盖）。" />
-              <SettingsSwitch name="speedLimitUnitConversionEnabled" label="超过 1000M 自动转换为 G 单位" description="开启后，速率达到 1000 Mbps 及以上时自动换算为 G 单位（如 1G、2.5G），全站 UI 与订阅节点名称角标同步生效。" />
+              <SettingsSwitch name="publicLinesEnabled" label={t('admin:settings.fieldPublicLinesEnabled')} description={t('admin:settings.descPublicLinesEnabled')} />
+              <SettingsSwitch name="includeUsageHeaders" label={t('admin:settings.fieldIncludeUsageHeaders')} description={t('admin:settings.descIncludeUsageHeaders')} />
+              <SettingsSwitch name="appendSubscriptionSpeedBadge" label={t('admin:settings.fieldAppendSubscriptionSpeedBadge')} description={t('admin:settings.descAppendSubscriptionSpeedBadge')} />
+              <SettingsSwitch name="speedLimitUnitConversionEnabled" label={t('admin:settings.fieldSpeedLimitUnitConversionEnabled')} description={t('admin:settings.descSpeedLimitUnitConversionEnabled')} />
               <div className="md:col-span-2 min-w-0">
                 <SpeedTierEditor />
               </div>
             </CardContent></Card></TabsContent>
 
-             <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 运维与网络探针" description="调整节点健康判定、配置推送和 HTTP 轮询行为。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-              <SettingsInput name="heartbeatTimeoutSecs" label="心跳离线判定超时（秒）" type="number" min={5} max={3600} />
-              <SettingsInput name="configSyncDebounceMs" label="配置同步防抖（毫秒）" type="number" min={0} max={10000} />
-              <SettingsInput name="defaultPollIntervalSecs" label="默认 HTTP 轮询周期（秒）" type="number" min={5} max={300} />
-              <SettingsInput name="binaryDownloadBaseUrl" label="二进制分发基准 URL（覆盖项，可选）" placeholder="https://downloads.example.com/riricloud" description="供节点下载 riri-agent 及 sing-box 内核的专用存储/CDN 地址。留空时自动继承「全站访问 URL」。" />
-              <SettingsInput name="githubRepoUrl" label="项目 GitHub 仓库地址" placeholder="https://github.com/Nanako660/riricloud" description="节点安装脚本从该仓库的 Release（agent-v* Tag）优先下载二进制。" />
+             <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title={t('admin:settings.sectionAgent')} description={t('admin:settings.sectionAgentDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+              <SettingsInput name="heartbeatTimeoutSecs" label={t('admin:settings.fieldHeartbeatTimeoutSecs')} type="number" min={5} max={3600} />
+              <SettingsInput name="configSyncDebounceMs" label={t('admin:settings.fieldConfigSyncDebounceMs')} type="number" min={0} max={10000} />
+              <SettingsInput name="defaultPollIntervalSecs" label={t('admin:settings.fieldDefaultPollIntervalSecs')} type="number" min={5} max={300} />
+              <SettingsInput name="binaryDownloadBaseUrl" label={t('admin:settings.fieldBinaryDownloadBaseUrl')} placeholder="https://downloads.example.com/riricloud" description={t('admin:settings.descBinaryDownloadBaseUrl')} />
+              <SettingsInput name="githubRepoUrl" label={t('admin:settings.fieldGithubRepoUrl')} placeholder="https://github.com/Nanako660/riricloud" description={t('admin:settings.descGithubRepoUrl')} />
               <div className="md:col-span-2 min-w-0">
-                <SettingsTextarea name="githubMirrorUrlsText" label="GitHub 加速镜像列表" rows={4} className="md:col-span-2" description="每行一个前缀代理地址（如 https://ghfast.top/），安装时对直连与镜像自动测速择优；全部失败回退主控内置下载。留空使用内置默认镜像。" />
+                <SettingsTextarea name="githubMirrorUrlsText" label={t('admin:settings.fieldGithubMirrorUrlsText')} rows={4} className="md:col-span-2" description={t('admin:settings.descGithubMirrorUrlsText')} />
               </div>
               <div className="rounded-lg border bg-muted/20 p-4 md:col-span-2 space-y-4 min-w-0">
                 <div className="space-y-1">
-                  <h4 className="text-sm font-semibold">线路自动测速</h4>
-                  <p className="text-xs text-muted-foreground">主控后台定时对所有已启用的线路执行连通性与端到端延迟探测，结果同步至管理端与用户端线路卡片。</p>
+                  <h4 className="text-sm font-semibold">{t('admin:settings.cardLineSpeedtestTitle')}</h4>
+                  <p className="text-xs text-muted-foreground">{t('admin:settings.descLineSpeedtest')}</p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 min-w-0">
-                  <SettingsSwitch name="lineSpeedtestEnabled" label="开启线路自动定时测速" description="关闭后将仅在管理端点击「测速」时手动触发。" className="sm:col-span-2" />
-                  <SettingsInput name="lineSpeedtestIntervalMins" label="自动测速执行周期（分钟）" type="number" min={1} max={1440} description="建议 15 ~ 60 分钟。" />
-                  <SettingsInput name="lineSpeedtestTimeoutMs" label="单次测速超时阈值（毫秒）" type="number" min={500} max={30000} description="默认 3000ms。" />
+                  <SettingsSwitch name="lineSpeedtestEnabled" label={t('admin:settings.fieldLineSpeedtestEnabled')} description={t('admin:settings.descLineSpeedtestEnabled')} className="sm:col-span-2" />
+                  <SettingsInput name="lineSpeedtestIntervalMins" label={t('admin:settings.fieldLineSpeedtestIntervalMins')} type="number" min={1} max={1440} description={t('admin:settings.descLineSpeedtestIntervalMins')} />
+                  <SettingsInput name="lineSpeedtestTimeoutMs" label={t('admin:settings.fieldLineSpeedtestTimeoutMs')} type="number" min={500} max={30000} description={t('admin:settings.descLineSpeedtestTimeoutMs')} />
                   <div className="sm:col-span-2 min-w-0">
-                    <SettingsInput name="lineSpeedtestTargetUrl" label="测速探测目标 URL" placeholder="http://cp.cloudflare.com/generate_204" description="端到端测速时通过代理请求的目标地址，建议使用轻量无内容的 204 返回站点。" />
+                    <SettingsInput name="lineSpeedtestTargetUrl" label={t('admin:settings.fieldLineSpeedtestTargetUrl')} placeholder="http://cp.cloudflare.com/generate_204" description={t('admin:settings.descLineSpeedtestTargetUrl')} />
                   </div>
                 </div>
               </div>
@@ -431,48 +438,48 @@ export default function AdminSettingsPage() {
              </CardContent></Card></TabsContent>
 
             <TabsContent value="storage"><div className="space-y-4">
-              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Database} title="观测数据保留策略" description="控制 Master 端流量统计、节点速率与系统日志的自动清理周期。保存设置不会立即删除历史数据。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-                <SettingsInput name="trafficHourlyRetentionDays" label="流量小时汇总保留天数" type="number" min={1} max={3650} description="默认 90 天；仅影响 TrafficHourlyMetric 历史观测数据。" />
-                <SettingsInput name="nodeRateRetentionDays" label="节点速率指标保留天数" type="number" min={1} max={3650} description="默认 30 天；不影响节点当前实时速率。" />
-                <SettingsInput name="logsRetentionDays" label="系统日志保留天数" type="number" min={1} max={3650} />
-                <SettingsInput name="logsMaxCount" label="系统日志最大记录数" type="number" min={1000} max={1000000} />
-                <SettingsSelect name="logsMinIngestLevel" label="系统日志最低采集级别" options={[{ value: 'DEBUG', label: 'DEBUG' }, { value: 'INFO', label: 'INFO（推荐）' }, { value: 'WARN', label: 'WARN' }, { value: 'ERROR', label: 'ERROR' }]} description="低于此级别的日志不会进入遥测库；清理审计日志始终强制写入。" />
-                <div className="rounded-lg border bg-muted/20 p-4 text-xs text-muted-foreground md:col-span-2">旧版 TrafficLog 仅作为迁移过渡数据保留 7 天，清理入口可单独处理，不开放为长期策略。</div>
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Database} title={t('admin:settings.sectionStorage')} description={t('admin:settings.sectionStorageDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+                <SettingsInput name="trafficHourlyRetentionDays" label={t('admin:settings.fieldTrafficHourlyRetentionDays')} type="number" min={1} max={3650} description={t('admin:settings.descTrafficHourlyRetentionDays')} />
+                <SettingsInput name="nodeRateRetentionDays" label={t('admin:settings.fieldNodeRateRetentionDays')} type="number" min={1} max={3650} description={t('admin:settings.descNodeRateRetentionDays')} />
+                <SettingsInput name="logsRetentionDays" label={t('admin:settings.fieldLogsRetentionDays')} type="number" min={1} max={3650} />
+                <SettingsInput name="logsMaxCount" label={t('admin:settings.fieldLogsMaxCount')} type="number" min={1000} max={1000000} />
+                <SettingsSelect name="logsMinIngestLevel" label={t('admin:settings.fieldLogsMinIngestLevel')} options={[{ value: 'DEBUG', label: 'DEBUG' }, { value: 'INFO', label: t('admin:settings.optLogsLevelInfo') }, { value: 'WARN', label: 'WARN' }, { value: 'ERROR', label: 'ERROR' }]} description={t('admin:settings.descLogsMinIngestLevel')} />
+                <div className="rounded-lg border bg-muted/20 p-4 text-xs text-muted-foreground md:col-span-2">{t('admin:settings.tipLegacyTrafficLogNotice')}</div>
               </CardContent></Card>
-              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title="Agent 本地日志轮转" description="新版本 Agent 会按文件大小轮转 agent.log；旧版本继续运行但需要升级后才能应用此策略。" /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
-                <SettingsInput name="agentLogMaxSizeMb" label="单文件大小（MiB）" type="number" min={1} max={1024} />
-                <SettingsInput name="agentLogMaxFiles" label="日志文件总数" type="number" min={1} max={20} description="包含当前文件，默认 5 个。" />
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title={t('admin:settings.cardAgentLogRotateTitle')} description={t('admin:settings.descAgentLogRotate')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+                <SettingsInput name="agentLogMaxSizeMb" label={t('admin:settings.fieldAgentLogMaxSizeMb')} type="number" min={1} max={1024} />
+                <SettingsInput name="agentLogMaxFiles" label={t('admin:settings.fieldAgentLogMaxFiles')} type="number" min={1} max={20} description={t('admin:settings.descAgentLogMaxFiles')} />
               </CardContent></Card>
-              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Trash2} title="历史数据管理与碎片整理" description="预览并清理历史观测数据，或整理 SQLite 碎片收缩磁盘空间。用户额度、订阅用量和流量游标不会被修改。" /></CardHeader><CardContent className="space-y-4">
+              <Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Trash2} title={t('admin:settings.cardStorageVacuumTitle')} description={t('admin:settings.descStorageVacuum')} /></CardHeader><CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">主业务数据库 (riri.db)</p>
+                    <p className="text-xs text-muted-foreground">{t('admin:settings.statMainDb')}</p>
                     <p className="mt-1 text-base font-semibold tabular-nums">
                       {dbStatsQuery.isLoading
-                        ? '读取中…'
+                        ? t('admin:settings.statReading')
                         : formatBytes(dbStatsQuery.data?.databases.find((d) => d.target === 'main')?.totalSize ?? 0)}
                     </p>
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">观测时序库 (telemetry.db)</p>
+                    <p className="text-xs text-muted-foreground">{t('admin:settings.statTelemetryDb')}</p>
                     <p className="mt-1 text-base font-semibold tabular-nums">
                       {dbStatsQuery.isLoading
-                        ? '读取中…'
+                        ? t('admin:settings.statReading')
                         : formatBytes(dbStatsQuery.data?.databases.find((d) => d.target === 'telemetry')?.totalSize ?? 0)}
                     </p>
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">数据库文件总占用</p>
+                    <p className="text-xs text-muted-foreground">{t('admin:settings.statTotalDb')}</p>
                     <p className="mt-1 text-base font-semibold tabular-nums">
                       {dbStatsQuery.isLoading
-                        ? '读取中…'
+                        ? t('admin:settings.statReading')
                         : formatBytes(dbStatsQuery.data?.totalBytes ?? 0)}
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="destructive" onClick={() => setCleanupOpen(true)}>
-                    <Trash2 />打开清理中心
+                    <Trash2 />{t('admin:settings.btnOpenCleanup')}
                   </Button>
                   <Button
                     type="button"
@@ -481,23 +488,23 @@ export default function AdminSettingsPage() {
                     onClick={() => vacuumMutation.mutate()}
                   >
                     <RefreshCw className={vacuumMutation.isPending ? 'animate-spin' : ''} />
-                    {vacuumMutation.isPending ? '整理压缩中…' : '整理并压缩数据库 (VACUUM)'}
+                    {vacuumMutation.isPending ? t('admin:settings.vacuuming') : t('admin:settings.btnVacuum')}
                   </Button>
                 </div>
               </CardContent></Card>
             </div></TabsContent>
 
-             <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title="安全与高级个性化" description="控制会话有效期，并为已登录面板注入自定义样式与头部代码。" /></CardHeader><CardContent className="min-w-0 space-y-6">
-              <div className="max-w-2xl min-w-0"><SettingsInput name="jwtSessionDays" label="JWT 会话有效天数" type="number" min={1} max={30} description="安全提示：缩短会话周期可以降低长期凭据泄漏风险，修改后新登录会使用新周期。" /></div>
-              <SettingsEditor name="customCss" label="自定义 CSS" extensions={[css()]} description="样式只注入当前面板页面，适合覆盖主题变量或品牌细节。" />
-              <SettingsEditor name="customHeadHtml" label="自定义 HTML / JavaScript 头部代码" extensions={[html()]} description="这是管理员可信边界：内容会原样挂载到 document.head，页面内脚本可能读取当前 JWT；默认 CSP 会阻止任意 inline script，请仅使用已审计的资源。" />
+             <TabsContent value="advanced"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={ShieldCheck} title={t('admin:settings.sectionAdvanced')} description={t('admin:settings.sectionAdvancedDesc')} /></CardHeader><CardContent className="min-w-0 space-y-6">
+              <div className="max-w-2xl min-w-0"><SettingsInput name="jwtSessionDays" label={t('admin:settings.fieldJwtSessionDays')} type="number" min={1} max={30} description={t('admin:settings.descJwtSessionDays')} /></div>
+              <SettingsEditor name="customCss" label={t('admin:settings.fieldCustomCss')} extensions={[css()]} description={t('admin:settings.descCustomCss')} />
+              <SettingsEditor name="customHeadHtml" label={t('admin:settings.fieldCustomHeadHtml')} extensions={[html()]} description={t('admin:settings.descCustomHeadHtml')} />
             </CardContent></Card></TabsContent>
           </Tabs>
-          <div className="flex justify-end pt-4"><Button type="submit" className="w-full sm:w-auto" disabled={saveMutation.isPending}><Save />{saveMutation.isPending ? '保存中…' : '保存设置'}</Button></div>
+          <div className="flex justify-end pt-4"><Button type="submit" className="w-full sm:w-auto" disabled={saveMutation.isPending}><Save />{saveMutation.isPending ? t('admin:settings.saving') : t('admin:settings.saveSettingsButton')}</Button></div>
         </form>
       </Form>
-      {publicSettings.isError ? <p className="text-xs text-muted-foreground">公开站点信息暂时不可用，保存后会自动重试同步。</p> : null}
-      <Dialog open={smtpTestOpen} onOpenChange={setSmtpTestOpen}><DialogContent size="compact"><DialogHeader><DialogTitle>发送 SMTP 测试邮件</DialogTitle><DialogDescription>请输入收件地址，系统会先验证 SMTP 连接，再发送一封测试邮件。</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="smtp-test-email">收件邮箱</Label><Input id="smtp-test-email" type="email" value={smtpTestEmail} onChange={(event) => setSmtpTestEmail(event.target.value)} placeholder="admin@example.com" /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setSmtpTestOpen(false)}>取消</Button><Button type="button" disabled={smtpTestMutation.isPending || !smtpTestEmail.trim()} onClick={() => smtpTestMutation.mutate(smtpTestEmail.trim())}><Send />{smtpTestMutation.isPending ? '发送中…' : '发送测试邮件'}</Button></DialogFooter></DialogContent></Dialog>
+      {publicSettings.isError ? <p className="text-xs text-muted-foreground">{t('admin:settings.publicSettingsUnavailable')}</p> : null}
+      <Dialog open={smtpTestOpen} onOpenChange={setSmtpTestOpen}><DialogContent size="compact"><DialogHeader><DialogTitle>{t('admin:settings.dialogSmtpTestTitle')}</DialogTitle><DialogDescription>{t('admin:settings.dialogSmtpTestDesc')}</DialogDescription></DialogHeader><div className="space-y-2"><Label htmlFor="smtp-test-email">{t('admin:settings.labelSmtpTestEmail')}</Label><Input id="smtp-test-email" type="email" value={smtpTestEmail} onChange={(event) => setSmtpTestEmail(event.target.value)} placeholder="admin@example.com" /></div><DialogFooter><Button type="button" variant="outline" onClick={() => setSmtpTestOpen(false)}>{t('common:actions.cancel')}</Button><Button type="button" disabled={smtpTestMutation.isPending || !smtpTestEmail.trim()} onClick={() => smtpTestMutation.mutate(smtpTestEmail.trim())}><Send />{smtpTestMutation.isPending ? t('admin:settings.sendingTestEmail') : t('admin:settings.btnSendTestEmail')}</Button></DialogFooter></DialogContent></Dialog>
       <TelemetryCleanupDialog open={cleanupOpen} onOpenChange={setCleanupOpen} />
     </PageContainer>
   );
@@ -523,8 +530,9 @@ function SettingsSwitch({ name, label, description, className }: { name: FieldPa
 }
 
 function SettingsSelect({ name, label, description, options }: { name: FieldPath<SettingsForm>; label: string; description?: string; options: Array<{ value: string; label: string }> }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { control } = useFormContext<SettingsForm>();
-  return <FormField control={control} name={name} render={({ field }) => <FormItem className="min-w-0"><FormLabel>{label}</FormLabel><Select value={String(field.value || 'none')} onValueChange={(value) => field.onChange(value === 'none' ? 'none' : value)}><FormControl><SelectTrigger className="w-full min-w-0 overflow-hidden [&>span]:truncate"><SelectValue placeholder="请选择" /></SelectTrigger></FormControl><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>{description ? <FormDescription className="break-words">{description}</FormDescription> : null}<FormMessage /></FormItem>} />;
+  return <FormField control={control} name={name} render={({ field }) => <FormItem className="min-w-0"><FormLabel>{label}</FormLabel><Select value={String(field.value || 'none')} onValueChange={(value) => field.onChange(value === 'none' ? 'none' : value)}><FormControl><SelectTrigger className="w-full min-w-0 overflow-hidden [&>span]:truncate"><SelectValue placeholder={t('admin:settings.selectPlaceholder')} /></SelectTrigger></FormControl><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>{description ? <FormDescription className="break-words">{description}</FormDescription> : null}<FormMessage /></FormItem>} />;
 }
 
 function SettingsEditor({ name, label, description, extensions }: { name: FieldPath<SettingsForm>; label: string; description: string; extensions: Extension[] }) {
@@ -535,18 +543,20 @@ function SettingsEditor({ name, label, description, extensions }: { name: FieldP
 }
 
 function SetOriginButton({ name }: { name: 'publicBaseUrl' | 'subscriptionBaseUrl' }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { setValue } = useFormContext<SettingsForm>();
-  return <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setValue(name, window.location.origin, { shouldDirty: true })}><Link2 />使用当前面板地址</Button>;
+  return <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => setValue(name, window.location.origin, { shouldDirty: true })}><Link2 />{t('admin:settings.btnSetOrigin')}</Button>;
 }
 
 function TimezoneSettingField() {
+  const { t } = useTranslation(['admin', 'common']);
   const { control, watch, setValue } = useFormContext<SettingsForm>();
   const currentTimezone = watch('systemTimezone') || 'Asia/Shanghai';
-  const isPreset = COMMON_TIMEZONES.some((tz) => tz.value === currentTimezone);
+  const isPreset = TIMEZONE_CONFIGS.some((tz) => tz.value === currentTimezone);
   const [selectMode, setSelectMode] = useState<string>(isPreset ? currentTimezone : 'custom');
 
   useEffect(() => {
-    if (COMMON_TIMEZONES.some((tz) => tz.value === currentTimezone)) {
+    if (TIMEZONE_CONFIGS.some((tz) => tz.value === currentTimezone)) {
       setSelectMode(currentTimezone);
     } else {
       setSelectMode('custom');
@@ -557,7 +567,7 @@ function TimezoneSettingField() {
   try {
     previewText = formatDateTime(new Date(), currentTimezone);
   } catch {
-    previewText = '无效时区';
+    previewText = t('admin:settings.tzInvalid');
   }
 
   return (
@@ -566,21 +576,21 @@ function TimezoneSettingField() {
         <div className="space-y-0.5 min-w-0">
           <FormLabel className="text-sm font-medium flex items-center gap-1.5">
             <Clock className="size-4 shrink-0 text-primary" />
-            <span className="truncate">全站统一时区设置</span>
+            <span className="truncate">{t('admin:settings.tzLabel')}</span>
           </FormLabel>
           <FormDescription className="break-words">
-            全站时间展示、账单流水、自然月流量重置（1日 00:00:00）及流量统计时间桶切分均以此统一时区为准。
+            {t('admin:settings.tzDesc')}
           </FormDescription>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground rounded-md bg-muted/60 px-2.5 py-1 tabular-nums self-start sm:self-auto shrink-0 max-w-full truncate">
-          <span className="shrink-0">当前时区时间：</span>
+          <span className="shrink-0">{t('admin:settings.tzCurrentTime')}</span>
           <strong className="text-foreground font-medium truncate">{previewText}</strong>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 min-w-0">
         <FormItem className="min-w-0">
-          <FormLabel className="text-xs text-muted-foreground">常用时区快捷选择</FormLabel>
+          <FormLabel className="text-xs text-muted-foreground">{t('admin:settings.tzPresetSelect')}</FormLabel>
           <Select
             value={selectMode}
             onValueChange={(val) => {
@@ -591,15 +601,15 @@ function TimezoneSettingField() {
             }}
           >
             <SelectTrigger className="w-full min-w-0 overflow-hidden [&>span]:truncate">
-              <SelectValue placeholder="请选择常用时区" />
+              <SelectValue placeholder={t('admin:settings.tzSelectPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
-              {COMMON_TIMEZONES.map((tz) => (
+              {TIMEZONE_CONFIGS.map((tz) => (
                 <SelectItem key={tz.value} value={tz.value}>
-                  {tz.label}
+                  {t(tz.key)}
                 </SelectItem>
               ))}
-              <SelectItem value="custom">自定义 IANA 时区（手动填写）</SelectItem>
+              <SelectItem value="custom">{t('admin:settings.tzCustomOption')}</SelectItem>
             </SelectContent>
           </Select>
         </FormItem>
@@ -609,12 +619,12 @@ function TimezoneSettingField() {
           name="systemTimezone"
           render={({ field }) => (
             <FormItem className="min-w-0">
-              <FormLabel className="text-xs text-muted-foreground">IANA 时区标识</FormLabel>
+              <FormLabel className="text-xs text-muted-foreground">{t('admin:settings.tzIanaInput')}</FormLabel>
               <FormControl>
                 <Input
                   {...field}
                   className="min-w-0"
-                  placeholder="例如 Asia/Shanghai 或 UTC"
+                  placeholder={t('admin:settings.tzIanaPlaceholder')}
                   onChange={(e) => field.onChange(e.target.value.trim())}
                 />
               </FormControl>

@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 
 export type BinaryKind = 'AGENT' | 'SINGBOX';
 export type BinaryStatus = 'DRAFT' | 'ACTIVE' | 'DISABLED' | 'RETIRED';
@@ -154,7 +155,7 @@ function useResourceAction(verb: 'activate' | 'disable' | 'retire' | 'restore' |
   return useMutation({
     mutationFn: async (id: string) => (await api.post(`/admin/binary-resources/${id}/${verb}`)).data,
     onSuccess: () => { toast.success(label); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源操作失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.opFailed')))
   });
 }
 
@@ -164,21 +165,21 @@ export function useBinaryResourceMutations() {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'binary-resources'] });
     void queryClient.invalidateQueries({ queryKey: ['admin', 'binaries', 'info'] });
   };
-  const activate = useResourceAction('activate', '资源已启用', invalidate);
-  const disable = useResourceAction('disable', '资源已停用', invalidate);
-  const retire = useResourceAction('retire', '资源已归档', invalidate);
-  const restore = useResourceAction('restore', '资源已恢复为停用状态', invalidate);
-  const setDefault = useResourceAction('default', '默认资源已更新', invalidate);
+  const activate = useResourceAction('activate', i18n.t('admin:binaries.actActivate'), invalidate);
+  const disable = useResourceAction('disable', i18n.t('admin:binaries.actDisable'), invalidate);
+  const retire = useResourceAction('retire', i18n.t('admin:binaries.actRetire'), invalidate);
+  const restore = useResourceAction('restore', i18n.t('admin:binaries.actRestore'), invalidate);
+  const setDefault = useResourceAction('default', i18n.t('admin:binaries.actSetDefault'), invalidate);
   const removeResource = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/binary-resources/${id}`)).data,
-    onSuccess: () => { toast.success('资源已删除'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源删除失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.deleteSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.deleteFailed')))
   });
   const updateResource = useMutation({
     mutationFn: async ({ id, notes, compatibility }: { id: string; notes?: string | null; compatibility?: Record<string, unknown> }) =>
       (await api.patch(`/admin/binary-resources/${id}`, { notes, compatibility })).data,
-    onSuccess: () => { toast.success('资源信息已更新'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源更新失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.updateSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.updateFailed')))
   });
   const batchResources = useMutation({
     mutationFn: async ({ action, ids }: { action: BinaryBatchAction; ids: string[] }) =>
@@ -186,25 +187,29 @@ export function useBinaryResourceMutations() {
     onSuccess: (result) => {
       if (result.failed > 0) {
         const firstError = result.results.find((item) => !item.ok)?.error;
-        toast.warning(`批量操作完成：成功 ${result.succeeded} 项，失败 ${result.failed} 项${firstError ? `（如：${firstError}）` : ''}`);
+        toast.warning(i18n.t('admin:binaries.batchDoneWithErrors', {
+          succeeded: result.succeeded,
+          failed: result.failed,
+          error: firstError ? ` (${firstError})` : ''
+        }));
       } else {
-        toast.success(`批量操作完成：成功 ${result.succeeded} 项`);
+        toast.success(i18n.t('admin:binaries.batchDoneSuccess', { succeeded: result.succeeded }));
       }
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '批量操作失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.batchFailed')))
   });
   const retryDeployment = useMutation({
     mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
       (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/retry`)).data,
-    onSuccess: () => { toast.success('分发任务已重新下发'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '任务重试失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.retrySuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.retryFailed')))
   });
   const importResource = useMutation({
     mutationFn: async (payload: { kind: BinaryKind; upstreamVersion: string; revision?: number; target: string; filename?: string; url: string; sha256: string; builtFromAppVersion?: string; compatibilityJson?: string; notes?: string }) =>
       (await api.post('/admin/binary-resources/import', payload)).data,
-    onSuccess: () => { toast.success('资源已导入为草稿'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源导入失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.importDraftSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.importDraftFailed')))
   });
   const uploadResource = useMutation({
     mutationFn: async ({ file, ...payload }: { file: File; kind: BinaryKind; upstreamVersion: string; revision?: number; target: string; filename?: string; sha256: string; builtFromAppVersion?: string; compatibilityJson?: string; notes?: string }) => {
@@ -213,8 +218,8 @@ export function useBinaryResourceMutations() {
       form.append('file', file);
       return (await api.post('/admin/binary-resources/upload', form)).data;
     },
-    onSuccess: () => { toast.success('资源文件已上传为草稿'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '资源上传失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.uploadDraftSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.uploadDraftFailed')))
   });
   return {
     activate,

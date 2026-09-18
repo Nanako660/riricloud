@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -48,7 +49,7 @@ function nodeTotalRate(node: AdminNode) {
 }
 
 const nodeDetailSchema = z.object({
-  name: z.string().trim().min(1, '请输入节点名称').max(64, '名称最多 64 个字符'),
+  name: z.string().trim().min(1, i18n.t('admin:nodes.valNameReq')).max(64, i18n.t('admin:nodes.valNameMax')),
   reachability: z.enum(['PUBLIC', 'NAT']),
   serverHost: z.string().trim(),
   configOverride: z.string()
@@ -57,7 +58,7 @@ const nodeDetailSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['serverHost'],
-      message: '公网 VPS 必须输入有效的服务器公网地址'
+      message: i18n.t('admin:nodes.valServerHostPublic')
     });
   }
 });
@@ -80,17 +81,17 @@ function ProbeSnapshotCard({ snapshot }: { snapshot: ProbeSnapshot | null }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">{snapshot.success ? '诊断通过' : '诊断存在异常'}</p>
+        <p className="text-sm font-medium">{snapshot.success ? t('admin:nodes.probePass') : t('admin:nodes.probeAnomaly')}</p>
         <span className="text-xs text-muted-foreground">{formatDateTime(snapshot.completedAt)}</span>
       </div>
       {snapshot.results.map((result, index) => (
         <div key={`${result.type}-${result.target}-${index}`} className="rounded-md border p-3 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium">{result.type.toUpperCase()} · {result.target}</span>
-            <Badge variant={result.success ? 'default' : 'destructive'}>{result.success ? '正常' : '失败'}</Badge>
+            <Badge variant={result.success ? 'default' : 'destructive'}>{result.success ? t('admin:nodes.probeNormal') : t('admin:nodes.probeFailed')}</Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            延迟：{result.latencyMs != null ? `${result.latencyMs} ms` : '—'} · 丢包：{result.packetLossPercent ?? (result.success ? 0 : 100)}%{result.addresses?.length ? ` · 地址：${result.addresses.join(', ')}` : ''}
+            {t('admin:nodes.probeLatencyLabel')}{result.latencyMs != null ? `${result.latencyMs} ms` : '—'} · {t('admin:nodes.probeLossLabel')}{result.packetLossPercent ?? (result.success ? 0 : 100)}%{result.addresses?.length ? ` · ${t('admin:nodes.probeAddrLabel')}${result.addresses.join(', ')}` : ''}
           </p>
           {result.message && <p className="mt-1 break-words text-xs text-destructive">{result.message}</p>}
         </div>
@@ -113,14 +114,14 @@ function InstallCommandDialog({ open, onOpenChange, node }: { open: boolean; onO
         <div className="min-w-0 space-y-4">
           <InstallCommandsPicker key={open ? node.id : 'closed'} commands={node.installCommands} defaultMode={node.communicationMode === 'HTTP' ? 'http' : 'ws'} nodeOsArch={node.osArch} nodeId={node.id} />
           <div className="space-y-2">
-            <Label>彻底卸载（Linux / macOS）</Label>
+            <Label>{t('admin:nodes.uninstallLinuxMac')}</Label>
             <div className="flex min-w-0 items-start gap-2">
               <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{uninstallCommand}</code>
               <CopyButton value={uninstallCommand} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>彻底卸载（Windows，管理员 PowerShell）</Label>
+            <Label>{t('admin:nodes.uninstallWindows')}</Label>
             <div className="flex min-w-0 items-start gap-2">
               <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 p-3 text-xs">{windowsUninstallCommand}</code>
               <CopyButton value={windowsUninstallCommand} />

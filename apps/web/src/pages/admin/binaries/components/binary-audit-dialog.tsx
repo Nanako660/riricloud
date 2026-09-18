@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ const ACTION_FILTERS = [
 ] as const;
 
 export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const [page, setPage] = React.useState(1);
   const [action, setAction] = React.useState<'ALL' | string>('ALL');
   const { data, isPending } = useBinaryAuditLogs({ page, action: action === 'ALL' ? undefined : action });
@@ -34,8 +36,8 @@ export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpe
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="wide">
         <DialogHeader>
-          <DialogTitle>操作审计</DialogTitle>
-          <DialogDescription>资源中心全部操作的审计记录，保留资源删除前的操作轨迹。</DialogDescription>
+          <DialogTitle>{t('admin:binaries.auditTitle')}</DialogTitle>
+          <DialogDescription>{t('admin:binaries.auditDesc')}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-between gap-2">
           <Select
@@ -47,13 +49,13 @@ export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpe
           >
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部动作</SelectItem>
+              <SelectItem value="ALL">{t('admin:binaries.allActions')}</SelectItem>
               {ACTION_FILTERS.map((item) => (
                 <SelectItem key={item} value={item}>{BINARY_AUDIT_ACTION_LABELS[item] ?? item}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">共 {data?.total ?? 0} 条</span>
+          <span className="text-xs text-muted-foreground">{t('admin:binaries.totalLogs', { total: data?.total ?? 0 })}</span>
         </div>
         {isPending ? (
           <div className="space-y-2">
@@ -67,10 +69,10 @@ export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpe
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>时间</TableHead>
-                    <TableHead>动作</TableHead>
-                    <TableHead>资源</TableHead>
-                    <TableHead>操作者</TableHead>
+                    <TableHead>{t('admin:binaries.colTime')}</TableHead>
+                    <TableHead>{t('admin:binaries.colAction')}</TableHead>
+                    <TableHead>{t('admin:binaries.colResourceShort')}</TableHead>
+                    <TableHead>{t('admin:binaries.colOperator')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -91,7 +93,7 @@ export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpe
                         {log.operator ? (
                           <span className="break-words">{log.operator.nickname || log.operator.email}</span>
                         ) : (
-                          <span className="text-muted-foreground">{log.operatorId ? log.operatorId.slice(0, 8) : '系统'}</span>
+                          <span className="text-muted-foreground">{log.operatorId ? log.operatorId.slice(0, 8) : t('admin:binaries.operatorSystem')}</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -100,13 +102,17 @@ export function BinaryAuditDialog({ open, onOpenChange }: { open: boolean; onOpe
               </Table>
             </div>
             <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-              <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>上一页</Button>
-              <span>第 {data!.page} / {totalPages} 页</span>
-              <Button variant="outline" size="sm" className="h-7" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>下一页</Button>
+              <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
+                {t('common:table.previous')}
+              </Button>
+              <span>{t('admin:binaries.pagination', { current: data!.page, total: totalPages })}</span>
+              <Button variant="outline" size="sm" className="h-7" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>
+                {t('common:table.next')}
+              </Button>
             </div>
           </>
         ) : (
-          <EmptyState title="暂无审计记录" description="资源操作发生后会在这里留下轨迹。" className="border-0" />
+          <EmptyState title={t('admin:binaries.emptyAuditTitle')} description={t('admin:binaries.emptyAuditDesc')} className="border-0" />
         )}
       </ResponsiveDialogContent>
     </ResponsiveDialog>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { yaml } from '@codemirror/lang-yaml';
 import { json } from '@codemirror/lang-json';
 import {
@@ -66,99 +67,6 @@ interface Snippet {
   payload: string | Record<string, unknown>;
 }
 
-const CLASH_SNIPPETS: Snippet[] = [
-  {
-    id: 'tun',
-    title: '开启 TUN 虚拟网卡模式',
-    description: '接管系统全部 TCP/UDP 流量，自动路由并劫持 53 端口 DNS',
-    payload: `tun:
-  enable: true
-  stack: mixed
-  dns-hijack:
-    - 'any:53'
-  auto-route: true
-  auto-detect-interface: true`
-  },
-  {
-    id: 'profile',
-    title: '持久化 Fake-IP 与选择节点',
-    description: '客户端重启时记住用户上次选中的代理节点与 Fake-IP 缓存',
-    payload: `profile:
-  store-selected: true
-  store-fake-ip: true`
-  },
-  {
-    id: 'controller',
-    title: '配置 Clash API 控制器',
-    description: '提供 9090 端口给外部 Dashboard 控制面板连接',
-    payload: `external-controller: 127.0.0.1:9090
-secret: ''`
-  },
-  {
-    id: 'general',
-    title: '基础监听与模式定义',
-    description: '设置 mixed-port 7890、禁止局域网访问、规则模式',
-    payload: `mixed-port: 7890
-allow-lan: false
-mode: rule
-log-level: info`
-  }
-];
-
-const SINGBOX_SNIPPETS: Snippet[] = [
-  {
-    id: 'clash_api',
-    title: '配置 Clash API 外部控制器',
-    description: '开放 9090 控制端口，便于使用主流 Clash UI 面板连接',
-    payload: {
-      experimental: {
-        clash_api: {
-          external_controller: "127.0.0.1:9090",
-          secret: ""
-        }
-      }
-    }
-  },
-  {
-    id: 'mixed_inbound',
-    title: '添加 Mixed 本地监听入站',
-    description: '在 127.0.0.1:7890 监听混合 SOCKS5/HTTP 代理',
-    payload: {
-      inbounds: [
-        {
-          type: "mixed",
-          tag: "mixed-in",
-          listen: "127.0.0.1",
-          listen_port: 7890
-        }
-      ]
-    }
-  },
-  {
-    id: 'log',
-    title: '设置日志等级与输出',
-    description: '将 Sing-box 日志级别设置为 info 并附带时间戳',
-    payload: {
-      log: {
-        level: "info",
-        timestamp: true
-      }
-    }
-  },
-  {
-    id: 'ntp',
-    title: '开启 NTP 时间校准服务',
-    description: '定期向苹果授时服务器同步系统时间，保障 TLS 证书有效性',
-    payload: {
-      ntp: {
-        enabled: true,
-        server: "time.apple.com",
-        interval: "30m"
-      }
-    }
-  }
-];
-
 function isObject(item: unknown): item is Record<string, unknown> {
   return !!item && typeof item === 'object' && !Array.isArray(item);
 }
@@ -201,31 +109,127 @@ export function TemplateOverrideEditor({
   yamlError,
   jsonError
 }: TemplateOverrideEditorProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [activeClient, setActiveClient] = useState<'clash' | 'singbox'>('clash');
+
+  const clashSnippets = useMemo<Snippet[]>(
+    () => [
+      {
+        id: 'tun',
+        title: t('admin:templateOverride.snippets.clashTunTitle'),
+        description: t('admin:templateOverride.snippets.clashTunDesc'),
+        payload: `tun:
+  enable: true
+  stack: mixed
+  dns-hijack:
+    - 'any:53'
+  auto-route: true
+  auto-detect-interface: true`
+      },
+      {
+        id: 'profile',
+        title: t('admin:templateOverride.snippets.clashProfileTitle'),
+        description: t('admin:templateOverride.snippets.clashProfileDesc'),
+        payload: `profile:
+  store-selected: true
+  store-fake-ip: true`
+      },
+      {
+        id: 'controller',
+        title: t('admin:templateOverride.snippets.clashControllerTitle'),
+        description: t('admin:templateOverride.snippets.clashControllerDesc'),
+        payload: `external-controller: 127.0.0.1:9090\nsecret: ''`
+      },
+      {
+        id: 'general',
+        title: t('admin:templateOverride.snippets.clashGeneralTitle'),
+        description: t('admin:templateOverride.snippets.clashGeneralDesc'),
+        payload: `mixed-port: 7890\nallow-lan: false\nmode: rule\nlog-level: info`
+      }
+    ],
+    [t]
+  );
+
+  const singboxSnippets = useMemo<Snippet[]>(
+    () => [
+      {
+        id: 'clash_api',
+        title: t('admin:templateOverride.snippets.singboxClashApiTitle'),
+        description: t('admin:templateOverride.snippets.singboxClashApiDesc'),
+        payload: {
+          experimental: {
+            clash_api: {
+              external_controller: '127.0.0.1:9090',
+              secret: ''
+            }
+          }
+        }
+      },
+      {
+        id: 'mixed_inbound',
+        title: t('admin:templateOverride.snippets.singboxMixedInboundTitle'),
+        description: t('admin:templateOverride.snippets.singboxMixedInboundDesc'),
+        payload: {
+          inbounds: [
+            {
+              type: 'mixed',
+              tag: 'mixed-in',
+              listen: '127.0.0.1',
+              listen_port: 7890
+            }
+          ]
+        }
+      },
+      {
+        id: 'log',
+        title: t('admin:templateOverride.snippets.singboxLogTitle'),
+        description: t('admin:templateOverride.snippets.singboxLogDesc'),
+        payload: {
+          log: {
+            level: 'info',
+            timestamp: true
+          }
+        }
+      },
+      {
+        id: 'ntp',
+        title: t('admin:templateOverride.snippets.singboxNtpTitle'),
+        description: t('admin:templateOverride.snippets.singboxNtpDesc'),
+        payload: {
+          ntp: {
+            enabled: true,
+            server: 'time.apple.com',
+            interval: '30m'
+          }
+        }
+      }
+    ],
+    [t]
+  );
 
   // 本地快速语法状态判定
   const syntaxStatus = useMemo(() => {
     if (activeClient === 'clash') {
-      if (!yamlValue.trim()) return { valid: true, message: '配置为空' };
+      if (!yamlValue.trim()) return { valid: true, message: t('admin:templateOverride.emptyConfig') };
       // 检查制表符等基础 YAML 禁忌
       if (/\t/.test(yamlValue)) {
-        return { valid: false, message: 'YAML 包含制表符 (Tab)，请使用空格缩进' };
+        return { valid: false, message: t('admin:templateOverride.yamlTabWarning') };
       }
       if (yamlError) return { valid: false, message: yamlError };
-      return { valid: true, message: 'YAML 语法有效' };
+      return { valid: true, message: t('admin:templateOverride.yamlValid') };
     } else {
-      if (!jsonValue.trim()) return { valid: true, message: '配置为空' };
+      if (!jsonValue.trim()) return { valid: true, message: t('admin:templateOverride.emptyConfig') };
       try {
         const parsed = JSON.parse(jsonValue);
         if (!isObject(parsed)) {
-          return { valid: false, message: '必须是 JSON 对象格式' };
+          return { valid: false, message: t('admin:templateOverride.jsonMustBeObject') };
         }
-        return { valid: true, message: 'JSON 语法有效' };
+        return { valid: true, message: t('admin:templateOverride.jsonValid') };
       } catch (err) {
-        return { valid: false, message: (err as Error).message || 'JSON 语法错误' };
+        return { valid: false, message: (err as Error).message || t('admin:templateOverride.jsonSyntaxError') };
       }
     }
-  }, [activeClient, yamlValue, jsonValue, yamlError]);
+  }, [activeClient, yamlValue, jsonValue, yamlError, t]);
 
   // 注入 Clash YAML 片段
   const injectClashSnippet = (snippet: Snippet) => {
@@ -244,7 +248,7 @@ export function TemplateOverrideEditor({
       const keyRegex = new RegExp(`(^|\\n)${topKey}:`, 'm');
       if (keyRegex.test(yamlValue)) {
         // 如果顶层 key 已存在，在末尾注释提示或替换
-        onYamlChange(`${yamlValue.trimEnd()}\n\n# 提示：覆盖已存在的 ${topKey} 配置片段\n${rawSnippet}`);
+        onYamlChange(`${yamlValue.trimEnd()}\n\n${t('admin:templateOverride.overrideNotice', { key: topKey })}\n${rawSnippet}`);
         return;
       }
     }
@@ -307,7 +311,7 @@ export function TemplateOverrideEditor({
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-amber-500" />
-            Clash YAML<span className="hidden sm:inline"> 顶层覆写</span>
+            {t('admin:templateOverride.clashTab')}
           </button>
           <button
             type="button"
@@ -320,7 +324,7 @@ export function TemplateOverrideEditor({
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-blue-500" />
-            Sing-box JSON<span className="hidden sm:inline"> 顶层覆写</span>
+            {t('admin:templateOverride.singboxTab')}
           </button>
         </div>
 
@@ -336,7 +340,7 @@ export function TemplateOverrideEditor({
             ) : (
               <AlertCircle className="h-3 w-3" />
             )}
-            <span>{syntaxStatus.valid ? '格式正常' : '语法错误'}</span>
+            <span>{syntaxStatus.valid ? t('admin:templateOverride.statusValid') : t('admin:templateOverride.statusError')}</span>
           </Badge>
 
           {/* 常用配置片段注入 */}
@@ -344,15 +348,15 @@ export function TemplateOverrideEditor({
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                常用片段
+                {t('admin:templateOverride.snippetsMenu')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel className="text-xs">
-                {activeClient === 'clash' ? 'Clash YAML 常用片段' : 'Sing-box JSON 常用片段'}
+                {activeClient === 'clash' ? t('admin:templateOverride.clashSnippetsLabel') : t('admin:templateOverride.singboxSnippetsLabel')}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {(activeClient === 'clash' ? CLASH_SNIPPETS : SINGBOX_SNIPPETS).map((item) => (
+              {(activeClient === 'clash' ? clashSnippets : singboxSnippets).map((item) => (
                 <DropdownMenuItem
                   key={item.id}
                   onClick={() =>
@@ -378,10 +382,10 @@ export function TemplateOverrideEditor({
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
             onClick={handleReset}
-            title="恢复为内置默认模板片段"
+            title={t('admin:templateOverride.resetTitle')}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            重置
+            {t('admin:templateOverride.reset')}
           </Button>
 
           {/* 清空 */}
@@ -391,7 +395,7 @@ export function TemplateOverrideEditor({
             size="sm"
             className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
             onClick={handleClear}
-            title="清空当前客户端覆写"
+            title={t('admin:templateOverride.clearTitle')}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -400,22 +404,7 @@ export function TemplateOverrideEditor({
 
       {/* 说明文案条 */}
       <div className="text-[11px] text-muted-foreground">
-        {activeClient === 'clash' ? (
-          <span>
-            此处的 YAML 对象将与生成的 Clash 配置执行 <strong>深度合并 (deepMerge)</strong>
-            ，可用于注入或覆盖 <code className="font-mono text-foreground">mixed-port</code>、
-            <code className="font-mono text-foreground">tun</code>、
-            <code className="font-mono text-foreground">profile</code>、
-            <code className="font-mono text-foreground">mode</code> 等顶层字段。
-          </span>
-        ) : (
-          <span>
-            此处的 JSON 对象将与生成的 Sing-box 配置执行 <strong>深度合并 (deepMerge)</strong>
-            ，可用于注入或覆盖 <code className="font-mono text-foreground">inbounds</code>、
-            <code className="font-mono text-foreground">log</code>、
-            <code className="font-mono text-foreground">experimental.clash_api</code> 等全局参数。
-          </span>
-        )}
+        {activeClient === 'clash' ? t('admin:templateOverride.clashNotice') : t('admin:templateOverride.singboxNotice')}
       </div>
 
       {/* 全高全宽代码编辑器 */}
@@ -447,10 +436,10 @@ export function TemplateOverrideEditor({
           <div className="flex items-center justify-between gap-2 pb-1.5">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
-              <span>{activeClient === 'clash' ? 'YAML 覆写语法错误' : 'JSON 覆写语法错误'}</span>
+              <span>{activeClient === 'clash' ? t('admin:templateOverride.clashSyntaxErrorTitle') : t('admin:templateOverride.singboxSyntaxErrorTitle')}</span>
             </div>
             <span className="text-[10px] text-muted-foreground">
-              请检查语法缩进与键值规范
+              {t('admin:templateOverride.checkSyntaxSubtitle')}
             </span>
           </div>
           <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">

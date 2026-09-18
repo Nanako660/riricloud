@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Copy, Pencil, Plus, RefreshCw, RotateCcw, Trash2, Wifi } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -24,11 +25,11 @@ import { useAdminNodes } from '@/pages/admin/nodes/use-nodes';
 import { useMirrorMutations, useAdminMirrors, type ApiMirror, type MirrorAccessMode, type MirrorPayload } from './use-mirrors';
 
 const mirrorFormSchema = z.object({
-  name: z.string().trim().min(1, '请输入镜像站名称').max(64, '名称最多 64 个字符'),
-  slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{2,62}$/, 'Slug 为 3-63 位小写字母、数字或连字符，且以字母或数字开头'),
-  upstreamBaseUrl: z.string().trim().regex(/^https?:\/\//i, '上游基址需以 http:// 或 https:// 开头'),
-  allowedOrigins: z.string().trim().min(1, '请至少填写一个允许的上游域名'),
-  nodeId: z.string().trim().min(1, '请选择出网节点'),
+  name: z.string().trim().min(1, i18n.t('admin:mirrors.valNameReq')).max(64, i18n.t('admin:mirrors.valNameMax')),
+  slug: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{2,62}$/, i18n.t('admin:mirrors.valSlugFormat')),
+  upstreamBaseUrl: z.string().trim().regex(/^https?:\/\//i, i18n.t('admin:mirrors.valUpstreamUrl')),
+  allowedOrigins: z.string().trim().min(1, i18n.t('admin:mirrors.valAllowedOrigins')),
+  nodeId: z.string().trim().min(1, i18n.t('admin:mirrors.valNodeIdReq')),
   accessMode: z.enum(['ADMIN', 'SHARE', 'PUBLIC']),
   enabled: z.boolean(),
   shareExpiresAt: z.string()
@@ -206,7 +207,7 @@ export default function AdminMirrorsPage() {
     return (
       <PageContainer>
         <PageHeader title={t('admin:mirrors.title')} />
-        <EmptyState title="无法加载镜像站" description="请稍后刷新重试。" />
+        <EmptyState title={t('admin:mirrors.loadErrorTitle')} description={t('admin:mirrors.loadErrorDesc')} />
       </PageContainer>
     );
   }

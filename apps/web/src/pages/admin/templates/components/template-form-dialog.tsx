@@ -1,5 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -19,13 +21,13 @@ import { TemplatePreviewDrawer } from './template-preview-drawer';
 import { SubscriptionTemplate, TemplatePayload, useTemplateMutations } from '../use-templates';
 
 const schema = z.object({
-  name: z.string().min(1, '请输入模板名称'),
+  name: z.string().min(1, i18n.t('admin:templateForm.validation.nameRequired')),
   description: z.string().optional(),
-  proxyGroups: z.string().refine((value) => isJsonArray(value), '必须是 JSON 数组'),
-  ruleSets: z.string().refine((value) => isJsonArray(value), '必须是 JSON 数组'),
-  dnsConfig: z.string().refine((value) => isJsonObject(value), '必须是 JSON 对象'),
+  proxyGroups: z.string().refine((value) => isJsonArray(value), i18n.t('admin:templateForm.validation.jsonArrayRequired')),
+  ruleSets: z.string().refine((value) => isJsonArray(value), i18n.t('admin:templateForm.validation.jsonArrayRequired')),
+  dnsConfig: z.string().refine((value) => isJsonObject(value), i18n.t('admin:templateForm.validation.jsonObjectRequired')),
   customInjectYaml: z.string().optional(),
-  customInjectJson: z.string().refine((value) => !value.trim() || isJsonObject(value), '必须是 JSON 对象'),
+  customInjectJson: z.string().refine((value) => !value.trim() || isJsonObject(value), i18n.t('admin:templateForm.validation.jsonObjectRequired')),
   isDefault: z.boolean()
 });
 type FormValues = z.infer<typeof schema>;
@@ -62,6 +64,7 @@ function normalizeDns(value: Record<string, unknown>): Record<string, unknown> {
 const defaultDns = JSON.stringify({ enable: true, fakeIp: true, directDns: ['https://223.5.5.5/dns-query', '223.5.5.5'], proxyDns: ['https://1.1.1.1/dns-query', 'https://8.8.8.8/dns-query', 'https://9.9.9.9/dns-query'], ipv6: false }, null, 2);
 
 export function TemplateFormDialog({ open, onOpenChange, template }: { open: boolean; onOpenChange: (open: boolean) => void; template: SubscriptionTemplate | null }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { create, update } = useTemplateMutations();
   const [previewDrawerOpen, setPreviewDrawerOpen] = useState(false);
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { name: '', description: '', proxyGroups: '[]', ruleSets: '[]', dnsConfig: defaultDns, customInjectYaml: '', customInjectJson: '', isDefault: false } });
@@ -120,27 +123,27 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
       <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
         <ResponsiveDialogContent size="wide" className="!flex min-h-0 min-w-0 flex-col overflow-hidden md:h-[calc(100dvh-2rem)] md:max-h-[94dvh]">
           <DialogHeader className="shrink-0">
-            <DialogTitle>{template ? '编辑订阅模板' : '新建订阅模板'}</DialogTitle>
-            <DialogDescription>用结构化工作台维护策略组、分流规则、DNS、客户端覆写与源文件。</DialogDescription>
+            <DialogTitle>{template ? t('admin:templateForm.titleEdit') : t('admin:templateForm.titleCreate')}</DialogTitle>
+            <DialogDescription>{t('admin:templateForm.desc')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={form.handleSubmit(submit)} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
             <Tabs defaultValue="basic" className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
               <div className="w-full shrink-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 <TabsList className="inline-flex h-9 w-auto min-w-full flex-nowrap items-center justify-start gap-1 p-1">
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="basic">基本信息</TabsTrigger>
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="groups">策略组设计</TabsTrigger>
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="rules">分流规则</TabsTrigger>
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="dns">DNS 设置</TabsTrigger>
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="override">客户端高级覆写</TabsTrigger>
-                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="source">源文件编辑</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="basic">{t('admin:templateForm.tabBasic')}</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="groups">{t('admin:templateForm.tabGroups')}</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="rules">{t('admin:templateForm.tabRules')}</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="dns">{t('admin:templateForm.tabDns')}</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="override">{t('admin:templateForm.tabOverride')}</TabsTrigger>
+                  <TabsTrigger className="shrink-0 flex-none whitespace-nowrap px-3 py-1 text-xs sm:text-sm" value="source">{t('admin:templateForm.tabSource')}</TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="basic" className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label htmlFor="template-name">模板名称</Label><Input id="template-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>
-                  <div className="space-y-2"><Label htmlFor="template-description">描述</Label><Input id="template-description" {...form.register('description')} /></div>
+                  <div className="space-y-2"><Label htmlFor="template-name">{t('admin:templateForm.name')}</Label><Input id="template-name" {...form.register('name')} />{form.formState.errors.name && <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>}</div>
+                  <div className="space-y-2"><Label htmlFor="template-description">{t('admin:templateForm.descLabel')}</Label><Input id="template-description" {...form.register('description')} /></div>
                 </div>
-                <div className="flex items-center gap-3 rounded-md border p-3"><Switch checked={form.watch('isDefault')} onCheckedChange={(checked) => form.setValue('isDefault', checked, { shouldDirty: true })} /><div><Label>设为全局默认模板</Label><p className="text-xs text-muted-foreground">保存后会同步系统设置中的默认模板。</p></div></div>
+                <div className="flex items-center gap-3 rounded-md border p-3"><Switch checked={form.watch('isDefault')} onCheckedChange={(checked) => form.setValue('isDefault', checked, { shouldDirty: true })} /><div><Label>{t('admin:templateForm.isDefault')}</Label><p className="text-xs text-muted-foreground">{t('admin:templateForm.isDefaultDesc')}</p></div></div>
               </TabsContent>
               <TabsContent value="groups" className="data-[state=active]:flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <TemplateGroupsEditor value={parseArray(watchedGroups)} onChange={(value) => setJsonArray('proxyGroups', value)} />
@@ -184,7 +187,7 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
                 />
               </TabsContent>
             </Tabs>
-            <DialogFooter className="shrink-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button><Button type="submit" disabled={busy}>{busy ? '保存中…' : '保存模板'}</Button></DialogFooter>
+            <DialogFooter className="shrink-0"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('admin:templateForm.cancel')}</Button><Button type="submit" disabled={busy}>{busy ? t('admin:templateForm.saving') : t('admin:templateForm.save')}</Button></DialogFooter>
           </form>
         </ResponsiveDialogContent>
       </ResponsiveDialog>
@@ -193,7 +196,7 @@ export function TemplateFormDialog({ open, onOpenChange, template }: { open: boo
         open={previewDrawerOpen}
         onOpenChange={setPreviewDrawerOpen}
         template={previewTemplate}
-        title="快速渲染与内核校验"
+        title={t('admin:templateForm.quickTestRender')}
       />
     </>
   );

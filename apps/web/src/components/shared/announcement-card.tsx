@@ -5,7 +5,10 @@ import { MarkdownText } from '@/components/shared/markdown-text';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
+import { useTranslation } from 'react-i18next';
+
 export function AnnouncementCard() {
+  const { t } = useTranslation(['user', 'common']);
   const settings = usePublicSettings().data;
   const announcement = settings?.siteAnnouncement?.trim() ?? '';
   const storageKey = useMemo(() => announcement ? `riricloud:announcement:${announcement}` : '', [announcement]);
@@ -26,7 +29,7 @@ export function AnnouncementCard() {
           variant="ghost"
           size="icon"
           className="-mr-2 -mt-2 shrink-0"
-          aria-label="收起公告"
+          aria-label={t('user:announcement.dismiss')}
           onClick={() => {
             window.localStorage.setItem(storageKey, 'dismissed');
             setDismissed(true);

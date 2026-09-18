@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,6 +29,7 @@ interface LineFormDialogProps {
 }
 
 export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certificates, pending, onSubmit }: LineFormDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [tab, setTab] = useState('inbound');
   const form = useForm<LineFormValues>({
     resolver: zodResolver(lineFormSchema),
@@ -92,7 +94,7 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
 
   const submit = (values: LineFormValues) => {
     if (values.tlsMode === 'reality' && !values.realityPrivateKey.trim() && !line && values.realityPublicKey.trim()) {
-      form.setError('realityPrivateKey', { message: '新建 Reality 线路必须同时提供私钥，或点击生成密钥对' });
+      form.setError('realityPrivateKey', { message: t('admin:lineForm.realityKeyRequired') });
       setTab('inbound');
       return;
     }
@@ -103,24 +105,24 @@ export function LineFormDialog({ open, onOpenChange, line, nodes, lines, certifi
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="wide">
         <DialogHeader>
-          <DialogTitle>{line ? '编辑线路' : '新建线路'}</DialogTitle>
+          <DialogTitle>{line ? t('admin:lines.editLine') : t('admin:lines.createLine')}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(submit)} className="space-y-4">
             <FormField control={form.control} name="name" render={({ field }) => (
-              <FormItem><FormLabel>线路名称</FormLabel><FormControl><Input placeholder="例如：香港高倍率线路" {...field} /></FormControl><FormMessage /></FormItem>
+              <FormItem><FormLabel>{t('admin:lines.name')}</FormLabel><FormControl><Input placeholder={t('admin:lineForm.namePlaceholder')} {...field} /></FormControl><FormMessage /></FormItem>
             )} />
             <Tabs value={tab} onValueChange={setTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="inbound">入站配置</TabsTrigger>
-                <TabsTrigger value="advanced">线路高级设置</TabsTrigger>
+                <TabsTrigger value="inbound">{t('admin:lineForm.tabInbound')}</TabsTrigger>
+                <TabsTrigger value="advanced">{t('admin:lineForm.tabAdvanced')}</TabsTrigger>
               </TabsList>
               <TabsContent value="inbound" className="mt-4"><LineInboundFields form={form} nodes={nodes} certificates={certificates} onProtocolChange={changeProtocol} onGenerateKeys={generateKeys} keyPending={realityKeypair.isPending} /></TabsContent>
               <TabsContent value="advanced" className="mt-4"><LineAdvancedFields form={form} nodes={nodes} lines={lines} currentLineId={line?.id} onTypeChange={changeType} /></TabsContent>
             </Tabs>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-              <Button type="submit" disabled={pending}>{pending ? '保存中…' : '保存线路'}</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
+              <Button type="submit" disabled={pending}>{pending ? t('common:actions.saving') : t('admin:lineForm.saveLine')}</Button>
             </DialogFooter>
           </form>
         </Form>

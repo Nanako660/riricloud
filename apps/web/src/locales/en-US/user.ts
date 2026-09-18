@@ -125,6 +125,8 @@ const user = {
     downgradeUnsupported: 'Downgrade not supported',
     limitReached: 'Limit reached',
     claimed: 'Claimed',
+    savePercent: 'Save {{percent}}%',
+    defaultPlanDesc: 'All-round high-speed proxy network plan',
     features: 'Included Features',
     unlimitedSpeedFeature: 'Uncapped high-speed access',
     speedFeature: '{{speed}} Mbps peak bandwidth',
@@ -135,8 +137,9 @@ const user = {
     confirmBuyTitle: 'Confirm Purchase',
     confirmBuyDesc: 'Are you sure you want to purchase "{{planName}}" for ¥{{price}} using your account balance? It takes effect immediately.',
     confirmUpgradeTitle: 'Confirm Plan Upgrade',
-    confirmUpgradeDesc: 'Are you sure you want to upgrade to "{{planName}}"? The difference is ¥{{price}}, and remaining quotas will be recalculated according to the new plan.',
-    buySuccess: 'Congratulations! Plan purchased successfully.',
+    confirmUpgradeDesc: 'Confirm upgrading to "{{planName}}"? Price difference is ¥{{price}}. Remaining quota will be recalculated under the new plan.',
+    balanceAndEstimatedRemaining: 'Current balance: {{balance}}; Estimated remaining: ',
+    buySuccess: 'Congratulations! Plan ordered successfully',
     insufficientBalance: 'Insufficient account balance. Please recharge with a card key in your Profile.',
     emptyPlans: 'No plans currently available. Please check back later.'
   },
@@ -405,6 +408,43 @@ const user = {
     emailChangeFailed: 'Failed to change linked email',
     emailVerifySuccess: 'Email verified successfully',
     emailVerifyFailed: 'Failed to verify email'
+  },
+  clientGuide: {
+    title: 'Client Setup Guide',
+    step1Title: 'Copy Subscription Link',
+    step1Desc: 'Copy your universal multi-format subscription link in My Subscription.',
+    step2Title: 'Import into Client',
+    step2Desc: 'Paste the subscription link into Clash Meta, Sing-box, or Shadowrocket.',
+    step3Title: 'Select Line & Connect',
+    step3Desc: 'Update your configuration and select a low-latency available line to connect.',
+    footerTip: 'Public available lines will automatically sync to your client without manual server or port configuration.'
+  },
+  announcement: {
+    title: 'System Announcement',
+    dismiss: 'Got it'
+  },
+  quickRedeem: {
+    title: 'Redeem Code',
+    desc: 'Enter a redeem code to quickly recharge your balance or activate a plan.',
+    codeLabel: 'Redeem Code',
+    codePlaceholder: 'Redeem Code',
+    redeemAction: 'Redeem Now',
+    successTitle: 'Redemption Successful',
+    successDesc: 'Balance recharged or plan activated successfully',
+    insufficientBalance: 'Low balance? Recharge with a redeem code',
+    redeeming: 'Redeeming…',
+    rechargeAction: 'Recharge',
+    profileHintPrefix: 'You can also visit ',
+    profileHintSuffix: ' to view complete transaction logs.',
+    invalidCode: 'Please enter a valid redeem code'
+  },
+  proxySnippets: {
+    title: 'Proxy Integration Snippets',
+    tabCurl: 'cURL',
+    tabPython: 'Python (requests)',
+    tabNode: 'Node.js (fetch)',
+    tabGo: 'Go (net/http)',
+    desc: 'Copy the generated integration snippets below to quickly integrate proxy authentication and routing.'
   }
 } as const;
 

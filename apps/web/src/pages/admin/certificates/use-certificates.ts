@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage, type ApiCertificate } from '@/lib/api';
+import i18n from '@/i18n/config';
 
 export type { ApiCertificate };
 
@@ -57,18 +58,18 @@ export function useCertificateMutations() {
   });
   const create = useMutation({
     mutationFn: async (payload: CertificatePayload) => (await api.post<{ certificate: ApiCertificate }>('/admin/certificates', payload)).data,
-    onSuccess: () => { toast.success('证书已添加'); invalidate(); },
-    onError: (error: unknown) => onError(error, '添加证书失败')
+    onSuccess: () => { toast.success(i18n.t('admin:certificates.createSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:certificates.createFailed'))
   });
   const update = useMutation({
     mutationFn: async ({ id, ...payload }: CertificatePayload & { id: string }) => (await api.patch<{ certificate: ApiCertificate }>(`/admin/certificates/${id}`, payload)).data,
-    onSuccess: () => { toast.success('证书已保存，关联节点将自动同步'); invalidate(); },
-    onError: (error: unknown) => onError(error, '保存证书失败')
+    onSuccess: () => { toast.success(i18n.t('admin:certificates.updateSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:certificates.updateFailed'))
   });
   const remove = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/certificates/${id}`)).data,
-    onSuccess: () => { toast.success('证书已删除'); invalidate(); },
-    onError: (error: unknown) => onError(error, '删除证书失败')
+    onSuccess: () => { toast.success(i18n.t('admin:certificates.deleteSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:certificates.deleteFailed'))
   });
   return { parse, create, update, remove };
 }

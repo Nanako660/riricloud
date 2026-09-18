@@ -63,7 +63,7 @@ export function UserRankTable({
           />
         </div>
         <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value as RoleFilter)}>
-          <SelectTrigger aria-label="筛选用户角色" className="h-9 w-full sm:w-36">
+          <SelectTrigger aria-label={t('admin:traffic.filterRoleAria')} className="h-9 w-full sm:w-36">
             <SelectValue placeholder={t('admin:users.filterRole')} />
           </SelectTrigger>
           <SelectContent>
@@ -94,8 +94,8 @@ export function UserRankTable({
               <TableRow
                 key={item.userId}
                 tabIndex={0}
-                className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label={`查看 ${item.email} 的流量明细`}
+                className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-ring"
+                aria-label={t('admin:traffic.viewUserTrafficAria', { email: item.email })}
                 onClick={() => onSelectUser(item)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -107,7 +107,7 @@ export function UserRankTable({
                 <TableCell className={`font-semibold tabular-nums ${rankClass(rank)}`}>
                   <div className="flex items-center gap-1">
                     {rank < 3 ? <Medal className="size-4" aria-hidden="true" /> : rank + 1}
-                    <span className="sr-only">第 {rank + 1} 名</span>
+                    <span className="sr-only">{t('admin:traffic.rankSrOnly', { rank: rank + 1 })}</span>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -136,7 +136,7 @@ export function UserRankTable({
                     size="sm"
                     variant="ghost"
                     className="gap-1.5"
-                    aria-label={`查看 ${item.email} 的流量明细`}
+                    aria-label={t('admin:traffic.viewUserTrafficAria', { email: item.email })}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSelectUser(item);

@@ -1,4 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { Separator } from '@/components/ui/separator';
 import { FieldGrid, SelectField, TextField } from './line-form-controls';
 import { LineNetworkFields } from './line-network-fields';
@@ -18,6 +19,7 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
   keyPending: boolean;
   certificates: ApiCertificate[];
 }) {
+  const { t } = useTranslation(['admin']);
   const protocol = form.watch('protocolType');
   const supportsTransport = ['VLESS', 'VMESS', 'TROJAN'].includes(protocol);
   const supportsTls = ['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE', 'MIXED', 'SOCKS', 'HTTP'].includes(protocol);
@@ -29,21 +31,21 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">基础与网络</h3>
+        <h3 className="text-sm font-medium">{t('admin:lineForm.sectionBasicAndNetwork')}</h3>
         <Separator />
         <FieldGrid>
           <ProtocolSelect form={form} onProtocolChange={onProtocolChange} />
-          <SelectField form={form} name="entryNodeId" label="入口节点" options={nodeOptions} />
-          <TextField form={form} name="tag" label="Tag（可选）" placeholder="留空自动生成" />
-          <TextField form={form} name="listen" label="监听地址" placeholder="0.0.0.0" />
-          <TextField form={form} name="entryPort" label="入口监听端口" type="number" placeholder="留空自动分配" />
+          <SelectField form={form} name="entryNodeId" label={t('admin:lineForm.entryNode')} options={nodeOptions} />
+          <TextField form={form} name="tag" label={t('admin:lineForm.tag')} placeholder={t('admin:lineForm.tagPlaceholder')} />
+          <TextField form={form} name="listen" label={t('admin:lineForm.listen')} placeholder={t('admin:lineForm.listenPlaceholder')} />
+          <TextField form={form} name="entryPort" label={t('admin:lineForm.entryPort')} type="number" placeholder={t('admin:lineForm.entryPortPlaceholder')} />
         </FieldGrid>
-        <p className="text-xs text-muted-foreground">切换协议会重置该协议的传输、安全和专属参数；线路公共属性会保留。</p>
+        <p className="text-xs text-muted-foreground">{t('admin:lineForm.switchProtocolHint')}</p>
       </section>
 
       <Separator />
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">底层网络与物理限速</h3>
+        <h3 className="text-sm font-medium">{t('admin:lineForm.sectionNetworkAndSpeedLimit')}</h3>
         <Separator />
         <LineNetworkFields form={form} />
       </section>
@@ -51,7 +53,7 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
       {supportsTransport && <>
         <Separator />
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">传输层 Transport</h3>
+          <h3 className="text-sm font-medium">{t('admin:lineForm.sectionTransport')}</h3>
           <Separator />
           <LineTransportFields form={form} />
         </section>
@@ -60,7 +62,7 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
       {supportsTls && <>
         <Separator />
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">安全层 TLS / Reality / ACME</h3>
+          <h3 className="text-sm font-medium">{t('admin:lineForm.sectionSecurity')}</h3>
           <Separator />
           <LineSecurityFields form={form} onGenerateKeys={onGenerateKeys} keyPending={keyPending} certificates={certificates} />
         </section>
@@ -69,7 +71,7 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
       {supportsProtocolFields && <>
         <Separator />
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">协议专属参数</h3>
+          <h3 className="text-sm font-medium">{t('admin:lineForm.sectionProtocol')}</h3>
           <Separator />
           <LineProtocolFields form={form} />
         </section>
@@ -79,11 +81,12 @@ export function LineInboundFields({ form, nodes, certificates, onProtocolChange,
 }
 
 function ProtocolSelect({ form, onProtocolChange }: { form: UseFormReturn<LineFormValues>; onProtocolChange: (protocol: ProtocolType) => void }) {
+  const { t } = useTranslation(['admin']);
   return (
     <SelectField
       form={form}
       name="protocolType"
-      label="协议"
+      label={t('admin:lineForm.protocol')}
       options={PROTOCOL_TYPES.map((value) => ({ value, label: PROTOCOL_LABELS[value] }))}
       onValueChange={(value) => onProtocolChange(value as ProtocolType)}
     />

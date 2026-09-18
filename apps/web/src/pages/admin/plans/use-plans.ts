@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
@@ -90,6 +91,7 @@ export function usePublicPlans() {
 }
 
 export function usePlanMutations() {
+  const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
@@ -97,10 +99,10 @@ export function usePlanMutations() {
   };
   const options = {
     onSuccess: () => {
-      toast.success('套餐已保存');
+      toast.success(t('admin:plans.savedSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '套餐操作失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:plans.saveFailed')))
   };
   const create = useMutation({
     mutationFn: async (payload: PlanPayload) => (await api.post('/admin/plans', payload)).data,
@@ -113,10 +115,10 @@ export function usePlanMutations() {
   const remove = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/plans/${id}`)).data,
     onSuccess: () => {
-      toast.success('套餐已删除');
+      toast.success(t('admin:plans.deletedSuccess'));
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '删除失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:plans.deleteFailed')))
   });
   return { create, update, remove };
 }

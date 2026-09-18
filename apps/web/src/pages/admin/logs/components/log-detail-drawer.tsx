@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, Check, Copy, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +31,7 @@ export function LogDetailDrawer({
   onFilterByNodeId,
   onFilterByModule
 }: LogDetailDrawerProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
 
   if (!log) return null;
@@ -37,7 +39,7 @@ export function LogDetailDrawer({
   const copyText = (text: string, key: string, label: string) => {
     void navigator.clipboard.writeText(text);
     setCopiedKey(key);
-    toast.success(`已复制 ${label}`);
+    toast.success(t('admin:logs.copiedLabel', { label }));
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
@@ -70,10 +72,13 @@ export function LogDetailDrawer({
             >
               {log.level}
             </Badge>
-            <span>[{log.module}] 日志详情</span>
+            <span>[{log.module}] {t('admin:logs.detailTitle')}</span>
           </SheetTitle>
           <SheetDescription className="text-xs font-mono text-muted-foreground mt-1">
-            产生时间：{new Date(log.createdAt).toLocaleString()} ({new Date(log.createdAt).toISOString()})
+            {t('admin:logs.generatedAt', {
+              local: new Date(log.createdAt).toLocaleString(),
+              iso: new Date(log.createdAt).toISOString()
+            })}
           </SheetDescription>
         </SheetHeader>
 
@@ -83,7 +88,7 @@ export function LogDetailDrawer({
           {log.traceId ? (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-                <span className="font-semibold text-[11px] uppercase tracking-wider">全链路 Trace ID</span>
+                <span className="font-semibold text-[11px] uppercase tracking-wider">{t('admin:logs.traceIdTitle')}</span>
                 <div className="flex items-center gap-1.5">
                   <Button
                     type="button"
@@ -93,7 +98,7 @@ export function LogDetailDrawer({
                     className="h-6 px-2 text-[10px] gap-1"
                   >
                     {copiedKey === 'trace' ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-                    复制
+                    {t('common:actions.copy')}
                   </Button>
                   <Button
                     type="button"
@@ -106,7 +111,7 @@ export function LogDetailDrawer({
                     className="h-6 px-2 text-[10px] gap-1"
                   >
                     <ExternalLink className="size-3" />
-                    按此链路过滤
+                    {t('admin:logs.filterByTrace')}
                   </Button>
                 </div>
               </div>
@@ -119,12 +124,12 @@ export function LogDetailDrawer({
           {/* 基础归属上下文信息 */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg border p-2.5 bg-muted/10">
-              <div className="text-muted-foreground text-[10px] uppercase font-semibold">来源端</div>
+              <div className="text-muted-foreground text-[10px] uppercase font-semibold">{t('admin:logs.colSource')}</div>
               <div className="mt-1 font-mono font-medium">{log.source}</div>
             </div>
             <div className="rounded-lg border p-2.5 bg-muted/10">
               <div className="flex items-center justify-between text-muted-foreground text-[10px] uppercase font-semibold">
-                <span>所属模块</span>
+                <span>{t('admin:logs.moduleTitle')}</span>
                 {onFilterByModule && (
                   <Button
                     type="button"
@@ -137,7 +142,7 @@ export function LogDetailDrawer({
                     className="h-4 px-1 text-[10px] text-primary hover:text-primary gap-0.5"
                   >
                     <ExternalLink className="size-2.5" />
-                    过滤此模块
+                    {t('admin:logs.filterModule')}
                   </Button>
                 )}
               </div>
@@ -146,7 +151,7 @@ export function LogDetailDrawer({
             {log.node && (
               <div className="rounded-lg border p-2.5 bg-muted/10">
                 <div className="flex items-center justify-between text-muted-foreground text-[10px] uppercase font-semibold">
-                  <span>关联 VPS 节点</span>
+                  <span>{t('admin:logs.relatedNode')}</span>
                   {onFilterByNodeId && (
                     <Button
                       type="button"
@@ -159,7 +164,7 @@ export function LogDetailDrawer({
                       className="h-4 px-1 text-[10px] text-primary hover:text-primary gap-0.5"
                     >
                       <ExternalLink className="size-2.5" />
-                      过滤此节点
+                      {t('admin:logs.filterThisNode')}
                     </Button>
                   )}
                 </div>
@@ -168,7 +173,7 @@ export function LogDetailDrawer({
             )}
             {log.user && (
               <div className="rounded-lg border p-2.5 bg-muted/10">
-                <div className="text-muted-foreground text-[10px] uppercase font-semibold">关联操作用户</div>
+                <div className="text-muted-foreground text-[10px] uppercase font-semibold">{t('admin:logs.relatedUser')}</div>
                 <div className="mt-1 font-mono font-medium">{log.user.email}</div>
               </div>
             )}
@@ -177,16 +182,16 @@ export function LogDetailDrawer({
           {/* 日志消息核心正文 */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground font-semibold text-[11px] uppercase tracking-wider">日志描述</span>
+              <span className="text-muted-foreground font-semibold text-[11px] uppercase tracking-wider">{t('admin:logs.logDesc')}</span>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => copyText(log.message, 'msg', '日志描述')}
+                onClick={() => copyText(log.message, 'msg', t('admin:logs.logDesc'))}
                 className="h-6 px-2 text-[10px] gap-1"
               >
                 {copiedKey === 'msg' ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-                复制
+                {t('common:actions.copy')}
               </Button>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3 font-mono text-xs select-text whitespace-pre-wrap break-all leading-relaxed">
@@ -200,17 +205,17 @@ export function LogDetailDrawer({
               <div className="flex items-center justify-between text-destructive">
                 <div className="flex items-center gap-1">
                   <AlertCircle className="size-3.5" />
-                  <span className="font-semibold text-[11px] uppercase tracking-wider">异常调用堆栈 (Stack Trace)</span>
+                  <span className="font-semibold text-[11px] uppercase tracking-wider">{t('admin:logs.stackTraceTitle')}</span>
                 </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => copyText(stackTrace, 'stack', '调用堆栈')}
+                  onClick={() => copyText(stackTrace, 'stack', t('admin:logs.copyStack'))}
                   className="h-6 px-2 text-[10px] gap-1 text-destructive hover:bg-destructive/10"
                 >
                   {copiedKey === 'stack' ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-                  复制堆栈
+                  {t('admin:logs.copyStack')}
                 </Button>
               </div>
               <pre className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 font-mono text-[11px] text-destructive select-text overflow-x-auto leading-relaxed">
@@ -222,16 +227,16 @@ export function LogDetailDrawer({
           {/* 结构化元数据 JSON */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground font-semibold text-[11px] uppercase tracking-wider">结构化元数据 (JSON Metadata)</span>
+              <span className="text-muted-foreground font-semibold text-[11px] uppercase tracking-wider">{t('admin:logs.metadataTitle')}</span>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => copyText(JSON.stringify(parsedMetadata, null, 2), 'meta', 'JSON 元数据')}
+                onClick={() => copyText(JSON.stringify(parsedMetadata, null, 2), 'meta', 'JSON')}
                 className="h-6 px-2 text-[10px] gap-1"
               >
                 {copiedKey === 'meta' ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-                复制 JSON
+                {t('admin:logs.copyJson')}
               </Button>
             </div>
             <pre className="rounded-lg border bg-zinc-950 text-zinc-100 p-3 font-mono text-[11px] select-text overflow-x-auto leading-relaxed">

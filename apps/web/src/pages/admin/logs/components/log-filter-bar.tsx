@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Download, Radio, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ export function LogFilterBar({
   nodes,
   isRefreshing
 }: LogFilterBarProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const isFiltered =
     filter.level !== 'ALL' ||
     filter.source !== 'ALL' ||
@@ -60,11 +62,11 @@ export function LogFilterBar({
             onValueChange={(val) => onChange({ timeRange: val as LogsFilter['timeRange'], page: 1 })}
           >
             <TabsList className="h-8 p-0.5">
-              <TabsTrigger value="15m" className="h-7 text-xs px-2.5">15分钟</TabsTrigger>
-              <TabsTrigger value="1h" className="h-7 text-xs px-2.5">1小时</TabsTrigger>
-              <TabsTrigger value="24h" className="h-7 text-xs px-2.5">24小时</TabsTrigger>
-              <TabsTrigger value="7d" className="h-7 text-xs px-2.5">7天</TabsTrigger>
-              <TabsTrigger value="all" className="h-7 text-xs px-2.5">全部</TabsTrigger>
+              <TabsTrigger value="15m" className="h-7 text-xs px-2.5">{t('admin:logs.filter15m')}</TabsTrigger>
+              <TabsTrigger value="1h" className="h-7 text-xs px-2.5">{t('admin:logs.filter1h')}</TabsTrigger>
+              <TabsTrigger value="24h" className="h-7 text-xs px-2.5">{t('admin:logs.filter24h')}</TabsTrigger>
+              <TabsTrigger value="7d" className="h-7 text-xs px-2.5">{t('admin:logs.filter7d')}</TabsTrigger>
+              <TabsTrigger value="all" className="h-7 text-xs px-2.5">{t('admin:logs.filterAll')}</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -97,10 +99,10 @@ export function LogFilterBar({
               size="sm"
               onClick={onReset}
               className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
-              title="重置全部筛选条件"
+              title={t('admin:logs.resetFiltersTitle')}
             >
               <RotateCcw className="size-3" />
-              <span>重置</span>
+              <span>{t('admin:logs.reset')}</span>
             </Button>
           )}
 
@@ -113,7 +115,7 @@ export function LogFilterBar({
             className={cn('h-8 gap-1.5 text-xs', isLiveTail && 'bg-emerald-600 hover:bg-emerald-700 text-white')}
           >
             <Radio className={cn('size-3.5', isLiveTail && 'animate-pulse text-white')} />
-            {isLiveTail ? '实时推流中' : '实时日志'}
+            {isLiveTail ? t('admin:logs.liveTailing') : t('admin:logs.liveTailStream')}
           </Button>
 
           {/* 刷新 */}
@@ -124,7 +126,7 @@ export function LogFilterBar({
             onClick={onRefresh}
             disabled={isRefreshing}
             className="size-8"
-            title="手动刷新"
+            title={t('admin:logs.refreshTitle')}
           >
             <RefreshCw className={cn('size-3.5', isRefreshing && 'animate-spin')} />
           </Button>
@@ -133,11 +135,11 @@ export function LogFilterBar({
           <Select onValueChange={(val) => onExport(val as 'json' | 'csv')}>
             <SelectTrigger className="h-8 w-24 text-xs gap-1">
               <Download className="size-3.5" />
-              <span>导出</span>
+              <span>{t('admin:logs.export')}</span>
             </SelectTrigger>
             <SelectContent align="end">
-              <SelectItem value="json">JSON 格式</SelectItem>
-              <SelectItem value="csv">CSV 表格</SelectItem>
+              <SelectItem value="json">{t('admin:logs.exportJson')}</SelectItem>
+              <SelectItem value="csv">{t('admin:logs.exportCsv')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -148,7 +150,7 @@ export function LogFilterBar({
             size="icon"
             onClick={onOpenCleanup}
             className="size-8 text-destructive hover:bg-destructive/10"
-            title="按策略清理旧日志"
+            title={t('admin:logs.cleanupTitle')}
           >
             <Trash2 className="size-3.5" />
           </Button>
@@ -163,14 +165,14 @@ export function LogFilterBar({
           onValueChange={(val) => onChange({ source: val as LogSource, page: 1 })}
         >
           <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="来源端" />
+            <SelectValue placeholder={t('admin:logs.filterSource')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">全部来源端</SelectItem>
-            <SelectItem value="SERVER">Master 服务端 (API/系统)</SelectItem>
-            <SelectItem value="WEB">Web 前端 (JS/异常/事件)</SelectItem>
-            <SelectItem value="AGENT">VPS Agent (守护程序)</SelectItem>
-            <SelectItem value="SINGBOX">Sing-box (代理内核)</SelectItem>
+            <SelectItem value="ALL">{t('admin:logs.allSources')}</SelectItem>
+            <SelectItem value="SERVER">{t('admin:logs.sourceServer')}</SelectItem>
+            <SelectItem value="WEB">{t('admin:logs.sourceWeb')}</SelectItem>
+            <SelectItem value="AGENT">{t('admin:logs.sourceAgent')}</SelectItem>
+            <SelectItem value="SINGBOX">{t('admin:logs.sourceSingbox')}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -180,10 +182,10 @@ export function LogFilterBar({
           onValueChange={(val) => onChange({ nodeId: val, page: 1 })}
         >
           <SelectTrigger className="h-8 text-xs truncate">
-            <SelectValue placeholder="筛选节点" />
+            <SelectValue placeholder={t('admin:logs.filterNodePlaceholder')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">全部节点</SelectItem>
+            <SelectItem value="ALL">{t('admin:logs.allNodes')}</SelectItem>
             {nodes?.map((n) => (
               <SelectItem key={n.id} value={n.id}>
                 {n.name}
@@ -195,7 +197,7 @@ export function LogFilterBar({
         {/* TraceId 精确检索 */}
         <div className="relative">
           <Input
-            placeholder="全链路 TraceId..."
+            placeholder={t('admin:logs.traceIdPlaceholder')}
             value={filter.traceId}
             onChange={(e) => onChange({ traceId: e.target.value, page: 1 })}
             className="h-8 pr-7 text-xs font-mono"
@@ -215,7 +217,7 @@ export function LogFilterBar({
         <div className="relative xl:col-span-2">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="全文检索（路由/错误堆栈/IP/模块/消息）..."
+            placeholder={t('admin:logs.keywordPlaceholder')}
             value={filter.keyword}
             onChange={(e) => onChange({ keyword: e.target.value, page: 1 })}
             className="h-8 pl-8 pr-7 text-xs"
@@ -235,14 +237,14 @@ export function LogFilterBar({
       {/* 活跃的快速过滤徽标（模块等） */}
       {filter.module && (
         <div className="flex items-center gap-2 pt-1 border-t border-border/40">
-          <span className="text-[11px] text-muted-foreground">模块过滤中:</span>
+          <span className="text-[11px] text-muted-foreground">{t('admin:logs.filteringModule')}</span>
           <Badge variant="secondary" className="h-5 gap-1 px-2 font-mono text-[11px]">
             <span>[{filter.module}]</span>
             <button
               type="button"
               onClick={() => onChange({ module: '', page: 1 })}
               className="text-muted-foreground hover:text-foreground ml-0.5"
-              title="清除模块过滤"
+              title={t('admin:logs.clearModuleFilter')}
             >
               <X className="size-3" />
             </button>

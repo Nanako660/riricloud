@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useFieldArray, useForm, useFormContext, useWatch } from 'react-hook-form';
 import { Plus, Settings2, Trash2 } from 'lucide-react';
@@ -14,13 +15,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   EMPTY_PROBE_PRESET,
   MAX_PROBE_PRESETS,
-  probePresetEditorSchema,
+  createProbePresetEditorSchema,
   type ProbePresetEditorValues,
   type ProbePresetFormValue,
   type ProbePresetType
 } from './probe-preset-schema';
 
 export function ProbePresetEditor() {
+  const { t } = useTranslation(['admin', 'common']);
   const { control, setValue } = useFormContext<SettingsForm>();
   const value = useWatch({ control, name: 'probePresetTargets' }) ?? [];
 
@@ -28,8 +30,8 @@ export function ProbePresetEditor() {
     <div className="space-y-3 md:col-span-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium">默认探针目标</p>
-          <p className="text-[0.8rem] text-muted-foreground">配置后会作为节点探针弹窗的快速预设，列表顺序会保留。</p>
+          <p className="text-sm font-medium">{t('admin:settings.probePresetTitle')}</p>
+          <p className="text-[0.8rem] text-muted-foreground">{t('admin:settings.probePresetDesc')}</p>
         </div>
         <ProbePresetDialog
           value={value}
@@ -41,9 +43,14 @@ export function ProbePresetEditor() {
 }
 
 function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; onApply: (value: ProbePresetFormValue[]) => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const [open, setOpen] = useState(false);
+  const schema = useMemo(() => {
+    void t;
+    return createProbePresetEditorSchema();
+  }, [t]);
   const form = useForm<ProbePresetEditorValues>({
-    resolver: zodResolver(probePresetEditorSchema),
+    resolver: zodResolver(schema),
     defaultValues: { probePresetTargets: [] }
   });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'probePresetTargets' });
@@ -60,14 +67,14 @@ function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; 
   return (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-xs tabular-nums text-muted-foreground">{value.length} / {MAX_PROBE_PRESETS} 项</span>
-        <Button type="button" variant="outline" size="sm" onClick={openEditor}><Settings2 />管理探针目标</Button>
+        <span className="text-xs tabular-nums text-muted-foreground">{t('admin:settings.probePresetCount', { count: value.length, max: MAX_PROBE_PRESETS })}</span>
+        <Button type="button" variant="outline" size="sm" onClick={openEditor}><Settings2 />{t('admin:settings.probePresetManage')}</Button>
       </div>
       <ResponsiveDialog open={open} onOpenChange={setOpen}>
         <ResponsiveDialogContent size="wide">
           <DialogHeader>
-            <DialogTitle>管理默认探针目标</DialogTitle>
-            <DialogDescription>配置节点探针弹窗中的快速预设。最多 {MAX_PROBE_PRESETS} 项，取消关闭不会修改当前设置。</DialogDescription>
+            <DialogTitle>{t('admin:settings.probePresetDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('admin:settings.probePresetDialogDesc', { max: MAX_PROBE_PRESETS })}</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form className="space-y-6" onSubmit={apply}>
@@ -76,11 +83,11 @@ function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; 
                   {fields.map((field, index) => <Fragment key={field.id}>{index > 0 ? <Separator /> : null}<ProbePresetRow index={index} onRemove={() => remove(index)} /></Fragment>)}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">暂无自定义探针目标，节点探针弹窗将使用内置快速预设。</p>
+                <p className="text-sm text-muted-foreground">{t('admin:settings.probePresetEmpty')}</p>
               )}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <Button type="button" variant="outline" size="sm" disabled={fields.length >= MAX_PROBE_PRESETS} onClick={() => append({ ...EMPTY_PROBE_PRESET })}><Plus />添加探针目标</Button>
-                <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>取消</Button><Button type="submit">应用</Button></DialogFooter>
+                <Button type="button" variant="outline" size="sm" disabled={fields.length >= MAX_PROBE_PRESETS} onClick={() => append({ ...EMPTY_PROBE_PRESET })}><Plus />{t('admin:settings.probePresetAdd')}</Button>
+                <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>{t('common:actions.cancel')}</Button><Button type="submit">{t('admin:settings.probePresetApply')}</Button></DialogFooter>
               </div>
             </form>
           </Form>
@@ -91,6 +98,7 @@ function ProbePresetDialog({ value, onApply }: { value: ProbePresetFormValue[]; 
 }
 
 function ProbePresetRow({ index, onRemove }: { index: number; onRemove: () => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { control, getValues, setValue } = useFormContext<ProbePresetEditorValues>();
   const type = useWatch({ control, name: `probePresetTargets.${index}.type` });
 
@@ -107,20 +115,20 @@ function ProbePresetRow({ index, onRemove }: { index: number; onRemove: () => vo
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">目标 {index + 1}</p>
+        <p className="text-sm font-medium">{t('admin:settings.probePresetTargetLabel', { index: index + 1 })}</p>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" aria-label={`删除目标 ${index + 1}`} onClick={onRemove}><Trash2 /></Button>
+            <Button type="button" variant="ghost" size="icon" aria-label={t('admin:settings.probePresetDeleteAria', { index: index + 1 })} onClick={onRemove}><Trash2 /></Button>
           </TooltipTrigger>
-          <TooltipContent>删除此目标</TooltipContent>
+          <TooltipContent>{t('admin:settings.probePresetDeleteTooltip')}</TooltipContent>
         </Tooltip>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <FormField control={control} name={`probePresetTargets.${index}.type`} render={({ field }) => <FormItem><FormLabel>探针类型</FormLabel><Select value={field.value} onValueChange={(value) => changeType(value as ProbePresetType)}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="tcp">TCP 连接</SelectItem><SelectItem value="dns">DNS 解析</SelectItem><SelectItem value="icmp">ICMP Ping</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
-        <FormField control={control} name={`probePresetTargets.${index}.target`} render={({ field }) => <FormItem><FormLabel>目标地址</FormLabel><FormControl><Input placeholder={type === 'icmp' ? '例如 1.1.1.1' : '例如 example.com'} {...field} /></FormControl><FormMessage /></FormItem>} />
-        {type === 'tcp' ? <FormField control={control} name={`probePresetTargets.${index}.port`} render={({ field }) => <FormItem><FormLabel>端口</FormLabel><FormControl><Input type="number" min={1} max={65535} placeholder="443" {...field} /></FormControl><FormMessage /></FormItem>} /> : null}
-        <FormField control={control} name={`probePresetTargets.${index}.timeoutMs`} render={({ field }) => <FormItem><FormLabel>超时（毫秒）</FormLabel><FormControl><Input type="number" min={100} max={10000} placeholder="5000" {...field} /></FormControl><FormMessage /></FormItem>} />
+        <FormField control={control} name={`probePresetTargets.${index}.type`} render={({ field }) => <FormItem><FormLabel>{t('admin:settings.probePresetType')}</FormLabel><Select value={field.value} onValueChange={(value) => changeType(value as ProbePresetType)}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="tcp">{t('admin:settings.probePresetTypeTcp')}</SelectItem><SelectItem value="dns">{t('admin:settings.probePresetTypeDns')}</SelectItem><SelectItem value="icmp">{t('admin:settings.probePresetTypeIcmp')}</SelectItem></SelectContent></Select><FormMessage /></FormItem>} />
+        <FormField control={control} name={`probePresetTargets.${index}.target`} render={({ field }) => <FormItem><FormLabel>{t('admin:settings.probePresetTargetAddress')}</FormLabel><FormControl><Input placeholder={type === 'icmp' ? t('admin:settings.probePresetTargetPlaceholderIcmp') : t('admin:settings.probePresetTargetPlaceholderHost')} {...field} /></FormControl><FormMessage /></FormItem>} />
+        {type === 'tcp' ? <FormField control={control} name={`probePresetTargets.${index}.port`} render={({ field }) => <FormItem><FormLabel>{t('admin:settings.probePresetPort')}</FormLabel><FormControl><Input type="number" min={1} max={65535} placeholder="443" {...field} /></FormControl><FormMessage /></FormItem>} /> : null}
+        <FormField control={control} name={`probePresetTargets.${index}.timeoutMs`} render={({ field }) => <FormItem><FormLabel>{t('admin:settings.probePresetTimeout')}</FormLabel><FormControl><Input type="number" min={100} max={10000} placeholder="5000" {...field} /></FormControl><FormMessage /></FormItem>} />
       </div>
     </div>
   );

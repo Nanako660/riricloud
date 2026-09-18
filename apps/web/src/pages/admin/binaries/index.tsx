@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { ASSET_UNAVAILABLE_LABEL, bytes, BINARY_STATUS_LABELS, formatTargetBadge, sourceLabel, totalAssetBytes } from './binary-labels';
+import { bytes, BINARY_STATUS_LABELS, formatTargetBadge, sourceLabel, totalAssetBytes } from './binary-labels';
 import { ResourceFormDialog } from './components/resource-form-dialog';
 import { ResourceEditDialog } from './components/resource-edit-dialog';
 import { ResourceDetailDialog } from './components/resource-detail-dialog';
@@ -262,7 +262,7 @@ export default function BinariesPage() {
                   <TableRow key={item.id} data-state={selectedIds.has(item.id) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox
-                        aria-label={`选择资源 ${item.version}`}
+                        aria-label={t('admin:binaries.selectResourceAria', { version: item.version })}
                         checked={selectedIds.has(item.id)}
                         onCheckedChange={() => toggleSelect(item.id)}
                       />
@@ -302,7 +302,7 @@ export default function BinariesPage() {
                                 {formatTargetBadge(asset.target)}
                               </Badge>
                             </TooltipTrigger>
-                            {asset.available === false ? <TooltipContent>文件缺失或校验不符，已不可分发</TooltipContent> : null}
+                            {asset.available === false ? <TooltipContent>{t('admin:binaries.assetUnavailableTooltip')}</TooltipContent> : null}
                           </Tooltip>
                         ))}
                         {item.assets.length > 3 ? (
@@ -313,10 +313,10 @@ export default function BinariesPage() {
                               </Badge>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs space-y-1 text-xs">
-                              <div className="font-medium text-foreground">支持平台及体积：</div>
+                              <div className="font-medium text-foreground">{t('admin:binaries.supportedPlatformAndSize')}</div>
                               {item.assets.map((asset) => (
                                 <div key={asset.id} className="flex justify-between gap-3 text-muted-foreground">
-                                  <span>{asset.target}{asset.available === false ? `（${ASSET_UNAVAILABLE_LABEL}）` : ''}</span>
+                                  <span>{asset.target}{asset.available === false ? `（${t('admin:binaries.assetUnavailable')}）` : ''}</span>
                                   <span className="font-mono">{bytes(asset.size)}</span>
                                 </div>
                               ))}
@@ -329,7 +329,7 @@ export default function BinariesPage() {
                       {totalAssetBytes(item.assets)}
                     </TableCell>
                     <TableCell className="text-xs tabular-nums text-muted-foreground">
-                      {item.deploymentCount ?? 0} 次
+                      {t('admin:binaries.deploymentTimes', { count: item.deploymentCount ?? 0 })}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1.5">
@@ -409,7 +409,7 @@ export default function BinariesPage() {
           ) : (
             <EmptyState
               title={debouncedSearch ? t('common:table.noResults') : t('admin:binaries.emptyBinaries')}
-              description={debouncedSearch ? '请尝试调整搜索关键词或筛选条件。' : '上传或导入一个资源开始管理。'}
+              description={debouncedSearch ? t('admin:binaries.emptySearchDesc') : t('admin:binaries.emptyInitDesc')}
               className="border-0"
             />
           )}

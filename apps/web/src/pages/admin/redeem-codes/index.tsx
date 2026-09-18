@@ -112,7 +112,7 @@ export default function RedeemCodesPage() {
               <Button type="button" variant="outline" onClick={() => setCleanupOpen(true)}><Eraser className="size-4" />{t('admin:redeemCodes.cleanupExpired')}</Button>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Ticket className="size-4" />充值卡密金额以人民币元展示，服务端按分保存；列表默认掩码显示卡密。</div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Ticket className="size-4" />{t('admin:redeemCodes.infoBanner')}</div>
           {selectedIds.size > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
               <span>{t('admin:redeemCodes.selectedCount', { count: selectedIds.size })}</span>
@@ -126,14 +126,14 @@ export default function RedeemCodesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={toggleAllPage} aria-label="全选本页" disabled={unusedRows.length === 0} /></TableHead>
+                  <TableHead className="w-10"><Checkbox checked={allPageSelected} onCheckedChange={toggleAllPage} aria-label={t('common:table.selectAll')} disabled={unusedRows.length === 0} /></TableHead>
                   <TableHead>{t('admin:redeemCodes.colCode')}</TableHead>
                   <TableHead>{t('admin:redeemCodes.colValue')}</TableHead>
                   <TableHead>{t('admin:redeemCodes.colStatus')}</TableHead>
                   <TableHead>{t('admin:redeemCodes.colValidity')}</TableHead>
                   <TableHead>{t('admin:redeemCodes.usedBy')}</TableHead>
                   <TableHead>{t('admin:redeemCodes.usedAt')}</TableHead>
-                  <TableHead>备注</TableHead>
+                  <TableHead>{t('admin:redeemCodes.colNote')}</TableHead>
                   <TableHead>{t('common:table.createdAt')}</TableHead>
                   <TableHead className="text-right">{t('common:table.actions')}</TableHead>
                 </TableRow>
@@ -141,7 +141,7 @@ export default function RedeemCodesPage() {
               <TableBody>
                 {rows.map((item) => (
                   <TableRow key={item.id} data-state={selectedIds.has(item.id) ? 'selected' : undefined}>
-                    <TableCell>{item.status === 'UNUSED' && <Checkbox checked={selectedIds.has(item.id)} onCheckedChange={() => toggleRow(item)} aria-label={`选择卡密 ${item.id}`} />}</TableCell>
+                    <TableCell>{item.status === 'UNUSED' && <Checkbox checked={selectedIds.has(item.id)} onCheckedChange={() => toggleRow(item)} aria-label={t('admin:redeemCodes.selectCardAria', { id: item.id })} />}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
                         <code className="whitespace-nowrap text-xs">{revealed ? item.code : maskRedeemCode(item.code)}</code>
@@ -164,7 +164,7 @@ export default function RedeemCodesPage() {
           {!rows.length && <EmptyState title={query.isPending ? t('common:actions.loading') : t('admin:redeemCodes.emptyCodes')} description={t('admin:redeemCodes.subtitle')} />}
           {rows.length > 0 && (
             <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-              <div>共 <span className="font-semibold text-foreground font-mono">{total.toLocaleString()}</span> 条记录</div>
+              <div><span>{t('admin:redeemCodes.totalRecords', { count: total })}</span></div>
               <Pagination>
                 <PaginationPrevious onClick={() => setPage((value) => Math.max(value - 1, 1))} disabled={page <= 1} />
                 <PaginationInfo page={page} totalPages={totalPages} />
@@ -194,7 +194,7 @@ export default function RedeemCodesPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('admin:redeemCodes.confirmRevoke')}</AlertDialogTitle>
-            <AlertDialogDescription>{revokeTarget?.code} 作废后无法兑换，且不可恢复。</AlertDialogDescription>
+            <AlertDialogDescription>{t('admin:redeemCodes.revokeDesc', { code: revokeTarget?.code ?? '' })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
@@ -213,7 +213,7 @@ export default function RedeemCodesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" disabled={batchRevoke.isPending} onClick={() => batchRevoke.mutate([...selectedIds], { onSuccess: () => { setBatchRevokeOpen(false); setSelectedIds(new Set()); } })}>
-              {batchRevoke.isPending ? '作废中…' : t('common:actions.confirm')}
+              {batchRevoke.isPending ? t('admin:redeemCodes.revoking') : t('common:actions.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -227,7 +227,7 @@ export default function RedeemCodesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction variant="destructive" disabled={cleanup.isPending} onClick={() => cleanup.mutate(30, { onSuccess: () => setCleanupOpen(false) })}>
-              {cleanup.isPending ? '清理中…' : t('common:actions.confirm')}
+              {cleanup.isPending ? t('admin:redeemCodes.cleaning') : t('common:actions.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

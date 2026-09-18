@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Slot } from '@radix-ui/react-slot';
 import { PanelLeft } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -109,6 +110,7 @@ const SidebarTrigger = React.forwardRef<
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
   const { toggleSidebar } = useSidebar();
+  const { t } = useTranslation('common');
   return (
     <Button
       ref={ref}
@@ -122,7 +124,7 @@ const SidebarTrigger = React.forwardRef<
       {...props}
     >
       <PanelLeft className="h-4 w-4" />
-      <span className="sr-only">切换侧边栏</span>
+      <span className="sr-only">{t('actions.toggleSidebar')}</span>
     </Button>
   );
 });

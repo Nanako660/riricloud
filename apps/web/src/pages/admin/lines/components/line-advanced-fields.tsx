@@ -1,4 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { FormField, FormItem, FormLabel, FormControl, FormDescription } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
@@ -14,6 +15,7 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
   currentLineId?: string;
   onTypeChange: (type: LineFormValues['type']) => void;
 }) {
+  const { t } = useTranslation(['admin']);
   const type = form.watch('type');
   const relayMode = form.watch('relayMode');
   const entryNodeId = form.watch('entryNodeId');
@@ -26,7 +28,7 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
     .filter((node) => node.id !== entryNodeId)
     .map((node) => ({
       value: node.id,
-      label: `${node.name} · ${node.serverHost}${node.reachability === 'NAT' ? ' (NAT 落地)' : ''}`
+      label: `${node.name} · ${node.serverHost}${node.reachability === 'NAT' ? t('admin:lineForm.natLandingTag') : ''}`
     }));
   const targetLines = lines.filter((line) => (
     line.id !== currentLineId &&
@@ -38,7 +40,7 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
   const targetLine = lines.find((line) => line.id === targetLineId);
   const targetLineOptions = targetLines.map((line) => ({
     value: line.id,
-    label: `${line.name} · ${line.entryNode.name} · ${line.protocolType} · ${line.entryPort}${line.status === 'ACTIVE' ? '' : ' · 已禁用'}`
+    label: `${line.name} · ${line.entryNode.name} · ${line.protocolType} · ${line.entryPort}${line.status === 'ACTIVE' ? '' : t('admin:lineForm.lineDisabledTag')}`
   }));
   const changeRelayMode = (value: string) => {
     form.setValue('relayMode', value as LineFormValues['relayMode'], { shouldDirty: true });
@@ -52,28 +54,34 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">线路拓扑</h3>
+        <h3 className="text-sm font-medium">{t('admin:lineForm.sectionTopology')}</h3>
         <Separator />
         <FieldGrid>
-          <SelectField form={form} name="type" label="线路模式" options={[{ value: 'DIRECT', label: '直连' }, { value: 'RELAY', label: '中继' }]} onValueChange={(value) => onTypeChange(value as LineFormValues['type'])} />
-          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="landingNodeId" label="落地节点" options={nodeOptions} />}
-          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="landingPort" label="落地监听端口" type="number" placeholder="留空自动分配" />}
+          <SelectField
+            form={form}
+            name="type"
+            label={t('admin:lineForm.lineMode')}
+            options={[{ value: 'DIRECT', label: t('admin:lineForm.modeDirect') }, { value: 'RELAY', label: t('admin:lineForm.modeRelay') }]}
+            onValueChange={(value) => onTypeChange(value as LineFormValues['type'])}
+          />
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <SelectField form={form} name="landingNodeId" label={t('admin:lineForm.landingNode')} options={nodeOptions} />}
+          {type === 'RELAY' && relayMode !== 'TARGET_LINE' && <TextField form={form} name="landingPort" label={t('admin:lineForm.landingPort')} type="number" placeholder={t('admin:lineForm.landingPortPlaceholder')} />}
         </FieldGrid>
         {type === 'RELAY' && (
           <SelectField
             form={form}
             name="relayMode"
-            label="中继机制"
+            label={t('admin:lineForm.relayMode')}
             options={
               isNatLanding
                 ? [
-                    { value: 'BLIND_FORWARD', label: '盲转发：反向隧道直接穿透（推荐）' },
-                    { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后经反向隧道重建连接' }
+                    { value: 'BLIND_FORWARD', label: t('admin:lineForm.relayModes.blindForwardNat') },
+                    { value: 'PROTOCOL_PROXY', label: t('admin:lineForm.relayModes.protocolProxyNat') }
                   ]
                 : [
-                    { value: 'BLIND_FORWARD', label: '盲转发：保持端到端协议' },
-                    { value: 'PROTOCOL_PROXY', label: '协议代理：入口终止后重建连接' },
-                    { value: 'TARGET_LINE', label: '协议转换：桥接已有线路' }
+                    { value: 'BLIND_FORWARD', label: t('admin:lineForm.relayModes.blindForward') },
+                    { value: 'PROTOCOL_PROXY', label: t('admin:lineForm.relayModes.protocolProxy') },
+                    { value: 'TARGET_LINE', label: t('admin:lineForm.relayModes.targetLine') }
                   ]
             }
             onValueChange={changeRelayMode}
@@ -83,33 +91,33 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
           <div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
             <div className="flex items-center justify-between">
               <span className="font-medium text-amber-700 dark:text-amber-400">
-                NAT 穿透落地节点安全与配置
+                {t('admin:lineForm.natLandingTitle')}
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              检测到所选落地节点为内网 NAT 主机，将通过基于 Yamux 的 TCP 反向隧道由入口公网 VPS 桥接穿透。Sing-box 在该节点仅监听 127.0.0.1 本地回环。
+              {t('admin:lineForm.natLandingDesc')}
             </p>
             <SwitchField
               form={form}
               name="allowLanAccess"
-              label="允许访问落地端局域网资源"
-              description="默认关闭：仅允许访问公网目标，自动拦截发往 10.0.0.0/8、192.168.0.0/16 等局域网私网地址的流量；开启后允许外部流量访问该家庭内网。"
+              label={t('admin:lineForm.allowLanAccess')}
+              description={t('admin:lineForm.allowLanAccessDesc')}
             />
             <FieldGrid>
               <TextField
                 form={form}
                 name="tunnelPort"
-                label="反向隧道监听端口（入口 VPS 端）"
+                label={t('admin:lineForm.tunnelPort')}
                 type="number"
-                placeholder="留空自动分配 (如 40001+)"
-                description="同一对 (入口, 落地) 节点自动复用聚合端口"
+                placeholder={t('admin:lineForm.tunnelPortPlaceholder')}
+                description={t('admin:lineForm.tunnelPortDesc')}
               />
               <TextField
                 form={form}
                 name="tunnelSecret"
-                label="隧道通讯密钥（可选）"
-                placeholder="留空自动生成高熵 Token"
-                description="同一对节点复用已有密钥"
+                label={t('admin:lineForm.tunnelSecret')}
+                placeholder={t('admin:lineForm.tunnelSecretPlaceholder')}
+                description={t('admin:lineForm.tunnelSecretDesc')}
               />
             </FieldGrid>
           </div>
@@ -118,45 +126,45 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
           <SelectField
             form={form}
             name="targetLineId"
-            label="目标落地线路"
-            options={targetLineOptions.length ? targetLineOptions : [{ value: '__no-target-line__', label: '暂无可用目标线路' }]}
+            label={t('admin:lineForm.targetLineLabel')}
+            options={targetLineOptions.length ? targetLineOptions : [{ value: '__no-target-line__', label: t('admin:lineForm.noTargetLine') }]}
             disabled={!entryNodeId || targetLineOptions.length === 0}
-            description="仅可选择其他节点上的启用直连线路；落地节点和端口由目标线路自动绑定。"
+            description={t('admin:lineForm.targetLineDesc')}
             onValueChange={changeTargetLine}
           />
           {targetLine && <div className="rounded-md border bg-muted/30 p-3 text-sm">
-            <p className="font-medium">已绑定落地</p>
+            <p className="font-medium">{t('admin:lineForm.boundLandingTitle')}</p>
             <p className="mt-1 text-muted-foreground">{targetLine.entryNode.name} · {targetLine.entryNode.serverHost}:{targetLine.entryPort}</p>
-            <p className="text-muted-foreground">目标协议：{targetLine.protocolType} · {targetLine.status === 'ACTIVE' ? '线路已启用' : '线路已禁用'}</p>
+            <p className="text-muted-foreground">{t('admin:lineForm.targetProtocol')}{targetLine.protocolType} · {targetLine.status === 'ACTIVE' ? t('admin:lineForm.lineActive') : t('admin:lineForm.lineDisabled')}</p>
           </div>}
         </div>}
       </section>
 
       <Separator />
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">对外端点覆盖</h3>
+        <h3 className="text-sm font-medium">{t('admin:lineForm.sectionEndpointOverride')}</h3>
         <Separator />
-        <SwitchField form={form} name="endpointOverrideEnabled" label="启用对外端点覆盖" description="关闭时复用入口节点地址、入口端口和协议参数中的 SNI/Host。" />
+        <SwitchField form={form} name="endpointOverrideEnabled" label={t('admin:lineForm.endpointOverrideEnabled')} description={t('admin:lineForm.endpointOverrideDesc')} />
         {endpointOverrideEnabled && <FieldGrid>
-          <TextField form={form} name="serverHost" label="对外地址覆盖" placeholder="留空使用入口节点" />
-          <TextField form={form} name="serverPort" label="对外端口覆盖" type="number" placeholder="留空使用入口端口" />
-          <TextField form={form} name="serverName" label="SNI 覆盖" placeholder="留空使用协议参数" />
-          <TextField form={form} name="host" label="Host 覆盖" placeholder="留空使用传输参数" />
+          <TextField form={form} name="serverHost" label={t('admin:lineForm.serverHostOverride')} placeholder={t('admin:lineForm.serverHostPlaceholder')} />
+          <TextField form={form} name="serverPort" label={t('admin:lineForm.serverPortOverride')} type="number" placeholder={t('admin:lineForm.serverPortPlaceholder')} />
+          <TextField form={form} name="serverName" label={t('admin:lineForm.serverNameOverride')} placeholder={t('admin:lineForm.serverNamePlaceholder')} />
+          <TextField form={form} name="host" label={t('admin:lineForm.hostOverride')} placeholder={t('admin:lineForm.hostPlaceholder')} />
         </FieldGrid>}
       </section>
 
       <Separator />
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">线路属性</h3>
+        <h3 className="text-sm font-medium">{t('admin:lineForm.sectionAttributes')}</h3>
         <Separator />
         <FieldGrid>
-          <TextField form={form} name="trafficRate" label="流量倍率" type="number" inputProps={{ min: 0.01, step: 0.01 }} />
-          <TextField form={form} name="tags" label="线路标签" placeholder="hk, premium, relay" />
-          <TextField form={form} name="level" label="线路等级" type="number" inputProps={{ min: 0 }} />
-          <TextField form={form} name="sortOrder" label="排序" type="number" inputProps={{ min: 0 }} />
+          <TextField form={form} name="trafficRate" label={t('admin:lineForm.trafficRate')} type="number" inputProps={{ min: 0.01, step: 0.01 }} />
+          <TextField form={form} name="tags" label={t('admin:lineForm.tags')} placeholder={t('admin:lineForm.tagsPlaceholder')} />
+          <TextField form={form} name="level" label={t('admin:lineForm.level')} type="number" inputProps={{ min: 0 }} />
+          <TextField form={form} name="sortOrder" label={t('admin:lineForm.sortOrder')} type="number" inputProps={{ min: 0 }} />
         </FieldGrid>
         <FieldGrid>
-          <SwitchField form={form} name="isPublic" label="对订阅公开" description="关闭后不会进入套餐匹配。" />
+          <SwitchField form={form} name="isPublic" label={t('admin:lineForm.isPublic')} description={t('admin:lineForm.isPublicDesc')} />
           <StatusSwitch form={form} />
         </FieldGrid>
       </section>
@@ -165,9 +173,10 @@ export function LineAdvancedFields({ form, nodes, lines, currentLineId, onTypeCh
 }
 
 function StatusSwitch({ form }: { form: UseFormReturn<LineFormValues> }) {
+  const { t } = useTranslation(['admin']);
   return <FormField control={form.control} name="status" render={({ field }) => (
     <FormItem className="flex items-center justify-between gap-4">
-      <div><FormLabel>线路已启用</FormLabel><FormDescription>禁用后保留配置但不参与订阅。</FormDescription></div>
+      <div><FormLabel>{t('admin:lineForm.lineActiveLabel')}</FormLabel><FormDescription>{t('admin:lineForm.lineActiveDesc')}</FormDescription></div>
       <FormControl><Switch checked={field.value === 'ACTIVE'} onCheckedChange={(checked) => field.onChange(checked ? 'ACTIVE' : 'DISABLED')} /></FormControl>
     </FormItem>
   )} />;

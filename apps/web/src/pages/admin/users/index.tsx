@@ -44,14 +44,14 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
 }
 
 function SubscriptionStatusBadge({ status }: { status: AdminUserSubscription['status'] | null }) {
-  const { t } = useTranslation(['admin']);
+  const { t } = useTranslation(['admin', 'common']);
   if (!status) return <Badge variant="outline">{t('admin:users.noSubscription')}</Badge>;
   const variant = status === 'ACTIVE' ? 'default' : status === 'REVOKED' ? 'destructive' : 'secondary';
   const labels: Record<AdminUserSubscription['status'], string> = {
     ACTIVE: t('admin:users.statusActive'),
-    CANCELED: '已取消',
-    EXPIRED: '已过期',
-    REVOKED: '已吊销'
+    CANCELED: t('common:status.canceled'),
+    EXPIRED: t('common:status.expired'),
+    REVOKED: t('common:status.revoked')
   };
   return <Badge variant={variant}>{labels[status] ?? status}</Badge>;
 }
@@ -277,7 +277,7 @@ export default function AdminUsersPage() {
   const onBulkBan = async (isActive: boolean) => {
     const ids = selected.filter((u) => u.id !== selfId).map((u) => u.id);
     if (ids.length === 0) {
-      toast.warning('没有可操作的用户（不能操作自己）');
+      toast.warning(t('admin:users.noOperableUsers'));
       return;
     }
     bulkActive.mutate({ ids, isActive });
@@ -344,9 +344,9 @@ export default function AdminUsersPage() {
                 <SelectContent>
                   <SelectItem value="ALL">{t('admin:users.allSubscriptions')}</SelectItem>
                   <SelectItem value="ACTIVE">{t('admin:users.statusActive')}</SelectItem>
-                  <SelectItem value="CANCELED">已取消</SelectItem>
-                  <SelectItem value="EXPIRED">已过期</SelectItem>
-                  <SelectItem value="REVOKED">已吊销</SelectItem>
+                  <SelectItem value="CANCELED">{t('common:status.canceled')}</SelectItem>
+                  <SelectItem value="EXPIRED">{t('common:status.expired')}</SelectItem>
+                  <SelectItem value="REVOKED">{t('common:status.revoked')}</SelectItem>
                   <SelectItem value="NONE">{t('admin:users.noSubscription')}</SelectItem>
                 </SelectContent>
               </Select>
@@ -366,7 +366,7 @@ export default function AdminUsersPage() {
                 <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto">
                   <Button size="sm" variant="outline" className="gap-1.5" disabled={bulkActive.isPending} onClick={() => void onBulkBan(false)}>
                     <ShieldOff className="h-4 w-4" />
-                    {t('admin:users.batchBan')}（{selected.length}）
+                    {t('admin:users.batchBan')} ({selected.length})
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5" disabled={bulkActive.isPending} onClick={() => void onBulkBan(true)}>
                     <ShieldCheck className="h-4 w-4" />
@@ -392,7 +392,7 @@ export default function AdminUsersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('admin:users.deleteConfirm', { email: deleting?.email ?? '' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              该用户的流量记录将一并删除，此操作不可撤销。
+              {t('admin:users.deleteConfirmDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -407,8 +407,8 @@ export default function AdminUsersPage() {
       <AlertDialog open={!!resetting} onOpenChange={(open) => !open && setResetting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('admin:users.resetToken')}？</AlertDialogTitle>
-            <AlertDialogDescription>{resetting?.email} 的旧链接会立即失效，需要重新导入订阅。</AlertDialogDescription>
+            <AlertDialogTitle>{t('admin:users.resetToken')}?</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:users.resetTokenDesc', { email: resetting?.email ?? '' })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
@@ -435,8 +435,8 @@ export default function AdminUsersPage() {
                 const ids = selected.filter((u) => u.id !== selfId).map((u) => u.id);
                 const results = await Promise.allSettled(ids.map((id) => api.delete(`/admin/users/${id}`)));
                 const failed = results.filter((r) => r.status === 'rejected').length;
-                if (failed === 0) toast.success(`已删除 ${ids.length} 个用户`);
-                else toast.warning(`删除完成：${ids.length - failed} 成功，${failed} 失败`);
+                if (failed === 0) toast.success(t('admin:users.deleteBatchSuccess', { count: ids.length }));
+                else toast.warning(t('admin:users.deleteBatchPartial', { success: ids.length - failed, failed }));
                 setBulkDeleting(false);
               }}
             >

@@ -3,6 +3,7 @@ import { useFormResetOnKey } from '@/hooks/use-form-reset';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FileKey2, FileText, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -12,22 +13,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { extractErrorMessage } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
-import { useCertificateDetail, useCertificateMutations, type CertificatePayload } from './use-certificates';
+import { useCertificateDetail, useCertificateMutations, type CertificatePayload, type ApiCertificate } from './use-certificates';
 
-const certificateFormSchema = z.object({
-  name: z.string().trim().min(1, '请输入证书名称').max(128, '证书名称不超过 128 字符'),
-  certificatePem: z.string().trim().min(1, '请粘贴或上传证书'),
-  privateKeyPem: z.string().optional()
-});
-
-type CertificateFormValues = z.infer<typeof certificateFormSchema>;
-
-const statusLabels = {
-  VALID: '有效',
-  EXPIRING: '即将到期',
-  EXPIRED: '已过期',
-  NOT_YET_VALID: '尚未生效'
-} as const;
+interface CertificateFormValues {
+  name: string;
+  certificatePem: string;
+  privateKeyPem?: string;
+}
 
 export function CertificateFormDialog({
   open,
@@ -42,6 +34,21 @@ export function CertificateFormDialog({
   pending: boolean;
   onSubmit: (payload: CertificatePayload) => void;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
+
+  const certificateFormSchema = React.useMemo(() => z.object({
+    name: z.string().trim().min(1, t('admin:certificates.valNameRequired')).max(128, t('admin:certificates.valNameMax')),
+    certificatePem: z.string().trim().min(1, t('admin:certificates.valCertPemRequired')),
+    privateKeyPem: z.string().optional()
+  }), [t]);
+
+  const statusLabels: Record<ApiCertificate['status'], string> = {
+    VALID: t('admin:certificates.statusValid'),
+    EXPIRING: t('admin:certificates.statusExpiring'),
+    EXPIRED: t('admin:certificates.statusExpired'),
+    NOT_YET_VALID: t('admin:certificates.statusNotYetValid')
+  };
+
   const form = useForm<CertificateFormValues>({
     resolver: zodResolver(certificateFormSchema),
     defaultValues: { name: '', certificatePem: '', privateKeyPem: '' }
@@ -88,7 +95,7 @@ export function CertificateFormDialog({
 
   const submit = (values: CertificateFormValues) => {
     if (!certificateId && !values.privateKeyPem?.trim()) {
-      form.setError('privateKeyPem', { message: '新建证书必须提供私钥' });
+      form.setError('privateKeyPem', { message: t('admin:certificates.valKeyRequired') });
       return;
     }
     onSubmit({
@@ -102,60 +109,60 @@ export function CertificateFormDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="wide" className="min-w-0 overflow-x-hidden">
         <DialogHeader className="min-w-0">
-          <DialogTitle>{certificateId ? '编辑证书' : '新增证书'}</DialogTitle>
-          <DialogDescription>证书通过 X.509 校验后，可在线路表单中选择并内嵌同步到节点。</DialogDescription>
+          <DialogTitle>{certificateId ? t('admin:certificates.formEditTitle') : t('admin:certificates.formCreateTitle')}</DialogTitle>
+          <DialogDescription>{t('admin:certificates.formDesc')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(submit)} className="min-w-0 space-y-4">
             <FormField control={form.control} name="name" render={({ field }) => (
               <FormItem className="min-w-0">
-                <FormLabel>证书名称</FormLabel>
-                <FormControl><Input placeholder="例如：api.example.com 生产证书" {...field} /></FormControl>
+                <FormLabel>{t('admin:certificates.nameLabel')}</FormLabel>
+                <FormControl><Input placeholder={t('admin:certificates.namePlaceholder')} {...field} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
             <FormField control={form.control} name="certificatePem" render={({ field }) => (
               <FormItem className="min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <FormLabel>证书 PEM</FormLabel>
+                  <FormLabel>{t('admin:certificates.labelCertPem')}</FormLabel>
                   <Button type="button" variant="outline" size="sm" asChild>
-                    <label><FileText />上传证书<Input className="sr-only" type="file" accept=".pem,.crt,.cer,text/plain" onChange={(event) => void readFile('certificatePem', event)} /></label>
+                    <label><FileText />{t('admin:certificates.uploadCertFile')}<Input className="sr-only" type="file" accept=".pem,.crt,.cer,text/plain" onChange={(event) => void readFile('certificatePem', event)} /></label>
                   </Button>
                 </div>
                 <FormControl><Textarea className="min-h-44 min-w-0 max-w-full font-mono text-xs" spellCheck={false} placeholder="-----BEGIN CERTIFICATE-----" {...field} /></FormControl>
-                <FormDescription>仅上传叶子证书；系统会读取 SAN、签发者和有效期。</FormDescription>
+                <FormDescription>{t('admin:certificates.certPemDesc')}</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
             <FormField control={form.control} name="privateKeyPem" render={({ field }) => (
               <FormItem className="min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <FormLabel>私钥 PEM</FormLabel>
+                  <FormLabel>{t('admin:certificates.labelKeyPem')}</FormLabel>
                   <Button type="button" variant="outline" size="sm" asChild>
-                    <label><FileKey2 />上传私钥<Input className="sr-only" type="file" accept=".pem,.key,text/plain" onChange={(event) => void readFile('privateKeyPem', event)} /></label>
+                    <label><FileKey2 />{t('admin:certificates.uploadKeyFile')}<Input className="sr-only" type="file" accept=".pem,.key,text/plain" onChange={(event) => void readFile('privateKeyPem', event)} /></label>
                   </Button>
                 </div>
-                <FormControl><Textarea className="min-h-36 min-w-0 max-w-full font-mono text-xs" spellCheck={false} placeholder={certificateId ? '留空保留现有私钥' : '-----BEGIN PRIVATE KEY-----'} {...field} value={field.value ?? ''} /></FormControl>
-                <FormDescription>{certificateId ? '编辑时留空保留原私钥；更换证书时请同时提供新的匹配私钥。' : '仅支持未加密 PEM 私钥。'}</FormDescription>
+                <FormControl><Textarea className="min-h-36 min-w-0 max-w-full font-mono text-xs" spellCheck={false} placeholder={certificateId ? t('admin:certificates.keyPlaceholderEdit') : t('admin:certificates.keyPlaceholderNew')} {...field} value={field.value ?? ''} /></FormControl>
+                <FormDescription>{certificateId ? t('admin:certificates.keyDescEdit') : t('admin:certificates.keyDescCreate')}</FormDescription>
                 <FormMessage />
               </FormItem>
             )} />
 
-            {parse.isPending && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />正在解析证书…</div>}
-            {parse.isError && <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{extractErrorMessage(parse.error, '证书解析失败')}</p>}
+            {parse.isPending && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{t('admin:certificates.parsing')}</div>}
+            {parse.isError && <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{extractErrorMessage(parse.error, t('admin:certificates.parseFailed'))}</p>}
             {parse.data && <div className="min-w-0 space-y-2 rounded-md border bg-muted/20 p-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">解析结果</span><span className="text-muted-foreground">{statusLabels[parse.data.status]}</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{t('admin:certificates.parseResult')}</span><span className="text-muted-foreground">{statusLabels[parse.data.status]}</span></div>
               <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                <span>签发者：{parse.data.issuer}</span>
-                <span>有效期：{formatDate(parse.data.validFrom)} 至 {formatDate(parse.data.validTo)}</span>
-                <span className="sm:col-span-2">SAN：{parse.data.sans.join('、')}</span>
-                {parse.data.privateKeyMatched !== null && <span>私钥匹配：{parse.data.privateKeyMatched ? '是' : '否'}</span>}
+                <span>{t('admin:certificates.labelIssuer')}{parse.data.issuer}</span>
+                <span>{t('admin:certificates.validitySpan', { from: formatDate(parse.data.validFrom), to: formatDate(parse.data.validTo) })}</span>
+                <span className="sm:col-span-2">{t('admin:certificates.labelSans')}{parse.data.sans.join(', ')}</span>
+                {parse.data.privateKeyMatched !== null && <span>{t('admin:certificates.keyMatch')}{parse.data.privateKeyMatched ? t('admin:certificates.yes') : t('admin:certificates.no')}</span>}
               </div>
             </div>}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-              <Button type="submit" disabled={pending || (certificateId !== null && detail.isLoading)}>{pending ? '保存中…' : '保存证书'}</Button>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
+              <Button type="submit" disabled={pending || (certificateId !== null && detail.isLoading)}>{pending ? t('admin:certificates.saving') : t('admin:certificates.saveCert')}</Button>
             </DialogFooter>
           </form>
         </Form>

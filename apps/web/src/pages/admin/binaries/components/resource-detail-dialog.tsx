@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -11,7 +12,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateTime } from '@/lib/utils';
 import {
-  ASSET_UNAVAILABLE_LABEL,
   BINARY_COMPATIBILITY_LABELS,
   BINARY_DEPLOYMENT_STATUS_LABELS,
   BINARY_STATUS_LABELS,
@@ -33,6 +33,7 @@ import {
 const DEPLOYMENT_PAGE_SIZE = 10;
 
 export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { data, isPending } = useAdminBinaryResource(id);
   const [page, setPage] = React.useState(1);
   const [statusFilter, setStatusFilter] = React.useState<'ALL' | BinaryDeploymentStatus>('ALL');
@@ -43,9 +44,9 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="wide">
         <DialogHeader>
-          <DialogTitle>资源详情</DialogTitle>
+          <DialogTitle>{t('admin:binaries.detailTitle')}</DialogTitle>
           <DialogDescription>
-            {data ? `${data.kind === 'SINGBOX' ? 'Sing-box' : 'Agent'} · ${data.version}` : '加载资源信息'}
+            {data ? `${data.kind === 'SINGBOX' ? 'Sing-box' : 'Agent'} · ${data.version}` : t('admin:binaries.detailLoading')}
           </DialogDescription>
         </DialogHeader>
         {isPending ? (
@@ -57,68 +58,68 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
           <div className="min-w-0 space-y-5">
             <div className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
               <div>
-                <p className="text-muted-foreground">来源</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelSource')}</p>
                 <p className="font-medium">{sourceLabel(data.source)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">状态</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelStatus')}</p>
                 <Badge variant={data.status === 'ACTIVE' ? 'default' : data.status === 'RETIRED' ? 'destructive' : 'secondary'}>
                   {BINARY_STATUS_LABELS[data.status]}
                 </Badge>
               </div>
               <div>
-                <p className="text-muted-foreground">默认</p>
-                <p className="font-medium">{data.isDefault ? '是' : '否'}</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelDefault')}</p>
+                <p className="font-medium">{data.isDefault ? t('admin:binaries.yes') : t('admin:binaries.no')}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">分发任务</p>
-                <p className="font-medium">{data.deploymentCount ?? data.deploymentTasks?.length ?? 0} 次</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelDeployments')}</p>
+                <p className="font-medium">{t('admin:binaries.deploymentTimes', { count: data.deploymentCount ?? data.deploymentTasks?.length ?? 0 })}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">登记体积</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelRegisteredSize')}</p>
                 <p className="font-medium tabular-nums">{totalAssetBytes(data.assets)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">删除可释放</p>
+                <p className="text-muted-foreground">{t('admin:binaries.labelReclaimableSize')}</p>
                 <p className="font-medium tabular-nums">{reclaimableAssetBytes(data.assets)}</p>
               </div>
             </div>
 
             {data.notes ? (
               <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                <p className="text-xs text-muted-foreground">备注</p>
+                <p className="text-xs text-muted-foreground">{t('admin:binaries.labelNotes')}</p>
                 <p className="mt-1 whitespace-pre-wrap break-words">{data.notes}</p>
               </div>
             ) : null}
 
             <div>
-              <h3 className="text-sm font-semibold">兼容性约束</h3>
+              <h3 className="text-sm font-semibold">{t('admin:binaries.labelCompatibility')}</h3>
               {compatibilityEntries(data.compatibilityJson).length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {compatibilityEntries(data.compatibilityJson).map(([key, value]) => (
                     <Badge key={key} variant="outline" className="text-xs">
-                      {BINARY_COMPATIBILITY_LABELS[key] ?? key}：{String(value)}
+                      {BINARY_COMPATIBILITY_LABELS[key] ?? key}: {String(value)}
                     </Badge>
                   ))}
                 </div>
               ) : (
-                <p className="mt-1 text-sm text-muted-foreground">未设置约束，所有节点均可分发。</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('admin:binaries.noCompatConstraint')}</p>
               )}
             </div>
 
             <Separator />
 
             <div className="min-w-0 space-y-3">
-              <h3 className="text-sm font-semibold">平台资产</h3>
+              <h3 className="text-sm font-semibold">{t('admin:binaries.labelAssets')}</h3>
               {data.assets.map((asset) => (
                 <div key={asset.id} className="min-w-0 overflow-hidden rounded-md border p-3">
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words font-medium">
                       {asset.target}
-                      <Badge variant="outline" className="text-[10px]">{asset.storageRoot === 'RUNTIME' ? '独占文件' : '共享静态'}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{asset.storageRoot === 'RUNTIME' ? t('admin:binaries.storageRuntime') : t('admin:binaries.storageStatic')}</Badge>
                       {asset.available === false ? (
                         <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
-                          <AlertTriangle className="mr-1 size-3" />{ASSET_UNAVAILABLE_LABEL}
+                          <AlertTriangle className="mr-1 size-3" />{t('admin:binaries.assetUnavailable')}
                         </Badge>
                       ) : null}
                     </span>
@@ -129,7 +130,7 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                     <div className="mt-2 min-w-0 space-y-1 text-xs text-muted-foreground">
                       {(asset.files ?? []).map((file) => (
                         <div key={file.id} className="flex min-w-0 flex-wrap justify-between gap-x-2 gap-y-1">
-                          <span className="min-w-0 break-words">{file.role === 'auxiliary' ? '辅助' : '主文件'} · {file.name}</span>
+                          <span className="min-w-0 break-words">{file.role === 'auxiliary' ? t('admin:binaries.fileAuxiliary') : t('admin:binaries.filePrimary')} · {file.name}</span>
                           <span className="break-all font-mono text-right">{file.sha256}</span>
                         </div>
                       ))}
@@ -145,16 +146,16 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
 
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">分发记录</h3>
+                <h3 className="text-sm font-semibold">{t('admin:binaries.labelRecords')}</h3>
                 <div className="flex items-center gap-2">
                   <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value as typeof statusFilter); setPage(1); }}>
                     <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">全部状态</SelectItem>
-                      <SelectItem value="QUEUED">排队中</SelectItem>
-                      <SelectItem value="DISPATCHED">已下发</SelectItem>
-                      <SelectItem value="COMPLETED">已完成</SelectItem>
-                      <SelectItem value="FAILED">失败</SelectItem>
+                      <SelectItem value="ALL">{t('admin:binaries.allStatuses')}</SelectItem>
+                      <SelectItem value="QUEUED">{t('admin:binaries.deployQueued')}</SelectItem>
+                      <SelectItem value="DISPATCHED">{t('admin:binaries.deployDispatched')}</SelectItem>
+                      <SelectItem value="COMPLETED">{t('admin:binaries.deployCompleted')}</SelectItem>
+                      <SelectItem value="FAILED">{t('admin:binaries.deployFailed')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -173,12 +174,15 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                             <Badge variant={deploymentBadgeVariant(task.status)}>
                               {BINARY_DEPLOYMENT_STATUS_LABELS[task.status] ?? task.status}
                             </Badge>
-                            <span className="text-muted-foreground">尝试 {task.attempts} 次</span>
+                            <span className="text-muted-foreground">{t('admin:binaries.taskAttempts', { count: task.attempts })}</span>
                           </div>
                           {task.errorMessage ? (
                             <p className="break-all text-destructive" title={task.errorMessage}>{task.errorMessage}</p>
                           ) : null}
-                          <p className="text-muted-foreground">请求于 {formatDateTime(task.requestedAt)}{task.completedAt ? ` · 完成于 ${formatDateTime(task.completedAt)}` : ''}</p>
+                          <p className="text-muted-foreground">
+                            {t('admin:binaries.taskRequestedAt', { time: formatDateTime(task.requestedAt) })}
+                            {task.completedAt ? ` · ${t('admin:binaries.taskCompletedAt', { time: formatDateTime(task.completedAt) })}` : ''}
+                          </p>
                         </div>
                         {task.status === 'FAILED' || task.status === 'COMPLETED' ? (
                           <Tooltip>
@@ -187,24 +191,31 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                                 variant="outline"
                                 size="icon"
                                 className="size-7"
-                                aria-label="重试该分发任务"
+                                aria-label={t('admin:binaries.retryTaskAria')}
                                 disabled={retryDeployment.isPending}
                                 onClick={() => retryDeployment.mutate({ nodeId: task.node?.id ?? task.nodeId, taskId: task.id })}
                               >
                                 {retryDeployment.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>重新下发该升级任务</TooltipContent>
+                            <TooltipContent>{t('admin:binaries.retryTaskTooltip')}</TooltipContent>
                           </Tooltip>
                         ) : null}
                       </div>
                     ))}
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>共 {deploymentsQuery.data!.total} 条</span>
+                    <span>{t('admin:binaries.totalDeployments', { total: deploymentsQuery.data!.total })}</span>
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>上一页</Button>
-                      <span>第 {deploymentsQuery.data!.page} / {Math.max(1, Math.ceil(deploymentsQuery.data!.total / DEPLOYMENT_PAGE_SIZE))} 页</span>
+                      <Button variant="outline" size="sm" className="h-7" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>
+                        {t('common:table.previous')}
+                      </Button>
+                      <span>
+                        {t('admin:binaries.pagination', {
+                          current: deploymentsQuery.data!.page,
+                          total: Math.max(1, Math.ceil(deploymentsQuery.data!.total / DEPLOYMENT_PAGE_SIZE))
+                        })}
+                      </span>
                       <Button
                         variant="outline"
                         size="sm"
@@ -212,18 +223,18 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                         disabled={page >= Math.ceil(deploymentsQuery.data!.total / DEPLOYMENT_PAGE_SIZE)}
                         onClick={() => setPage((prev) => prev + 1)}
                       >
-                        下一页
+                        {t('common:table.next')}
                       </Button>
                     </div>
                   </div>
                 </>
               ) : (
-                <EmptyState title="暂无分发记录" description="该资源尚未产生节点升级任务。" className="border-0" />
+                <EmptyState title={t('admin:binaries.emptyDeploymentsTitle')} description={t('admin:binaries.emptyDeploymentsDesc')} className="border-0" />
               )}
             </div>
           </div>
         ) : (
-          <EmptyState title="资源不存在" description="资源可能已经被删除或移除。" />
+          <EmptyState title={t('admin:binaries.resourceNotFoundTitle')} description={t('admin:binaries.resourceNotFoundDesc')} />
         )}
       </ResponsiveDialogContent>
     </ResponsiveDialog>

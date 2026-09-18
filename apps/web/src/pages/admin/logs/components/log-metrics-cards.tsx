@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, AlertTriangle, FileText, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,6 +11,8 @@ interface LogMetricsCardsProps {
 }
 
 export function LogMetricsCards({ metrics, isLoading }: LogMetricsCardsProps) {
+  const { t } = useTranslation(['admin', 'common']);
+
   if (isLoading && !metrics) {
     return (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -22,31 +25,31 @@ export function LogMetricsCards({ metrics, isLoading }: LogMetricsCardsProps) {
 
   const cards = [
     {
-      title: '历史日志总量',
+      title: t('admin:logs.metricTotalLogs'),
       value: metrics?.totalLogs.toLocaleString() ?? '0',
-      desc: '全部存储日志',
+      desc: t('admin:logs.metricTotalLogsDesc'),
       icon: FileText,
       color: 'text-blue-500'
     },
     {
-      title: '24h 错误发生',
+      title: t('admin:logs.metricError24h'),
       value: metrics?.errorCount24h.toLocaleString() ?? '0',
-      desc: (metrics?.errorCount24h ?? 0) > 0 ? '需排查修复' : '运行平稳',
+      desc: (metrics?.errorCount24h ?? 0) > 0 ? t('admin:logs.metricErrorNeedFix') : t('admin:logs.metricErrorSmooth'),
       icon: AlertCircle,
       color: (metrics?.errorCount24h ?? 0) > 0 ? 'text-rose-500' : 'text-muted-foreground',
       highlight: (metrics?.errorCount24h ?? 0) > 0
     },
     {
-      title: '24h 告警提示',
+      title: t('admin:logs.metricWarn24h'),
       value: metrics?.warnCount24h.toLocaleString() ?? '0',
-      desc: (metrics?.warnCount24h ?? 0) > 0 ? '业务/网络重试' : '无异常',
+      desc: (metrics?.warnCount24h ?? 0) > 0 ? t('admin:logs.metricWarnRetry') : t('admin:logs.metricWarnNone'),
       icon: AlertTriangle,
       color: (metrics?.warnCount24h ?? 0) > 0 ? 'text-amber-500' : 'text-muted-foreground'
     },
     {
-      title: '平均接口响应耗时',
+      title: t('admin:logs.metricAvgLatency'),
       value: `${metrics?.avgLatencyMs ?? 0} ms`,
-      desc: '基于访问日志均值',
+      desc: t('admin:logs.metricAvgLatencyDesc'),
       icon: Zap,
       color: 'text-emerald-500'
     }

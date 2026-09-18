@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, ExternalLink, HardDrive, Laptop, Server, Terminal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -106,6 +107,8 @@ export function LogTable({
   onFilterByModule,
   keyword
 }: LogTableProps) {
+  const { t } = useTranslation(['admin', 'common']);
+
   if (isLoading && logs.length === 0) {
     return (
       <div className="space-y-2 rounded-xl border bg-card p-4">
@@ -120,8 +123,8 @@ export function LogTable({
     return (
       <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed bg-card/40 p-6 text-center">
         <Terminal className="size-8 text-muted-foreground/60 mb-2" />
-        <p className="text-sm font-medium text-foreground">未检索到匹配的系统日志</p>
-        <p className="text-xs text-muted-foreground mt-1">请尝试调整时间范围或放宽过滤条件</p>
+        <p className="text-sm font-medium text-foreground">{t('admin:logs.emptySearchTitle')}</p>
+        <p className="text-xs text-muted-foreground mt-1">{t('admin:logs.emptySearchDesc')}</p>
       </div>
     );
   }
@@ -133,12 +136,12 @@ export function LogTable({
         <table className="w-full text-left text-xs font-mono">
           <thead className="border-b bg-muted/40 text-muted-foreground">
             <tr>
-              <th className="py-2.5 pl-4 pr-2 font-medium w-[160px]">时间</th>
-              <th className="py-2.5 px-2 font-medium w-[80px]">级别</th>
-              <th className="py-2.5 px-2 font-medium w-[90px]">来源</th>
-              <th className="py-2.5 px-2 font-medium w-[110px]">模块</th>
-              <th className="py-2.5 px-2 font-medium">日志核心摘要</th>
-              <th className="py-2.5 pl-2 pr-4 font-medium text-right w-[140px]">关联 Trace</th>
+              <th className="py-2.5 pl-4 pr-2 font-medium w-[160px]">{t('admin:logs.colTime')}</th>
+              <th className="py-2.5 px-2 font-medium w-[80px]">{t('admin:logs.colLevel')}</th>
+              <th className="py-2.5 px-2 font-medium w-[90px]">{t('admin:logs.colSource')}</th>
+              <th className="py-2.5 px-2 font-medium w-[110px]">{t('admin:logs.colModule')}</th>
+              <th className="py-2.5 px-2 font-medium">{t('admin:logs.colMessage')}</th>
+              <th className="py-2.5 pl-2 pr-4 font-medium text-right w-[140px]">{t('admin:logs.colTrace')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
@@ -187,7 +190,7 @@ export function LogTable({
                         onFilterByModule?.(log.module);
                       }}
                       className="text-foreground/80 hover:text-primary hover:underline font-semibold text-[11px] max-w-[100px] truncate block text-left transition-colors cursor-pointer"
-                      title={`按模块 [${log.module}] 过滤`}
+                      title={t('admin:logs.filterByModuleTitle', { module: log.module })}
                     >
                       [{log.module}]
                     </button>
@@ -200,7 +203,7 @@ export function LogTable({
                         {highlightKeyword(log.message, keyword)}
                       </span>
                       {repeatCount > 1 && (
-                        <Badge variant="secondary" className="h-4.5 shrink-0 px-1 font-mono text-[10px]" title={`相同 Sing-box WARN 在 60 秒内合并 ${repeatCount} 次`}>
+                        <Badge variant="secondary" className="h-4.5 shrink-0 px-1 font-mono text-[10px]" title={t('admin:logs.repeatCountTitle', { count: repeatCount })}>
                           x{repeatCount}
                         </Badge>
                       )}
@@ -214,7 +217,7 @@ export function LogTable({
                             }
                           }}
                           className="text-[10px] h-4.5 px-1 font-mono shrink-0 cursor-pointer hover:border-primary hover:text-primary transition-colors"
-                          title={`按节点 ${log.node.name} 过滤`}
+                          title={t('admin:logs.filterByNodeTitle', { name: log.node.name })}
                         >
                           {log.node.name}
                         </Badge>
@@ -234,7 +237,7 @@ export function LogTable({
                           }
                         }}
                         className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 bg-muted/60 hover:bg-primary/10 hover:text-primary transition-colors text-muted-foreground"
-                        title={`过滤链路: ${log.traceId}`}
+                        title={t('admin:logs.filterByTraceTitle', { traceId: log.traceId })}
                       >
                         <span className="truncate max-w-[80px]">{log.traceId.slice(0, 8)}...</span>
                         <ExternalLink className="size-2.5 shrink-0 opacity-70" />
@@ -253,9 +256,9 @@ export function LogTable({
       {/* 分页控制栏 */}
       <div className="flex items-center justify-between border-t px-4 py-2.5 bg-card text-xs text-muted-foreground">
         <div>
-          共 <span className="font-semibold text-foreground font-mono">{total.toLocaleString()}</span> 条记录
+          <span>{t('admin:logs.totalRecords', { count: total })}</span>
           {totalPages > 1 && (
-            <span className="ml-1">（第 {page} / {totalPages} 页）</span>
+            <span className="ml-1">{t('admin:logs.pageNumber', { current: page, total: totalPages })}</span>
           )}
         </div>
 
@@ -269,7 +272,7 @@ export function LogTable({
             className="h-7 px-2 text-xs gap-1"
           >
             <ChevronLeft className="size-3.5" />
-            <span>上一页</span>
+            <span>{t('common:table.previous')}</span>
           </Button>
 
           <Button
@@ -280,7 +283,7 @@ export function LogTable({
             disabled={page >= totalPages}
             className="h-7 px-2 text-xs gap-1"
           >
-            <span>下一页</span>
+            <span>{t('common:table.next')}</span>
             <ChevronRight className="size-3.5" />
           </Button>
         </div>

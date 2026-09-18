@@ -5,10 +5,10 @@ export const trafficRanges = ['today', '24h', '7d', '30d'] as const;
 export type TrafficTimeRange = (typeof trafficRanges)[number];
 
 export const trafficRangeLabels: Record<TrafficTimeRange, string> = {
-  today: '今日',
-  '24h': '24 小时',
-  '7d': '7 天',
-  '30d': '30 天'
+  today: 'today',
+  '24h': '24h',
+  '7d': '7d',
+  '30d': '30d'
 };
 
 export interface TrafficTimeSeriesPoint {

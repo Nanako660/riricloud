@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { json } from '@codemirror/lang-json';
 import {
   ArrowDown,
@@ -45,84 +46,14 @@ export interface TemplateGroupDraft {
 }
 
 const PROTOCOLS = ['VLESS', 'VMESS', 'TROJAN', 'HYSTERIA2', 'TUIC', 'SHADOWSOCKS', 'NAIVE'];
-const GROUP_TYPES = [
-  { value: 'select', label: '手动选择' },
-  { value: 'url-test', label: '自动测速' },
-  { value: 'fallback', label: '故障转移' },
-  { value: 'load-balance', label: '负载均衡' }
-];
+const VALID_TYPES = ['select', 'url-test', 'fallback', 'load-balance'] as const;
 
-const PRESET_GROUPS: Array<{ title: string; desc: string; payload: TemplateGroupDraft }> = [
-  {
-    title: '⚡ 自动优选 (url-test)',
-    desc: '自动选择延迟最低的可用节点',
-    payload: {
-      name: '⚡ 自动优选',
-      type: 'url-test',
-      proxies: 'all',
-      url: 'https://www.gstatic.com/generate_204',
-      interval: 300,
-      tolerance: 50
-    }
-  },
-  {
-    title: '🚀 手动选择 (select)',
-    desc: '在客户端列表中自由挑选当前节点',
-    payload: {
-      name: '🚀 节点选择',
-      type: 'select',
-      proxies: 'all'
-    }
-  },
-  {
-    title: '🛡️ 故障转移 (fallback)',
-    desc: '按顺序首选健康节点，宕机自适应漂移',
-    payload: {
-      name: '🛡️ 故障转移',
-      type: 'fallback',
-      proxies: 'all',
-      url: 'https://www.gstatic.com/generate_204',
-      interval: 300
-    }
-  },
-  {
-    title: '⚖️ 负载均衡 (load-balance)',
-    desc: '在多可用节点间均衡分配出站流量',
-    payload: {
-      name: '⚖️ 负载均衡',
-      type: 'load-balance',
-      proxies: 'all',
-      url: 'https://www.gstatic.com/generate_204',
-      interval: 300
-    }
-  },
-  {
-    title: '🤖 AI 服务专选',
-    desc: '专为 ChatGPT、Claude、Gemini 等 AI 准备',
-    payload: {
-      name: '🤖 AI 服务',
-      type: 'select',
-      proxies: 'all'
-    }
-  },
-  {
-    title: '🎬 国际流媒体',
-    desc: 'Netflix、YouTube、Disney+ 等流媒体专线',
-    payload: {
-      name: '🎬 国际流媒体',
-      type: 'select',
-      proxies: 'all'
-    }
-  }
-];
-
-function normalizeGroup(value: unknown, index: number): TemplateGroupDraft {
+function normalizeGroup(value: unknown, index: number, fallbackName?: string): TemplateGroupDraft {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  const type = typeof source.type === 'string' && GROUP_TYPES.some((item) => item.value === source.type)
-    ? source.type as TemplateGroupDraft['type']
-    : 'select';
+  const rawType = typeof source.type === 'string' ? source.type : 'select';
+  const type = (VALID_TYPES.includes(rawType as (typeof VALID_TYPES)[number]) ? rawType : 'select') as TemplateGroupDraft['type'];
   return {
-    name: typeof source.name === 'string' ? source.name : `策略组 ${index + 1}`,
+    name: typeof source.name === 'string' ? source.name : (fallbackName || `Proxy Group ${index + 1}`),
     type,
     proxies: typeof source.proxies === 'string' || Array.isArray(source.proxies) ? source.proxies as string | string[] : 'all',
     filter: typeof source.filter === 'string' ? source.filter : '',
@@ -147,7 +78,80 @@ function swap<T>(items: T[], from: number, to: number) {
 }
 
 export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; onChange: (value: unknown[]) => void }) {
-  const groups = useMemo(() => value.map(normalizeGroup), [value]);
+  const { t } = useTranslation(['admin', 'common']);
+
+  const groupTypes = useMemo(() => [
+    { value: 'select', label: t('admin:templateGroups.types.select') },
+    { value: 'url-test', label: t('admin:templateGroups.types.urlTest') },
+    { value: 'fallback', label: t('admin:templateGroups.types.fallback') },
+    { value: 'load-balance', label: t('admin:templateGroups.types.loadBalance') }
+  ], [t]);
+
+  const presetGroups = useMemo<Array<{ title: string; desc: string; payload: TemplateGroupDraft }>>(() => [
+    {
+      title: t('admin:templateGroups.presets.urlTestTitle'),
+      desc: t('admin:templateGroups.presets.urlTestDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.urlTestName'),
+        type: 'url-test',
+        proxies: 'all',
+        url: 'https://www.gstatic.com/generate_204',
+        interval: 300,
+        tolerance: 50
+      }
+    },
+    {
+      title: t('admin:templateGroups.presets.selectTitle'),
+      desc: t('admin:templateGroups.presets.selectDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.selectName'),
+        type: 'select',
+        proxies: 'all'
+      }
+    },
+    {
+      title: t('admin:templateGroups.presets.fallbackTitle'),
+      desc: t('admin:templateGroups.presets.fallbackDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.fallbackName'),
+        type: 'fallback',
+        proxies: 'all',
+        url: 'https://www.gstatic.com/generate_204',
+        interval: 300
+      }
+    },
+    {
+      title: t('admin:templateGroups.presets.loadBalanceTitle'),
+      desc: t('admin:templateGroups.presets.loadBalanceDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.loadBalanceName'),
+        type: 'load-balance',
+        proxies: 'all',
+        url: 'https://www.gstatic.com/generate_204',
+        interval: 300
+      }
+    },
+    {
+      title: t('admin:templateGroups.presets.aiTitle'),
+      desc: t('admin:templateGroups.presets.aiDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.aiName'),
+        type: 'select',
+        proxies: 'all'
+      }
+    },
+    {
+      title: t('admin:templateGroups.presets.streamingTitle'),
+      desc: t('admin:templateGroups.presets.streamingDesc'),
+      payload: {
+        name: t('admin:templateGroups.presets.streamingName'),
+        type: 'select',
+        proxies: 'all'
+      }
+    }
+  ], [t]);
+
+  const groups = useMemo(() => value.map((item, i) => normalizeGroup(item, i, t('admin:templateGroups.defaultGroupName', { index: i + 1 }))), [value, t]);
   const [mode, setMode] = useState<'visual' | 'code'>('visual');
   const [source, setSource] = useState(() => JSON.stringify(value, null, 2));
   const [sourceError, setSourceError] = useState('');
@@ -200,7 +204,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
             )}
           >
             <Sliders className="h-3.5 w-3.5 text-primary" />
-            可视化设计
+            {t('admin:templateGroups.modeVisual')}
           </button>
           <button
             type="button"
@@ -213,7 +217,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
             )}
           >
             <Code2 className="h-3.5 w-3.5 text-blue-500" />
-            JSON 源码
+            {t('admin:templateGroups.modeCode')}
           </button>
         </div>
 
@@ -221,7 +225,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {mode === 'visual' ? (
             <Badge variant="secondary" className="text-xs">
-              共 {groups.length} 个策略组
+              {t('admin:templateGroups.totalCount', { count: groups.length })}
             </Badge>
           ) : (
             <Badge
@@ -233,7 +237,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
               ) : (
                 <AlertCircle className="h-3 w-3" />
               )}
-              <span>{!sourceError ? '格式正常' : '语法错误'}</span>
+              <span>{!sourceError ? t('admin:templateGroups.statusValid') : t('admin:templateGroups.statusError')}</span>
             </Badge>
           )}
 
@@ -242,13 +246,13 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                常用预设
+                {t('admin:templateGroups.presetsDropdown')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-xs">添加常用策略组预设</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs">{t('admin:templateGroups.presetsDropdownLabel')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {PRESET_GROUPS.map((preset) => (
+              {presetGroups.map((preset) => (
                 <DropdownMenuItem
                   key={preset.title}
                   onClick={() => addPreset(preset.payload)}
@@ -270,10 +274,10 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
               className="h-7 gap-1 px-2 text-xs"
               onClick={formatSource}
               disabled={!!sourceError}
-              title="美化排版 JSON"
+              title={t('admin:templateGroups.beautifyTitle')}
             >
               <Wand2 className="h-3.5 w-3.5 text-primary" />
-              美化
+              {t('admin:templateGroups.beautify')}
             </Button>
           )}
 
@@ -283,10 +287,10 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
             variant="default"
             size="sm"
             className="h-7 gap-1 text-xs"
-            onClick={() => onChange([...groups, normalizeGroup({}, groups.length)])}
+            onClick={() => onChange([...groups, normalizeGroup({}, groups.length, t('admin:templateGroups.defaultGroupName', { index: groups.length + 1 }))])}
           >
             <Plus className="h-3.5 w-3.5" />
-            新增策略组
+            {t('admin:templateGroups.addGroup')}
           </Button>
         </div>
       </div>
@@ -296,7 +300,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
         <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto pr-1">
           {groups.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
-              <span>暂无策略组，请点击上方「新增策略组」或从「常用预设」快速添加</span>
+              <span>{t('admin:templateGroups.emptyNotice')}</span>
             </div>
           ) : (
             groups.map((group, index) => (
@@ -308,7 +312,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                     </span>
                     <CardTitle className="text-sm font-semibold">{group.name}</CardTitle>
                     <Badge variant="outline" className="text-[10px]">
-                      {GROUP_TYPES.find((t) => t.value === group.type)?.label || group.type}
+                      {groupTypes.find((item) => item.value === group.type)?.label || group.type}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1">
@@ -317,7 +321,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      aria-label="上移策略组"
+                      aria-label={t('admin:templateGroups.moveUp')}
                       disabled={index === 0}
                       onClick={() => onChange(swap(groups, index, index - 1))}
                     >
@@ -328,7 +332,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      aria-label="下移策略组"
+                      aria-label={t('admin:templateGroups.moveDown')}
                       disabled={index === groups.length - 1}
                       onClick={() => onChange(swap(groups, index, index + 1))}
                     >
@@ -339,7 +343,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      aria-label="删除策略组"
+                      aria-label={t('admin:templateGroups.deleteGroup')}
                       onClick={() => onChange(groups.filter((_, itemIndex) => itemIndex !== index))}
                     >
                       <Trash2 className="size-3.5" />
@@ -348,7 +352,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">策略组名称</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.nameLabel')}</Label>
                     <Input
                       value={group.name}
                       onChange={(event) => updateGroup(index, { name: event.target.value })}
@@ -356,7 +360,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">工作机制类型</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.typeLabel')}</Label>
                     <Select
                       value={group.type}
                       onValueChange={(type) => updateGroup(index, { type: type as TemplateGroupDraft['type'] })}
@@ -365,7 +369,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {GROUP_TYPES.map((item) => (
+                        {groupTypes.map((item) => (
                           <SelectItem key={item.value} value={item.value} className="text-xs">
                             {item.label}
                           </SelectItem>
@@ -374,7 +378,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                     </Select>
                   </div>
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label className="text-xs">包含候选节点/策略组</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.proxiesLabel')}</Label>
                     <Input
                       value={Array.isArray(group.proxies) ? group.proxies.join(', ') : group.proxies}
                       onChange={(event) =>
@@ -382,39 +386,39 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                           proxies: event.target.value.includes(',') ? commaValues(event.target.value) : event.target.value
                         })
                       }
-                      placeholder="all、DIRECT 或其他策略组名称，逗号分隔"
+                      placeholder={t('admin:templateGroups.proxiesPlaceholder')}
                       className="h-8 text-xs font-mono"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">节点名称正则筛选</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.filterLabel')}</Label>
                     <Input
                       value={group.filter ?? ''}
                       onChange={(event) => updateGroup(index, { filter: event.target.value })}
-                      placeholder="例如 香港|HK|HongKong"
+                      placeholder={t('admin:templateGroups.filterPlaceholder')}
                       className="h-8 text-xs font-mono"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">包含线路标签</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.includeTagsLabel')}</Label>
                     <Input
                       value={(group.includeTags ?? []).join(', ')}
                       onChange={(event) => updateGroup(index, { includeTags: commaValues(event.target.value) })}
-                      placeholder="必须包含的标签，逗号分隔"
+                      placeholder={t('admin:templateGroups.includeTagsPlaceholder')}
                       className="h-8 text-xs"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">排除线路标签</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.excludeTagsLabel')}</Label>
                     <Input
                       value={(group.excludeTags ?? []).join(', ')}
                       onChange={(event) => updateGroup(index, { excludeTags: commaValues(event.target.value) })}
-                      placeholder="需要排除的标签，逗号分隔"
+                      placeholder={t('admin:templateGroups.excludeTagsPlaceholder')}
                       className="h-8 text-xs"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">最高倍率限制</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.maxRateLabel')}</Label>
                     <Input
                       type="number"
                       min="0"
@@ -423,12 +427,12 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                       onChange={(event) =>
                         updateGroup(index, { maxRate: event.target.value ? Number(event.target.value) : undefined })
                       }
-                      placeholder="不限制"
+                      placeholder={t('admin:templateGroups.maxRatePlaceholder')}
                       className="h-8 text-xs"
                     />
                   </div>
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label className="text-xs">限定协议支持</Label>
+                    <Label className="text-xs">{t('admin:templateGroups.protocolsLabel')}</Label>
                     <div className="grid grid-cols-2 gap-2 rounded-md border bg-background/50 p-2.5 sm:grid-cols-4">
                       {PROTOCOLS.map((protocol) => (
                         <label key={protocol} className="flex items-center gap-2 text-xs">
@@ -444,7 +448,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                   {group.type !== 'select' && (
                     <>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">测速健康检查 URL</Label>
+                        <Label className="text-xs">{t('admin:templateGroups.urlLabel')}</Label>
                         <Input
                           value={group.url ?? ''}
                           onChange={(event) => updateGroup(index, { url: event.target.value })}
@@ -452,7 +456,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">检测间隔（秒）</Label>
+                        <Label className="text-xs">{t('admin:templateGroups.intervalLabel')}</Label>
                         <Input
                           type="number"
                           min="5"
@@ -462,7 +466,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                         />
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
-                        <Label className="text-xs">容差容错抖动（毫秒）</Label>
+                        <Label className="text-xs">{t('admin:templateGroups.toleranceLabel')}</Label>
                         <Input
                           type="number"
                           min="0"
@@ -470,7 +474,7 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                           onChange={(event) =>
                             updateGroup(index, { tolerance: event.target.value ? Number(event.target.value) : undefined })
                           }
-                          placeholder="例如 50"
+                          placeholder={t('admin:templateGroups.tolerancePlaceholder')}
                           className="h-8 text-xs"
                         />
                       </div>
@@ -499,11 +503,11 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
                 setSource(next);
                 try {
                   const parsed: unknown = JSON.parse(next);
-                  if (!Array.isArray(parsed)) throw new Error('必须是 JSON 数组');
+                  if (!Array.isArray(parsed)) throw new Error(t('admin:templateGroups.errorMustBeArray'));
                   setSourceError('');
                   onChange(parsed);
                 } catch (err) {
-                  setSourceError((err as Error).message || 'JSON 语法错误');
+                  setSourceError((err as Error).message || t('admin:templateGroups.errorSyntax'));
                 }
               }}
             />
@@ -513,10 +517,10 @@ export function TemplateGroupsEditor({ value, onChange }: { value: unknown[]; on
               <div className="flex items-center justify-between gap-2 pb-1.5">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0 text-destructive animate-pulse" />
-                  <span>策略组 JSON 语法错误</span>
+                  <span>{t('admin:templateGroups.syntaxErrorTitle')}</span>
                 </div>
                 <span className="text-[10px] text-muted-foreground">
-                  必须为 JSON 数组且格式合法
+                  {t('admin:templateGroups.syntaxErrorDesc')}
                 </span>
               </div>
               <div className="overflow-x-auto rounded-md bg-zinc-950/90 dark:bg-zinc-900/90 px-3 py-2 text-red-400 dark:text-red-300 font-mono text-[11px] leading-relaxed select-text shadow-inner">

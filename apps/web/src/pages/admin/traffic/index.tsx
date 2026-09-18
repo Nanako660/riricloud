@@ -73,13 +73,13 @@ export default function AdminTrafficPage() {
       {isPending && !data ? <TrafficSkeleton /> : isError || !data || !summary || !data.rate ? <EmptyState title={t('common:status.error')} description={t('common:actions.loading')} /> : (
         <div className={cn('space-y-4 transition-opacity duration-200', isFetching && 'opacity-85')}>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
-            <StatCard title={t('admin:traffic.statTotalBilled')} value={formatBytes(summary.totalBilled)} hint={`物理流量 ${formatBytes(summary.totalPhysical)}`} icon={<Zap className="size-5 text-chart-3" />} />
+            <StatCard title={t('admin:traffic.statTotalBilled')} value={formatBytes(summary.totalBilled)} hint={t('admin:traffic.hintPhysical', { bytes: formatBytes(summary.totalPhysical) })} icon={<Zap className="size-5 text-chart-3" />} />
             <StatCard title={t('admin:traffic.statTotalDownload')} value={formatBytes(summary.totalDownload)} icon={<ArrowDownToLine className="size-5 text-chart-1" />} />
             <StatCard title={t('admin:traffic.statTotalUpload')} value={formatBytes(summary.totalUpload)} icon={<ArrowUpFromLine className="size-5 text-chart-2" />} />
-            <StatCard title={t('admin:traffic.statCurrentDownload')} value={formatRate(data.rate.currentDownloadRate)} hint="在线节点网络吞吐" icon={<ArrowDownToLine className="size-5 text-chart-1" />} />
-            <StatCard title={t('admin:traffic.statCurrentUpload')} value={formatRate(data.rate.currentUploadRate)} hint="在线节点网络吞吐" icon={<ArrowUpFromLine className="size-5 text-chart-2" />} />
-            <StatCard title={t('admin:traffic.statActiveLines')} value={`${summary.activeLinesCount} / ${summary.totalLinesCount}`} hint="产生流量的线路" icon={<Activity className="size-5 text-chart-4" />} />
-            <StatCard title={t('admin:traffic.statActiveUsers')} value={`${summary.activeUsersCount} / ${summary.totalUsersCount}`} hint="产生流量的用户" icon={<Users className="size-5 text-chart-5" />} />
+            <StatCard title={t('admin:traffic.statCurrentDownload')} value={formatRate(data.rate.currentDownloadRate)} hint={t('admin:traffic.hintNodeThroughput')} icon={<ArrowDownToLine className="size-5 text-chart-1" />} />
+            <StatCard title={t('admin:traffic.statCurrentUpload')} value={formatRate(data.rate.currentUploadRate)} hint={t('admin:traffic.hintNodeThroughput')} icon={<ArrowUpFromLine className="size-5 text-chart-2" />} />
+            <StatCard title={t('admin:traffic.statActiveLines')} value={`${summary.activeLinesCount} / ${summary.totalLinesCount}`} hint={t('admin:traffic.hintActiveLines')} icon={<Activity className="size-5 text-chart-4" />} />
+            <StatCard title={t('admin:traffic.statActiveUsers')} value={`${summary.activeUsersCount} / ${summary.totalUsersCount}`} hint={t('admin:traffic.hintActiveUsers')} icon={<Users className="size-5 text-chart-5" />} />
           </div>
 
           <Card className="min-w-0">
@@ -154,7 +154,7 @@ export default function AdminTrafficPage() {
                       <Gauge className="size-4 text-muted-foreground" />
                       <Input aria-label={t('admin:traffic.searchLine')} className="h-9 w-full sm:w-56" placeholder={t('admin:traffic.searchLine')} value={lineSearch} onChange={(event) => setLineSearch(event.target.value)} />
                       <Select value={protocolFilter} onValueChange={setProtocolFilter}>
-                        <SelectTrigger aria-label="筛选线路协议" className="h-9 w-full sm:w-36"><SelectValue placeholder="协议" /></SelectTrigger>
+                        <SelectTrigger aria-label={t('admin:traffic.filterProtocolAria')} className="h-9 w-full sm:w-36"><SelectValue placeholder={t('admin:traffic.protocolPlaceholder')} /></SelectTrigger>
                         <SelectContent><SelectItem value="ALL">{t('admin:traffic.allProtocols')}</SelectItem>{protocols.map((protocol) => <SelectItem key={protocol} value={protocol}>{protocol}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>

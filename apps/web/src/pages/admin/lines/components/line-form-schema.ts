@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import i18n from '@/i18n/config';
 import type { ApiLine, ProtocolType } from '@/lib/api';
 import type { InboundParams, ProtocolType as NodeProtocolType } from '../../nodes/use-nodes';
 
@@ -48,9 +49,9 @@ const optionalNonNegative = z.preprocess(
 const headersSchema = z.array(z.object({ key: z.string(), value: z.string() }));
 
 export const lineFormSchema = z.object({
-  name: z.string().trim().min(1, '请输入线路名称'),
-  tag: z.string().trim().max(64, 'Tag 不超过 64 字符'),
-  listen: z.string().trim().min(1, '请输入监听地址').max(64, '监听地址不超过 64 字符'),
+  name: z.string().trim().min(1, i18n.t('admin:lineForm.validation.nameRequired')),
+  tag: z.string().trim().max(64, i18n.t('admin:lineForm.validation.tagMax')),
+  listen: z.string().trim().min(1, i18n.t('admin:lineForm.validation.listenRequired')).max(64, i18n.t('admin:lineForm.validation.listenMax')),
   type: z.enum(['DIRECT', 'RELAY']),
   protocolType: z.enum(PROTOCOL_TYPES),
   relayMode: z.enum(['BLIND_FORWARD', 'PROTOCOL_PROXY', 'TARGET_LINE']).optional(),
@@ -153,35 +154,35 @@ export const lineFormSchema = z.object({
   tunnelPort: optionalPort,
   tunnelSecret: z.string().optional()
 }).superRefine((value, ctx) => {
-  if (!value.entryNodeId) ctx.addIssue({ code: 'custom', path: ['entryNodeId'], message: '请选择入口节点' });
+  if (!value.entryNodeId) ctx.addIssue({ code: 'custom', path: ['entryNodeId'], message: i18n.t('admin:lineForm.validation.entryNodeRequired') });
   if (value.type === 'RELAY' && value.relayMode !== 'TARGET_LINE' && !value.landingNodeId) {
-    ctx.addIssue({ code: 'custom', path: ['landingNodeId'], message: '中继线路必须选择落地节点' });
+    ctx.addIssue({ code: 'custom', path: ['landingNodeId'], message: i18n.t('admin:lineForm.validation.landingNodeRequired') });
   }
   if (value.type === 'RELAY' && !value.relayMode) {
-    ctx.addIssue({ code: 'custom', path: ['relayMode'], message: '请选择中继机制' });
+    ctx.addIssue({ code: 'custom', path: ['relayMode'], message: i18n.t('admin:lineForm.validation.relayModeRequired') });
   }
   if (value.type === 'RELAY' && value.relayMode === 'TARGET_LINE' && !value.targetLineId) {
-    ctx.addIssue({ code: 'custom', path: ['targetLineId'], message: '请选择目标落地线路' });
+    ctx.addIssue({ code: 'custom', path: ['targetLineId'], message: i18n.t('admin:lineForm.validation.targetLineRequired') });
   }
 
   const tlsRequired = ['TROJAN', 'HYSTERIA2', 'TUIC', 'NAIVE'].includes(value.protocolType);
   if (tlsRequired && value.tlsMode === 'none') {
-    ctx.addIssue({ code: 'custom', path: ['tlsMode'], message: '该协议必须启用 TLS' });
+    ctx.addIssue({ code: 'custom', path: ['tlsMode'], message: i18n.t('admin:lineForm.validation.tlsRequired') });
   }
   if (value.tlsMode === 'tls') {
     const usesManagedCertificate = value.certificateId !== MANUAL_CERTIFICATE_ID;
-    if (!usesManagedCertificate && !value.tlsCertPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsCertPath'], message: '请选择证书或输入证书路径' });
-    if (!usesManagedCertificate && !value.tlsKeyPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsKeyPath'], message: '请选择证书或输入私钥路径' });
+    if (!usesManagedCertificate && !value.tlsCertPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsCertPath'], message: i18n.t('admin:lineForm.validation.certRequired') });
+    if (!usesManagedCertificate && !value.tlsKeyPath.trim()) ctx.addIssue({ code: 'custom', path: ['tlsKeyPath'], message: i18n.t('admin:lineForm.validation.keyRequired') });
   }
   if (value.tlsMode === 'acme') {
-    if (!value.acmeDomain.trim()) ctx.addIssue({ code: 'custom', path: ['acmeDomain'], message: '请输入 ACME 域名' });
-    if (!value.acmeEmail.trim()) ctx.addIssue({ code: 'custom', path: ['acmeEmail'], message: '请输入 ACME 邮箱' });
+    if (!value.acmeDomain.trim()) ctx.addIssue({ code: 'custom', path: ['acmeDomain'], message: i18n.t('admin:lineForm.validation.acmeDomainRequired') });
+    if (!value.acmeEmail.trim()) ctx.addIssue({ code: 'custom', path: ['acmeEmail'], message: i18n.t('admin:lineForm.validation.acmeEmailRequired') });
   }
   if (value.protocolType === 'SHADOWTLS' && !value.stHandshakeDest.trim()) {
-    ctx.addIssue({ code: 'custom', path: ['stHandshakeDest'], message: '请输入 ShadowTLS 握手目标' });
+    ctx.addIssue({ code: 'custom', path: ['stHandshakeDest'], message: i18n.t('admin:lineForm.validation.stDestRequired') });
   }
   if (value.protocolType === 'SHADOWTLS' && !value.stInnerMethod.trim()) {
-    ctx.addIssue({ code: 'custom', path: ['stInnerMethod'], message: '请输入内层 Shadowsocks 2022 算法' });
+    ctx.addIssue({ code: 'custom', path: ['stInnerMethod'], message: i18n.t('admin:lineForm.validation.stMethodRequired') });
   }
 
   // 规范互斥：客户端 Multiplex 中 max_connections 与 max_streams 互斥
@@ -189,7 +190,7 @@ export const lineFormSchema = z.object({
     ctx.addIssue({
       code: 'custom',
       path: ['multiplexMaxStreams'],
-      message: 'Sing-box 官方规范中最大连接数 (max_connections) 与最大并发流数 (max_streams) 互斥，请仅保留其中一项'
+      message: i18n.t('admin:lineForm.validation.muxMutexError')
     });
   }
 
@@ -199,14 +200,14 @@ export const lineFormSchema = z.object({
       ctx.addIssue({
         code: 'custom',
         path: ['multiplexBrutalUpMbps'],
-        message: '开启 TCP Brutal 强力拥塞控制时必须填写大于 0 的上行速率期望'
+        message: i18n.t('admin:lineForm.validation.brutalUpRequired')
       });
     }
     if (!value.multiplexBrutalDownMbps || value.multiplexBrutalDownMbps <= 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['multiplexBrutalDownMbps'],
-        message: '开启 TCP Brutal 强力拥塞控制时必须填写大于 0 的下行速率期望'
+        message: i18n.t('admin:lineForm.validation.brutalDownRequired')
       });
     }
   }
@@ -216,7 +217,7 @@ export const lineFormSchema = z.object({
     ctx.addIssue({
       code: 'custom',
       path: ['multiplexEnabled'],
-      message: 'Shadowsocks 协议中 UDP over TCP 与 多路复用 (Multiplex) 互斥，不能同时开启'
+      message: i18n.t('admin:lineForm.validation.ssUotMutexError')
     });
   }
 
@@ -225,7 +226,7 @@ export const lineFormSchema = z.object({
     ctx.addIssue({
       code: 'custom',
       path: ['vlessFlow'],
-      message: 'XTLS Vision 流控仅限原始 TCP 传输，WebSocket / gRPC 等传输协议不能启用 flow'
+      message: i18n.t('admin:lineForm.validation.vlessFlowTcpOnly')
     });
   }
 });

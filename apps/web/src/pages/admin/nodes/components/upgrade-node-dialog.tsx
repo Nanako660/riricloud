@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n/config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,9 +23,9 @@ const schema = z.object({
   sha256: z.string().optional()
 }).superRefine((value, context) => {
   if (value.source === 'custom') {
-    if (!value.version?.trim()) context.addIssue({ code: z.ZodIssueCode.custom, path: ['version'], message: '请输入自定义版本号' });
-    if (!value.url || !/^https?:\/\//i.test(value.url)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: '请输入完整下载地址' });
-    if (!value.sha256 || !/^[a-f0-9]{64}$/i.test(value.sha256)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['sha256'], message: 'SHA-256 必须是 64 位十六进制' });
+    if (!value.version?.trim()) context.addIssue({ code: z.ZodIssueCode.custom, path: ['version'], message: i18n.t('admin:nodes.valCustomVersionReq') });
+    if (!value.url || !/^https?:\/\//i.test(value.url)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: i18n.t('admin:nodes.valDownloadUrlReq') });
+    if (!value.sha256 || !/^[a-f0-9]{64}$/i.test(value.sha256)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['sha256'], message: i18n.t('admin:nodes.valSha256Hex') });
   }
 });
 
@@ -105,7 +106,7 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing: _imp
                 <>
                   <span className="text-muted-foreground ml-2">{t('admin:nodes.availableResource')}</span>
                   <Badge variant={selectedResource || builtIn?.available ? 'default' : 'secondary'}>
-                    {selectedResource?.version || builtIn?.version || '未找到对应架构'}
+                    {selectedResource?.version || builtIn?.version || t('admin:nodes.noArchFound')}
                   </Badge>
                 </>
               )}
@@ -128,7 +129,7 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing: _imp
                     <SelectContent>
                       {resourceOptions.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          {item.version}{item.isDefault ? ' · 默认' : ''} · {item.assets.length} 个平台资产
+                          {item.version}{item.isDefault ? t('admin:nodes.defaultBadge') : ''}{t('admin:nodes.platformAssetsCount', { count: item.assets.length })}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -158,7 +159,7 @@ export function UpgradeNodeDialog({ open, onOpenChange, pending, importing: _imp
               </div>
               <div className="space-y-2">
                 <Label htmlFor="upgrade-sha256">{t('admin:nodes.customSha256')}</Label>
-                <Input id="upgrade-sha256" placeholder="64 位十六进制 SHA-256" className="font-mono text-xs" {...form.register('sha256')} />
+                <Input id="upgrade-sha256" placeholder={t('admin:nodes.sha256Placeholder')} className="font-mono text-xs" {...form.register('sha256')} />
                 {form.formState.errors.sha256 && <p className="text-xs text-destructive">{form.formState.errors.sha256.message}</p>}
               </div>
             </>

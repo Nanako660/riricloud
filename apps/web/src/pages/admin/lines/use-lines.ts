@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import i18n from '@/i18n/config';
 import { api, extractErrorMessage, type ApiLine, type LineStatus, type LineType, type ProtocolType, type RelayMode } from '@/lib/api';
 
 export type { ApiLine as AdminLine };
@@ -85,58 +86,58 @@ export function useLineMutations() {
   const onError = (error: unknown, fallback: string) => toast.error(extractErrorMessage(error, fallback));
   const create = useMutation({
     mutationFn: async (payload: LinePayload) => (await api.post<{ line: ApiLine }>('/admin/lines', payload)).data,
-    onSuccess: () => { toast.success('线路已创建'); invalidate(); },
-    onError: (error: unknown) => onError(error, '创建线路失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.createSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.createFailed'))
   });
   const update = useMutation({
     mutationFn: async ({ id, ...payload }: LinePayload & { id: string }) => (await api.patch<{ line: ApiLine }>(`/admin/lines/${id}`, payload)).data,
-    onSuccess: () => { toast.success('线路已保存'); invalidate(); },
-    onError: (error: unknown) => onError(error, '保存线路失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.saveSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.saveFailed'))
   });
   const remove = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/lines/${id}`)).data,
-    onSuccess: () => { toast.success('线路已删除'); invalidate(); },
-    onError: (error: unknown) => onError(error, '删除线路失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.deleteSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.deleteFailed'))
   });
   const duplicate = useMutation({
     mutationFn: async (id: string) => (await api.post<{ line: ApiLine }>(`/admin/lines/${id}/duplicate`)).data,
-    onSuccess: () => { toast.success('线路副本已创建'); invalidate(); },
-    onError: (error: unknown) => onError(error, '复制线路失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.duplicateSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.duplicateFailed'))
   });
   const testResolve = useMutation({
     mutationFn: async (id: string) => (await api.post(`/admin/lines/${id}/test`)).data,
-    onSuccess: () => toast.success('线路解析成功'),
-    onError: (error: unknown) => onError(error, '线路解析失败')
+    onSuccess: () => toast.success(i18n.t('admin:lines.resolveSuccess')),
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.resolveFailed'))
   });
   const batchStatus = useMutation({
     mutationFn: async ({ ids, status }: { ids: string[]; status: LineStatus }) => (await api.post('/admin/lines/batch-status', { ids, status })).data,
-    onSuccess: () => { toast.success('线路状态已更新'); invalidate(); },
-    onError: (error: unknown) => onError(error, '批量更新失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.batchStatusSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.batchStatusFailed'))
   });
   const reorder = useMutation({
     mutationFn: async (items: Array<{ id: string; sortOrder: number }>) => (await api.patch('/admin/lines/reorder', { items })).data,
-    onSuccess: () => { toast.success('线路顺序已更新'); invalidate(); },
-    onError: (error: unknown) => onError(error, '调整顺序失败')
+    onSuccess: () => { toast.success(i18n.t('admin:lines.reorderSuccess')); invalidate(); },
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.reorderFailed'))
   });
   const speedtest = useMutation({
     mutationFn: async (id: string) => (await api.post<SpeedTestExecutionResult>(`/admin/lines/${id}/speedtest`)).data,
     onSuccess: (data) => {
       if (data.status === 'SUCCESS') {
-        toast.success(`测速完成：${data.latencyMs ?? '—'} ms`);
+        toast.success(i18n.t('admin:lines.speedtestSuccess', { latency: data.latencyMs ?? '—' }));
       } else {
-        toast.error(`测速失败：${data.message}`);
+        toast.error(i18n.t('admin:lines.speedtestFailed', { message: data.message }));
       }
       invalidate();
     },
-    onError: (error: unknown) => onError(error, '测速请求失败')
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.speedtestRequestFailed'))
   });
   const speedtestAll = useMutation({
     mutationFn: async () => (await api.post<{ total: number; success: number; failed: number }>('/admin/lines/speedtest-all')).data,
     onSuccess: (data) => {
-      toast.success(`全量测速已完成：共 ${data.total} 条，成功 ${data.success} 条，失败 ${data.failed} 条`);
+      toast.success(i18n.t('admin:lines.speedtestAllSuccess', { total: data.total, success: data.success, failed: data.failed }));
       invalidate();
     },
-    onError: (error: unknown) => onError(error, '批量测速请求失败')
+    onError: (error: unknown) => onError(error, i18n.t('admin:lines.speedtestAllFailed'))
   });
   return { create, update, remove, duplicate, testResolve, batchStatus, reorder, speedtest, speedtestAll };
 }

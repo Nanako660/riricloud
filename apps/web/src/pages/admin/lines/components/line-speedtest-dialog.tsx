@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Activity,
   ArrowRight,
@@ -34,6 +35,7 @@ export interface LineSpeedtestDialogProps {
 }
 
 export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const { speedtest } = useLineMutations();
   const [result, setResult] = React.useState<SpeedTestExecutionResult | null>(null);
 
@@ -84,9 +86,9 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
 
   const latencyRating = (ms: number | null | undefined) => {
     if (ms == null) return null;
-    if (ms < 150) return { label: '延迟极佳', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30' };
-    if (ms < 400) return { label: '延迟一般', color: 'text-amber-500 bg-amber-500/10 border-amber-500/30' };
-    return { label: '延迟较高', color: 'text-rose-500 bg-rose-500/10 border-rose-500/30' };
+    if (ms < 150) return { label: t('admin:lineSpeedtest.ratingExcellent'), color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30' };
+    if (ms < 400) return { label: t('admin:lineSpeedtest.ratingNormal'), color: 'text-amber-500 bg-amber-500/10 border-amber-500/30' };
+    return { label: t('admin:lineSpeedtest.ratingHigh'), color: 'text-rose-500 bg-rose-500/10 border-rose-500/30' };
   };
 
   const rating = latencyRating(result?.latencyMs ?? line.lastLatencyMs);
@@ -98,24 +100,24 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle className="text-lg font-semibold flex items-center gap-2">
               <Activity className="h-5 w-5 text-primary shrink-0" />
-              <span>链路测试流程</span>
+              <span>{t('admin:lineSpeedtest.title')}</span>
               <span className="text-muted-foreground font-normal">·</span>
               <span className="truncate">{line.name}</span>
             </DialogTitle>
             <Badge variant="outline" className="font-mono text-xs">{line.protocolType}</Badge>
-            <Badge variant="secondary" className="text-xs">{line.type === 'DIRECT' ? '直连' : '中继'}</Badge>
+            <Badge variant="secondary" className="text-xs">{line.type === 'DIRECT' ? t('admin:lines.typeDirect') : t('admin:lines.typeRelay')}</Badge>
           </div>
           <DialogDescription className="text-xs text-muted-foreground">
-            探测由 Master 主控服务器直接发起，模拟真实客户端经节点通道访问公网测试源，诊断链路连通性与分段延时。
+            {t('admin:lineSpeedtest.desc')}
           </DialogDescription>
         </DialogHeader>
 
         {/* 链路流程拓扑示意 */}
         <div className="rounded-lg border bg-muted/30 p-3.5 space-y-2">
           <div className="text-[11px] font-medium text-muted-foreground flex items-center justify-between">
-            <span>网络拓扑路径</span>
+            <span>{t('admin:lineSpeedtest.topoPath')}</span>
             <span className="font-mono text-[10px] text-muted-foreground/75">
-              目标: {result?.targetUrl || 'http://cp.cloudflare.com/generate_204'}
+              {t('admin:lineSpeedtest.targetUrl', { url: result?.targetUrl || 'http://cp.cloudflare.com/generate_204' })}
             </span>
           </div>
 
@@ -125,13 +127,13 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
               <div className="size-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-1">
                 <Server className="size-4" />
               </div>
-              <span className="text-xs font-medium">Master 主控</span>
-              <span className="text-[10px] text-muted-foreground">发起端</span>
+              <span className="text-xs font-medium">{t('admin:lineSpeedtest.masterServer')}</span>
+              <span className="text-[10px] text-muted-foreground">{t('admin:lineSpeedtest.initiator')}</span>
             </div>
 
             <div className="flex-1 flex flex-col items-center min-w-8">
               <ArrowRight className="size-3.5 text-muted-foreground/60" />
-              <span className="text-[9px] text-muted-foreground">网络拨测</span>
+              <span className="text-[9px] text-muted-foreground">{t('admin:lineSpeedtest.networkProbe')}</span>
             </div>
 
             {/* 2. 入口节点 */}
@@ -150,7 +152,13 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
               <>
                 <div className="flex-1 flex flex-col items-center min-w-8">
                   <ArrowRight className="size-3.5 text-muted-foreground/60" />
-                  <span className="text-[9px] text-muted-foreground">{line.relayMode === 'BLIND_FORWARD' ? '盲转发' : line.relayMode === 'PROTOCOL_PROXY' ? '协议代理' : '中转桥接'}</span>
+                  <span className="text-[9px] text-muted-foreground">
+                    {line.relayMode === 'BLIND_FORWARD'
+                      ? t('admin:lineSpeedtest.blindForward')
+                      : line.relayMode === 'PROTOCOL_PROXY'
+                        ? t('admin:lineSpeedtest.protocolProxy')
+                        : t('admin:lineSpeedtest.relayBridge')}
+                  </span>
                 </div>
 
                 <div className="flex flex-col items-center min-w-28 text-center shrink-0">
@@ -167,7 +175,7 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
 
             <div className="flex-1 flex flex-col items-center min-w-8">
               <ArrowRight className="size-3.5 text-muted-foreground/60" />
-              <span className="text-[9px] text-muted-foreground">代理出站</span>
+              <span className="text-[9px] text-muted-foreground">{t('admin:lineSpeedtest.proxyEgress')}</span>
             </div>
 
             {/* 4. 测试目标 */}
@@ -185,12 +193,12 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
         <div className="space-y-3">
           <div className="flex items-center justify-between rounded-lg border p-3 bg-card">
             <div className="space-y-0.5">
-              <div className="text-xs text-muted-foreground">当前测速结果</div>
+              <div className="text-xs text-muted-foreground">{t('admin:lineSpeedtest.currentResult')}</div>
               <div className="flex items-center gap-2">
                 {isPending ? (
                   <div className="flex items-center gap-1.5 text-sm font-medium text-primary">
                     <Loader2 className="size-4 animate-spin" />
-                    <span>正在发起链路测试…</span>
+                    <span>{t('admin:lineSpeedtest.testing')}</span>
                   </div>
                 ) : result ? (
                   result.status === 'SUCCESS' ? (
@@ -204,19 +212,19 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
                         </Badge>
                       )}
                       <Badge variant="secondary" className="text-xs">
-                        {result.mode === 'END_TO_END' ? '端到端 Sing-box 代理' : '入口 TCP 握手延时'}
+                        {result.mode === 'END_TO_END' ? t('admin:lineSpeedtest.modeEndToEnd') : t('admin:lineSpeedtest.modeTcpHandshake')}
                       </Badge>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                        {result.status === 'TIMEOUT' ? '测速超时' : '测速失败'}
+                        {result.status === 'TIMEOUT' ? t('admin:lineSpeedtest.statusTimeout') : t('admin:lineSpeedtest.statusFailed')}
                       </Badge>
                       <span className="text-xs text-muted-foreground truncate max-w-sm">{result.message}</span>
                     </div>
                   )
                 ) : (
-                  <span className="text-sm text-muted-foreground">准备测试…</span>
+                  <span className="text-sm text-muted-foreground">{t('admin:lineSpeedtest.readyToTest')}</span>
                 )}
               </div>
             </div>
@@ -224,26 +232,26 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
             <div className="text-right text-xs text-muted-foreground">
               <div className="flex items-center gap-1 text-[11px] justify-end">
                 <Clock className="size-3" />
-                <span>{result?.testedAt ? formatDateTime(result.testedAt) : '刚刚'}</span>
+                <span>{result?.testedAt ? formatDateTime(result.testedAt) : t('admin:lineSpeedtest.justNow')}</span>
               </div>
             </div>
           </div>
 
           {/* 分阶段流程详情 */}
           <div className="space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground">分段链路执行阶段</div>
+            <div className="text-xs font-medium text-muted-foreground">{t('admin:lineSpeedtest.stagesTitle')}</div>
             <div className="space-y-1.5">
               {isPending && !result?.stages?.length ? (
                 <div className="flex items-center justify-center p-6 border rounded-md text-xs text-muted-foreground gap-2">
                   <Loader2 className="size-4 animate-spin text-primary" />
-                  <span>正在执行链路拨测与协议握手…</span>
+                  <span>{t('admin:lineSpeedtest.stagesTesting')}</span>
                 </div>
               ) : (
                 (result?.stages ?? ([
-                  { id: 'master_ready', name: '主控探测引擎', target: 'Master 服务端', status: 'SUCCESS', message: '等待初始化' },
-                  { id: 'entry_handshake', name: '入口网络联通', target: `${entryHost}:${entryPort}`, status: 'SUCCESS', message: '等待探测' },
-                  ...(isRelay ? [{ id: 'relay_transit', name: '中继链路转发', target: `${landingHost}:${landingPort}`, status: 'SUCCESS', message: '等待验证' }] : []),
-                  { id: 'target_http', name: '端到端请求', target: 'http://cp.cloudflare.com/generate_204', status: 'SUCCESS', message: '等待请求' }
+                  { id: 'master_ready', name: t('admin:lineSpeedtest.defaultStages.masterReady'), target: t('admin:lineSpeedtest.defaultStages.masterTarget'), status: 'SUCCESS', message: t('admin:lineSpeedtest.defaultStages.masterWaiting') },
+                  { id: 'entry_handshake', name: t('admin:lineSpeedtest.defaultStages.entryHandshake'), target: `${entryHost}:${entryPort}`, status: 'SUCCESS', message: t('admin:lineSpeedtest.defaultStages.entryWaiting') },
+                  ...(isRelay ? [{ id: 'relay_transit', name: t('admin:lineSpeedtest.defaultStages.relayTransit'), target: `${landingHost}:${landingPort}`, status: 'SUCCESS', message: t('admin:lineSpeedtest.defaultStages.relayWaiting') }] : []),
+                  { id: 'target_http', name: t('admin:lineSpeedtest.defaultStages.targetHttp'), target: 'http://cp.cloudflare.com/generate_204', status: 'SUCCESS', message: t('admin:lineSpeedtest.defaultStages.targetWaiting') }
                 ] as SpeedTestStage[])).map((stage: SpeedTestStage, idx: number) => (
                   <Card key={`${stage.id}-${idx}`} className="shadow-none border bg-card/50">
                     <CardContent className="p-2.5 flex items-center justify-between gap-3 text-xs">
@@ -276,9 +284,9 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
                             {stage.latencyMs} ms
                           </span>
                         ) : stage.status === 'SKIPPED' ? (
-                          <span className="text-[10px] text-muted-foreground">跳过</span>
+                          <span className="text-[10px] text-muted-foreground">{t('admin:lineSpeedtest.stageSkipped')}</span>
                         ) : stage.status === 'FAILED' ? (
-                          <span className="text-[10px] text-rose-500 font-medium">异常</span>
+                          <span className="text-[10px] text-rose-500 font-medium">{t('admin:lineSpeedtest.stageError')}</span>
                         ) : (
                           <span className="text-[10px] text-muted-foreground">—</span>
                         )}
@@ -295,13 +303,13 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
             <div className="rounded-md border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400 space-y-1">
               <div className="font-semibold flex items-center gap-1.5">
                 <AlertCircle className="size-4 shrink-0" />
-                <span>排查与诊断指引</span>
+                <span>{t('admin:lineSpeedtest.troubleshootingTitle')}</span>
               </div>
               <ul className="list-disc list-inside space-y-0.5 text-[11px] opacity-90">
-                <li>请核查入口节点防火墙及安全组是否放行监听端口 <code className="font-mono font-semibold">{entryPort}</code>。</li>
-                {isRelay && <li>中继线路请检查入口与落地节点的联通状态（若为 NAT 落地，请确认反向隧道服务是否在线）。</li>}
-                <li>若为纯 UDP 协议（Hysteria 2 / TUIC），请确认云厂商安全组未屏蔽 UDP 流量或遭遇端口限速。</li>
-                <li>若入口为 Master 本机节点，请检查宿主机 NAT 回环及本地回环策略。</li>
+                <li>{t('admin:lineSpeedtest.troubleshooting1', { port: entryPort })}</li>
+                {isRelay && <li>{t('admin:lineSpeedtest.troubleshooting2')}</li>}
+                <li>{t('admin:lineSpeedtest.troubleshooting3')}</li>
+                <li>{t('admin:lineSpeedtest.troubleshooting4')}</li>
               </ul>
             </div>
           )}
@@ -311,7 +319,7 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
 
         <DialogFooter className="flex items-center justify-between sm:justify-between w-full">
           <div className="text-[11px] text-muted-foreground">
-            {result?.mode === 'TCP_HANDSHAKE' && '提示：当前测得为入口 TCP 往返延时，非端到端代理延时。'}
+            {result?.mode === 'TCP_HANDSHAKE' && t('admin:lineSpeedtest.tcpHandshakeNotice')}
           </div>
           <div className="flex gap-2">
             <Button
@@ -322,10 +330,10 @@ export function LineSpeedtestDialog({ open, onOpenChange, line }: LineSpeedtestD
               className="gap-1.5"
             >
               <RefreshCw className={cn('size-3.5', isPending && 'animate-spin')} />
-              <span>重新测速</span>
+              <span>{t('admin:lineSpeedtest.retest')}</span>
             </Button>
             <Button size="sm" onClick={() => onOpenChange(false)}>
-              关闭
+              {t('common:actions.close')}
             </Button>
           </div>
         </DialogFooter>

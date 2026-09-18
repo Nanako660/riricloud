@@ -1,4 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 
@@ -359,6 +360,7 @@ export function useNodeTasks(nodeId: string, query: { page?: number; status?: st
 }
 
 export function useNodeMutations() {
+  const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes'] });
@@ -367,10 +369,10 @@ export function useNodeMutations() {
 
   const invalidateSub = {
     onSuccess: () => {
-      toast.success('已保存');
+      toast.success(t('admin:nodes.toastSaved'));
       invalidate();
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '操作失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastFailed')))
   };
 
   // 创建成功不弹 toast：弹窗内切换到 AgentToken 与安装命令展示页
@@ -378,18 +380,18 @@ export function useNodeMutations() {
     mutationFn: async (payload: { name?: string; serverHost?: string; reachability?: 'PUBLIC' | 'NAT'; communicationMode?: CommunicationMode }) =>
       (await api.post<CreateNodeResult>('/admin/nodes', payload)).data,
     onSuccess: () => invalidate(),
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '创建失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastCreateFailed')))
   });
 
   const rotateToken = useMutation({
     mutationFn: async ({ id }: { id: string }) =>
       (await api.post<RotateNodeTokenResult>(`/admin/nodes/${id}/rotate-token`)).data,
     onSuccess: (_data, variables) => {
-      toast.success('AgentToken 已轮换');
+      toast.success(t('admin:nodes.toastTokenRotated'));
       invalidate();
       invalidateDetail(variables.id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, 'AgentToken 轮换失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastTokenRotateFailed')))
   });
 
   const updateNode = useMutation({
@@ -411,112 +413,112 @@ export function useNodeMutations() {
   const deleteNode = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/nodes/${id}`)).data,
     onSuccess: () => {
-      toast.success('节点已删除');
+      toast.success(t('admin:nodes.toastNodeDeleted'));
       invalidate();
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '删除失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastDeleteFailed')))
   });
 
   const enableLogDiagnostics = useMutation({
     mutationFn: async ({ id, level }: { id: string; level: 'INFO' | 'DEBUG' }) =>
       (await api.post<{ nodeId: string; enabled: boolean; level: 'INFO' | 'DEBUG'; expiresAt: string; requested: boolean }>(`/admin/nodes/${id}/log-diagnostics`, { level })).data,
     onSuccess: (data, variables) => {
-      toast.success(`已开启 Sing-box ${data.level} 诊断日志`);
+      toast.success(t('admin:nodes.toastDiagLogEnabled', { level: data.level }));
       invalidateDetail(variables.id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '开启诊断日志失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastEnableDiagLogFailed')))
   });
 
   const disableLogDiagnostics = useMutation({
     mutationFn: async (id: string) =>
       (await api.delete<{ nodeId: string; enabled: boolean }>(`/admin/nodes/${id}/log-diagnostics`)).data,
     onSuccess: (_data, id) => {
-      toast.success('已关闭 Sing-box 诊断日志');
+      toast.success(t('admin:nodes.toastDiagLogDisabled'));
       invalidateDetail(id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '关闭诊断日志失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastDisableDiagLogFailed')))
   });
 
   const reloadNode = useMutation({
     mutationFn: async (id: string) => (await api.post<{ requested: boolean }>(`/admin/nodes/${id}/reload`)).data,
     onSuccess: (data) => {
-      toast.success(data.requested ? '已下发配置重载指令' : '节点不在线，稍后连接时自动同步');
+      toast.success(data.requested ? t('admin:nodes.toastConfigReloadDispatched') : t('admin:nodes.toastOfflineReloadPending'));
       invalidate();
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '重载失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastReloadFailed')))
   });
 
   const upgradeNode = useMutation({
     mutationFn: async ({ id, ...payload }: { id: string; target: 'singbox' | 'agent'; resourceId?: string; version?: string; url?: string; sha256?: string }) =>
       (await api.post(`/admin/nodes/${id}/upgrade`, payload)).data,
     onSuccess: (data, variables) => {
-      toast.success(data.requested ? '升级任务已下发' : '节点不在线，升级任务未下发');
+      toast.success(data.requested ? t('admin:nodes.toastUpgradeDispatched') : t('admin:nodes.toastOfflineUpgradePending'));
       invalidateDetail(variables.id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '升级下发失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastUpgradeDispatchFailed')))
   });
 
   const probeNode = useMutation({
     mutationFn: async ({ id, probes }: { id: string; probes: Array<{ type: 'tcp' | 'dns' | 'icmp'; target: string; port?: number; timeoutMs?: number }> }) =>
       (await api.post(`/admin/nodes/${id}/probe`, { probes })).data,
     onSuccess: (data, variables) => {
-      toast.success(data.requested ? '探针任务已下发' : '节点不在线，探针任务未下发');
+      toast.success(data.requested ? t('admin:nodes.toastProbeDispatched') : t('admin:nodes.toastOfflineProbePending'));
       invalidateDetail(variables.id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '探针下发失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastProbeDispatchFailed')))
   });
 
   const restartAgent = useMutation({
     mutationFn: async (id: string) => (await api.post<{ taskId: string; requested: boolean }>(`/admin/nodes/${id}/restart-agent`)).data,
     onSuccess: (data, id) => {
-      toast.success(data.requested ? 'Agent 重启指令已下发' : '节点不在线，重启指令未下发');
+      toast.success(data.requested ? t('admin:nodes.toastRestartDispatched') : t('admin:nodes.toastOfflineRestartPending'));
       invalidateDetail(id);
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, 'Agent 重启失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastRestartFailed')))
   });
 
   const importBinary = useMutation({
     mutationFn: async (payload: { target: string; version: string; url: string; sha256: string }) =>
       (await api.post('/admin/binaries/import', payload)).data,
     onSuccess: () => {
-      toast.success('自定义内核已导入主控');
+      toast.success(t('admin:nodes.toastBinaryImported'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'binaries', 'info'] });
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '内核导入失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastBinaryImportFailed')))
   });
 
   const retryTask = useMutation({
     mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
       (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/retry`)).data,
     onSuccess: (_data, variables) => {
-      toast.success('分发任务已重新下发');
+      toast.success(t('admin:nodes.toastTaskRetried'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes', variables.nodeId, 'tasks'] });
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '任务重试失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastTaskRetryFailed')))
   });
 
   const rollbackTask = useMutation({
     mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
       (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/rollback`)).data,
     onSuccess: (_data, variables) => {
-      toast.success('回滚任务已下发');
+      toast.success(t('admin:nodes.toastTaskRollbackDispatched'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'nodes', variables.nodeId, 'tasks'] });
     },
-    onError: (e: unknown) => toast.error(extractErrorMessage(e, '任务回滚失败'))
+    onError: (e: unknown) => toast.error(extractErrorMessage(e, t('admin:nodes.toastTaskRollbackFailed')))
   });
 
   const waitForTask = async ({ nodeId, taskId, label }: { nodeId: string; taskId: string; label: string }) => {
     for (let attempt = 0; attempt < 60; attempt += 1) {
       const status = (await api.get<NodeTaskStatus>(`/admin/nodes/${nodeId}/tasks/${taskId}`)).data;
       if (status.status === 'COMPLETED' || status.status === 'FAILED') {
-        if (status.success) toast.success(`${label}已完成`);
-        else toast.error(`${label}失败`, { description: status.message ?? 'Agent 返回失败' });
+        if (status.success) toast.success(t('admin:nodes.toastTaskCompleted', { label }));
+        else toast.error(t('admin:nodes.toastTaskFailed', { label }), { description: status.message ?? t('admin:nodes.toastTaskFailedAgentMsg') });
         invalidateDetail(nodeId);
         return status;
       }
       await new Promise((resolve) => setTimeout(resolve, 3_000));
     }
-    toast.info(`${label}仍在执行`, { description: '可稍后返回节点详情查看结果' });
+    toast.info(t('admin:nodes.toastTaskRunning', { label }), { description: t('admin:nodes.toastTaskRunningDesc') });
     return undefined;
   };
 

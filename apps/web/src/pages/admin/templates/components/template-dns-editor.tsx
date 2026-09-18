@@ -1,4 +1,5 @@
 import { useState, KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, X, RotateCcw, Globe, ShieldCheck, Zap } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -20,9 +21,9 @@ interface TemplateDnsEditorProps {
 }
 
 const DIRECT_PRESETS = [
-  { label: '阿里 DoH', value: 'https://223.5.5.5/dns-query' },
-  { label: '腾讯 DoH', value: 'https://doh.pub/dns-query' },
-  { label: '阿里 DNS', value: '223.5.5.5' },
+  { label: 'Ali DoH', value: 'https://223.5.5.5/dns-query' },
+  { label: 'Tencent DoH', value: 'https://doh.pub/dns-query' },
+  { label: 'Ali DNS', value: '223.5.5.5' },
   { label: 'DNSPod', value: '119.29.29.29' },
   { label: '114 DNS', value: '114.114.114.114' }
 ];
@@ -44,6 +45,7 @@ const RECOMMENDED_DNS: SemanticDnsConfig = {
 };
 
 export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const [directInput, setDirectInput] = useState('');
   const [proxyInput, setProxyInput] = useState('');
 
@@ -105,8 +107,8 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
       {/* 顶部总览与重置操作 */}
       <div className="flex items-center justify-between gap-2 border-b pb-3">
         <div>
-          <h4 className="text-sm font-semibold tracking-tight text-foreground">DNS 引擎与分流策略</h4>
-          <p className="text-xs text-muted-foreground">配置客户端订阅分流时的直连与代理 DNS 服务器及增强模式</p>
+          <h4 className="text-sm font-semibold tracking-tight text-foreground">{t('admin:templateDns.title')}</h4>
+          <p className="text-xs text-muted-foreground">{t('admin:templateDns.desc')}</p>
         </div>
         <Button
           type="button"
@@ -116,7 +118,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
           onClick={() => onChange(RECOMMENDED_DNS)}
         >
           <RotateCcw className="h-3.5 w-3.5" />
-          恢复推荐配置
+          {t('admin:templateDns.resetRecommended')}
         </Button>
       </div>
 
@@ -126,7 +128,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Globe className="h-3.5 w-3.5 text-primary" />
-              启用 DNS 分流
+              {t('admin:templateDns.enableDns')}
             </span>
             <Switch
               checked={enable}
@@ -134,7 +136,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             />
           </div>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            根据分流规则将域名分别路由至国内直连或代理 DNS 解析。
+            {t('admin:templateDns.enableDnsDesc')}
           </p>
         </div>
 
@@ -142,7 +144,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Zap className="h-3.5 w-3.5 text-amber-500" />
-              启用 Fake-IP
+              {t('admin:templateDns.enableFakeIp')}
             </span>
             <Switch
               checked={fakeIp}
@@ -150,7 +152,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             />
           </div>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            客户端直接返回虚拟 IP，省去首包等待时间，大幅加快网页解析响应。
+            {t('admin:templateDns.enableFakeIpDesc')}
           </p>
         </div>
 
@@ -158,7 +160,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-              启用 IPv6
+              {t('admin:templateDns.enableIpv6')}
             </span>
             <Switch
               checked={ipv6}
@@ -166,7 +168,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             />
           </div>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            允许解析 AAAA 记录；若客户端网络无原生 IPv6 建议关闭以防回落减速。
+            {t('admin:templateDns.enableIpv6Desc')}
           </p>
         </div>
       </div>
@@ -175,16 +177,16 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
       <div className="space-y-3 rounded-lg border bg-card/60 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-xs font-semibold text-foreground">国内直连 DNS 服务器 (Direct DNS)</Label>
+            <Label className="text-xs font-semibold text-foreground">{t('admin:templateDns.directDnsTitle')}</Label>
             <p className="text-[11px] text-muted-foreground">
-              用于解析国内站点及直连流量，建议首选低延迟的国内 DoH 或公共 DNS（已配置 {directDns.length} 个）
+              {t('admin:templateDns.directDnsDesc', { count: directDns.length })}
             </p>
           </div>
         </div>
 
         {/* 预设快捷添加 */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground">常用预设：</span>
+          <span className="text-[11px] text-muted-foreground">{t('admin:templateDns.commonPresets')}</span>
           {DIRECT_PRESETS.map((preset) => (
             <Button
               key={preset.value}
@@ -203,7 +205,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
         {/* 徽章列表 */}
         <div className="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-md border border-dashed bg-background/50 p-2">
           {directDns.length === 0 ? (
-            <span className="text-xs text-muted-foreground/70">暂无直连 DNS，请从上方预设添加或在下方输入</span>
+            <span className="text-xs text-muted-foreground/70">{t('admin:templateDns.emptyDirect')}</span>
           ) : (
             directDns.map((item, index) => (
               <Badge
@@ -218,7 +220,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
                   type="button"
                   onClick={() => removeDirect(index)}
                   className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="移除此 DNS"
+                  aria-label={t('admin:templateDns.removeAria')}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -233,7 +235,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             value={directInput}
             onChange={(e) => setDirectInput(e.target.value)}
             onKeyDown={handleDirectKeyDown}
-            placeholder="输入 IP 或 DoH 链接，例如 223.5.5.5 或 https://223.5.5.5/dns-query"
+            placeholder={t('admin:templateDns.directPlaceholder')}
             className="h-8 text-xs font-mono"
           />
           <Button
@@ -245,7 +247,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             disabled={!directInput.trim()}
           >
             <Plus className="h-3.5 w-3.5" />
-            添加
+            {t('admin:templateDns.add')}
           </Button>
         </div>
       </div>
@@ -254,16 +256,16 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
       <div className="space-y-3 rounded-lg border bg-card/60 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-xs font-semibold text-foreground">远程代理 DNS 服务器 (Proxy DNS)</Label>
+            <Label className="text-xs font-semibold text-foreground">{t('admin:templateDns.proxyDnsTitle')}</Label>
             <p className="text-[11px] text-muted-foreground">
-              通过代理节点出站向海外安全解析，防止 DNS 污染（已配置 {proxyDns.length} 个）
+              {t('admin:templateDns.proxyDnsDesc', { count: proxyDns.length })}
             </p>
           </div>
         </div>
 
         {/* 预设快捷添加 */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground">常用预设：</span>
+          <span className="text-[11px] text-muted-foreground">{t('admin:templateDns.commonPresets')}</span>
           {PROXY_PRESETS.map((preset) => (
             <Button
               key={preset.value}
@@ -282,7 +284,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
         {/* 徽章列表 */}
         <div className="flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-md border border-dashed bg-background/50 p-2">
           {proxyDns.length === 0 ? (
-            <span className="text-xs text-muted-foreground/70">暂无代理 DNS，请从上方预设添加或在下方输入</span>
+            <span className="text-xs text-muted-foreground/70">{t('admin:templateDns.emptyProxy')}</span>
           ) : (
             proxyDns.map((item, index) => (
               <Badge
@@ -297,7 +299,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
                   type="button"
                   onClick={() => removeProxy(index)}
                   className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="移除此 DNS"
+                  aria-label={t('admin:templateDns.removeAria')}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -312,7 +314,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             value={proxyInput}
             onChange={(e) => setProxyInput(e.target.value)}
             onKeyDown={handleProxyKeyDown}
-            placeholder="输入海外安全 DNS，例如 https://1.1.1.1/dns-query"
+            placeholder={t('admin:templateDns.proxyPlaceholder')}
             className="h-8 text-xs font-mono"
           />
           <Button
@@ -324,7 +326,7 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
             disabled={!proxyInput.trim()}
           >
             <Plus className="h-3.5 w-3.5" />
-            添加
+            {t('admin:templateDns.add')}
           </Button>
         </div>
       </div>

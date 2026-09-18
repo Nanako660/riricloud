@@ -1,83 +1,85 @@
 import type { UseFormReturn } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { FieldGrid, SelectField, SwitchField, TextField } from './line-form-controls';
 import type { LineFormValues } from './line-form-schema';
 
 export function LineProtocolFields({ form }: { form: UseFormReturn<LineFormValues> }) {
+  const { t } = useTranslation(['admin']);
   const protocol = form.watch('protocolType');
   return <div className="space-y-3">
     {protocol === 'VLESS' && (
       <TextField
         form={form}
         name="vlessFlow"
-        label="Flow（流控）"
-        placeholder="xtls-rprx-vision"
+        label={t('admin:lineForm.vlessFlow')}
+        placeholder={t('admin:lineForm.vlessFlowPlaceholder')}
         disabled={form.watch('transportType') !== 'tcp'}
-        description={form.watch('transportType') !== 'tcp' ? 'XTLS Vision 流控仅限原始 TCP 传输，当前传输协议已自动禁用' : undefined}
+        description={form.watch('transportType') !== 'tcp' ? t('admin:lineForm.vlessFlowDisabled') : undefined}
       />
     )}
-    {protocol === 'VMESS' && <TextField form={form} name="vmessAlterId" label="AlterId" type="number" placeholder="0" />}
+    {protocol === 'VMESS' && <TextField form={form} name="vmessAlterId" label={t('admin:lineForm.vmessAlterId')} type="number" placeholder="0" />}
     {protocol === 'HYSTERIA2' && <>
       <FieldGrid>
-        <TextField form={form} name="hy2UpMbps" label="上行速率（Mbps，0=不限）" type="number" />
-        <TextField form={form} name="hy2DownMbps" label="下行速率（Mbps，0=不限）" type="number" />
-        <TextField form={form} name="hy2ObfsPassword" label="Salamander 混淆密码" type="password" placeholder="可选" />
+        <TextField form={form} name="hy2UpMbps" label={t('admin:lineForm.hy2UpMbps')} type="number" />
+        <TextField form={form} name="hy2DownMbps" label={t('admin:lineForm.hy2DownMbps')} type="number" />
+        <TextField form={form} name="hy2ObfsPassword" label={t('admin:lineForm.hy2ObfsPassword')} type="password" placeholder={t('admin:lineForm.hy2ObfsPlaceholder')} />
       </FieldGrid>
-      <SwitchField form={form} name="hy2IgnoreClientBandwidth" label="忽略客户端带宽" description="强制使用服务端限速。" />
+      <SwitchField form={form} name="hy2IgnoreClientBandwidth" label={t('admin:lineForm.hy2IgnoreClientBandwidth')} description={t('admin:lineForm.hy2IgnoreClientBandwidthDesc')} />
       <SelectField
         form={form}
         name="hy2MasqueradeType"
-        label="HTTP 伪装模式 (Masquerade)"
+        label={t('admin:lineForm.hy2MasqueradeType')}
         options={[
-          { value: 'none', label: '关闭' },
-          { value: 'file', label: '本地静态目录 (File)' },
-          { value: 'proxy', label: '反向代理 (Proxy)' },
-          { value: 'string', label: '自定义响应字符串 (String)' }
+          { value: 'none', label: t('admin:lineForm.hy2MasqModes.none') },
+          { value: 'file', label: t('admin:lineForm.hy2MasqModes.file') },
+          { value: 'proxy', label: t('admin:lineForm.hy2MasqModes.proxy') },
+          { value: 'string', label: t('admin:lineForm.hy2MasqModes.string') }
         ]}
       />
       {form.watch('hy2MasqueradeType') === 'file' && (
-        <TextField form={form} name="hy2MasqueradeFile" label="静态网站目录绝对路径" placeholder="/var/www/html" />
+        <TextField form={form} name="hy2MasqueradeFile" label={t('admin:lineForm.hy2MasqueradeFile')} placeholder={t('admin:lineForm.hy2MasqueradeFilePlaceholder')} />
       )}
       {form.watch('hy2MasqueradeType') === 'proxy' && (
-        <TextField form={form} name="hy2MasqueradeProxyUrl" label="反代目标 URL" placeholder="https://news.ycombinator.com" />
+        <TextField form={form} name="hy2MasqueradeProxyUrl" label={t('admin:lineForm.hy2MasqueradeProxyUrl')} placeholder={t('admin:lineForm.hy2MasqueradeProxyPlaceholder')} />
       )}
       {form.watch('hy2MasqueradeType') === 'string' && (
-        <TextField form={form} name="hy2MasqueradeString" label="自定义 HTTP 响应内容" placeholder="404 Not Found" />
+        <TextField form={form} name="hy2MasqueradeString" label={t('admin:lineForm.hy2MasqueradeString')} placeholder={t('admin:lineForm.hy2MasqueradeStringPlaceholder')} />
       )}
     </>}
     {protocol === 'TUIC' && <FieldGrid>
-      <SelectField form={form} name="tuicCongestionControl" label="拥塞控制" options={[{ value: 'bbr', label: 'BBR' }, { value: 'cubic', label: 'CUBIC' }, { value: 'new_reno', label: 'New Reno' }]} />
-      <TextField form={form} name="tuicHeartbeat" label="Heartbeat" placeholder="可选" />
-      <SwitchField form={form} name="tuicZeroRtt" label="0-RTT 快速握手" />
+      <SelectField form={form} name="tuicCongestionControl" label={t('admin:lineForm.tuicCongestionControl')} options={[{ value: 'bbr', label: 'BBR' }, { value: 'cubic', label: 'CUBIC' }, { value: 'new_reno', label: 'New Reno' }]} />
+      <TextField form={form} name="tuicHeartbeat" label={t('admin:lineForm.tuicHeartbeat')} placeholder={t('admin:lineForm.tuicHeartbeatPlaceholder')} />
+      <SwitchField form={form} name="tuicZeroRtt" label={t('admin:lineForm.tuicZeroRtt')} />
     </FieldGrid>}
     {protocol === 'SHADOWSOCKS' && <>
       <FieldGrid>
-        <TextField form={form} name="ssMethod" label="加密算法" placeholder="2022-blake3-aes-128-gcm" />
-        <SelectField form={form} name="ssMode" label="认证模式" options={[{ value: 'shared', label: '共享密码模式' }, { value: 'multi-user', label: '多用户模式' }]} />
+        <TextField form={form} name="ssMethod" label={t('admin:lineForm.ssMethod')} placeholder={t('admin:lineForm.ssMethodPlaceholder')} />
+        <SelectField form={form} name="ssMode" label={t('admin:lineForm.ssMode')} options={[{ value: 'shared', label: t('admin:lineForm.ssModes.shared') }, { value: 'multi-user', label: t('admin:lineForm.ssModes.multiUser') }]} />
       </FieldGrid>
-      <TextField form={form} name="ssPassword" label="入站密钥 / 密码" type="password" placeholder="留空自动生成" />
+      <TextField form={form} name="ssPassword" label={t('admin:lineForm.ssPassword')} type="password" placeholder={t('admin:lineForm.ssPasswordPlaceholder')} />
       <SwitchField
         form={form}
         name="ssUdpOverTcp"
-        label="启用 UDP over TCP"
-        description="通过 TCP 隧道承载 UDP 数据，提升严苛网络下的 UDP 连通性（与多路复用 Multiplex 互斥）。"
+        label={t('admin:lineForm.ssUdpOverTcp')}
+        description={t('admin:lineForm.ssUdpOverTcpDesc')}
       />
     </>}
-    {protocol === 'NAIVE' && <SelectField form={form} name="naiveNetwork" label="网络" options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }]} />}
+    {protocol === 'NAIVE' && <SelectField form={form} name="naiveNetwork" label={t('admin:lineForm.naiveNetwork')} options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }]} />}
     {protocol === 'SHADOWTLS' && <>
       <FieldGrid>
-        <TextField form={form} name="stHandshakeDest" label="握手目标 Dest" placeholder="gateway.icloud.com:443" />
-        <TextField form={form} name="stInnerMethod" label="内层 SS2022 算法" placeholder="2022-blake3-aes-128-gcm" />
-        <TextField form={form} name="stInnerPassword" label="内层 SS2022 服务端密钥" type="password" placeholder="留空自动生成" />
+        <TextField form={form} name="stHandshakeDest" label={t('admin:lineForm.stHandshakeDest')} placeholder={t('admin:lineForm.stHandshakeDestPlaceholder')} />
+        <TextField form={form} name="stInnerMethod" label={t('admin:lineForm.stInnerMethod')} placeholder={t('admin:lineForm.stInnerMethodPlaceholder')} />
+        <TextField form={form} name="stInnerPassword" label={t('admin:lineForm.stInnerPassword')} type="password" placeholder={t('admin:lineForm.stInnerPasswordPlaceholder')} />
       </FieldGrid>
-      <SwitchField form={form} name="stStrictMode" label="Strict Mode" description="仅允许严格的 ShadowTLS v3 握手。" />
+      <SwitchField form={form} name="stStrictMode" label={t('admin:lineForm.stStrictMode')} description={t('admin:lineForm.stStrictModeDesc')} />
     </>}
     {['MIXED', 'SOCKS', 'HTTP'].includes(protocol) && <FieldGrid>
-      <SwitchField form={form} name="localAllowLan" label="允许局域网连接" />
-      <SwitchField form={form} name="localUsersEnabled" label="启用用户认证" />
+      <SwitchField form={form} name="localAllowLan" label={t('admin:lineForm.localAllowLan')} />
+      <SwitchField form={form} name="localUsersEnabled" label={t('admin:lineForm.localUsersEnabled')} />
     </FieldGrid>}
     {protocol === 'DIRECT' && <FieldGrid>
-      <TextField form={form} name="directOverrideAddress" label="覆盖目标地址" placeholder="127.0.0.1" />
-      <TextField form={form} name="directOverridePort" label="覆盖目标端口" type="number" placeholder="80" />
+      <TextField form={form} name="directOverrideAddress" label={t('admin:lineForm.directOverrideAddress')} placeholder={t('admin:lineForm.directOverrideAddressPlaceholder')} />
+      <TextField form={form} name="directOverridePort" label={t('admin:lineForm.directOverridePort')} type="number" placeholder={t('admin:lineForm.directOverridePortPlaceholder')} />
     </FieldGrid>}
   </div>;
 }

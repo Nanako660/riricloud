@@ -15,23 +15,22 @@ import {
 } from 'lucide-react';
 import type { PlanThemeColor } from '@/pages/admin/plans/use-plans';
 
-export const PLAN_ICONS: Record<string, { label: string; icon: LucideIcon }> = {
-  Zap: { label: '极速闪电', icon: Zap },
-  Rocket: { label: '冲刺火箭', icon: Rocket },
-  Crown: { label: '尊享王冠', icon: Crown },
-  Shield: { label: '安全盾牌', icon: Shield },
-  Sparkles: { label: '特惠星芒', icon: Sparkles },
-  Flame: { label: '热门爆款', icon: Flame },
-  Globe: { label: '全球节点', icon: Globe },
-  Gauge: { label: '性能狂飙', icon: Gauge },
-  Gem: { label: '至尊黑钻', icon: Gem },
-  Server: { label: '专享机房', icon: Server },
-  Cpu: { label: '强悍核心', icon: Cpu },
-  Plane: { label: '极速出海', icon: Plane }
+export const PLAN_ICONS: Record<string, { icon: LucideIcon }> = {
+  Zap: { icon: Zap },
+  Rocket: { icon: Rocket },
+  Crown: { icon: Crown },
+  Shield: { icon: Shield },
+  Sparkles: { icon: Sparkles },
+  Flame: { icon: Flame },
+  Globe: { icon: Globe },
+  Gauge: { icon: Gauge },
+  Gem: { icon: Gem },
+  Server: { icon: Server },
+  Cpu: { icon: Cpu },
+  Plane: { icon: Plane }
 };
 
 export interface ThemeColorConfig {
-  name: string;
   borderClass: string;
   cardBgClass: string;
   cardShadowClass: string;
@@ -60,7 +59,6 @@ export const RAINBOW_HOLOGRAPHIC_FOIL =
 
 export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
   default: {
-    name: '极简暗黑',
     borderClass: 'border-zinc-200/90 hover:border-zinc-300 dark:border-white/12 dark:hover:border-white/25',
     cardBgClass: 'bg-gradient-to-b from-white/95 via-white/85 to-slate-50/75 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-neutral-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgb(0,0,0,0.06),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.18),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
@@ -81,7 +79,6 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(186,230,253,0.3) 25%, rgba(244,114,182,0.35) 50%, rgba(253,224,71,0.35) 75%, rgba(167,243,208,0.3) 90%, transparent 100%)'
   },
   amber: {
-    name: '金珀香槟',
     borderClass: 'border-amber-500/30 hover:border-amber-500/55 dark:border-amber-500/30 dark:hover:border-amber-500/50',
     cardBgClass: 'bg-gradient-to-b from-amber-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-neutral-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(245,158,11,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
@@ -102,7 +99,6 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(245,158,11,0.25) 20%, rgba(251,191,36,0.45) 45%, rgba(255,255,255,0.4) 60%, rgba(249,115,22,0.4) 80%, transparent 100%)'
   },
   blue: {
-    name: '极速冰蓝',
     borderClass: 'border-sky-500/30 hover:border-sky-500/55 dark:border-sky-500/30 dark:hover:border-sky-500/50',
     cardBgClass: 'bg-gradient-to-b from-sky-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-slate-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(56,189,248,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
@@ -123,7 +119,6 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(56,189,248,0.25) 20%, rgba(147,197,253,0.45) 45%, rgba(255,255,255,0.4) 60%, rgba(34,211,238,0.4) 80%, transparent 100%)'
   },
   purple: {
-    name: '星云薄暮',
     borderClass: 'border-purple-500/30 hover:border-purple-500/55 dark:border-purple-500/30 dark:hover:border-purple-500/50',
     cardBgClass: 'bg-gradient-to-b from-purple-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-zinc-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(168,85,247,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
@@ -144,14 +139,13 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(168,85,247,0.25) 20%, rgba(216,180,254,0.45) 45%, rgba(255,255,255,0.4) 60%, rgba(244,114,182,0.4) 80%, transparent 100%)'
   },
   emerald: {
-    name: '碧翠翡冷',
     borderClass: 'border-emerald-500/30 hover:border-emerald-500/55 dark:border-emerald-500/30 dark:hover:border-emerald-500/50',
     cardBgClass: 'bg-gradient-to-b from-emerald-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-zinc-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(16,185,129,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
     priceBoxClass: 'bg-emerald-500/[0.04] border-emerald-500/20 dark:bg-emerald-500/[0.06] dark:border-emerald-500/25 dark:shadow-[inset_0_1px_1px_rgba(16,185,129,0.1)]',
     iconBgClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30 shadow-xs',
     badgeGradient: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-amber-400/30 font-semibold backdrop-blur-md',
-    buttonGlassClass: 'bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md shadow-emerald-500/20 border border-emerald-500/40 dark:bg-emerald-500/20 dark:hover:bg-emerald-500/30 dark:text-emerald-200 dark:hover:text-emerald-100 dark:border-emerald-400/40 dark:shadow-[0_0_20px_-3px_rgba(16,185,129,0.3)] backdrop-blur-md',
+    buttonGlassClass: 'bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-md shadow-emerald-500/20 border border-emerald-500/40 dark:bg-emerald-500/20 dark:hover:bg-emerald-500/30 dark:text-emerald-200 dark:hover:text-emerald-100 dark:border-emerald-400/40 dark:shadow-[0_0_20px_-3px_rgba(168,85,247,0.3)] backdrop-blur-md',
     buttonGradient: 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20',
     featureIconColor: 'text-emerald-600 dark:text-emerald-400',
     topAmbientGlow: 'from-emerald-400/25 via-emerald-500/10 to-transparent dark:from-emerald-400/30 dark:via-emerald-500/[0.08] to-transparent',
@@ -165,7 +159,6 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(16,185,129,0.25) 20%, rgba(110,231,183,0.45) 45%, rgba(255,255,255,0.4) 60%, rgba(45,212,191,0.4) 80%, transparent 100%)'
   },
   rose: {
-    name: '炽焰宝石',
     borderClass: 'border-rose-500/30 hover:border-rose-500/55 dark:border-rose-500/30 dark:hover:border-rose-500/50',
     cardBgClass: 'bg-gradient-to-b from-rose-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-neutral-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(244,63,94,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',
@@ -186,7 +179,6 @@ export const THEME_COLOR_CONFIGS: Record<PlanThemeColor, ThemeColorConfig> = {
     holographicFoilStyle: 'linear-gradient(115deg, transparent 0%, rgba(244,63,94,0.25) 20%, rgba(253,164,175,0.45) 45%, rgba(255,255,255,0.4) 60%, rgba(249,115,22,0.4) 80%, transparent 100%)'
   },
   indigo: {
-    name: '深邃星空',
     borderClass: 'border-indigo-500/30 hover:border-indigo-500/55 dark:border-indigo-500/30 dark:hover:border-indigo-500/50',
     cardBgClass: 'bg-gradient-to-b from-indigo-50/40 via-white/85 to-white/95 dark:from-zinc-900/75 dark:via-zinc-950/85 dark:to-slate-950/95',
     cardShadowClass: 'shadow-[0_8px_30px_rgba(99,102,241,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.8)] dark:shadow-[inset_0_1px_1.5px_rgba(255,255,255,0.2),0_12px_40px_-8px_rgba(0,0,0,0.85)]',

@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { toast } from 'sonner';
+import i18n from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
 import { frontendLogger } from '@/lib/logger';
 import { getLocalizedErrorMessage } from '@/i18n/error-mapping';
@@ -23,7 +24,7 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
-    const message = error.response?.data?.message ?? '请求失败，请稍后重试';
+    const message = error.response?.data?.message ?? i18n.t('errors:network.serverError');
     const config = error.config as (Record<string, unknown> & { url?: string; method?: string }) | undefined;
     const traceId = typeof config?.__traceId === 'string' ? config.__traceId : undefined;
     const startTime = typeof config?.__startTime === 'number' ? config.__startTime : undefined;
@@ -49,7 +50,7 @@ api.interceptors.response.use(
     // 401：登录态失效，清理并跳转登录页（避免在登录页自身弹跳转循环）
     if (status === 401 && useAuthStore.getState().user) {
       useAuthStore.getState().logout();
-      toast.error(getLocalizedErrorMessage(error, '登录已过期，请重新登录'));
+      toast.error(getLocalizedErrorMessage(error, i18n.t('errors:network.unauthorized')));
       if (window.location.pathname !== '/login') {
         window.location.assign('/login');
       }

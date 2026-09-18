@@ -126,14 +126,20 @@ export function MarketPlanCard({
   const speedBadgeClass = getSpeedTierBadgeClass(plan.speedLimitMbps, publicSettings?.speedLimitColorTiers);
   const currentPrice = plan.price;
   const originalPrice = cardConfig.originalPrice;
-  const hasDiscount = originalPrice != null && originalPrice > currentPrice;
-  const discountText = cardConfig.discountText || (hasDiscount ? `立省 ${Math.round(((originalPrice - currentPrice) / originalPrice) * 100)}%` : null);
+  const hasDiscount = typeof originalPrice === 'number' && originalPrice > currentPrice;
+  const discountText =
+    cardConfig.discountText ||
+    (hasDiscount
+      ? t('user:market.savePercent', {
+          percent: Math.round(((originalPrice - currentPrice) / originalPrice) * 100)
+        })
+      : null);
 
   const resetText =
     plan.trafficResetMode === 'CALENDAR_MONTH'
-      ? '自然月重置'
+      ? t('common:resetMode.CALENDAR_MONTH')
       : plan.trafficResetMode === 'SUBSCRIPTION_CYCLE'
-      ? '订阅周期重置'
+      ? t('common:resetMode.SUBSCRIPTION_CYCLE')
       : t('common:time.permanent');
 
   // Button text
@@ -369,7 +375,7 @@ export function MarketPlanCard({
                     {plan.name}
                   </CardTitle>
                   <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                    {plan.description || '全能代理高速网络订阅方案'}
+                    {plan.description || t('user:market.defaultPlanDesc')}
                   </p>
                 </div>
               </div>
@@ -432,7 +438,7 @@ export function MarketPlanCard({
                     / {t('common:time.days', { count: plan.durationDays })}
                   </span>
                 </div>
-                {hasDiscount && (
+                {hasDiscount && originalPrice != null && (
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                     <span>{t('user:market.originalPrice')}</span>
                     <span className="line-through">{formatCurrency(Math.round(originalPrice * 100))}</span>

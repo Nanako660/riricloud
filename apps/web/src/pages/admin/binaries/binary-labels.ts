@@ -1,44 +1,74 @@
+import i18n from '@/i18n/config';
 import type { BinaryDeployment, BinaryStatus } from './use-binaries';
 
-export const BINARY_STATUS_LABELS: Record<BinaryStatus, string> = {
-  DRAFT: '草稿',
-  ACTIVE: '启用',
-  DISABLED: '停用',
-  RETIRED: '归档'
-};
+export const BINARY_STATUS_LABELS = new Proxy({} as Record<BinaryStatus, string>, {
+  get(_, prop: BinaryStatus) {
+    const map: Record<BinaryStatus, string> = {
+      DRAFT: i18n.t('admin:binaries.statusDraft'),
+      ACTIVE: i18n.t('admin:binaries.statusActive'),
+      DISABLED: i18n.t('admin:binaries.statusDisabled'),
+      RETIRED: i18n.t('admin:binaries.statusRetired')
+    };
+    return map[prop] ?? prop;
+  }
+});
 
-export const BINARY_AUDIT_ACTION_LABELS: Record<string, string> = {
-  RESOURCE_IMPORTED: '导入/上传',
-  RESOURCE_UPDATED: '更新信息',
-  RESOURCE_ACTIVATED: '启用',
-  RESOURCE_DISABLED: '停用',
-  RESOURCE_RETIRED: '归档',
-  RESOURCE_RESTORED: '恢复',
-  RESOURCE_DEFAULT_CHANGED: '切换默认',
-  RESOURCE_DELETED: '删除'
-};
+export const BINARY_AUDIT_ACTION_LABELS = new Proxy({} as Record<string, string>, {
+  get(_, prop: string) {
+    const map: Record<string, string> = {
+      RESOURCE_IMPORTED: i18n.t('admin:binaries.auditImported'),
+      RESOURCE_UPDATED: i18n.t('admin:binaries.auditUpdated'),
+      RESOURCE_ACTIVATED: i18n.t('admin:binaries.auditActivated'),
+      RESOURCE_DISABLED: i18n.t('admin:binaries.auditDisabled'),
+      RESOURCE_RETIRED: i18n.t('admin:binaries.auditRetired'),
+      RESOURCE_RESTORED: i18n.t('admin:binaries.auditRestored'),
+      RESOURCE_DEFAULT_CHANGED: i18n.t('admin:binaries.auditDefaultChanged'),
+      RESOURCE_DELETED: i18n.t('admin:binaries.auditDeleted')
+    };
+    return map[prop] ?? prop;
+  }
+});
 
-export const BINARY_DEPLOYMENT_STATUS_LABELS: Record<string, string> = {
-  QUEUED: '排队中',
-  DISPATCHED: '已下发',
-  COMPLETED: '已完成',
-  FAILED: '失败'
-};
+export const BINARY_DEPLOYMENT_STATUS_LABELS = new Proxy({} as Record<string, string>, {
+  get(_, prop: string) {
+    const map: Record<string, string> = {
+      QUEUED: i18n.t('admin:binaries.deployQueued'),
+      DISPATCHED: i18n.t('admin:binaries.deployDispatched'),
+      COMPLETED: i18n.t('admin:binaries.deployCompleted'),
+      FAILED: i18n.t('admin:binaries.deployFailed')
+    };
+    return map[prop] ?? prop;
+  }
+});
 
-export const BINARY_COMPATIBILITY_LABELS: Record<string, string> = {
-  minAgentProtocolVersion: '最低协议版本',
-  maxAgentProtocolVersion: '最高协议版本',
-  minAgentVersion: '最低 Agent 版本',
-  maxAgentVersion: '最高 Agent 版本',
-  cronetVersion: 'Cronet 版本'
-};
+export const BINARY_COMPATIBILITY_LABELS = new Proxy({} as Record<string, string>, {
+  get(_, prop: string) {
+    const map: Record<string, string> = {
+      minAgentProtocolVersion: i18n.t('admin:binaries.compatMinAgentProtocolVersion'),
+      maxAgentProtocolVersion: i18n.t('admin:binaries.compatMaxAgentProtocolVersion'),
+      minAgentVersion: i18n.t('admin:binaries.compatMinAgentVersion'),
+      maxAgentVersion: i18n.t('admin:binaries.compatMaxAgentVersion'),
+      cronetVersion: i18n.t('admin:binaries.compatCronetVersion')
+    };
+    return map[prop] ?? prop;
+  }
+});
 
 export function sourceLabel(source: string) {
-  return { BUILTIN: '内置', UPLOAD: '上传', REMOTE: '远程导入' }[source] ?? source;
+  const map: Record<string, string> = {
+    BUILTIN: i18n.t('admin:binaries.sourceBuiltin'),
+    UPLOAD: i18n.t('admin:binaries.sourceUpload'),
+    REMOTE: i18n.t('admin:binaries.sourceRemote')
+  };
+  return map[source] ?? source;
 }
 
 export function operationLabel(operation: string) {
-  return { UPGRADE: '升级', ROLLBACK: '回滚' }[operation] ?? operation;
+  const map: Record<string, string> = {
+    UPGRADE: i18n.t('admin:binaries.opUpgrade'),
+    ROLLBACK: i18n.t('admin:binaries.opRollback')
+  };
+  return map[operation] ?? operation;
 }
 
 export function formatTargetBadge(target: string) {
@@ -61,23 +91,23 @@ export function validateCompatibilityText(text: string): { ok: true; value: Reco
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { ok: false, message: '必须是合法 JSON' };
+    return { ok: false, message: i18n.t('admin:binaries.compatMustBeJson') };
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ok: false, message: '必须是 JSON 对象' };
+    return { ok: false, message: i18n.t('admin:binaries.compatMustBeObject') };
   }
   const numberKeys = ['minAgentProtocolVersion', 'maxAgentProtocolVersion'];
   const stringKeys = ['minAgentVersion', 'maxAgentVersion', 'cronetVersion'];
   for (const [key, value] of Object.entries(parsed)) {
     if (numberKeys.includes(key)) {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return { ok: false, message: `字段 ${key} 必须为数字` };
+      if (typeof value !== 'number' || !Number.isFinite(value)) return { ok: false, message: i18n.t('admin:binaries.compatFieldMustBeNumber', { field: key }) };
       continue;
     }
     if (stringKeys.includes(key)) {
-      if (typeof value !== 'string') return { ok: false, message: `字段 ${key} 必须为字符串` };
+      if (typeof value !== 'string') return { ok: false, message: i18n.t('admin:binaries.compatFieldMustBeString', { field: key }) };
       continue;
     }
-    return { ok: false, message: `不支持的兼容性字段: ${key}` };
+    return { ok: false, message: i18n.t('admin:binaries.compatUnsupportedField', { field: key }) };
   }
   return { ok: true, value: parsed as Record<string, unknown> };
 }
@@ -90,7 +120,7 @@ export function bytes(value: number) {
 }
 
 // 与服务端 verifyAssetsAvailability 对应：available=false 表示磁盘文件缺失或校验不符。
-export const ASSET_UNAVAILABLE_LABEL = '文件失效';
+export const getAssetUnavailableLabel = () => i18n.t('admin:binaries.assetUnavailable');
 
 export function totalAssetBytes(assets: Array<{ size: number; available?: boolean }>) {
   return bytes(assets.reduce((sum, asset) => sum + (asset.available === false ? 0 : asset.size || 0), 0));

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 import { useAuthStore } from '@/stores/auth';
 import type { LogMetrics, LogsFilter, LogsQueryResult, SystemLogItem } from './types';
 
@@ -65,12 +66,12 @@ export function useLogs(filter: LogsFilter) {
       return res.data;
     },
     onSuccess: (data) => {
-      toast.success(`清理完成，共清除 ${data.deletedCount} 条历史日志`);
+      toast.success(i18n.t('admin:logs.cleanSuccess', { count: data.deletedCount }));
       void queryClient.invalidateQueries({ queryKey: ['admin-logs'] });
       void queryClient.invalidateQueries({ queryKey: ['admin-logs-metrics'] });
     },
     onError: (err) => {
-      toast.error(extractErrorMessage(err, '清理日志失败'));
+      toast.error(extractErrorMessage(err, i18n.t('admin:logs.cleanFailed')));
     }
   });
 
@@ -105,9 +106,9 @@ export function useLogs(filter: LogsFilter) {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      toast.success('日志导出成功');
+      toast.success(i18n.t('admin:logs.exportSuccess'));
     } catch (err) {
-      toast.error(extractErrorMessage(err, '导出日志失败'));
+      toast.error(extractErrorMessage(err, i18n.t('admin:logs.exportFailed')));
     }
   };
 

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Database, Eye, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { api, extractErrorMessage } from '@/lib/api';
 import { formatBytes } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -82,13 +83,6 @@ export interface ExecuteResponse {
   vacuum?: VacuumResponse;
 }
 
-const KIND_LABELS: Record<CleanupKind, string> = {
-  trafficHourly: '流量小时汇总',
-  nodeRate: '节点速率指标',
-  systemLog: '系统日志',
-  legacyTraffic: '旧版流量明细'
-};
-
 const DEFAULT_KINDS: CleanupKind[] = ['trafficHourly', 'nodeRate', 'systemLog', 'legacyTraffic'];
 
 function toIso(value: string) {
@@ -98,6 +92,7 @@ function toIso(value: string) {
 }
 
 export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const [selectedKinds, setSelectedKinds] = React.useState<CleanupKind[]>(DEFAULT_KINDS);
   const [mode, setMode] = React.useState<CleanupMode>('retention');
@@ -111,6 +106,8 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
   const [isExecuting, setIsExecuting] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [executionResult, setExecutionResult] = React.useState<ExecuteResponse | null>(null);
+
+  const getKindLabel = (k: CleanupKind): string => t(`admin:telemetryCleanup.kinds.${k}`);
 
   const { data: dbStats, isLoading: isStatsLoading } = useQuery<DatabaseStatsResponse>({
     queryKey: ['admin-database-stats'],
@@ -129,13 +126,13 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['admin-database-stats'] });
       if (data.totalReclaimedBytes > 0) {
-        toast.success(`整理完成，已成功释放 ${formatBytes(data.totalReclaimedBytes)} 磁盘空间`);
+        toast.success(t('admin:telemetryCleanup.vacuumSuccess', { bytes: formatBytes(data.totalReclaimedBytes) }));
       } else {
-        toast.success('整理完成，数据库当前无多余碎片空间');
+        toast.success(t('admin:telemetryCleanup.vacuumNoWaste'));
       }
     },
     onError: (error) => {
-      toast.error(extractErrorMessage(error, '整理数据库失败'));
+      toast.error(extractErrorMessage(error, t('admin:telemetryCleanup.vacuumFailed')));
     }
   });
 
@@ -154,23 +151,23 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
 
   const buildTargets = (): CleanupTarget[] | null => {
     if (!selectedKinds.length) {
-      toast.error('至少选择一种数据类型');
+      toast.error(t('admin:telemetryCleanup.selectAtLeastOneKind'));
       return null;
     }
     if (mode === 'before' && !toIso(before)) {
-      toast.error('请输入有效的清理时间点');
+      toast.error(t('admin:telemetryCleanup.invalidTimePoint'));
       return null;
     }
     if (mode === 'range') {
       const fromIso = toIso(from);
       const toIsoValue = toIso(to);
       if (!fromIso || !toIsoValue || new Date(fromIso) >= new Date(toIsoValue)) {
-        toast.error('请输入有效的时间区间，且开始时间早于结束时间');
+        toast.error(t('admin:telemetryCleanup.invalidTimeRange'));
         return null;
       }
     }
     if (mode === 'count' && (!Number.isInteger(Number(keepLatest)) || Number(keepLatest) < 1)) {
-      toast.error('保留条数必须是正整数');
+      toast.error(t('admin:telemetryCleanup.keepLatestPositiveInt'));
       return null;
     }
     return selectedKinds.map((kind) => ({
@@ -192,7 +189,7 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
       setPhrase('');
       setExecutionResult(null);
     } catch (error) {
-      toast.error(extractErrorMessage(error, '生成清理预览失败'));
+      toast.error(extractErrorMessage(error, t('admin:telemetryCleanup.previewFailed')));
     } finally {
       setIsPreviewing(false);
     }
@@ -201,7 +198,7 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
   const handleExecute = async () => {
     if (!preview) return;
     if (phrase !== 'CLEAR_HISTORY') {
-      toast.error('请输入正确的确认短语 CLEAR_HISTORY');
+      toast.error(t('admin:telemetryCleanup.invalidConfirmationPhrase'));
       return;
     }
     const targets = buildTargets();
@@ -211,13 +208,13 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
       const response = await api.post<ExecuteResponse>('/admin/telemetry/cleanup', { targets, confirmationPhrase: phrase });
       const deleted = response.data.results.reduce((sum, item) => sum + item.deletedCount, 0);
       const reclaimed = response.data.vacuum?.totalReclaimedBytes ?? 0;
-      const reclaimedText = reclaimed > 0 ? `，并释放 ${formatBytes(reclaimed)} 磁盘空间` : '';
+      const reclaimedText = reclaimed > 0 ? t('admin:telemetryCleanup.reclaimedDiskSpace', { bytes: formatBytes(reclaimed) }) : '';
       if (response.data.status === 'SUCCEEDED') {
-        toast.success(`清理完成，共删除 ${deleted.toLocaleString()} 条历史记录${reclaimedText}`);
+        toast.success(t('admin:telemetryCleanup.cleanupSuccess', { deleted: deleted.toLocaleString(), reclaimed: reclaimedText }));
       } else if (response.data.status === 'PARTIAL') {
-        toast.warning(`清理部分完成，共删除 ${deleted.toLocaleString()} 条历史记录${reclaimedText}`);
+        toast.warning(t('admin:telemetryCleanup.cleanupPartial', { deleted: deleted.toLocaleString(), reclaimed: reclaimedText }));
       } else {
-        toast.error('清理失败，未能完成所选数据类型的清理');
+        toast.error(t('admin:telemetryCleanup.cleanupFailed'));
       }
       setExecutionResult(response.data);
       setConfirmOpen(false);
@@ -227,7 +224,7 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
       void queryClient.invalidateQueries({ queryKey: ['admin-logs-metrics'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'traffic'] });
     } catch (error) {
-      toast.error(extractErrorMessage(error, '执行清理失败'));
+      toast.error(extractErrorMessage(error, t('admin:telemetryCleanup.cleanupFailed')));
     } finally {
       setIsExecuting(false);
     }
@@ -243,26 +240,29 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
     <Dialog open={open} onOpenChange={(value) => { if (!value) reset(); onOpenChange(value); }}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive"><Trash2 className="size-4" />历史观测数据清理</DialogTitle>
-          <DialogDescription>只清理历史观测数据，不修改用户额度、订阅用量、流量游标或当前节点状态。</DialogDescription>
+          <DialogTitle className="flex items-center gap-2 text-destructive"><Trash2 className="size-4" />{t('admin:telemetryCleanup.title')}</DialogTitle>
+          <DialogDescription>{t('admin:telemetryCleanup.desc')}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Database className="size-4 shrink-0 text-primary" />
             <span>
-              数据库物理占用：
+              {t('admin:telemetryCleanup.databaseSize')}
               {isStatsLoading ? (
-                '读取中…'
+                t('admin:telemetryCleanup.reading')
               ) : dbStats ? (
                 <span className="font-medium text-foreground">
-                  总计 {formatBytes(dbStats.totalBytes)}
+                  {' '}{t('admin:telemetryCleanup.totalStats', { total: formatBytes(dbStats.totalBytes) })}
                   <span className="ml-1 text-muted-foreground">
-                    (业务库: {formatBytes(dbStats.databases.find((d) => d.target === 'main')?.totalSize ?? 0)}，观测库: {formatBytes(dbStats.databases.find((d) => d.target === 'telemetry')?.totalSize ?? 0)})
+                    {t('admin:telemetryCleanup.mainAndTelemetryStats', {
+                      main: formatBytes(dbStats.databases.find((d) => d.target === 'main')?.totalSize ?? 0),
+                      telemetry: formatBytes(dbStats.databases.find((d) => d.target === 'telemetry')?.totalSize ?? 0)
+                    })}
                   </span>
                 </span>
               ) : (
-                '未知'
+                t('admin:telemetryCleanup.unknown')
               )}
             </span>
           </div>
@@ -275,64 +275,64 @@ export function TelemetryCleanupDialog({ open, onOpenChange }: { open: boolean; 
             onClick={() => vacuumMutation.mutate()}
           >
             <RefreshCw className={`mr-1 size-3 ${vacuumMutation.isPending ? 'animate-spin' : ''}`} />
-            {vacuumMutation.isPending ? '整理中…' : '整理压缩 (VACUUM)'}
+            {vacuumMutation.isPending ? t('admin:telemetryCleanup.vacuuming') : t('admin:telemetryCleanup.vacuumAction')}
           </Button>
         </div>
 
         <div className="grid gap-5 py-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium">数据类型</p>
+              <p className="text-sm font-medium">{t('admin:telemetryCleanup.dataType')}</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {DEFAULT_KINDS.map((kind) => (
                   <label key={kind} className="flex items-center gap-2 rounded-md border p-2.5 text-sm">
                     <Checkbox checked={selectedKinds.includes(kind)} onCheckedChange={() => toggleKind(kind)} />
-                    <span>{KIND_LABELS[kind]}</span>
+                    <span>{getKindLabel(kind)}</span>
                   </label>
                 ))}
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="telemetry-cleanup-mode">清理模式</label>
+              <label className="text-sm font-medium" htmlFor="telemetry-cleanup-mode">{t('admin:telemetryCleanup.cleanupMode')}</label>
               <Select value={mode} onValueChange={(value) => { setMode(value as CleanupMode); setPreview(null); setExecutionResult(null); }}>
                 <SelectTrigger id="telemetry-cleanup-mode"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="retention">按当前保留策略</SelectItem>
-                  <SelectItem value="before">删除指定时间以前</SelectItem>
-                  <SelectItem value="range">删除指定时间区间</SelectItem>
-                  <SelectItem value="count">仅保留最新 N 条</SelectItem>
-                  <SelectItem value="all">清空所选类型全部历史</SelectItem>
+                  <SelectItem value="retention">{t('admin:telemetryCleanup.modeRetention')}</SelectItem>
+                  <SelectItem value="before">{t('admin:telemetryCleanup.modeBefore')}</SelectItem>
+                  <SelectItem value="range">{t('admin:telemetryCleanup.modeRange')}</SelectItem>
+                  <SelectItem value="count">{t('admin:telemetryCleanup.modeCount')}</SelectItem>
+                  <SelectItem value="all">{t('admin:telemetryCleanup.modeAll')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {mode === 'before' ? <Input type="datetime-local" value={before} onChange={(event) => { setBefore(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label="清理时间点" /> : null}
-            {mode === 'range' ? <div className="grid gap-2 sm:grid-cols-2"><Input type="datetime-local" value={from} onChange={(event) => { setFrom(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label="开始时间" /><Input type="datetime-local" value={to} onChange={(event) => { setTo(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label="结束时间" /></div> : null}
-            {mode === 'count' ? <Input type="number" min={1} max={1000000} value={keepLatest} onChange={(event) => { setKeepLatest(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label="保留最新记录数" /> : null}
-            <Button type="button" variant="outline" className="w-full" onClick={() => void handlePreview()} disabled={isPreviewing || isExecuting}><Eye />{isPreviewing ? '生成预览中…' : '生成清理预览'}</Button>
+            {mode === 'before' ? <Input type="datetime-local" value={before} onChange={(event) => { setBefore(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label={t('admin:telemetryCleanup.modeBefore')} /> : null}
+            {mode === 'range' ? <div className="grid gap-2 sm:grid-cols-2"><Input type="datetime-local" value={from} onChange={(event) => { setFrom(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label={t('admin:telemetryCleanup.modeRange')} /><Input type="datetime-local" value={to} onChange={(event) => { setTo(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label={t('admin:telemetryCleanup.modeRange')} /></div> : null}
+            {mode === 'count' ? <Input type="number" min={1} max={1000000} value={keepLatest} onChange={(event) => { setKeepLatest(event.target.value); setPreview(null); setExecutionResult(null); }} aria-label={t('admin:telemetryCleanup.modeCount')} /> : null}
+            <Button type="button" variant="outline" className="w-full" onClick={() => void handlePreview()} disabled={isPreviewing || isExecuting}><Eye />{isPreviewing ? t('admin:telemetryCleanup.generatingPreview') : t('admin:telemetryCleanup.generatePreview')}</Button>
           </div>
 
           <div className="min-h-48 rounded-lg border bg-muted/20 p-3">
-            {!preview ? <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"><Database className="size-6" /><p>先生成预览，确认实际影响范围后再执行。</p></div> : <div className="space-y-3"><p className="text-sm font-medium">预览结果</p>{preview.items.map((item) => <div key={item.kind} className="rounded-md border bg-background p-3 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-medium">{KIND_LABELS[item.kind]}</span><span className="tabular-nums">{item.matchedCount.toLocaleString()} 条</span></div><p className="mt-1 text-muted-foreground">{item.condition}</p><p className="mt-1 text-muted-foreground">{formatBytes(item.estimatedBytes)} · {item.oldest ? `最早 ${new Date(item.oldest).toLocaleString()}` : '没有匹配记录'}{item.newest ? ` · 最新 ${new Date(item.newest).toLocaleString()}` : ''}</p></div>)}{executionResult ? <div className="space-y-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs"><p className="font-medium">执行结果：{executionResult.status}</p>{executionResult.results.map((item) => <p key={item.kind} className={item.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-destructive'}>{KIND_LABELS[item.kind]}：匹配 {item.matchedCount.toLocaleString()} 条，删除 {item.deletedCount.toLocaleString()} 条{item.error ? `，${item.error}` : ''}</p>)}{executionResult.vacuum ? <p className="border-t border-emerald-500/20 pt-1.5 text-muted-foreground">空间收缩：{executionResult.vacuum.totalReclaimedBytes > 0 ? `已执行 VACUUM 并释放 ${formatBytes(executionResult.vacuum.totalReclaimedBytes)} 磁盘空间` : '已完成 checkpoint 与 VACUUM，未产生额外多余空闲页'}</p> : null}</div> : <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300"><ShieldAlert className="mt-0.5 size-4 shrink-0" /><span>执行不可逆。点击“进入执行确认”后还需输入 <code className="font-semibold">CLEAR_HISTORY</code>。</span></div>}</div>}
+            {!preview ? <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"><Database className="size-6" /><p>{t('admin:telemetryCleanup.previewPrompt')}</p></div> : <div className="space-y-3"><p className="text-sm font-medium">{t('admin:telemetryCleanup.previewResults')}</p>{preview.items.map((item) => <div key={item.kind} className="rounded-md border bg-background p-3 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-medium">{getKindLabel(item.kind)}</span><span className="tabular-nums">{t('admin:telemetryCleanup.recordsCount', { count: item.matchedCount })}</span></div><p className="mt-1 text-muted-foreground">{item.condition}</p><p className="mt-1 text-muted-foreground">{formatBytes(item.estimatedBytes)} · {item.oldest ? t('admin:telemetryCleanup.earliest', { date: new Date(item.oldest).toLocaleString() }) : t('admin:telemetryCleanup.noMatchingRecords')}{item.newest ? ` · ${t('admin:telemetryCleanup.latest', { date: new Date(item.newest).toLocaleString() })}` : ''}</p></div>)}{executionResult ? <div className="space-y-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs"><p className="font-medium">{t('common:status.success')}: {executionResult.status}</p>{executionResult.results.map((item) => <p key={item.kind} className={item.success ? 'text-emerald-700 dark:text-emerald-300' : 'text-destructive'}>{getKindLabel(item.kind)}: {t('admin:telemetryCleanup.recordsCount', { count: item.matchedCount })}{item.error ? `, ${item.error}` : ''}</p>)}{executionResult.vacuum ? <p className="border-t border-emerald-500/20 pt-1.5 text-muted-foreground">{executionResult.vacuum.totalReclaimedBytes > 0 ? t('admin:telemetryCleanup.reclaimedVacuumSuccess', { bytes: formatBytes(executionResult.vacuum.totalReclaimedBytes) }) : t('admin:telemetryCleanup.reclaimedVacuumNoWaste')}</p> : null}</div> : <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300"><ShieldAlert className="mt-0.5 size-4 shrink-0" /><span>{t('admin:telemetryCleanup.executionIrreversibleWarning')}</span></div>}</div>}
           </div>
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isExecuting}>取消</Button>
-          <Button type="button" variant="destructive" onClick={() => setConfirmOpen(true)} disabled={!preview || isExecuting || Boolean(executionResult)}><Trash2 />进入执行确认</Button>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isExecuting}>{t('common:actions.cancel')}</Button>
+          <Button type="button" variant="destructive" onClick={() => setConfirmOpen(true)} disabled={!preview || isExecuting || Boolean(executionResult)}><Trash2 />{t('admin:telemetryCleanup.enterConfirm')}</Button>
         </DialogFooter>
       </DialogContent>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认清理历史观测数据</AlertDialogTitle>
-            <AlertDialogDescription>该操作不可逆，将按刚才生成的预览条件逐类删除历史记录。请输入固定短语后执行。</AlertDialogDescription>
+            <AlertDialogTitle>{t('admin:telemetryCleanup.confirmDialogTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('admin:telemetryCleanup.confirmDialogDesc')}</AlertDialogDescription>
           </AlertDialogHeader>
-          <Input value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder="输入 CLEAR_HISTORY" aria-label="清理确认短语" autoComplete="off" />
+          <Input value={phrase} onChange={(event) => setPhrase(event.target.value)} placeholder={t('admin:telemetryCleanup.confirmPhrasePlaceholder')} aria-label={t('admin:telemetryCleanup.confirmPhrasePlaceholder')} autoComplete="off" />
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isExecuting}>返回</AlertDialogCancel>
+            <AlertDialogCancel disabled={isExecuting}>{t('common:actions.back')}</AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button type="button" variant="destructive" onClick={() => void handleExecute()} disabled={isExecuting || phrase !== 'CLEAR_HISTORY'}>{isExecuting ? '清理中…' : '确认执行清理'}</Button>
+              <Button type="button" variant="destructive" onClick={() => void handleExecute()} disabled={isExecuting || phrase !== 'CLEAR_HISTORY'}>{isExecuting ? t('admin:telemetryCleanup.cleaning') : t('admin:telemetryCleanup.confirmExecute')}</Button>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 
 export type RedeemCodeStatus = 'UNUSED' | 'REDEEMED' | 'REVOKED' | 'EXPIRED';
 export interface AdminRedeemCode {
@@ -54,26 +55,31 @@ export function useRedeemCodeMutations(listParams: { status?: RedeemCodeStatus; 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['admin', 'redeem-codes'] });
   const batch = useMutation({
     mutationFn: async (payload: { count: number; amount: number; prefix?: string; expiresAt?: string | null; note?: string }) => (await api.post<{ codes: string[] }>('/admin/redeem-codes/batch', payload)).data,
-    onSuccess: (data) => { toast.success(`已生成 ${data.codes.length} 张卡密`); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '卡密生成失败'))
+    onSuccess: (data) => { toast.success(i18n.t('admin:redeemCodes.generateSuccess', { count: data.codes.length })); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:redeemCodes.generateFailed')))
   });
   const revoke = useMutation({
     mutationFn: async (id: string) => (await api.post(`/admin/redeem-codes/${id}/revoke`)).data,
-    onSuccess: () => { toast.success('卡密已作废'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '卡密作废失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:redeemCodes.revokeSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:redeemCodes.revokeFailed')))
   });
   const batchRevoke = useMutation({
     mutationFn: async (ids: string[]) => (await api.post<{ requested: number; revoked: number; skipped: number }>('/admin/redeem-codes/batch-revoke', { ids })).data,
     onSuccess: (data) => {
-      toast.success(`已作废 ${data.revoked} 张卡密`, { description: data.skipped > 0 ? `${data.skipped} 张非未使用状态的卡密已自动跳过` : undefined });
+      toast.success(i18n.t('admin:redeemCodes.batchRevokeSuccess', { count: data.revoked }), {
+        description: data.skipped > 0 ? i18n.t('admin:redeemCodes.batchRevokeSkipped', { count: data.skipped }) : undefined
+      });
       invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '批量作废失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:redeemCodes.batchRevokeFailed')))
   });
   const cleanup = useMutation({
     mutationFn: async (retentionDays: number) => (await api.post<{ deleted: number; retentionDays: number }>('/admin/redeem-codes/cleanup', { retentionDays })).data,
-    onSuccess: (data) => { toast.success(data.deleted > 0 ? `已清理 ${data.deleted} 张过期卡密` : '没有符合条件的过期卡密'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '清理过期卡密失败'))
+    onSuccess: (data) => {
+      toast.success(data.deleted > 0 ? i18n.t('admin:redeemCodes.cleanupSuccess', { count: data.deleted }) : i18n.t('admin:redeemCodes.cleanupNoExpired'));
+      invalidate();
+    },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:redeemCodes.cleanupFailed')))
   });
   const exportCodes = useMutation({
     mutationFn: async (format: 'csv' | 'txt') => {
@@ -91,8 +97,8 @@ export function useRedeemCodeMutations(listParams: { status?: RedeemCodeStatus; 
       document.body.removeChild(anchor);
       window.URL.revokeObjectURL(url);
     },
-    onSuccess: () => toast.success('卡密导出成功'),
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '导出卡密失败'))
+    onSuccess: () => toast.success(i18n.t('admin:redeemCodes.exportSuccess')),
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:redeemCodes.exportFailed')))
   });
   return { batch, revoke, batchRevoke, cleanup, exportCodes };
 }

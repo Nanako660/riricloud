@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import i18n from '@/i18n/config';
 import { passwordZodSchema, type PasswordStrengthPolicy } from '@/lib/password-policy';
 
 export const GB = 1024 ** 3;
@@ -10,7 +11,7 @@ const optionalPositiveInt = z.preprocess(
 
 export function buildCreateUserSchema(minLength: number, policy: PasswordStrengthPolicy) {
   return z.object({
-    email: z.string().email('请输入有效的邮箱地址'),
+    email: z.string().email(i18n.t('admin:userForm.invalidEmail')),
     password: passwordZodSchema(minLength, policy),
     role: z.enum(['USER', 'ADMIN']).default('USER'),
     planId: z.string().optional()
@@ -29,8 +30,8 @@ export function buildEditAccountSchema(minLength: number, policy: PasswordStreng
 export const subscriptionSchema = z.object({
   planId: z.string().optional(),
   status: z.enum(['ACTIVE', 'CANCELED', 'EXPIRED', 'REVOKED']),
-  quotaGB: z.coerce.number().min(0, '配额不能为负数'),
-  usedGB: z.coerce.number().min(0, '已用流量不能为负数'),
+  quotaGB: z.coerce.number().min(0, i18n.t('admin:userForm.quotaNonNegative')),
+  usedGB: z.coerce.number().min(0, i18n.t('admin:userForm.usedNonNegative')),
   expireAt: z.string().optional(),
   addDays: optionalPositiveInt,
   extraLineIds: z.array(z.string()).default([])

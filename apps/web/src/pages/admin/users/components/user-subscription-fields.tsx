@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { UseFormReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,18 +13,7 @@ import type { AdminUserSubscription } from '../use-users';
 import { dateInputAfterDays, GB, type SubscriptionForm } from './user-form-schema';
 import { formatDate, formatDateTime } from '@/lib/utils';
 
-const STATUS_LABELS = {
-  ACTIVE: '正常',
-  CANCELED: '已取消',
-  EXPIRED: '已过期',
-  REVOKED: '已吊销'
-} as const;
 
-const RESET_MODE_LABELS = {
-  NONE: '不自动重置',
-  CALENDAR_MONTH: '自然月重置',
-  SUBSCRIPTION_CYCLE: '订阅周期重置'
-} as const;
 
 export function UserSubscriptionFields({
   form,
@@ -40,6 +30,7 @@ export function UserSubscriptionFields({
   onResetToken: () => void;
   resetPending: boolean;
 }) {
+  const { t } = useTranslation(['admin', 'common']);
   const currentPlanId = form.watch('planId');
   const selectedPlan = plans.find((plan) => plan.id === currentPlanId);
   const resetMode = subscription?.trafficResetMode ?? selectedPlan?.trafficResetMode ?? 'NONE';
@@ -52,15 +43,17 @@ export function UserSubscriptionFields({
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-md border p-3">
         <div>
-          <p className="text-sm font-medium">{subscription ? `当前套餐：${subscription.plan?.name ?? '未命名套餐'}` : '当前没有订阅'}</p>
+          <p className="text-sm font-medium">
+            {subscription ? t('admin:userForm.currentPlanTitle', { name: subscription.plan?.name ?? t('admin:userForm.unnamedPlan') }) : t('admin:userForm.noSubscription')}
+          </p>
           <p className="text-xs text-muted-foreground">
-            {subscription ? `开始于 ${formatDate(subscription.startedAt)}` : '当前为无套餐状态，选择套餐后可绑定'}
+            {subscription ? t('admin:userForm.startedAt', { date: formatDate(subscription.startedAt) }) : t('admin:userForm.noSubNote')}
           </p>
         </div>
         {subscription && (
           <Button type="button" variant="outline" size="sm" disabled={resetPending} onClick={onResetToken}>
             <RefreshCw className={resetPending ? 'animate-spin' : undefined} />
-            重置订阅链接
+            {t('admin:userForm.resetTokenButton')}
           </Button>
         )}
       </div>
@@ -71,7 +64,7 @@ export function UserSubscriptionFields({
           name="planId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>套餐</FormLabel>
+              <FormLabel>{t('admin:userForm.planLabel')}</FormLabel>
               <Select
                 value={field.value || (hasSubscription ? 'none' : 'unselected')}
                 onValueChange={(value) => {
@@ -92,14 +85,14 @@ export function UserSubscriptionFields({
               >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder={hasSubscription ? '无套餐' : '请选择套餐绑定'} />
+                    <SelectValue placeholder={hasSubscription ? t('admin:userForm.noPlan') : t('admin:userForm.selectPlanBind')} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
                   {hasSubscription ? (
-                    <SelectItem value="none">无套餐（彻底取消订阅）</SelectItem>
+                    <SelectItem value="none">{t('admin:userForm.noPlanCancelSub')}</SelectItem>
                   ) : (
-                    <SelectItem value="unselected" disabled>请选择套餐绑定</SelectItem>
+                    <SelectItem value="unselected" disabled>{t('admin:userForm.selectPlanBind')}</SelectItem>
                   )}
                   {plans.map((plan) => (
                     <SelectItem key={plan.id} value={plan.id}>
@@ -115,25 +108,34 @@ export function UserSubscriptionFields({
 
         {!hasSelectedPlan && hasSubscription && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-            <p className="font-semibold">已选择取消订阅</p>
+            <p className="font-semibold">{t('admin:userForm.selectedCancelSub')}</p>
             <p className="mt-1 text-xs opacity-90 leading-relaxed">
-              保存后将彻底解除该用户的订阅关联、清空所有流量配额与到期时间，并撤销额外线路授权。点击下方保存按钮后需进行二次确认。
+              {t('admin:userForm.selectedCancelSubDesc')}
             </p>
           </div>
         )}
 
         {!hasSelectedPlan && !hasSubscription && (
           <div className="rounded-md border border-dashed p-6 text-center text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">该用户当前未绑定有效订阅</p>
-            <p className="mt-1">请从上方下拉菜单选择一个套餐进行绑定，系统将自动填入预设配额与有效时长。</p>
+            <p className="font-medium text-foreground">{t('admin:userForm.noActiveSub')}</p>
+            <p className="mt-1">{t('admin:userForm.noActiveSubDesc')}</p>
           </div>
         )}
 
         {hasSelectedPlan && (
           <>
             <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">流量重置：</span>{RESET_MODE_LABELS[resetMode]}
-              {resetMode === 'NONE' ? '，当前套餐不会自动重置' : nextResetAt ? `，下次重置：${formatDateTime(nextResetAt)}` : '，绑定后按当前周期计算下次重置时间'}
+              <span className="font-medium text-foreground">{t('admin:userForm.trafficReset')}</span>
+              {resetMode === 'CALENDAR_MONTH'
+                ? t('common:resetMode.CALENDAR_MONTH')
+                : resetMode === 'SUBSCRIPTION_CYCLE'
+                  ? t('common:resetMode.SUBSCRIPTION_CYCLE')
+                  : t('common:resetMode.NONE')}
+              {resetMode === 'NONE'
+                ? t('admin:userForm.noAutoReset')
+                : nextResetAt
+                  ? t('admin:userForm.nextResetAt', { time: formatDateTime(nextResetAt) })
+                  : t('admin:userForm.calculateNextReset')}
             </div>
 
             <FormField
@@ -141,13 +143,14 @@ export function UserSubscriptionFields({
               name="status"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>订阅状态</FormLabel>
+                  <FormLabel>{t('admin:userForm.statusLabel')}</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
+                      <SelectItem value="ACTIVE">{t('common:status.active')}</SelectItem>
+                      <SelectItem value="CANCELED">{t('common:status.canceled')}</SelectItem>
+                      <SelectItem value="EXPIRED">{t('common:status.expired')}</SelectItem>
+                      <SelectItem value="REVOKED">{t('common:status.revoked')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -161,7 +164,7 @@ export function UserSubscriptionFields({
                 name="quotaGB"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>配额（GiB）</FormLabel>
+                    <FormLabel>{t('admin:userForm.quotaLabel')}</FormLabel>
                     <FormControl><Input type="number" min={0} step="any" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -172,7 +175,7 @@ export function UserSubscriptionFields({
                 name="usedGB"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>已用流量（GiB）</FormLabel>
+                    <FormLabel>{t('admin:userForm.usedLabel')}</FormLabel>
                     <FormControl><Input type="number" min={0} step="any" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -186,9 +189,9 @@ export function UserSubscriptionFields({
                 name="expireAt"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>到期日期</FormLabel>
+                    <FormLabel>{t('admin:userForm.expireAtLabel')}</FormLabel>
                     <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormDescription>留空表示永久有效。</FormDescription>
+                    <FormDescription>{t('admin:userForm.expireAtPlaceholder')}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -198,9 +201,9 @@ export function UserSubscriptionFields({
                 name="addDays"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>增加天数</FormLabel>
-                    <FormControl><Input type="number" min={1} placeholder="可选" {...field} /></FormControl>
-                    <FormDescription>在当前到期日上顺延。</FormDescription>
+                    <FormLabel>{t('admin:userForm.addDaysLabel')}</FormLabel>
+                    <FormControl><Input type="number" min={1} placeholder={t('admin:userForm.addDaysPlaceholder')} {...field} /></FormControl>
+                    <FormDescription>{t('admin:userForm.addDaysDesc')}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -221,8 +224,8 @@ export function UserSubscriptionFields({
                 };
                 return (
                   <FormItem>
-                    <FormLabel>额外线路授权</FormLabel>
-                    <FormDescription>授权长期保留；线路需启用且相关节点在线后才会生效。</FormDescription>
+                    <FormLabel>{t('admin:userForm.extraLinesLabel')}</FormLabel>
+                    <FormDescription>{t('admin:userForm.extraLinesHint')}</FormDescription>
                     <FormControl>
                       <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">
                         {lineOptions.length ? lineOptions.map((line) => {
@@ -230,7 +233,7 @@ export function UserSubscriptionFields({
                           const available = line.status === 'ACTIVE' && line.entryNode.status === 'ONLINE' && (!targetLandingNode || targetLandingNode.status === 'ONLINE');
                           const topologyText = line.type === 'DIRECT'
                             ? `${line.entryNode.name} · ${line.protocolType}`
-                            : `${line.entryNode.name} ➔ ${targetLandingNode?.name ?? '未绑定'} · ${line.protocolType}`;
+                            : `${line.entryNode.name} ➔ ${targetLandingNode?.name ?? t('admin:lines.unbound')} · ${line.protocolType}`;
                           return (
                             <div key={line.id} className="flex items-start gap-2">
                               <Checkbox
@@ -241,13 +244,13 @@ export function UserSubscriptionFields({
                               <Label htmlFor={`user-extra-line-${line.id}`} className="min-w-0 cursor-pointer text-sm font-normal">
                                 <span className="block truncate font-medium">{line.name}</span>
                                 <span className="block text-xs text-muted-foreground">
-                                  {topologyText} · {available ? '当前可用' : '等待线路或节点恢复'}
-                                  {!line.isPublic ? ' · 隐藏线路' : ''}
+                                  {topologyText} · {available ? t('admin:userForm.currentlyAvailable') : t('admin:userForm.waitingAvailable')}
+                                  {!line.isPublic ? ` · ${t('admin:userForm.hiddenLine')}` : ''}
                                 </span>
                               </Label>
                             </div>
                           );
-                        }) : <p className="text-xs text-muted-foreground">暂无线路，请先在线路管理中创建。</p>}
+                        }) : <p className="text-xs text-muted-foreground">{t('admin:userForm.emptyLines')}</p>}
                       </div>
                     </FormControl>
                     <FormMessage />

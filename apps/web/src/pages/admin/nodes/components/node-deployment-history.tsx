@@ -92,11 +92,11 @@ export function NodeDeploymentHistory({ nodeId }: { nodeId: string }) {
                           {task.kind === 'AGENT' ? 'Agent' : 'Sing-box'}
                         </Badge>
                         <span className="text-xs font-medium">{taskVersion(task) ?? '—'}</span>
-                        {!task.assetId ? <Badge variant="secondary" className="text-[11px]">自定义 URL</Badge> : null}
-                        <span className="text-xs text-muted-foreground">尝试 {task.attempts} 次</span>
+                        {!task.assetId ? <Badge variant="secondary" className="text-[11px]">{t('admin:nodes.customUrlBadge')}</Badge> : null}
+                        <span className="text-xs text-muted-foreground">{t('admin:nodes.attemptsCount', { count: task.attempts })}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs">{task.operation === 'ROLLBACK' ? t('admin:nodes.rollback') : '升级'}</TableCell>
+                    <TableCell className="text-xs">{task.operation === 'ROLLBACK' ? t('admin:nodes.rollback') : t('admin:nodes.upgradeOperation')}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(task.status)}>{statusLabels[task.status] ?? task.status}</Badge>
                       {task.errorMessage ? (
@@ -149,7 +149,7 @@ export function NodeDeploymentHistory({ nodeId }: { nodeId: string }) {
             ) : null}
           </>
         ) : (
-          <EmptyState title="暂无分发记录" description="升级和回滚任务执行后将在此展示审计记录" className="border-0" />
+          <EmptyState title={t('admin:nodes.emptyHistoryTitle')} description={t('admin:nodes.emptyHistoryDesc')} className="border-0" />
         )}
       </CardContent>
 

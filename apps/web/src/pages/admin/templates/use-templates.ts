@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import i18n from '@/i18n/config';
 
 export interface SubscriptionTemplate {
   id: string;
@@ -55,15 +56,15 @@ export function useTemplateMutations() {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
   };
   const options = {
-    onSuccess: () => { toast.success('模板已保存'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '模板操作失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:templates.saveSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:templates.opFailed')))
   };
   const create = useMutation({ mutationFn: async (payload: TemplatePayload) => (await api.post('/admin/subscription-templates', payload)).data, ...options });
   const update = useMutation({ mutationFn: async ({ id, ...payload }: TemplatePayload & { id: string }) => (await api.patch(`/admin/subscription-templates/${id}`, payload)).data, ...options });
   const remove = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/subscription-templates/${id}`)).data,
-    onSuccess: () => { toast.success('模板已删除'); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '删除失败'))
+    onSuccess: () => { toast.success(i18n.t('admin:templates.deleteSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:templates.deleteFailed')))
   });
   const duplicate = useDuplicateTemplate();
   return { create, update, remove, duplicate };
@@ -73,7 +74,7 @@ export function useTemplatePreview() {
   return useMutation({
     mutationFn: async ({ format, template }: { format: 'clash' | 'singbox'; template: TemplatePayload }) =>
       (await api.post<TemplatePreviewResponse>('/admin/subscription-templates/preview', { format, template })).data,
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '预览渲染失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:templates.previewFailed')))
   });
 }
 
@@ -82,9 +83,9 @@ export function useDuplicateTemplate() {
   return useMutation({
     mutationFn: async (id: string) => (await api.post<SubscriptionTemplate>(`/admin/subscription-templates/${id}/duplicate`)).data,
     onSuccess: () => {
-      toast.success('模板副本已创建');
+      toast.success(i18n.t('admin:templates.duplicateSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'templates'] });
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, '复制模板失败'))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:templates.duplicateFailed')))
   });
 }
