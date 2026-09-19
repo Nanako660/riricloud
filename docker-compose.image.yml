@@ -3,6 +3,7 @@
 #   MASTER_IMAGE=ghcr.io/<owner>/riricloud-master:latest
 #   AGENT_IMAGE=ghcr.io/<owner>/riricloud-agent:latest
 #   IMAGE_PULL_POLICY=if_not_present (或 always)
+#   DOCKER_USER=0:0 (可选：若在 VPS 以 root 部署出现挂载目录权限问题，可设为 0:0 免改宿主目录权限)
 name: riricloud
 
 services:
@@ -10,7 +11,7 @@ services:
     image: ${MASTER_IMAGE:-riricloud/master:latest}
     pull_policy: ${IMAGE_PULL_POLICY:-never}
     restart: unless-stopped
-    user: "65532:65532"
+    user: "${DOCKER_USER:-65532:65532}"
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -56,7 +57,7 @@ services:
     pull_policy: ${IMAGE_PULL_POLICY:-never}
     restart: unless-stopped
     command: ["run"]
-    user: "65532:65532"
+    user: "${DOCKER_USER:-65532:65532}"
     read_only: true
     security_opt:
       - no-new-privileges:true

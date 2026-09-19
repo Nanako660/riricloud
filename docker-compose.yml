@@ -12,7 +12,7 @@ services:
         RIRICLOUD_IMAGE_TAGS: ${RIRICLOUD_IMAGE_TAGS:-latest}
     image: ${MASTER_IMAGE:-riricloud/master:latest}
     restart: unless-stopped
-    user: "65532:65532"
+    user: "${DOCKER_USER:-65532:65532}"
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -66,7 +66,7 @@ services:
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
     restart: unless-stopped
     command: ["run"]
-    user: "65532:65532"
+    user: "${DOCKER_USER:-65532:65532}"
     read_only: true
     security_opt:
       - no-new-privileges:true
