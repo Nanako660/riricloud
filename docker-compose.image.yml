@@ -1,10 +1,14 @@
-# RiriCloud 离线镜像部署模板：仅使用已导入本地 Docker 的镜像，不执行构建或拉取。
+# RiriCloud 预构建镜像部署模板：适用于离线镜像包导入或从 GHCR (GitHub Packages) 在线拉取。
+# 在线镜像示例（在 .env.image 或环境变量中指定）：
+#   MASTER_IMAGE=ghcr.io/<owner>/riricloud-master:latest
+#   AGENT_IMAGE=ghcr.io/<owner>/riricloud-agent:latest
+#   IMAGE_PULL_POLICY=if_not_present (或 always)
 name: riricloud
 
 services:
   master:
     image: ${MASTER_IMAGE:-riricloud/master:latest}
-    pull_policy: never
+    pull_policy: ${IMAGE_PULL_POLICY:-never}
     restart: unless-stopped
     user: "65532:65532"
     read_only: true
@@ -49,7 +53,7 @@ services:
 
   agent:
     image: ${AGENT_IMAGE:-riricloud/agent:latest}
-    pull_policy: never
+    pull_policy: ${IMAGE_PULL_POLICY:-never}
     restart: unless-stopped
     command: ["run"]
     user: "65532:65532"

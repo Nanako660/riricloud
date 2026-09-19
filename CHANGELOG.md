@@ -13,6 +13,11 @@
 ## [Unreleased]
 
 ### Added
+- **Docker 镜像自动构建与发布流水线 (GitHub Packages / GHCR)**：
+  - **GitHub Actions 自动化流水线 (`.github/workflows/docker-publish.yml`)**：接入 GitHub Container Registry (`ghcr.io`) 自动发布，使用仓库内置 `GITHUB_TOKEN` 实现零外部密钥配置；
+  - **标准化触发与镜像打标策略**：推送 `v*` Tag 时自动编译发布 Master 与 Agent 双端镜像并同步标记版本号与 `latest`；推送 `agent-v*` Tag 时支持 Agent 独立发版；`main` 分支主线推送自动构建输出 `edge` 快照镜像；提供 `workflow_dispatch` 支持手动按需触发；
+  - **针对 `linux/amd64` 优化与构建缓存**：严格锁定 `linux/amd64` 目标平台，并配置 Buildx GHA 缓存（`type=gha`），大幅加速内核拉取与重复构建；
+  - **部署模板与运维文档联动**：更新 `docker-compose.image.yml` 支持环境变量配置 `IMAGE_PULL_POLICY`，并在 `docs/DEPLOYMENT_GUIDE.md` 补充从 GHCR 拉取镜像运行的完整操作指南。
 
 ### Changed
 

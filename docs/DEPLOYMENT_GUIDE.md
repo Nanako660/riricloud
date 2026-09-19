@@ -128,7 +128,9 @@ gzip -dc artifacts/docker/linux-amd64/riricloud-agent_<agent-version>_linux_amd6
 (cd artifacts/docker/linux-amd64 && sha256sum -c riricloud-docker-images_<master-version>_linux_amd64.sha256)
 ```
 
-仓库提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已经导入的镜像（`pull_policy: never`，适合离线环境）：
+仓库提供 `docker-compose.image.yml` 与 `.env.image.example`，用于直接运行已导入的离线镜像或从在线仓库拉取镜像：
+
+**方式 A：离线镜像（默认，`pull_policy: never`）**
 
 ```bash
 cp .env.image.example .env.image
@@ -136,6 +138,25 @@ cp .env.image.example .env.image
 docker compose --env-file .env.image -f docker-compose.image.yml up -d --no-build
 docker compose --env-file .env.image -f docker-compose.image.yml ps
 ```
+
+**方式 B：从 GitHub Packages (GHCR) 在线拉取运行（`linux/amd64`）**
+
+项目已配置 GitHub Actions 自动发布 Docker 镜像至 GitHub Container Registry (`ghcr.io`)。可在 `.env.image` 中指定在线镜像与拉取策略：
+
+```env
+MASTER_IMAGE=ghcr.io/<owner>/riricloud-master:latest
+AGENT_IMAGE=ghcr.io/<owner>/riricloud-agent:latest
+IMAGE_PULL_POLICY=if_not_present
+```
+
+随后一键启动并拉取最新镜像：
+
+```bash
+docker compose --env-file .env.image -f docker-compose.image.yml pull
+docker compose --env-file .env.image -f docker-compose.image.yml up -d
+```
+
+> 注：`<owner>` 替换为 GitHub 仓库所属用户或组织名（全小写）。主控镜像会跟随发版自动打上 `vX.Y.Z`、`X.Y.Z` 与 `latest` 标签；`main` 分支构建输出 `edge` 快照标签。
 
 停止并清理容器：
 
