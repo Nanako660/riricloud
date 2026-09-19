@@ -166,7 +166,7 @@ export function DocEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="fixed inset-0 z-50 w-screen h-screen max-w-none max-h-none rounded-none border-none p-4 sm:p-6 flex flex-col overflow-hidden bg-background">
+      <DialogContent size="fullscreen">
         <DialogHeader className="shrink-0 pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold">
