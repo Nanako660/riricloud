@@ -2322,6 +2322,31 @@ const admin = {
     drawerTitle: 'Quick Preview Subscription Configuration',
     drawerDesc: 'Generate actual client configuration using current template and available lines.',
     selectTemplatePrompt: 'Please select a template.'
+  },
+  docs: {
+    title: 'Documentation Management',
+    subtitle: 'Manage beginner client tutorials and troubleshooting guides with dynamic token injection.',
+    newDoc: 'New Article',
+    resetDefaults: 'Restore Presets',
+    searchPlaceholder: 'Search title or slug…',
+    platform: 'Platform',
+    allPlatforms: 'All Platforms',
+    locale: 'All Languages',
+    emptyTitle: 'No Articles Found',
+    emptyDesc: 'Click "New Article" or "Restore Presets" to initialize standard beginner tutorials.',
+    createNow: 'Create Now',
+    table: {
+      title: 'Title & Summary',
+      platformClient: 'Platform / Client',
+      slug: 'Slug',
+      sort: 'Sort',
+      locale: 'Locale',
+      status: 'Status',
+      updatedAt: 'Updated At',
+      actions: 'Actions',
+      published: 'Published',
+      draft: 'Draft'
+    }
   }
 } as const;
 

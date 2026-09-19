@@ -19,6 +19,7 @@ import { RedeemCodesModule } from './redeem-codes/redeem-codes.module';
 import { SystemLogsModule } from './system-logs/system-logs.module';
 import { MirrorsModule } from './mirrors/mirrors.module';
 import { ProxyPoolModule } from './proxy-pool/proxy-pool.module';
+import { HelpModule } from './help/help.module';
 
 // Web 静态托管在 main.ts 以中间件方式注册（@nestjs/serve-static 与 Express 5 不兼容）
 @Module({
@@ -42,7 +43,8 @@ import { ProxyPoolModule } from './proxy-pool/proxy-pool.module';
     RedeemCodesModule,
     SystemLogsModule,
     MirrorsModule,
-    ProxyPoolModule
+    ProxyPoolModule,
+    HelpModule
   ]
 })
 export class AppModule {}

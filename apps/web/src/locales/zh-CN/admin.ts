@@ -2322,6 +2322,31 @@ const admin = {
     drawerTitle: '快速预览订阅配置',
     drawerDesc: '使用当前模板与可用线路生成实际客户端配置。',
     selectTemplatePrompt: '请选择一个模板。'
+  },
+  docs: {
+    title: '帮助文档管理',
+    subtitle: '维护面向 0 基础用户的客户端图文教程与常见排错指南，支持动态变量插值与出厂预设恢复。',
+    newDoc: '新建帮助文档',
+    resetDefaults: '恢复官方预设',
+    searchPlaceholder: '搜索文档标题或 slug…',
+    platform: '平台分类',
+    allPlatforms: '全部平台',
+    locale: '全部语言',
+    emptyTitle: '暂无帮助文档',
+    emptyDesc: '您可以点击右上角「新建帮助文档」，或者点击「恢复官方预设」灌入标准新手教程。',
+    createNow: '立即新建',
+    table: {
+      title: '标题与摘要',
+      platformClient: '平台 / 客户端',
+      slug: 'Slug 标识',
+      sort: '排序',
+      locale: '语言',
+      status: '发布状态',
+      updatedAt: '更新时间',
+      actions: '操作',
+      published: '已发布',
+      draft: '草稿'
+    }
   }
 } as const;
 

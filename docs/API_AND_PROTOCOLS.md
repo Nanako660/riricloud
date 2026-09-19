@@ -58,6 +58,10 @@
 - `GET /user/proxy-pool/nodes?lineIds?`：列出可用的 Mixed 直连代理端点。⭐
 - `GET /user/proxy-pool/export?format&protocol&keyId&lineIds&token`：多格式导出与免登录拉取。⭐ 支持 Cookie 登录态或 `?token=<exportToken>` 二选一。
 
+### 1.2.1 帮助中心与使用文档 (`/help`)
+- `GET /help/articles?platform&locale`：获取已发布的帮助文档列表。⭐ 支持按平台（`WINDOWS` / `MACOS` / `IOS` / `ANDROID` / `ROUTER` / `FAQ` / `GENERAL`）和语言（`zh-CN` / `en-US`）过滤，正文与摘要自动基于当前登录用户身份和站点配置完成动态变量插值（如 `{{subscription_url}}`、`{{clash_import_url}}`、`{{shadowrocket_import_url}}`、`{{site_name}}` 等）；响应按 `sortOrder` 升序排列。
+- `GET /help/articles/:slug?locale`：根据别名查询单篇文档详情。⭐ 返回包含完整变量插值正文的文档对象；未发布或不存在返回 404。
+
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
@@ -180,6 +184,14 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `POST /admin/subscriptions/users/:userId`：为尚无订阅的用户绑定套餐。⭐ 请求字段同管理员订阅调整接口，必须提供 `planId`；已有订阅时按更新语义处理。管理员发放可突破用户限购上限，但每次变更套餐仍写入 `ADMIN` 来源购买台账。支持 `extraLineIds?: UUID[]` 全量设置用户额外线路授权，空数组表示清空。
 - `PATCH /admin/subscriptions/:id`：管理员全量调整订阅。⭐ 支持 `planId`、`status`、`trafficLimitBytes`、`trafficUsedBytes`、`expireAt`、`addDays`、`extraLineIds`；变更套餐时管理员可破例但必须记录 `ADMIN` 购买台账；传 `planId: null` 会删除订阅实例，购买台账保留，用户回到无套餐状态并使旧订阅 Token 失效，但不会删除用户额外线路授权。
 - `POST /admin/subscriptions/:id/reset-token`：重置指定用户订阅 Token。⭐
+
+#### 帮助中心与文档管理 (`/admin/help/articles`)
+- `GET /admin/help/articles?search&platform&locale&isPublished`：管理员获取全量帮助文档列表（包含未发布草稿）。⭐ 支持按标题/别名关键词模糊搜索、平台、语言和发布状态筛选；响应按 `sortOrder` 升序及 `createdAt` 降序返回。
+- `GET /admin/help/articles/:id`：管理员获取单篇文档详情。⭐ 返回未经变量插值的原始 Markdown 内容，便于后台在线编辑。
+- `POST /admin/help/articles`：创建帮助文档。⭐ 请求 `{ slug, title, platform, clientName?, icon?, summary?, content, sortOrder?, isPublished?, locale? }`；`slug` 全局唯一，冲突返回 409。
+- `PATCH /admin/help/articles/:id`：修改帮助文档。⭐ 请求更新字段子集；若修改 `slug` 发生冲突返回 409。
+- `DELETE /admin/help/articles/:id`：删除帮助文档。⭐
+- `POST /admin/help/articles/reset-defaults`：一键重置为官方预置文档。⭐ 请求 `{ overwriteExisting?: boolean }`；默认仅增补缺失文档，`overwriteExisting=true` 时将官方预置文档的标题、正文、排序和平台全量覆盖恢复。
 
 #### 系统日志管理 (`/logs`)
 - `GET /logs?page&pageSize&level&source&nodeId&traceId&keyword&startTime&endTime`：管理员分页多维查询系统日志。⭐ 支持日志级别（DEBUG/INFO/WARN/ERROR）、来源端（SERVER/WEB/AGENT/SINGBOX）、关联 VPS 节点 UUID、全链路 TraceId 与关键词全文模糊检索；返回统一分页结构 `{ items: SystemLog[], total, page, pageSize, totalPages }`。服务端拦截器对常规的日志自查读取请求（状态码 `< 400`）静默放行，避免产生自循环 HTTP 访问日志。

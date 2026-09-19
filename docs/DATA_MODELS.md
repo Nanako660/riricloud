@@ -614,6 +614,29 @@ model SystemSetting {
   description String?
   updatedAt   DateTime @updatedAt
 }
+
+// ==============================
+// 5. 帮助中心与使用文档 (HelpArticle)
+// ==============================
+model HelpArticle {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String
+  platform    String   @default("ALL") // WINDOWS | MACOS | IOS | ANDROID | ROUTER | FAQ | GENERAL
+  clientName  String?  // 如 "Clash Verge Rev", "Shadowrocket"
+  icon        String?  // 图标标识
+  summary     String?  // 简短摘要
+  content     String   // Markdown 正文，支持动态变量插值
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  locale      String   @default("zh-CN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([platform, isPublished, sortOrder])
+  @@index([locale, isPublished])
+  @@index([sortOrder])
+}
 ```
 
 **已启用键定义（v0.4.8）**：
@@ -987,3 +1010,51 @@ NORMAL 节点的 SINGBOX INFO/DEBUG 不进入 `SystemLog`；有效诊断期内�
 - 使用 SQLite 内核级 `ATTACH DATABASE "${telemetryDbPath}" AS telemetry` 引擎指令。
 - 直接在数据库引擎内部执行 `INSERT OR IGNORE INTO telemetry.TrafficHourlyMetric SELECT ... FROM main.TrafficHourlyMetric`，无需经由 Node.js 内存周转，可在亚秒级完成数万条存量记录的零拷贝迁移。
 - 迁移脚本具备完全幂等性，主库表结构迁移在数据迁移完成后安全移除废弃表。
+
+---
+
+## 10. 帮助中心与使用文档模型（HelpArticle）
+
+帮助中心为面向 0 基础小白用户的系统内置文档库，提供客户端使用教程、配置导入指引与常见问题解答。文档保存在主业务库中，支持管理端富文本/Markdown 实时编辑、平台分类过滤、多语言与动态变量自动插值。
+
+### 10.1 字段字典
+
+| 字段 | 类型 | 默认值 | 约束与说明 |
+| :--- | :--- | :--- | :--- |
+| `id` | String (UUID) | uuid() | 文档记录唯一主键 |
+| `slug` | String | 必填 | 唯一标识与 URL 路径别名（如 `windows-clash-verge`、`faq`），唯一约束 `@@unique([slug])` |
+| `title` | String | 必填 | 文档主标题（如 `Windows 客户端使用教程`） |
+| `platform` | String | `"ALL"` | 归属平台分类：`WINDOWS` / `MACOS` / `IOS` / `ANDROID` / `ROUTER` / `FAQ` / `GENERAL` |
+| `clientName` | String? | `null` | 客户端软件名称（如 `Clash Verge Rev`、`Shadowrocket`），用于快速导入识别 |
+| `icon` | String? | `null` | 前端渲染图标标示，支持 Lucide 图标名称 |
+| `summary` | String? | `null` | 文档摘要/副标题，展示于目录列表或卡片预览 |
+| `content` | String | 必填 | Markdown 正文内容，支持 GFM 语法、代码高亮、Callout 警告块及动态变量插值 |
+| `sortOrder` | Int | `0` | 排序权重（数值越小越靠前） |
+| `isPublished` | Boolean | `true` | 上架/发布开关；未发布的文档仅管理员可见 |
+| `locale` | String | `"zh-CN"` | 语言代码（`zh-CN` / `en-US`），支撑全站多语言切换 |
+| `createdAt` | DateTime | now() | 创建时间戳 |
+| `updatedAt` | DateTime | 自动 | 最后编辑时间戳 |
+
+### 10.2 索引设计
+
+- `@@unique([slug])`：URL 路由别名唯一性校验
+- `@@index([platform, isPublished, sortOrder])`：客户端按平台与发布状态快速排序筛选
+- `@@index([locale, isPublished])`：多语言与公开文档过滤
+- `@@index([sortOrder])`：全局目录树有序检索
+
+### 10.3 动态变量插值机制 (Dynamic Variables)
+
+文档 Markdown 正文内可自由引用占位符变量，用户端在获取文章正文时由服务端依据当前登录用户身份和系统全局配置自动完成安全上下文替换：
+
+| 变量占位符 | 替换值含义 | 回退/默认处理 |
+| :--- | :--- | :--- |
+| `{{subscription_url}}` | 当前用户专属主订阅 URL | 用户未登录时保留原样或提示占位 |
+| `{{clash_import_url}}` | 一键导入 Clash 协议链接 (`clash://install-config?url=...`) | 自动基于当前用户订阅链接编码生成 |
+| `{{shadowrocket_import_url}}` | 一键导入 Shadowrocket 协议链接 (`sub://...`) | 自动以 Base64 安全编码转换生成 |
+| `{{site_name}}` | 当前站点名称 (`SystemSetting.siteName`) | 未配置时默认 `"RiriCloud"` |
+| `{{public_base_url}}` | 站点基准对外访问 URL (`SystemSetting.publicBaseUrl`) | 未配置时自动回退为请求 Host |
+
+### 10.4 官方预置教程与安全恢复
+
+- 系统在首次 `pnpm db:seed` 时自动灌入涵盖 Windows (Clash Verge Rev)、macOS (Clash Verge Rev)、iOS (Shadowrocket)、Android (Clash Meta) 及常见故障排查 (FAQ) 的 5 篇官方标准化图文教程。
+- 管理端提供 `POST /api/v1/admin/help/articles/reset-defaults` 安全重置机制，支持在文档损毁或配置错乱时一键恢复官方标准预设文档，可选择覆写冲突项或全量刷新。

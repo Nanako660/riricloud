@@ -417,7 +417,8 @@ const user = {
     step2Desc: 'Paste the subscription link into Clash Meta, Sing-box, or Shadowrocket.',
     step3Title: 'Select Line & Connect',
     step3Desc: 'Update your configuration and select a low-latency available line to connect.',
-    footerTip: 'Public available lines will automatically sync to your client without manual server or port configuration.'
+    footerTip: 'Public available lines will automatically sync to your client without manual server or port configuration.',
+    viewFullDocs: 'View Full Tutorial'
   },
   announcement: {
     title: 'System Announcement',
@@ -445,6 +446,26 @@ const user = {
     tabNode: 'Node.js (fetch)',
     tabGo: 'Go (net/http)',
     desc: 'Copy the generated integration snippets below to quickly integrate proxy authentication and routing.'
+  },
+  help: {
+    title: 'Documentation & Help Center',
+    subtitle: 'Beginner-friendly guides for client setup and troubleshooting.',
+    allDocs: 'All Guides',
+    searchPlaceholder: 'Search tutorials and questions…',
+    navTitle: 'Tutorial Navigation',
+    empty: 'No articles found in this category',
+    needHelp: 'Still Having Issues?',
+    needHelpDesc: 'If you still cannot connect after following the guide, contact our support team.',
+    contactSupport: 'Contact Support',
+    prevArticle: 'Previous',
+    nextArticle: 'Next',
+    tocTitle: 'On This Page',
+    quickImport: 'Quick Setup',
+    quickImportBadge: 'Credentials Injected',
+    quickImportDesc: 'One-click launch and configuration for popular clients',
+    oneClickImport: 'Import to {{client}}',
+    copySub: 'Copy Subscription URL',
+    subSecretTip: 'This link contains your private token. Keep it safe and do not share.'
   }
 } as const;
 

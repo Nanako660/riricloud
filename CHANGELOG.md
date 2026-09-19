@@ -13,6 +13,13 @@
 ## [Unreleased]
 
 ### Added
+- **用户侧使用帮助中心与面向 0 基础小白指南 (Help Center & Beginner Guides)**：
+  - **用户端现代化帮助中心 (`/help`)**：支持按平台分类（Windows、macOS、iOS、Android、路由器与常见问题 FAQ）筛选，左侧多级目录与搜索、右侧正文目录 TOC 自动高亮联动，支持 GitHub Flavored Markdown 语法渲染、警告提示块 (Callouts)、代码块一键复制及图片 Lightbox 灯箱点击放大；
+  - **专属凭据与客户端一键导入动态插值**：教程正文与顶部指引自动注入当前用户专属主订阅链接与客户端专用深度导入协议（如 Clash Verge 一键导入 `clash://install-config?url=...`、Shadowrocket 一键导入 `sub://...`），0 基础用户无需手动复杂复制配置；
+  - **「我的订阅」新手卡片直达联动**：在用户订阅主控制台的新手快速配置卡片中新增「查看图文教程」快捷跳转入口，无缝引导小白用户前往对应平台的帮助中心页面；
+  - **管理端在线 Markdown 文档管理与编辑器 (`/admin/docs`)**：管理员可按平台、发布状态与关键词检索文档，支持在弹窗内通过分屏 Markdown 实时预览编辑器修改文档，支持变量快捷插入（如 `{{subscription_url}}`、`{{clash_import_url}}`、`{{site_name}}` 等）；
+  - **开箱即用官方预置教程与安全恢复**：主库数据模型新增 `HelpArticle`，初始化时自动灌入 Windows (Clash Verge Rev)、macOS (Clash Verge Rev)、iOS (Shadowrocket)、Android (Clash Meta) 及常见故障排查 5 篇高质量官方教程，并提供管理端一键恢复官方默认教程的安全机制；
+  - **全链路中英双语国际化适配**：用户端帮助中心、管理端文档编辑器及全部官方预置文档深度适配 `zh-CN` 与 `en-US` 多语言。
 - **前端二级交互组件与全模块多语言深度适配 (Full Subcomponents & Dialogs i18n)**：
   - **节点与运维全链路**：节点详情（`detail.tsx`）、探针配置与执行弹窗（`probe-node-dialog.tsx`）、远程升级中心（`upgrade-node-dialog.tsx`）、部署与升级分发历史（`node-deployment-history.tsx`）、安装命令选择器（`install-commands-picker.tsx`）及创建/编辑表单（`node-form-dialog.tsx`）所有文案、ARIA 属性、诊断度量、状态徽标与 Toast 全面接入多语言；
   - **线路管理网络调优与高级表单**：入站配置、高级设置、网络底座调优、客户端多路复用、协议高级伪装、TLS 密码套件与链路测速流程弹窗全向国际化，消除硬编码文本；

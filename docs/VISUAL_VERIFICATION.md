@@ -62,6 +62,8 @@
 | **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
 | **`UI-34`** | 网络与节点 | 镜像站列表、编辑与测试结果 | `/admin/mirrors` | `apps/web/src/pages/admin/mirrors/**` | 上游域名、指定节点与 `mirror_proxy` 能力、访问模式、启用状态和最近请求结果的表格扫描；创建/编辑表单、分享 Token 一次性展示与轮换、删除确认、测试结果对话框；明暗主题、移动端表格局部滚动和弹窗内滚动 |
 | **`UI-35`** | 用户中心 | 直连代理池凭据管理与提取导出中心 | `/proxy-pool` | `apps/web/src/pages/user/proxy-pool/**` | 顶部 4 项微型状态指标卡（活跃凭据、可用端点、双协议单端口支持、主账户配额共享）；响应式双 Tab 切换（「代理提取与代码集成」与「凭据与白名单」）；凭据网格化响应式卡片流（发光状态指示微灯、紧凑等宽凭据胶囊避免横向拉伸、显隐切换、行内复制、白名单 IP 预览与下拉操作）；macOS 终端风格一体化结果工作台（节点流式芯片选择、TXT/URI/JSON 提取结果与四语言代码片段平滑切换、多节点自动化代码轮换池与单节点快速切换器、移动端分层响应式控制栏彻底根除 Tab 与操作按钮重叠、代码视窗常规文本选择、全 TLS 节点 SOCKS5 互斥禁用约束、混合节点 SOCKS5 智能过滤告警横幅、一键复制、一键下载 .txt 文件）；免登录自动化动态拉取 API 复制；移动端全宽自适应无多余横向溢出 |
+| **`UI-36`** | 帮助与支持 | 用户端帮助中心与客户端教程 | `/help` | `apps/web/src/pages/user/help/**`, `apps/web/src/components/shared/markdown-renderer.tsx`, `apps/web/src/components/shared/image-lightbox.tsx` | 平台分类切换（Windows/macOS/iOS/Android/路由器/常见问题）、文章侧边栏导航、搜索过滤、置顶客户端一键导入卡（包含协议一键导入与订阅链接复制）、Markdown 正文动态变量插值（自动替换为当前用户专属订阅链接与站点名）、警告块 (Callout) 渲染、代码高亮与一键复制、图片灯箱 (Lightbox) 点击放大预览、右侧 TOC 目录随滚动自动高亮、移动端自适应排版 |
+| **`UI-37`** | 帮助与支持 | 管理端文档管理与分屏编辑器 | `/admin/docs` | `apps/web/src/pages/admin/docs/**` | 帮助文档数据表格（标题、别名、平台、语言、发布状态、排序）、平台/状态/搜索组合筛选、新建/编辑文档分屏弹窗（CodeMirror 源码高亮 + 动态变量插入工具条 + 实时渲染预览 + 平台/客户端/图标/发布 Switch/排序输入项）、一键重置官方预置文档二次确认弹窗（含覆盖选项）、明暗主题与移动端局部滚动 |
 
 认证页面的会话验证以 Cookie 为浏览器实现细节：视觉走查只需确认登录/注册成功后正确进入已认证路由、刷新页面仍保持登录态、注销后返回登录页；不得在页面 DOM、localStorage 或 sessionStorage 中出现 JWT 文本。
 
@@ -105,14 +107,15 @@ flowchart TD
     PathCheck -->|系统日志\npages/admin/logs/*| Logs[精准走查: UI-32]
     PathCheck -->|镜像站\npages/admin/mirrors/*| Mirrors[精准走查: UI-34]
     PathCheck -->|资源管理\npages/admin/binaries/*| Binaries[精准走查: UI-31]
+    PathCheck -->|帮助中心\npages/user/help/*\npages/admin/docs/*| Help[精准走查: UI-36, UI-37]
 ```
 
 ### 映射规则表
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-35`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-35`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-37`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-37`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
 | `apps/web/src/router/index.tsx` | `UI-03`, `UI-21` | **增量** |
@@ -133,9 +136,10 @@ flowchart TD
 | `apps/web/src/pages/admin/lines/**` | `UI-23`, `UI-24` | **增量** |
 | `apps/web/src/pages/admin/certificates/**` | `UI-26` | **增量** |
 | `apps/web/src/pages/admin/logs/**` | `UI-32` | **增量** |
-
 | `apps/web/src/pages/admin/mirrors/**` | `UI-34` | **增量** |
 | `apps/web/src/pages/user/proxy-pool/**` | `UI-35` | **增量** |
+| `apps/web/src/pages/user/help/**` | `UI-36` | **增量** |
+| `apps/web/src/pages/admin/docs/**` | `UI-37` | **增量** |
 
 > **2026-09-17 增量台账**：本次新增节点详情 Sing-box 诊断卡片与系统日志真实级别/重复次数展示，增量走查范围为 `UI-05`~`UI-10`、`UI-32`。需在 Antigravity 中覆盖 Light/Dark、`1440x900`、`375x812`、`768x1024`，检查开启确认弹窗、剩余时间、停止/离线/不支持/下发中/自动过期状态，以及日志表格的 `xN` 徽标和说明文案。当前实现未将视觉检查接入 CI 或 Git Hook。
 >
@@ -144,6 +148,8 @@ flowchart TD
 > **2026-09-18 增量台账（多路复用与 Brutal 拥塞控制优化）**：本次修复线路多路复用 Brutal 速率必填校验与取消勾选状态同步（`fix/line-multiplex-brutal-update`），受影响走查范围为 `UI-24`（线路编辑弹窗入站多路复用卡片）。需覆盖 Light/Dark，验证开启 Brutal 时的必填提示文案、空值提交红字拦截以及取消多路复用后的干净保存。当前实现未将视觉检查接入 CI 或 Git Hook。
 >
 > **2026-09-19 增量台账（前端全模块国际化与二级交互组件多语言完整覆盖）**：本次对 `apps/web` 全模块进行了彻底的硬编码文本与二级交互组件扫网清理（`feat/web-i18n-subcomponents-and-dialogs-complete`），涵盖节点详情/升级/探针/部署历史、线路高级/网络/协议表单、模板六大编辑器与预览抽屉、资源管理详情/编辑/审计/表单、证书详情与表单、系统日志筛选/实时推流/指标/清理抽屉、系统设置探针与色阶编辑器、流量统计图表与排行下钻、卡密与套餐管理全部二级弹窗、用户管理弹窗及全局 UI 底座（Dialog、Sheet、Sidebar）。所有 UI 文本、ARIA 辅助属性、表单校验与 Toast 提示 100% 纳入 `react-i18next` 统一多语言字典管理，保持中英文结构与词条完全对称。走查覆盖 Light/Dark 模式，确认切换语言即时生效、中英文字符串无溢出与排版变形。当前实现未将视觉检查接入 CI 或 Git Hook。
+>
+> **2026-09-19 增量台账（用户侧帮助中心与管理端文档管理）**：本次新增用户端使用文档中心与管理端在线编辑器（`feat/help-center-docs`），受影响走查范围为 `UI-36` 与 `UI-37`。覆盖 Light/Dark 模式与移动视口，验证多平台 Tab 切换、代码高亮复制与图片灯箱放大、正文动态变量自动插值、管理端 CodeMirror 分屏实时预览及重置官方预置文档弹窗。当前实现未将视觉检查接入 CI 或 Git Hook。
 
 ---
 

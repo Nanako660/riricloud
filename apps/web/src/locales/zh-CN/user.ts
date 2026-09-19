@@ -417,7 +417,8 @@ const user = {
     step2Desc: '在 Clash Meta、Sing-box 或 Shadowrocket 中粘贴订阅链接。',
     step3Title: '选择线路并连接',
     step3Desc: '更新配置后选择延迟较低的可用线路开启代理。',
-    footerTip: '公开可用的线路会由系统自动同步至客户端，无需手动填写服务器与端口。'
+    footerTip: '公开可用的线路会由系统自动同步至客户端，无需手动填写服务器与端口。',
+    viewFullDocs: '查看完整图文教程'
   },
   announcement: {
     title: '系统公告',
@@ -445,6 +446,26 @@ const user = {
     tabNode: 'Node.js (fetch)',
     tabGo: 'Go (net/http)',
     desc: '直接复制下方生成的调用示例代码快速集成代理认证与转发。'
+  },
+  help: {
+    title: '使用文档与帮助中心',
+    subtitle: '面向 0 基础用户的主流客户端安装配置指南与连接排错手册。',
+    allDocs: '全部文档',
+    searchPlaceholder: '搜索教程标题或问题…',
+    navTitle: '教程导航',
+    empty: '该分类下暂无文档',
+    needHelp: '仍然无法连接？',
+    needHelpDesc: '如果在阅读教程后仍然无法连接或遇到报错，欢迎联系人工技术支持。',
+    contactSupport: '联系在线客服',
+    prevArticle: '上一篇',
+    nextArticle: '下一篇',
+    tocTitle: '本页目录',
+    quickImport: '快速快捷配置',
+    quickImportBadge: '已填入专属凭据',
+    quickImportDesc: '支持一键自动唤起软件并下载节点，零基础一键上手',
+    oneClickImport: '一键导入到 {{client}}',
+    copySub: '复制专属订阅',
+    subSecretTip: '该链接包含您的加密连接密钥，切勿分享给他人，支持多客户端自动协商兼容'
   }
 } as const;
 
