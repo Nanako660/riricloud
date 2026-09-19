@@ -120,6 +120,11 @@ printf '%s\n' 'New-admin-password1!' | docker compose exec -T master /nodejs/bin
 
 Compose 在 Linux/WSL 下使用 `network_mode: host`，`MASTER_PORT` 控制 Master 面板监听端口（默认 3000）；Agent 容器直接在 host 网络中监听配置的入站 TCP/UDP 端口。持久化目录：Master 为 `${MASTER_DATA_PATH:-./data}:/app/data`，Agent 为 `${AGENT_DATA_PATH:-./data/agent}:/var/lib/riri-agent`。
 
+> **挂载权限与启动自检说明**：
+> - 官方镜像基于 Distroless 默认以 `65532:65532` 非 Root 安全用户运行。宿主机首次拉起时，建议预先确保数据目录可写：`chmod -R 777 ./data ./data/agent` 或 `sudo chown -R 65532:65532 ./data ./data/agent`；
+> - 主控入口内置**全链路前置启动诊断机制**，在执行数据库迁移前自动预检数据目录可写性、SQLite 探测锁创建、存量 db/wal 文件及核心密钥。若检测到权限受限，控制台将输出格式化的现场取证与一键修复卡片；
+> - 在 VPS 上以 root 用户（或位于 `/root/` 目录）部署时，可在 `.env` / `.env.image` 设置 `DOCKER_USER=0:0`，使容器进程直接以宿主机身份运行，彻底免去宿主机权限调整。
+
 导入离线镜像时，在目标 Docker 环境执行：
 
 ```bash

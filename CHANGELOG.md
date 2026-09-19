@@ -19,6 +19,17 @@
 ### Fixed
 
 
+## [0.8.22] - 2026-09-20
+
+### Added
+- **Docker 容器全链路启动前置诊断与运行身份自适应体系 (Startup Diagnostics & Adaptive User)**：
+  - **全链路前置深度自检模块 (`scripts/docker-entrypoint.js`)**：在执行数据库迁移或启动服务前，前置诊断挂载数据目录 `/app/data` 读写可穿透性、临时探测锁创建与销毁、存量 SQLite 数据库（`riri.db` / `telemetry.db`）及 WAL/SHM 文件读写锁状态、`/tmp` 临时目录可用性及核心安全密钥；
+  - **结构化中文诊断卡片输出**：在权限受限或配置异常时，拦截底层底层崩溃（如 `os error 13`），格式化输出包含容器运行身份（UID/GID）、数据目录属主与权限、失败环节在内的现场取证报告，并提供针对宿主机的 3 种一键自愈命令；
+  - **运行身份自适应扩展 (`DOCKER_USER`)**：在 `docker-compose.yml` 与 `docker-compose.image.yml` 中支持通过 `${DOCKER_USER:-65532:65532}` 动态覆盖运行用户，默认为 Distroless 高安全非 Root 规范，VPS 管理员可声明 `DOCKER_USER=0:0` 彻底免去宿主机权限调整烦恼；
+  - **项目全局硬约束扩充 (`docs/PROJECT_CONSTRAINTS.md`)**：正式新增 §11「容器安全、运行身份与启动诊断约束」，确立非 Root 默认锁定、自适应接口与 Fail-Fast 诊断卡片为不可协商的代码硬指标。
+
+
+
 ## [0.8.21] - 2026-09-20
 
 ### Added

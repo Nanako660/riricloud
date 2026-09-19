@@ -140,3 +140,13 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 1. **单仓唯一版本源**：根 `package.json` 的 `version` 字段为全局唯一真实源，子包（`apps/server`、`apps/web`）与 `apps/agent` 一律不得私自维护版本号。
 2. **核心代码变更强制递增**：凡涉及 `apps/server`、`apps/web`、`apps/agent` 或 `prisma` 等核心代码修改的 PR，在合入 `main` 前分支上必须执行 `pnpm bump [patch|minor|major]` 递增版本号，并在 [CHANGELOG.md](../CHANGELOG.md) 顶部的对应版本小节中记录改动。纯文档、脚本或配置改动允许免增版本。
 3. **三重防线机械阻断**：`pnpm gate:version`、CI 流水线及 `.husky/pre-push` 构成三重防线，自动校验版本号大小、CHANGELOG 格式与 Git 变更差分，杜绝未升版本的核心代码变更合入主干。
+
+---
+
+## 11. 容器安全、运行身份与启动诊断约束
+
+1. **非 Root 默认锁定与最小特权**：官方发布的 Master 与 Agent 容器镜像必须基于 Distroless 极简安全底座，镜像内置与 Docker Compose 默认运行身份必须强制锁定为 `65532:65532` 非 Root 安全用户，严禁在构建阶段将默认用户回退为 `0:0`。
+2. **运行身份自适应接口约束**：所有 Compose 模板（含 `docker-compose.yml` 与 `docker-compose.image.yml`）必须统一通过 `${DOCKER_USER:-65532:65532}` 暴露运行身份覆盖接口，在兼顾默认非 Root 安全规范的同时，允许宿主机管理员在复杂权限环境（如 root 工作目录或权限受限的挂载卷）下通过 `DOCKER_USER=0:0` 获得免权限配置的自愈通道。
+3. **前置健康体检与 Fail-Fast 原则**：主控容器入口（`docker-entrypoint.js`）在执行任何数据库迁移（`prisma migrate`）或子进程拉起前，必须执行全链路前置深度自检（涵盖挂载数据目录 `/app/data` 读写可穿透性、临时探测锁创建与销毁、存量 `*.db` 及 WAL/SHM 读写锁状态、`/tmp` 临时目录可用性及核心安全密钥强度）；严禁将底层原生异常（如 Rust `os error 13`）未加工直接暴露给终端。
+4. **结构化诊断卡片输出标准**：启动自检发现任何异常时，必须以标准结构化格式输出诊断卡片，完整呈现：① 明确的诊断结论；② 现场取证（容器 UID/GID、挂载点实际属主与权限、出错具体环节）；③ 针对宿主机环境的多方案一键修复命令（放宽权限、对齐属主或配置 DOCKER_USER）。
+
