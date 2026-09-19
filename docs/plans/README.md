@@ -31,6 +31,7 @@
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
 | [首屏落地页（Landing Page）与可配置化设计落地](./archive/2026-09-20-landing-page.md) | `v0.8.20` | 2026-09-20 | — |
+| [fix-docker-entrypoint-autoseed](./archive/2026-09-20-fix-docker-entrypoint-autoseed.md) | `v0.8.23` | 2026-09-20 | — |
 | [docker-startup-diagnostics](./archive/2026-09-20-docker-startup-diagnostics.md) | `v0.8.22` | 2026-09-20 | — |
 | [docker-ghcr-publish](./archive/2026-09-20-docker-ghcr-publish.md) | `v0.8.21` | 2026-09-20 | — |
 | [用户侧帮助中心与使用文档系统实现](./archive/2026-09-19-help-center-docs.md) | `v0.8.19` | 2026-09-19 | — |

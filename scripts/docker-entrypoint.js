@@ -281,6 +281,7 @@ async function main() {
   runPrisma('migrate', 'deploy');
   runNodeScript('/app/prisma/bootstrap-admin.js');
 
+  const autoSeed = String(process.env.AUTO_SEED ?? 'false').toLowerCase();
   if (isEnabled(autoSeed)) {
     console.log('seeding demo data (AUTO_SEED=true) ...');
     runNodeScript('/app/prisma/seed.js');
