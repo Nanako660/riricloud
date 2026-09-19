@@ -167,7 +167,7 @@ export function DocEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="fullscreen">
-        <DialogHeader className="shrink-0 pb-2 border-b border-border/50">
+        <DialogHeader className="shrink-0 pb-2 border-b border-border/50 pr-10 sm:pr-12">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold">
               {article ? t('admin:docs.editor.editTitle') : t('admin:docs.editor.newTitle')}
