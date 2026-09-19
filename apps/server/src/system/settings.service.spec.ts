@@ -199,5 +199,43 @@ describe('SettingsService', () => {
       { maxMbps: null, color: 'rose' }
     ]);
   });
+
+  it('正确读取与更新首页配置字段', async () => {
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.LANDING_ENABLED, value: 'true' },
+      { key: SETTING_KEYS.LANDING_HERO_TITLE, value: '自定义首屏标题' },
+      { key: SETTING_KEYS.LANDING_HERO_SUBTITLE, value: '极速互联节点' },
+      { key: SETTING_KEYS.LANDING_SHOW_FEATURES, value: 'false' },
+      { key: SETTING_KEYS.LANDING_CUSTOM_FEATURES_JSON, value: JSON.stringify([{ id: 'f1', title: '特快' }]) }
+    ]);
+    const settings = await service.getSettings();
+    expect(settings.landingEnabled).toBe(true);
+    expect(settings.landingHeroTitle).toBe('自定义首屏标题');
+    expect(settings.landingHeroSubtitle).toBe('极速互联节点');
+    expect(settings.landingShowFeatures).toBe(false);
+    expect(settings.landingShowPlans).toBe(true);
+    expect(settings.landingCustomFeaturesJson).toBe(JSON.stringify([{ id: 'f1', title: '特快' }]));
+
+    const publicSettings = await service.getPublicSettings();
+    expect(publicSettings.landingEnabled).toBe(true);
+    expect(publicSettings.landingHeroTitle).toBe('自定义首屏标题');
+    expect(publicSettings.landingCustomFeaturesJson).toBe(JSON.stringify([{ id: 'f1', title: '特快' }]));
+
+    prisma.systemSetting.upsert.mockResolvedValue({});
+    prisma.systemSetting.findMany.mockResolvedValue([]);
+    await service.updateSettings({
+      landingEnabled: false,
+      landingHeroTitle: '新主标题',
+      landingCustomFeaturesJson: JSON.stringify([{ id: 'f2', title: '新特性' }])
+    });
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: SETTING_KEYS.LANDING_ENABLED },
+      update: { value: 'false' }
+    }));
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: SETTING_KEYS.LANDING_CUSTOM_FEATURES_JSON },
+      update: { value: JSON.stringify([{ id: 'f2', title: '新特性' }]) }
+    }));
+  });
 });
 

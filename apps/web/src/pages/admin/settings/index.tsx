@@ -11,7 +11,7 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { useTheme } from 'next-themes';
 import { z } from 'zod';
-import { Clock, Code2, Database, Gauge, Globe2, Link2, Mail, Palette, RefreshCw, RotateCcw, Save, Send, ShieldCheck, Trash2, UsersRound, type LucideIcon } from 'lucide-react';
+import { Clock, Code2, Database, Gauge, Globe2, Layout, Link2, Mail, Palette, RefreshCw, RotateCcw, Save, Send, ShieldCheck, Trash2, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Extension } from '@codemirror/state';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
@@ -22,6 +22,7 @@ import { useAdminTemplates } from '@/pages/admin/templates/use-templates';
 import { ProbePresetEditor } from './components/probe-preset-editor';
 import { probePresetTargetsSchema, toProbePresetFormValue, toProbePresetTarget, type ProbePresetTarget } from './components/probe-preset-schema';
 import { SpeedTierEditor } from './components/speed-tier-editor';
+import { LandingSettingsTab } from './components/landing-settings-tab';
 import { DEFAULT_SPEED_TIERS, type SpeedTier } from '@/lib/speed-tier';
 import { DatabaseStatsResponse, TelemetryCleanupDialog, VacuumResponse } from '@/components/shared/telemetry-cleanup-dialog';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
@@ -136,6 +137,15 @@ interface SystemSettings {
   nodeRateRetentionDays: number;
   agentLogMaxSizeMb: number;
   agentLogMaxFiles: number;
+  landingEnabled: boolean;
+  landingHeroBadge: string;
+  landingHeroTitle: string;
+  landingHeroSubtitle: string;
+  landingShowFeatures: boolean;
+  landingShowPlans: boolean;
+  landingShowFaq: boolean;
+  landingCustomFeaturesJson: string;
+  landingCustomFaqJson: string;
 }
 
 function createSettingsSchema() {
@@ -207,7 +217,16 @@ function createSettingsSchema() {
     trafficHourlyRetentionDays: z.coerce.number().int().min(1).max(3650),
     nodeRateRetentionDays: z.coerce.number().int().min(1).max(3650),
     agentLogMaxSizeMb: z.coerce.number().int().min(1).max(1024),
-    agentLogMaxFiles: z.coerce.number().int().min(1).max(20)
+    agentLogMaxFiles: z.coerce.number().int().min(1).max(20),
+    landingEnabled: z.boolean(),
+    landingHeroBadge: z.string().max(100),
+    landingHeroTitle: z.string().max(150),
+    landingHeroSubtitle: z.string().max(500),
+    landingShowFeatures: z.boolean(),
+    landingShowPlans: z.boolean(),
+    landingShowFaq: z.boolean(),
+    landingCustomFeaturesJson: z.string().max(50000),
+    landingCustomFaqJson: z.string().max(50000)
   });
 }
 
@@ -266,7 +285,10 @@ export default function AdminSettingsPage() {
       smtpEnabled: false, smtpHost: '', smtpPort: 587, smtpSecure: false, smtpUser: '', smtpPass: '', smtpFrom: '',
       emailVerificationEnabled: false, enforceEmailVerification: false, captchaMode: 'OFF', turnstileSiteKey: '', turnstileSecretKey: '',
       logsRetentionDays: 7, logsMaxCount: 100000, logsMinIngestLevel: 'INFO', trafficHourlyRetentionDays: 90,
-      nodeRateRetentionDays: 30, agentLogMaxSizeMb: 50, agentLogMaxFiles: 5
+      nodeRateRetentionDays: 30, agentLogMaxSizeMb: 50, agentLogMaxFiles: 5,
+      landingEnabled: true, landingHeroBadge: '', landingHeroTitle: '', landingHeroSubtitle: '',
+      landingShowFeatures: true, landingShowPlans: true, landingShowFaq: true,
+      landingCustomFeaturesJson: '[]', landingCustomFaqJson: '[]'
     })
   });
 
@@ -330,6 +352,7 @@ export default function AdminSettingsPage() {
           <Tabs defaultValue="branding" className="min-w-0 max-w-full w-full space-y-4">
             <TabsList className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto p-1">
               <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />{t('admin:settings.generalTab')}</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="landing"><Layout className="h-4 w-4 shrink-0" />{t('admin:settings.landingTab', { defaultValue: '首页设置' })}</TabsTrigger>
               <TabsTrigger className="shrink-0" value="users"><UsersRound className="h-4 w-4 shrink-0" />{t('admin:settings.authTab')}</TabsTrigger>
                <TabsTrigger className="shrink-0" value="subscription"><Globe2 className="h-4 w-4 shrink-0" />{t('admin:settings.subscriptionTab')}</TabsTrigger>
                <TabsTrigger className="shrink-0" value="agent"><Gauge className="h-4 w-4 shrink-0" />{t('admin:settings.agentTab')}</TabsTrigger>
@@ -351,6 +374,10 @@ export default function AdminSettingsPage() {
               <SettingsInput name="supportDiscordUrl" label={t('admin:settings.fieldSupportDiscord')} placeholder="https://discord.gg/example" />
               <SettingsInput name="supportCustomUrl" label={t('admin:settings.fieldSupportCustom')} placeholder="https://example.com/support" />
             </CardContent></Card></TabsContent>
+
+            <TabsContent value="landing">
+              <LandingSettingsTab />
+            </TabsContent>
 
             <TabsContent value="users"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={UsersRound} title={t('admin:settings.sectionUsers')} description={t('admin:settings.sectionUsersDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
               <SettingsSwitch name="registrationEnabled" label={t('admin:settings.fieldRegistrationEnabled')} description={t('admin:settings.descRegistrationEnabled')} className="md:col-span-2" />
@@ -703,7 +730,16 @@ function toForm(settings: SystemSettings): SettingsForm {
     trafficHourlyRetentionDays: settings.trafficHourlyRetentionDays,
     nodeRateRetentionDays: settings.nodeRateRetentionDays,
     agentLogMaxSizeMb: settings.agentLogMaxSizeMb,
-    agentLogMaxFiles: settings.agentLogMaxFiles
+    agentLogMaxFiles: settings.agentLogMaxFiles,
+    landingEnabled: settings.landingEnabled ?? true,
+    landingHeroBadge: settings.landingHeroBadge || '',
+    landingHeroTitle: settings.landingHeroTitle || '',
+    landingHeroSubtitle: settings.landingHeroSubtitle || '',
+    landingShowFeatures: settings.landingShowFeatures ?? true,
+    landingShowPlans: settings.landingShowPlans ?? true,
+    landingShowFaq: settings.landingShowFaq ?? true,
+    landingCustomFeaturesJson: settings.landingCustomFeaturesJson || '[]',
+    landingCustomFaqJson: settings.landingCustomFaqJson || '[]'
   };
 }
 
@@ -773,7 +809,16 @@ function toPayload(values: SettingsForm) {
     trafficHourlyRetentionDays: values.trafficHourlyRetentionDays,
     nodeRateRetentionDays: values.nodeRateRetentionDays,
     agentLogMaxSizeMb: values.agentLogMaxSizeMb,
-    agentLogMaxFiles: values.agentLogMaxFiles
+    agentLogMaxFiles: values.agentLogMaxFiles,
+    landingEnabled: values.landingEnabled,
+    landingHeroBadge: values.landingHeroBadge,
+    landingHeroTitle: values.landingHeroTitle,
+    landingHeroSubtitle: values.landingHeroSubtitle,
+    landingShowFeatures: values.landingShowFeatures,
+    landingShowPlans: values.landingShowPlans,
+    landingShowFaq: values.landingShowFaq,
+    landingCustomFeaturesJson: values.landingCustomFeaturesJson,
+    landingCustomFaqJson: values.landingCustomFaqJson
   };
 }
 

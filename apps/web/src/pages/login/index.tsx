@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Cloud, Loader2, LogIn } from 'lucide-react';
+import { ArrowLeft, Cloud, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
 import { usePublicSettings } from '@/lib/public-settings';
@@ -16,6 +16,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { SupportContactsInline } from '@/components/shared/support-dialog';
 import { LanguageSwitcher } from '@/components/layout/language-switcher';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 
 interface MeResponse {
   id: string;
@@ -57,7 +58,7 @@ export default function LoginPage() {
     onSuccess: ({ user }) => {
       setAuth(user);
       toast.success(t('auth:login.loginSuccess'));
-      navigate('/', { replace: true });
+      navigate(user.role === 'ADMIN' ? '/admin/nodes' : '/subscription', { replace: true });
     },
     onError: (error) => {
       toast.error(extractErrorMessage(error, t('errors:business.invalidCredentials')));
@@ -66,8 +67,18 @@ export default function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted/40 p-3 sm:p-4">
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 left-4">
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground">
+          <Link to="/">
+            <ArrowLeft className="h-4 w-4" />
+            <span>{t('auth:backToHome')}</span>
+          </Link>
+        </Button>
+      </div>
+
+      <div className="absolute top-4 right-4 flex items-center gap-2">
         <LanguageSwitcher showLabel />
+        <ThemeToggle />
       </div>
 
       <Card className="w-full max-w-sm animate-in fade-in-0 zoom-in-[0.985] duration-300 ease-out">

@@ -1,4 +1,5 @@
 const auth = {
+  backToHome: '返回首页',
   login: {
     title: '欢迎登录',
     subtitle: '请输入您的邮箱与登录密码以继续访问控制台',

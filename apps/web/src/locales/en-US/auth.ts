@@ -1,4 +1,5 @@
 const auth = {
+  backToHome: 'Back to Home',
   login: {
     title: 'Welcome Back',
     subtitle: 'Enter your email and password to access the console',

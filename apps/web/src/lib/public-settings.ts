@@ -33,6 +33,15 @@ export interface PublicSystemSettings {
   enforceEmailVerification: boolean;
   captchaMode: 'OFF' | 'LOCAL' | 'TURNSTILE';
   turnstileSiteKey: string;
+  landingEnabled?: boolean;
+  landingHeroBadge?: string;
+  landingHeroTitle?: string;
+  landingHeroSubtitle?: string;
+  landingShowFeatures?: boolean;
+  landingShowPlans?: boolean;
+  landingShowFaq?: boolean;
+  landingCustomFeaturesJson?: string;
+  landingCustomFaqJson?: string;
 }
 
 export function usePublicSettings() {

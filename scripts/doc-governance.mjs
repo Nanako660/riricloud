@@ -44,6 +44,7 @@ const ALLOWED_ROOT_DOCS = new Set([
 
 const ALLOWED_ROOT_DIRS = new Set([
   'plans',
+  'assets',
 ]);
 
 /**
