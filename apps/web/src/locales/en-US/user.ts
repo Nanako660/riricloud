@@ -417,7 +417,8 @@ const user = {
     step2Desc: 'Paste the subscription link into Clash Meta, Sing-box, or Shadowrocket.',
     step3Title: 'Select Line & Connect',
     step3Desc: 'Update your configuration and select a low-latency available line to connect.',
-    footerTip: 'Public available lines will automatically sync to your client without manual server or port configuration.'
+    footerTip: 'Public available lines will automatically sync to your client without manual server or port configuration.',
+    viewFullDocs: 'View Full Tutorial'
   },
   announcement: {
     title: 'System Announcement',
@@ -445,6 +446,56 @@ const user = {
     tabNode: 'Node.js (fetch)',
     tabGo: 'Go (net/http)',
     desc: 'Copy the generated integration snippets below to quickly integrate proxy authentication and routing.'
+  },
+  help: {
+    title: 'Documentation & Help Center',
+    subtitle: 'Beginner-friendly guides for client setup and troubleshooting.',
+    allDocs: 'All Guides',
+    searchPlaceholder: 'Search tutorials and questions…',
+    navTitle: 'Tutorial Navigation',
+    navCount: 'Navigation ({{count}})',
+    loading: 'Loading tutorials…',
+    loadingArticle: 'Loading tutorial content…',
+    empty: 'No articles found in this category',
+    emptySelect: 'No article selected',
+    emptySelectDesc: 'Please select an article from the left navigation to start reading.',
+    needHelp: 'Still Having Issues?',
+    needHelpDesc: 'If you still cannot connect after following the guide, contact our support team.',
+    contactSupport: 'Contact Support',
+    prevArticle: 'Previous',
+    nextArticle: 'Next',
+    tocTitle: 'On this page',
+    noToc: 'No table of contents',
+    updatedAt: 'Updated on {{date}}',
+    copyPageLink: 'Copy page link',
+    linkCopied: 'Page link copied to clipboard',
+    groups: {
+      desktop: 'DESKTOP CLIENTS',
+      mobile: 'MOBILE CLIENTS',
+      troubleshooting: 'TROUBLESHOOTING & FAQ',
+      all: 'ALL GUIDES'
+    },
+    tabs: {
+      all: 'All Guides',
+      windows: 'Windows',
+      macos: 'macOS',
+      ios: 'iOS',
+      android: 'Android',
+      router: 'Router',
+      faq: 'FAQ',
+      general: 'General'
+    },
+    quickImport: {
+      title: 'Quick Client Setup',
+      badge: 'Credentials Injected',
+      desc: 'One-click launch and configuration for popular clients',
+      oneClickBtn: 'Import to {{client}}',
+      copySub: 'Copy Subscription',
+      copied: 'Subscription URL copied to clipboard',
+      subUrlLabel: 'Your Private Subscription URL:',
+      securityTip: 'This link contains your private connection credentials. Keep it safe and do not share.',
+      launchTip: 'Attempting to launch {{client}}. If it does not open, please copy the URL manually.'
+    }
   }
 } as const;
 

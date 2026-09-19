@@ -615,3 +615,27 @@ model BinaryAuditLog {
   @@index([taskId])
   @@index([nodeId, createdAt])
 }
+
+// ==============================
+// 5. 帮助中心与使用文档 (HelpArticle)
+// 面向 0 基础用户的使用教程与排错指南，支持平台分类、多语言、排序与 Markdown 渲染
+// ==============================
+model HelpArticle {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String
+  platform    String   @default("ALL") // WINDOWS | MACOS | IOS | ANDROID | ROUTER | FAQ | GENERAL
+  clientName  String?  // 客户端名称，如 "Clash Verge Rev", "Shadowrocket"
+  icon        String?  // 图标标示
+  summary     String?  // 简短摘要
+  content     String   // Markdown 正文，支持动态变量插值
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  locale      String   @default("zh-CN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([platform, isPublished, sortOrder])
+  @@index([locale, isPublished])
+  @@index([sortOrder])
+}

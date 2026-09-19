@@ -8,6 +8,7 @@ const { ensureMasterAgentNode } = require('./master-agent-bootstrap');
 const { buildDefaultTemplateData, migrateLegacyTemplates } = require('./default-template');
 const { encryptSecret } = require('./secret-crypto');
 const { ensurePlanPurchaseForSubscription } = require('./plan-purchase-bootstrap');
+const { DEFAULT_HELP_ARTICLES } = require('./default-help-articles');
 
 const prisma = new PrismaClient();
 const RANDOM_SERVICE_PORT_MIN = 20000;
@@ -234,7 +235,14 @@ async function main() {
     }
   }
 
-  console.log(`seed: admin=${admin.email}, user=${userEmail}, plan=${plan.name}`);
+  for (const article of DEFAULT_HELP_ARTICLES) {
+    const existing = await prisma.helpArticle.findUnique({ where: { slug: article.slug } });
+    if (!existing) {
+      await prisma.helpArticle.create({ data: article });
+    }
+  }
+
+  console.log(`seed: admin=${admin.email}, user=${userEmail}, plan=${plan.name}, helpArticles=${DEFAULT_HELP_ARTICLES.length}`);
 }
 
 main()

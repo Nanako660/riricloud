@@ -1,5 +1,7 @@
-import { CheckCircle2, HelpCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function ClientGuideCard() {
@@ -13,10 +15,16 @@ export function ClientGuideCard() {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <HelpCircle className="h-4 w-4" />{t('user:clientGuide.title')}
         </CardTitle>
+        <Button variant="ghost" size="sm" asChild className="text-xs gap-1 h-8 text-primary hover:text-primary">
+          <Link to="/help">
+            <span>{t('user:clientGuide.viewFullDocs', { defaultValue: '查看完整图文教程' })}</span>
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-3">

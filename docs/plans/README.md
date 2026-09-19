@@ -30,6 +30,7 @@
 
 | 归档规划名称 | 达成版本 | 归档日期 | 关联 PR / 提交 |
 | :--- | :--- | :--- | :--- |
+| [用户侧帮助中心与使用文档系统实现](./archive/2026-09-19-help-center-docs.md) | `v0.8.19` | 2026-09-19 | — |
 | [线路多路复用 (Multiplex) 与 TCP Brutal 强力拥塞控制及线路参数更新优化](./archive/2026-09-18-line-multiplex-brutal-and-params-update.md) | `v0.8.18` | 2026-09-18 | — |
 | [线路管理配置项扩充与分层限速机制](./archive/2026-09-18-line-config-enhancement-and-speed-limiting.md) | `v0.9.0` | 2026-09-18 | — |
 | [流量与系统日志存储治理（时序小时桶聚合、自动淘汰与物理分库）](./archive/2026-09-17-traffic-and-log-storage-governance.md) | `v0.9.1` | 2026-09-17 | — |

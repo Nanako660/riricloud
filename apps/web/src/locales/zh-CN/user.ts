@@ -417,7 +417,8 @@ const user = {
     step2Desc: '在 Clash Meta、Sing-box 或 Shadowrocket 中粘贴订阅链接。',
     step3Title: '选择线路并连接',
     step3Desc: '更新配置后选择延迟较低的可用线路开启代理。',
-    footerTip: '公开可用的线路会由系统自动同步至客户端，无需手动填写服务器与端口。'
+    footerTip: '公开可用的线路会由系统自动同步至客户端，无需手动填写服务器与端口。',
+    viewFullDocs: '查看完整图文教程'
   },
   announcement: {
     title: '系统公告',
@@ -445,6 +446,56 @@ const user = {
     tabNode: 'Node.js (fetch)',
     tabGo: 'Go (net/http)',
     desc: '直接复制下方生成的调用示例代码快速集成代理认证与转发。'
+  },
+  help: {
+    title: '使用文档与帮助中心',
+    subtitle: '面向 0 基础用户的主流客户端安装配置指南与连接排错手册。',
+    allDocs: '全部文档',
+    searchPlaceholder: '搜索教程标题或问题…',
+    navTitle: '教程导航',
+    navCount: '教程导航 ({{count}})',
+    loading: '正在加载文档列表…',
+    loadingArticle: '正在加载教程正文…',
+    empty: '该分类下暂无文档',
+    emptySelect: '未选中或暂无可用文档',
+    emptySelectDesc: '请在左侧列表中选择一篇教程开始阅读。',
+    needHelp: '仍然无法连接？',
+    needHelpDesc: '如果在阅读教程后仍然无法连接或遇到报错，欢迎联系人工技术支持。',
+    contactSupport: '联系在线客服',
+    prevArticle: '上一篇',
+    nextArticle: '下一篇',
+    tocTitle: '本页目录',
+    noToc: '暂无目录',
+    updatedAt: '更新于 {{date}}',
+    copyPageLink: '复制本页链接',
+    linkCopied: '本页链接已复制到剪贴板',
+    groups: {
+      desktop: '桌面客户端',
+      mobile: '移动客户端',
+      troubleshooting: '常见排错与指南',
+      all: '全部文档'
+    },
+    tabs: {
+      all: '全部文档',
+      windows: 'Windows',
+      macos: 'macOS',
+      ios: 'iOS (苹果)',
+      android: 'Android (安卓)',
+      router: '路由器',
+      faq: '常见排错 FAQ',
+      general: '通用指南'
+    },
+    quickImport: {
+      title: '客户端快速一键配置',
+      badge: '已填入专属凭据',
+      desc: '支持一键自动唤起软件并下载节点，零基础一键上手',
+      oneClickBtn: '一键导入到 {{client}}',
+      copySub: '复制专属订阅',
+      copied: '已复制专属订阅链接',
+      subUrlLabel: '您的专属订阅链接：',
+      securityTip: '该链接包含您的加密连接密钥，切勿分享给他人，支持多客户端自动协商兼容',
+      launchTip: '正在尝试唤起 {{client}}，若未自动弹出请手动复制链接导入'
+    }
   }
 } as const;
 

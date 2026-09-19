@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useCurrentUser } from '@/lib/current-user';
-import { Activity, Cloud, GitBranch, Headphones, KeyRound, LayoutTemplate, Network, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
+import { Activity, BookOpen, Cloud, FileText, GitBranch, Headphones, KeyRound, LayoutTemplate, Network, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { usePublicSettings } from '@/lib/public-settings';
 import { SupportDialog } from '@/components/shared/support-dialog';
@@ -38,7 +38,8 @@ export function AppSidebar() {
         { to: '/subscription', label: t('nav.mySubscription'), icon: WalletCards, end: false },
         { to: '/proxy-pool', label: t('nav.directProxy'), icon: Network, end: false },
         { to: '/market', label: t('nav.market'), icon: ShoppingBag, end: false },
-        { to: '/profile', label: t('nav.profile'), icon: Wallet, end: false }
+        { to: '/profile', label: t('nav.profile'), icon: Wallet, end: false },
+        { to: '/help', label: t('nav.help', { defaultValue: '使用文档' }), icon: BookOpen, end: false }
       ]
     },
     ...(isAdmin
@@ -48,7 +49,8 @@ export function AppSidebar() {
             items: [
               { to: '/admin/users', label: t('nav.users'), icon: Users, end: false },
               { to: '/admin/plans', label: t('nav.plans'), icon: Package, end: false },
-              { to: '/admin/redeem-codes', label: t('nav.redeemCodes'), icon: Ticket, end: false }
+              { to: '/admin/redeem-codes', label: t('nav.redeemCodes'), icon: Ticket, end: false },
+              { to: '/admin/docs', label: t('nav.docs', { defaultValue: '文档管理' }), icon: FileText, end: false }
             ]
           },
           {
