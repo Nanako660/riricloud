@@ -40,7 +40,7 @@ i18n
     fallbackLng: 'en-US',
     supportedLngs: ['zh-CN', 'en-US'],
     defaultNS: 'common',
-    ns: ['common', 'auth', 'user', 'admin', 'errors'],
+    ns: ['common', 'auth', 'user', 'admin', 'errors', 'landing'],
     detection: {
       order: ['localStorage', 'customNavigator', 'navigator'],
       lookupLocalStorage: STORAGE_LOCALE_KEY,

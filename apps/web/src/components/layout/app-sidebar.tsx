@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useCurrentUser } from '@/lib/current-user';
 import { Activity, BookOpen, Cloud, FileText, GitBranch, Headphones, KeyRound, LayoutTemplate, Network, Package, Server, Settings, ShoppingBag, Users, WalletCards, Wallet, Ticket, Binary, ScrollText, Waypoints } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
@@ -79,12 +79,16 @@ export function AppSidebar() {
   return (
     <Sidebar variant="inset" aria-label="主导航">
       <SidebarHeader className="h-14 justify-center px-4">
-        <div className="flex items-center gap-2.5 px-1">
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 px-1 rounded-md transition-opacity hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          title={t('nav.home')}
+        >
           <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
             {logoUrl ? <img src={logoUrl} alt="" className="size-4.5 rounded object-contain" /> : <Cloud className="size-4" />}
           </div>
           <span className="truncate font-semibold tracking-tight text-sidebar-foreground text-sm">{siteName}</span>
-        </div>
+        </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">
         {groups.map((group) => (

@@ -83,7 +83,16 @@ export const SETTING_KEYS = {
   TRAFFIC_HOURLY_RETENTION_DAYS: 'trafficHourlyRetentionDays',
   NODE_RATE_RETENTION_DAYS: 'nodeRateRetentionDays',
   AGENT_LOG_MAX_SIZE_MB: 'agentLogMaxSizeMb',
-  AGENT_LOG_MAX_FILES: 'agentLogMaxFiles'
+  AGENT_LOG_MAX_FILES: 'agentLogMaxFiles',
+  LANDING_ENABLED: 'landingEnabled',
+  LANDING_HERO_BADGE: 'landingHeroBadge',
+  LANDING_HERO_TITLE: 'landingHeroTitle',
+  LANDING_HERO_SUBTITLE: 'landingHeroSubtitle',
+  LANDING_SHOW_FEATURES: 'landingShowFeatures',
+  LANDING_SHOW_PLANS: 'landingShowPlans',
+  LANDING_SHOW_FAQ: 'landingShowFaq',
+  LANDING_CUSTOM_FEATURES_JSON: 'landingCustomFeaturesJson',
+  LANDING_CUSTOM_FAQ_JSON: 'landingCustomFaqJson'
 } as const;
 
 export interface SystemSettings {
@@ -152,6 +161,15 @@ export interface SystemSettings {
   nodeRateRetentionDays: number;
   agentLogMaxSizeMb: number;
   agentLogMaxFiles: number;
+  landingEnabled: boolean;
+  landingHeroBadge: string;
+  landingHeroTitle: string;
+  landingHeroSubtitle: string;
+  landingShowFeatures: boolean;
+  landingShowPlans: boolean;
+  landingShowFaq: boolean;
+  landingCustomFeaturesJson: string;
+  landingCustomFaqJson: string;
 }
 
 export type SystemSettingsPatch = {
@@ -189,6 +207,15 @@ export type PublicSystemSettings = Pick<
   | 'enforceEmailVerification'
   | 'captchaMode'
   | 'turnstileSiteKey'
+  | 'landingEnabled'
+  | 'landingHeroBadge'
+  | 'landingHeroTitle'
+  | 'landingHeroSubtitle'
+  | 'landingShowFeatures'
+  | 'landingShowPlans'
+  | 'landingShowFaq'
+  | 'landingCustomFeaturesJson'
+  | 'landingCustomFaqJson'
 >;
 
 export const DEFAULTS: SystemSettings = {
@@ -259,7 +286,16 @@ export const DEFAULTS: SystemSettings = {
   trafficHourlyRetentionDays: 90,
   nodeRateRetentionDays: 30,
   agentLogMaxSizeMb: 50,
-  agentLogMaxFiles: 5
+  agentLogMaxFiles: 5,
+  landingEnabled: true,
+  landingHeroBadge: '',
+  landingHeroTitle: '',
+  landingHeroSubtitle: '',
+  landingShowFeatures: true,
+  landingShowPlans: true,
+  landingShowFaq: true,
+  landingCustomFeaturesJson: '[]',
+  landingCustomFaqJson: '[]'
 };
 
 const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
@@ -327,7 +363,16 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   trafficHourlyRetentionDays: '流量小时汇总保留天数',
   nodeRateRetentionDays: '节点速率指标保留天数',
   agentLogMaxSizeMb: 'Agent 本地日志单文件大小（MiB）',
-  agentLogMaxFiles: 'Agent 本地日志文件总数'
+  agentLogMaxFiles: 'Agent 本地日志文件总数',
+  landingEnabled: '是否启用首页门户',
+  landingHeroBadge: '首页顶部徽章标签（留空使用默认）',
+  landingHeroTitle: '首页主标题（留空使用默认）',
+  landingHeroSubtitle: '首页副标题（留空使用默认）',
+  landingShowFeatures: '首页是否展示核心特性模块',
+  landingShowPlans: '首页是否展示公开套餐模块',
+  landingShowFaq: '首页是否展示常见问答 FAQ 模块',
+  landingCustomFeaturesJson: '首页自定义特性列表（JSON 格式）',
+  landingCustomFaqJson: '首页自定义 FAQ 列表（JSON 格式）'
 };
 
 const SETTING_VALUES = Object.values(SETTING_KEYS);
@@ -424,7 +469,16 @@ export class SettingsService {
       trafficHourlyRetentionDays: this.readInteger(map, 'trafficHourlyRetentionDays', 1, 3650),
       nodeRateRetentionDays: this.readInteger(map, 'nodeRateRetentionDays', 1, 3650),
       agentLogMaxSizeMb: this.readInteger(map, 'agentLogMaxSizeMb', 1, 1024),
-      agentLogMaxFiles: this.readInteger(map, 'agentLogMaxFiles', 1, 20)
+      agentLogMaxFiles: this.readInteger(map, 'agentLogMaxFiles', 1, 20),
+      landingEnabled: this.readBoolean(map, 'landingEnabled'),
+      landingHeroBadge: this.readString(map, 'landingHeroBadge'),
+      landingHeroTitle: this.readString(map, 'landingHeroTitle'),
+      landingHeroSubtitle: this.readString(map, 'landingHeroSubtitle'),
+      landingShowFeatures: this.readBoolean(map, 'landingShowFeatures'),
+      landingShowPlans: this.readBoolean(map, 'landingShowPlans'),
+      landingShowFaq: this.readBoolean(map, 'landingShowFaq'),
+      landingCustomFeaturesJson: this.readString(map, 'landingCustomFeaturesJson'),
+      landingCustomFaqJson: this.readString(map, 'landingCustomFaqJson')
     };
   }
 
@@ -468,7 +522,16 @@ export class SettingsService {
       emailVerificationEnabled: settings.emailVerificationEnabled,
       enforceEmailVerification: settings.enforceEmailVerification,
       captchaMode: settings.captchaMode,
-      turnstileSiteKey: settings.turnstileSiteKey
+      turnstileSiteKey: settings.turnstileSiteKey,
+      landingEnabled: settings.landingEnabled,
+      landingHeroBadge: settings.landingHeroBadge,
+      landingHeroTitle: settings.landingHeroTitle,
+      landingHeroSubtitle: settings.landingHeroSubtitle,
+      landingShowFeatures: settings.landingShowFeatures,
+      landingShowPlans: settings.landingShowPlans,
+      landingShowFaq: settings.landingShowFaq,
+      landingCustomFeaturesJson: settings.landingCustomFeaturesJson,
+      landingCustomFaqJson: settings.landingCustomFaqJson
     };
   }
 
@@ -540,7 +603,7 @@ export class SettingsService {
     if (Array.isArray(value)) return JSON.stringify(value);
     if (value === null) return '';
     if (typeof value === 'string') {
-      return key === 'customCss' || key === 'customHeadHtml' ? value : value.trim();
+      return key === 'customCss' || key === 'customHeadHtml' || key === 'landingCustomFeaturesJson' || key === 'landingCustomFaqJson' ? value : value.trim();
     }
     return String(value);
   }

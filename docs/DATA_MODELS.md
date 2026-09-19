@@ -700,6 +700,15 @@ model HelpArticle {
 | `logsMinIngestLevel` | `DEBUG` / `INFO` / `WARN` / `ERROR` | `"INFO"` | 系统日志最低采集级别；清理审计日志显式绕过该门槛 |
 | `agentLogMaxSizeMb` | 十进制整数（1~1024） | `"50"` | Master 下发的 Agent 本地单文件日志轮转上限（MiB） |
 | `agentLogMaxFiles` | 十进制整数（1~20） | `"5"` | Agent 本地日志文件总数上限，包含当前文件 |
+| `landingEnabled` | `"true"` / `"false"` | `"true"` | 是否启用首页门户（关闭时访问 `/` 回退至重定向逻辑） |
+| `landingHeroBadge` | 纯文本（≤100 字符） | `""` | 首页 Hero 顶部徽章标签文案（留空使用默认） |
+| `landingHeroTitle` | 纯文本（≤150 字符） | `""` | 首页主标题（留空使用默认） |
+| `landingHeroSubtitle` | 纯文本（≤500 字符） | `""` | 首页副标题描述（留空使用默认） |
+| `landingShowFeatures` | `"true"` / `"false"` | `"true"` | 首页是否展示核心特性优势网格模块 |
+| `landingShowPlans` | `"true"` / `"false"` | `"true"` | 首页是否展示公开售卖套餐卡片模块 |
+| `landingShowFaq` | `"true"` / `"false"` | `"true"` | 首页是否展示常见问答 FAQ 折叠模块 |
+| `landingCustomFeaturesJson` | JSON 数组字符串 | `"[]"` | 首页自定义特性卡片列表（留空使用内置高质量默认特性） |
+| `landingCustomFaqJson` | JSON 数组字符串 | `"[]"` | 首页自定义 FAQ 问答列表（留空使用内置高质量默认问答） |
 
 存储日志设置仅更新清理和采集策略，不会在保存时立即删除数据；旧版 `TrafficLog` 作为过渡数据继续按固定 7 天清理，不暴露为长期保留项。
 

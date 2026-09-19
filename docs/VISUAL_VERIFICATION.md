@@ -28,9 +28,9 @@
 
 | 索引编号 | 模块分类 | 页面 / 交互单元 | 路由 / 触发方式 | 对应源码路径 | 核心验证检查点 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 卡片居中性、Logo 渲染、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、输入框聚焦态、登录按钮 LogIn 图标与加载动画对齐、登录后跳转与错误 Toast、忘记密码入口跳转、底栏客服支持联系渠道与页脚版权渲染 |
-| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**`, `apps/web/src/components/shared/captcha-challenge.tsx` | 表单字段对齐、昵称选填与默认昵称提示、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、密码确认校验、邮箱验证码获取按钮与 60 秒倒计时、本地 SVG CAPTCHA 弹窗/内嵌验证或 Turnstile 状态、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
-| **`UI-03`** | 控制台 | 根路径重定向 | `/` | `apps/web/src/router/index.tsx` | 登录后访问根路径使用 replace 自动跳转至 `/subscription`，不渲染已下线的仪表盘页面 |
+| **`UI-01`** | 认证 | 登录页面 | `/login` | `apps/web/src/pages/login/**` | 左上角返回首页按钮（带 ArrowLeft 图标与多语言文本）、右上角语言切换器与 ThemeToggle 主题切换并列排布、卡片居中性、Logo 渲染、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、输入框聚焦态、登录按钮 LogIn 图标与加载动画对齐、登录后跳转与错误 Toast、忘记密码入口跳转、底栏客服支持联系渠道与页脚版权渲染 |
+| **`UI-02`** | 认证 | 注册页面 | `/register` | `apps/web/src/pages/register/**`, `apps/web/src/components/shared/captcha-challenge.tsx` | 左上角返回首页按钮（带 ArrowLeft 图标与多语言文本）、右上角语言切换器与 ThemeToggle 主题切换并列排布、表单字段对齐、昵称选填与默认昵称提示、可选副标题不展示默认开发文案、邮箱/密码正式占位提示、密码确认校验、邮箱验证码获取按钮与 60 秒倒计时、本地 SVG CAPTCHA 弹窗/内嵌验证或 Turnstile 状态、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
+| **`UI-03`** | 门户与控制台 | 根路径与落地页路由 | `/` | `apps/web/src/router/index.tsx`, `apps/web/src/pages/landing/**` | 根路径受系统设置 `landingEnabled` 驱动：开启首页门户时（默认）访问根路径直接渲染首页，未登录提供登录/注册入口，已登录自适应提供进入控制台入口；关闭首页时自动根据会话状态回退（未登录跳转 `/login`，已登录跳转 `/subscription` 或 `/admin/nodes`） |
 | **`UI-04`** | 用户订阅 | 公告与客户端使用指引 | `/subscription` | `apps/web/src/components/shared/announcement-card.tsx`, `apps/web/src/components/shared/client-guide-card.tsx` | 公告 Markdown 安全渲染、关闭状态本地记忆、无订阅与有订阅状态下均展示客户端三步指引，明暗主题与移动端不溢出 |
 | **`UI-05`** | 节点管理 | 节点管理列表 | `/admin/nodes` | `apps/web/src/pages/admin/nodes/index.tsx` | 节点名称与地址即时搜索、通信状态与内核状态组合筛选（筛选器联动在线状态）、网络可达性徽标（公网 VPS / NAT 落地，NAT 节点带有黄色外发链路图标与反向穿透说明）、节点数据表格、内核运行状态 Badge（离线节点置灰展示为未知状态破折号 `—` 并带 Tooltip 提示，避免残留历史状态误导）、CPU/内存/带宽遥测实时刷新（离线统一回退展示 `—`）、统一时区心跳时间展示 |
 | **`UI-06`** | 节点管理 | 添加节点弹窗 | `/admin/nodes`（点击“添加节点”） | `apps/web/src/pages/admin/nodes/components/node-form-dialog.tsx`, `apps/web/src/pages/admin/nodes/components/install-commands-picker.tsx` | Dialog 居中、网络可达性单选（公网 VPS / NAT 落地）、服务器地址与名称输入框（NAT 模式下地址设为选填并自动提供 127.0.0.1 兜底与反向隧道接入提示）、通信协议选择、创建成功后展示 AgentToken，并提供「原生安装 / 免安装运行 / Docker / 离线安装包」四 Tab × 目标操作系统（Linux / macOS / Windows，Docker Tab 隐藏系统选择）× WS/HTTP 模式的命令切换、系统化提示文案、原生模式专属预编排免交互安装脚本一键下载、离线安装包直接下载与一键安装命令复制 |
@@ -41,8 +41,8 @@
 | **`UI-11`** | 用户管理 | 一站式用户管理列表 | `/admin/users` | `apps/web/src/pages/admin/users/index.tsx` | UID 与昵称列、邮箱验证状态 Badge（已验证/未验证）、UID 精确搜索和昵称/邮箱实时搜索、角色/账号状态/邮箱验证/订阅状态/套餐筛选（支持「无订阅 NONE」与「无套餐 NONE」精准筛选，状态下拉中英文对照）、套餐 Badge、订阅状态 Badge（有效/已取消/已过期/已吊销/无订阅）、流量进度条、统一时区到期日、流量数据自动刷新、操作列对无订阅用户置灰禁用重置订阅链接按钮并展示「该用户暂无有效订阅」Tooltip 提示、Token 重置确认、管理员防误操作保护 |
 | **`UI-12`** | 用户管理 | 创建用户弹窗 | `/admin/users`（点击“创建用户”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 邮箱、初始密码、角色选择器、可选初始套餐 Select，纯套餐驱动（彻底移除手动流量配额与到期项输入，无套餐创建 0 配额无订阅用户，绑定套餐自动继承套餐配额与时长） |
 | **`UI-13`** | 用户管理 | 综合编辑用户弹窗 | `/admin/users`（点击操作列“编辑”） | `apps/web/src/pages/admin/users/components/user-form-dialog.tsx` | 「账号安全/订阅管理」双 Tab、角色选择器、启用账号与邮箱已验证状态卡片对齐无挤压（rounded-lg border p-3 shadow-xs）、密码重置；订阅管理中无订阅用户隐藏重置订阅链接按钮，无订阅或选择无套餐时自适应隐藏配额/已用流量/到期日/额外线路输入项，展示状态说明或取消警告卡片；无订阅用户提示请选择套餐绑定且未选套餐前保存按钮禁用；已有订阅选择无套餐切换为红色「彻底取消订阅」按钮并触发二次确认弹窗；绑定具体套餐后流畅展开微调输入项与流量重置信息；Token 重置确认 |
-| **`UI-14`** | 系统设置 | 系统设置六分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx` | 六个 Tab 响应式切换与 16px 图标、区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、强制邮箱验证开关（限制订阅与节点连接）、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、注册与用户 Tab 密码复杂度要求区块（小写/大写/数字/特殊字符四开关跟随 `passwordRequire*` 设置，全部关闭仅校验长度）、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与客户端分发 Tab 包含基准 URL 覆盖项、Nginx 伪静态短链接开关、默认追加节点速率角标开关（appendSubscriptionSpeedBadge）、自动折算 G 单位开关（speedLimitUnitConversionEnabled）、速率色彩阶梯配置器（SpeedTierEditor，支持多档阈值增删、语义色阶与实时预览）、启用「我的订阅」卡片特效同步开关（subscriptionEffectsSyncEnabled）及默认模板只读展示与跳转管理、存储与日志策略字段、数据库物理体积（业务主库/观测库/总占用）统计与手动 VACUUM 碎片整理按钮、统一清理中心入口、CodeMirror、自定义 Head 可信边界与 JWT 风险提示、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
-| **`UI-15`** | 全局框架 | 动态品牌外壳与主题/语言切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/components/ui/sidebar.tsx`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、顶栏语言切换器（LanguageSwitcher，支持简体中文与 English 即时切换与本地持久化）、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、服务端会话角色变化后管理员导航及时同步、侧边栏定位、移动端抽屉高度自适应与垂直顺畅滚动、版本号展示、主题三态切换、Sonner Toast 浮层 |
+| **`UI-14`** | 系统设置 | 系统设置七分类管理面板 | `/admin/settings` | `apps/web/src/pages/admin/settings/index.tsx`, `components/landing-settings-tab.tsx` | 七个 Tab 响应式切换与 16px 图标（新增「首页设置」Tab，支持首页总开关、Hero 胶囊/主标题/副标题多语言文案定制、特性与套餐与 FAQ 模块显隐独立开关、特性卡片与常见问答 FAQ 的可视化新增/编辑/删除/上移下移/一键恢复默认）；区域与统一时区设置卡片（常用 IANA 候选 + 自定义输入 + 本地实时时钟预览）、SMTP 邮件服务卡片与脱敏密码、注册邮箱验证开关、强制邮箱验证开关（限制订阅与节点连接）、SMTP 测试邮件弹窗与反馈、人机验证模式切换及 Turnstile Site/Secret 配置、注册与用户 Tab 密码复杂度要求区块（小写/大写/数字/特殊字符四开关跟随 `passwordRequire*` 设置，全部关闭仅校验长度）、主站 URL 强化主从继承说明、移除失效默认流量配额与天数（明确新用户由套餐决定）、订阅与客户端分发 Tab 包含基准 URL 覆盖项、Nginx 伪静态短链接开关、默认追加节点速率角标开关（appendSubscriptionSpeedBadge）、自动折算 G 单位开关（speedLimitUnitConversionEnabled）、速率色彩阶梯配置器（SpeedTierEditor，支持多档阈值增删、语义色阶与实时预览）、启用「我的订阅」卡片特效同步开关（subscriptionEffectsSyncEnabled）及默认模板只读展示与跳转管理、存储与日志策略字段、数据库物理体积（业务主库/观测库/总占用）统计与手动 VACUUM 碎片整理按钮、统一清理中心入口、CodeMirror、自定义 Head 可信边界与 JWT 风险提示、保存与重置确认、移动端与窄屏视口（375px/320px）防横向溢出与表单组件自动换行/截断适配 |
+| **`UI-15`** | 全局框架 | 动态品牌外壳与主题/语言切换 | 全局 Layout / Header / Sidebar | `apps/web/src/components/layout/**`, `apps/web/src/components/ui/sidebar.tsx`, `apps/web/src/lib/public-settings.ts` | 站点名/Logo、左上角 Logo 与站点名称点击平滑导向首页（带 hover 微透与多语言「返回首页」title）、顶栏语言切换器（LanguageSwitcher，支持简体中文与 English 即时切换与本地持久化）、侧边栏底栏客服支持联系弹窗与页脚版权文案、统一时区挂载、动态标题/Favicon/CSS、服务端会话角色变化后管理员导航及时同步、侧边栏定位、移动端抽屉高度自适应与垂直顺畅滚动、版本号展示、主题三态切换、Sonner Toast 浮层 |
 | **`UI-16`** | 套餐管理 | 套餐管理列表 | `/admin/plans` | `apps/web/src/pages/admin/plans/index.tsx` | 套餐名称/标签/描述即时搜索、状态筛选器（全部/仅公开/已下架）、紧凑数据表格布局（套餐信息与主推/角标、资费与周期、流量与重置、线路范围、绑定模板、公开状态、编辑/删除快捷操作）、购买台账存在时删除被阻止的提示、删除确认弹窗、移动端容器内横向滚动 |
 | **`UI-17`** | 套餐管理 | 套餐创建/编辑弹窗与实机即时预览 | `/admin/plans`（点击“新建套餐/编辑”） | `apps/web/src/pages/admin/plans/components/plan-form-dialog.tsx` | 每用户限购次数输入（留空不限购）、允许续费 Switch、价格改为 0 元时自动套用“限购 1 次且不可续费”安全默认；配额/期限数值输入、流量重置策略 Select、匹配模式 Select、模板选择、公开 Switch、角标文本 badgeText、主推推荐套餐 isFeatured 开关；带宽限制速率上限 speedLimitMbps（0 为不限速）、节点名称速率角标策略 appendSpeedBadge（继承/强制追加/强制不追加）；自定义权益清单 features 多行文本与快捷微标记预设（集成悬浮气泡指南 Tooltip 并精炼右侧空间，缺省自动附带峰值带宽展示）；三大视觉流派方案卡片式选择（尊享流光合璧 fusion / 全息黑曜 3D 闪卡 holographic / 赛博霓虹导光晶体 neon）；折叠式「高级视觉微调」抽屉提供 5 项原子微调独立开关（3D 视差微倾斜、1.5px 流光微边框、全息彩虹折射、双层环境霓虹、流体极光内衬）并与预设基线联动；视觉配置（7 款质感主题色选择、12 款 Lucide 专业矢量图标网格、光色与角标样式纯净中文下拉、原价划线与折扣文案、按钮扫光开关、同步特效至「我的订阅」syncToSubscription 开关，彻底剔除旧版 animationEffect 冲突下拉框）；右侧所见即所得实机卡片预览（Live Preview）实时联动速率限制与角标、移动端自适应滚动 |
 | **`UI-18`** | 模板管理 | 订阅模板列表 | `/admin/templates` | `apps/web/src/pages/admin/templates/index.tsx` | 模板名称/描述即时搜索、紧凑数据表格布局、默认/内嵌 Badge、策略组/规则集/DNS 状态与高级覆写标签、常用操作（预览/编辑）外露与次要操作（复制/删除确认）下拉菜单收纳、移动端容器内横向滚动 |
@@ -59,11 +59,12 @@
 | **`UI-30`** | 卡密管理 | 卡密管理列表与批量生成/作废交互 | `/admin/redeem-codes` | `apps/web/src/pages/admin/redeem-codes/**` | 四态统计卡片（数量 + 合计金额）、防抖搜索、状态筛选、元/分单位提示、卡密默认掩码与列头眼睛图标明文切换（明文态行内复制）、CSV/TXT 导出下拉、清理过期确认弹窗、批量生成表单、生成结果换行复制、兑换人与兑换时间列、统一时区有效期状态、行选择批量作废与单张作废确认、移动端表格局部滚动与弹窗内滚动 |
 | **`UI-31`** | 资源管理 | 资源管理与资源详情 | `/admin/binaries` | `apps/web/src/pages/admin/binaries/**` | 服务端分页/搜索（版本号或备注，400ms 防抖）与类型/平台/状态组合筛选；顶部「登记体积 / 删除可释放空间」统计卡片（随筛选联动，可释放仅计独占运行时文件，共享静态文件不计入）；行多选与批量工具栏（启用/停用/归档/删除，危险动作二次确认，确认文案说明内置资源需先归档）；数据表格紧凑布局、默认/启停/归档状态 Badge、平台架构徽标聚合（超过 3 个折叠 +N 并带完整平台与体积 Tooltip；`available=false` 的资产显示琥珀色警示徽标与“文件缺失或校验不符”Tooltip，+N 折叠列表同步标注失效项）、总体积仅累计可用资产、引用分发次数、分页底栏；操作列详情/启停外露与编辑备注兼容性/设为默认/归档恢复/删除下拉收纳（已归档且无分发历史的内置资源提供删除入口）；本地上传（选文件后浏览器自动计算 SHA-256 并展示计算态）与远程导入表单（react-hook-form + zod 字段级错误提示）；资源详情弹窗（备注、兼容性约束徽标、登记体积/可释放汇总、资产存储类型徽标：独占文件/共享静态、文件级 SHA-256 明细且不与资产哈希重复展示（无文件明细时兜底显示资产哈希）、失效资产“文件失效”Badge、分发记录分页列表与状态筛选、失败任务就地重试）；操作审计弹窗（分页、动作筛选、操作者展示）；明暗主题与移动端局部滚动 |
 | **`UI-32`** | 监控与系统 | 系统日志可视化大盘 | `/admin/logs` | `apps/web/src/pages/admin/logs/**` | 4 大 KPI 指标卡、分级趋势堆叠柱状图、多维过滤器工具栏（支持一键重置与活跃模块徽标，支持 URL searchParams 携带 nodeId 与 live 参数自动激活对应节点实时日志推流）、高密度等宽日志流表格（支持节点与模块标签点击即滤、搜索关键词精准高亮）、Live Tail 实时推流条（悬浮控制、清屏、暂停、自动滚动）、详情抽屉（TraceId/节点/模块一键穿透过滤、调用堆栈、格式化元数据）、日志导出与统一历史观测数据清理弹窗（目标/模式/预览/二次确认/`CLEAR_HISTORY`/逐表结果）；明暗主题自适应与移动端防溢出 |
-| **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
+| **`UI-33`** | 认证 | 找回密码页面 | `/forgot-password` | `apps/web/src/pages/forgot-password/**` | 左上角返回首页按钮（带 ArrowLeft 图标与多语言文本）、右上角语言切换器与 ThemeToggle 主题切换并列排布、找回密码表单居中对齐、邮箱/新密码/确认密码输入校验、邮箱验证码获取按钮与 60 秒倒计时、人机验证弹窗防刷保护、重置成功后跳转登录页与反馈 Toast、返回登录跳转链接、底栏客服支持联系渠道与页脚版权渲染 |
 | **`UI-34`** | 网络与节点 | 镜像站列表、编辑与测试结果 | `/admin/mirrors` | `apps/web/src/pages/admin/mirrors/**` | 上游域名、指定节点与 `mirror_proxy` 能力、访问模式、启用状态和最近请求结果的表格扫描；创建/编辑表单、分享 Token 一次性展示与轮换、删除确认、测试结果对话框；明暗主题、移动端表格局部滚动和弹窗内滚动 |
 | **`UI-35`** | 用户中心 | 直连代理池凭据管理与提取导出中心 | `/proxy-pool` | `apps/web/src/pages/user/proxy-pool/**` | 顶部 4 项微型状态指标卡（活跃凭据、可用端点、双协议单端口支持、主账户配额共享）；响应式双 Tab 切换（「代理提取与代码集成」与「凭据与白名单」）；凭据网格化响应式卡片流（发光状态指示微灯、紧凑等宽凭据胶囊避免横向拉伸、显隐切换、行内复制、白名单 IP 预览与下拉操作）；macOS 终端风格一体化结果工作台（节点流式芯片选择、TXT/URI/JSON 提取结果与四语言代码片段平滑切换、多节点自动化代码轮换池与单节点快速切换器、移动端分层响应式控制栏彻底根除 Tab 与操作按钮重叠、代码视窗常规文本选择、全 TLS 节点 SOCKS5 互斥禁用约束、混合节点 SOCKS5 智能过滤告警横幅、一键复制、一键下载 .txt 文件）；免登录自动化动态拉取 API 复制；移动端全宽自适应无多余横向溢出 |
 | **`UI-36`** | 帮助与支持 | 用户端帮助中心与客户端教程 | `/help` | `apps/web/src/pages/user/help/**`, `apps/web/src/components/shared/markdown-renderer.tsx`, `apps/web/src/components/shared/image-lightbox.tsx` | 平台分类切换（Windows/macOS/iOS/Android/路由器/常见问题）、文章侧边栏导航、搜索过滤、置顶客户端一键导入卡（包含协议一键导入与订阅链接复制）、Markdown 正文动态变量插值（自动替换为当前用户专属订阅链接与站点名）、警告块 (Callout) 渲染、代码高亮与一键复制、图片灯箱 (Lightbox) 点击放大预览、右侧 TOC 目录随滚动自动高亮、移动端自适应排版 |
 | **`UI-37`** | 帮助与支持 | 管理端文档管理与分屏编辑器 | `/admin/docs` | `apps/web/src/pages/admin/docs/**` | 帮助文档数据表格（标题、别名、平台、语言、发布状态、排序）、平台/状态/搜索组合筛选、新建/编辑文档分屏弹窗（CodeMirror 源码高亮 + 动态变量插入工具条 + 实时渲染预览 + 平台/客户端/图标/发布 Switch/排序输入项）、一键重置官方预置文档二次确认弹窗（含覆盖选项）、明暗主题与移动端局部滚动 |
+| **`UI-38`** | 门户 | 首页门户 | `/` | `apps/web/src/pages/landing/**` | 纯正 shadcn/ui New York 风格高品质首页：Sticky 毛玻璃顶栏（品牌 Logo、平滑锚点、语言/主题切换、智能控制台按钮与用户快捷菜单）、Hero 导流区（胶囊徽标、一级标题、副标题、CTA 按钮组、面向普通用户的感知亮点微胶囊）、核心特性 6 宫格网格（Lucide 动态图标、精致边框与卡片悬浮提升）、公开套餐卡片预览（对接公共 API、价格周期与速率特性）、常见问题（FAQ）折叠手风琴、优雅客服支持与版权页脚；明暗双主题自适应、移动端单列优雅排版与防溢出、系统设置动态配置与 i18n 即时切换 |
 
 认证页面的会话验证以 Cookie 为浏览器实现细节：视觉走查只需确认登录/注册成功后正确进入已认证路由、刷新页面仍保持登录态、注销后返回登录页；不得在页面 DOM、localStorage 或 sessionStorage 中出现 JWT 文本。
 
@@ -88,13 +89,14 @@
 ```mermaid
 flowchart TD
     Change[前端代码修改 apps/web/src/**] --> PathCheck{路径类型判断}
-    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-35]
+    PathCheck -->|全局组件 / 样式\ncomponents/ui/*\ncomponents/layout/*\nsrc/index.css| Full[全量走查: UI-01 ~ UI-38]
     PathCheck -->|认证模块\npages/login/*\npages/register/*| Auth[精准走查: UI-01, UI-02]
-    PathCheck -->|根路径与订阅控制台\nrouter/index.tsx\npages/user/subscription/*\ncomponents/shared/*| Dash[精准走查: UI-03, UI-04, UI-21]
+    PathCheck -->|首页门户\npages/landing/*| Landing[精准走查: UI-38]
+    PathCheck -->|根路径与订阅控制台\nrouter/index.tsx\npages/user/subscription/*\ncomponents/shared/*| Dash[精准走查: UI-03, UI-04, UI-21, UI-38]
     PathCheck -->|节点模块\npages/admin/nodes/*| Node[精准走查: UI-05 ~ UI-10]
     PathCheck -->|用户模块\npages/admin/users/*| User[精准走查: UI-11 ~ UI-13, UI-28]
     PathCheck -->|流量模块\npages/admin/traffic/*| Traffic[精准走查: UI-27]
-    PathCheck -->|设置模块\npages/admin/settings/*| Sett[精准走查: UI-14]
+    PathCheck -->|设置模块\npages/admin/settings/*| Sett[精准走查: UI-14, UI-38]
     PathCheck -->|套餐模块\npages/admin/plans/*| Plans[精准走查: UI-16, UI-17]
     PathCheck -->|模板模块\npages/admin/templates/*| Templates[精准走查: UI-18, UI-19]
     PathCheck -->|用户订阅\npages/user/*| UserSubs[精准走查: UI-20, UI-21, UI-29]
@@ -114,17 +116,18 @@ flowchart TD
 
 | 修改的代码路径 (Glob Pattern) | 关联受影响的 UI 索引 | 走查级别 |
 | :--- | :--- | :---: |
-| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-37`（全站所有页面） | **全量** |
-| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-37`（全局框架与主题） | **全量** |
+| `apps/web/src/index.css`, `tailwind.config.js` | `UI-01` ~ `UI-38`（全站所有页面） | **全量** |
+| `apps/web/src/components/layout/**`, `theme-toggle.tsx` | `UI-01` ~ `UI-38`（全局框架与主题） | **全量** |
 | `apps/web/src/components/ui/**` | 依赖该原子组件的所有页面 | **全量 / 宽范围** |
 | `apps/web/src/pages/login/**`, `register/**` | `UI-01`, `UI-02` | **增量** |
-| `apps/web/src/router/index.tsx` | `UI-03`, `UI-21` | **增量** |
+| `apps/web/src/pages/landing/**` | `UI-38` | **增量** |
+| `apps/web/src/router/index.tsx` | `UI-03`, `UI-21`, `UI-38` | **增量** |
 | `apps/web/src/pages/admin/nodes/**` | `UI-05`, `UI-06`, `UI-07`, `UI-08`, `UI-09`, `UI-10` | **增量** |
 | `apps/web/src/pages/admin/users/**` | `UI-11`, `UI-12`, `UI-13`, `UI-28` | **增量** |
 | `apps/web/src/pages/admin/traffic/**` | `UI-27` | **增量** |
-| `apps/web/src/pages/admin/settings/**` | `UI-14` | **增量** |
+| `apps/web/src/pages/admin/settings/**` | `UI-14`, `UI-38` | **增量** |
 | `apps/web/src/lib/subscription-url.ts` | `UI-03`, `UI-14`, `UI-21` | **增量** |
-| `apps/web/src/components/layout/site-runtime.tsx`, `apps/web/src/lib/public-settings.ts` | `UI-01` ~ `UI-03`, `UI-14`, `UI-15`, `UI-21` | **增量** |
+| `apps/web/src/components/layout/site-runtime.tsx`, `apps/web/src/lib/public-settings.ts` | `UI-01` ~ `UI-03`, `UI-14`, `UI-15`, `UI-21`, `UI-38` | **增量** |
 | `apps/web/src/pages/admin/plans/**` | `UI-16`, `UI-17` | **增量** |
 | `apps/web/src/pages/admin/templates/**` | `UI-18`, `UI-19` | **增量** |
 | `apps/web/src/pages/user/**` | `UI-20`, `UI-21`, `UI-29` | **增量** |
@@ -150,6 +153,8 @@ flowchart TD
 > **2026-09-19 增量台账（前端全模块国际化与二级交互组件多语言完整覆盖）**：本次对 `apps/web` 全模块进行了彻底的硬编码文本与二级交互组件扫网清理（`feat/web-i18n-subcomponents-and-dialogs-complete`），涵盖节点详情/升级/探针/部署历史、线路高级/网络/协议表单、模板六大编辑器与预览抽屉、资源管理详情/编辑/审计/表单、证书详情与表单、系统日志筛选/实时推流/指标/清理抽屉、系统设置探针与色阶编辑器、流量统计图表与排行下钻、卡密与套餐管理全部二级弹窗、用户管理弹窗及全局 UI 底座（Dialog、Sheet、Sidebar）。所有 UI 文本、ARIA 辅助属性、表单校验与 Toast 提示 100% 纳入 `react-i18next` 统一多语言字典管理，保持中英文结构与词条完全对称。走查覆盖 Light/Dark 模式，确认切换语言即时生效、中英文字符串无溢出与排版变形。当前实现未将视觉检查接入 CI 或 Git Hook。
 >
 > **2026-09-19 增量台账（用户侧帮助中心与管理端文档管理）**：本次新增用户端使用文档中心与管理端在线编辑器（`feat/help-center-docs`），受影响走查范围为 `UI-36` 与 `UI-37`。覆盖 Light/Dark 模式与移动视口，验证多平台 Tab 切换、代码高亮复制与图片灯箱放大、正文动态变量自动插值、管理端 CodeMirror 分屏实时预览及重置官方预置文档弹窗。当前实现未将视觉检查接入 CI 或 Git Hook。
+>
+> **2026-09-20 增量台账（首页门户与可配置管理）**：本次新增纯正 shadcn/ui New York 风格首页门户与管理端可视化设置面板（`feat/landing-page`），受影响走查范围涵盖 `UI-03`（根路径按配置进入首页或回退跳转）、`UI-14`（系统设置新增「首页设置」Tab、模块显隐开关、Hero 文案与特性/FAQ 动态增删改弹窗）与 `UI-38`（首页门户全量视图）。覆盖 Light/Dark 模式与 `1440x900`、`768x1024`、`375x812` 移动端视口，走查验证 Sticky 毛玻璃顶栏平滑吸顶、Hero 导流与用户感知亮点胶囊、6 宫格特性卡片悬浮提升、公开套餐接口卡片渲染、FAQ 手风琴平滑折叠、官方客服与版权页脚、以及中英文多语言即时热切换。当前实现未将视觉检查接入 CI 或 Git Hook。
 
 ---
 

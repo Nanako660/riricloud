@@ -5,6 +5,12 @@ import { AdminGuard, AuthGuard } from './guards';
 // 路由层声明守卫与懒加载（CODE_REVIEW W4）
 export const router = createBrowserRouter([
   {
+    path: '/',
+    lazy: async () => ({
+      Component: (await import('@/pages/landing')).default
+    })
+  },
+  {
     path: '/login',
     lazy: async () => ({
       Component: (await import('@/pages/login')).default
@@ -28,10 +34,6 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          {
-            path: '/',
-            element: <Navigate to="/subscription" replace />
-          },
           {
             element: <AdminGuard />,
             children: [

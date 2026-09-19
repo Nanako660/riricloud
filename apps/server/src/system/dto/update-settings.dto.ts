@@ -473,6 +473,56 @@ export class UpdateSettingsDto {
   @Max(20)
   @IsOptional()
   agentLogMaxFiles?: number;
+
+  @ApiPropertyOptional({ example: true, description: '是否启用首页门户' })
+  @IsBoolean()
+  @IsOptional()
+  landingEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: '✨ 新一代高速网络服务', description: '首页顶部徽章标签' })
+  @IsString()
+  @MaxLength(100)
+  @IsOptional()
+  landingHeroBadge?: string;
+
+  @ApiPropertyOptional({ example: '随时随地，畅享无界高速互联', description: '首页主标题' })
+  @IsString()
+  @MaxLength(150)
+  @IsOptional()
+  landingHeroTitle?: string;
+
+  @ApiPropertyOptional({ example: '专为高清流媒体与多设备协同优化。一键轻松接入，全天候稳定护航，重塑您的数字生活体验。', description: '首页副标题' })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  landingHeroSubtitle?: string;
+
+  @ApiPropertyOptional({ example: true, description: '首页是否展示核心特性模块' })
+  @IsBoolean()
+  @IsOptional()
+  landingShowFeatures?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: '首页是否展示公开套餐模块' })
+  @IsBoolean()
+  @IsOptional()
+  landingShowPlans?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: '首页是否展示常见问答 FAQ 模块' })
+  @IsBoolean()
+  @IsOptional()
+  landingShowFaq?: boolean;
+
+  @ApiPropertyOptional({ example: '[]', description: '首页自定义特性列表（JSON 字符串）' })
+  @IsString()
+  @MaxLength(50000)
+  @IsOptional()
+  landingCustomFeaturesJson?: string;
+
+  @ApiPropertyOptional({ example: '[]', description: '首页自定义 FAQ 列表（JSON 字符串）' })
+  @IsString()
+  @MaxLength(50000)
+  @IsOptional()
+  landingCustomFaqJson?: string;
 }
 
 export class ResetSettingsDto {

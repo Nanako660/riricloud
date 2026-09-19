@@ -1,5 +1,6 @@
 const common = {
   nav: {
+    home: 'Back to Home',
     console: 'Console',
     mySubscription: 'My Subscription',
     directProxy: 'Direct Proxy',

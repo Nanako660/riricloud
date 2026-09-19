@@ -1,5 +1,6 @@
 const common = {
   nav: {
+    home: '返回首页',
     console: '控制台',
     mySubscription: '我的订阅',
     directProxy: '直连代理',
