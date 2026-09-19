@@ -1,0 +1,136 @@
+name: Docker Publish (GHCR)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+      - 'agent-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '自定义镜像标签 (留空则按版本自动推导，例如 0.8.20 / edge)'
+        required: false
+        default: ''
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: 构建并发布镜像至 GHCR (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node.js 环境 (提取版本号)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 解析镜像元数据与标签
+        id: meta
+        run: |
+          OWNER_LC="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "owner_lc=${OWNER_LC}" >> "$GITHUB_OUTPUT"
+
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ -f "apps/agent/VERSION" ]; then
+            AGENT_VERSION="$(tr -d '[:space:]' < apps/agent/VERSION)"
+          else
+            AGENT_VERSION="$VERSION"
+          fi
+          echo "agent_version=${AGENT_VERSION}" >> "$GITHUB_OUTPUT"
+
+          echo "vcs_ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+          REF="${{ github.ref }}"
+          EVENT_NAME="${{ github.event_name }}"
+          CUSTOM_TAG="${{ inputs.tag }}"
+
+          BUILD_MASTER="true"
+          BUILD_AGENT="true"
+
+          if [[ "$REF" =~ ^refs/tags/v[0-9] ]]; then
+            # 正式发布 Master (如 v0.8.20)
+            TAG_NAME="${REF#refs/tags/}"
+            RAW_VER="${TAG_NAME#v}"
+            MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-master:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-master:latest"
+            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-agent:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
+          elif [[ "$REF" =~ ^refs/tags/agent-v[0-9] ]]; then
+            # 独立发布 Agent (如 agent-v0.8.20)
+            TAG_NAME="${REF#refs/tags/}"
+            RAW_VER="${TAG_NAME#agent-v}"
+            BUILD_MASTER="false"
+            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-agent:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$CUSTOM_TAG" ]; then
+            MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:${CUSTOM_TAG}"
+            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${CUSTOM_TAG}"
+          else
+            # main 分支推送或无自定义 Tag 的 workflow_dispatch
+            MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:edge"
+            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:edge"
+          fi
+
+          echo "master_tags=${MASTER_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "agent_tags=${AGENT_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "build_master=${BUILD_MASTER}" >> "$GITHUB_OUTPUT"
+          echo "build_agent=${BUILD_AGENT}" >> "$GITHUB_OUTPUT"
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送 Master 镜像 (ghcr.io)
+        if: steps.meta.outputs.build_master == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.master_tags }}
+          build-args: |
+            TARGETARCH=amd64
+            RIRICLOUD_VERSION=${{ steps.meta.outputs.version }}
+            RIRICLOUD_VCS_REF=${{ steps.meta.outputs.vcs_ref }}
+            RIRICLOUD_BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            RIRICLOUD_IMAGE_TAGS=${{ steps.meta.outputs.master_tags }}
+          cache-from: type=gha,scope=docker-master
+          cache-to: type=gha,mode=max,scope=docker-master
+
+      - name: 构建并推送 Agent 镜像 (ghcr.io)
+        if: steps.meta.outputs.build_agent == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.agent
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.agent_tags }}
+          build-args: |
+            TARGETARCH=amd64
+            RIRICLOUD_VERSION=${{ steps.meta.outputs.agent_version }}
+            RIRICLOUD_VCS_REF=${{ steps.meta.outputs.vcs_ref }}
+            RIRICLOUD_BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            RIRICLOUD_IMAGE_TAGS=${{ steps.meta.outputs.agent_tags }}
+          cache-from: type=gha,scope=docker-agent
+          cache-to: type=gha,mode=max,scope=docker-agent
