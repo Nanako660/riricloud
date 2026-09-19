@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.19] - 2026-09-19
+
+### Added
 - **用户侧使用帮助中心与面向 0 基础小白指南 (Help Center & Beginner Guides)**：
   - **用户端现代化帮助中心 (`/help`)**：支持按平台分类（Windows、macOS、iOS、Android、路由器与常见问题 FAQ）筛选，左侧多级目录与搜索、右侧正文目录 TOC 自动高亮联动，支持 GitHub Flavored Markdown 语法渲染、警告提示块 (Callouts)、代码块一键复制及图片 Lightbox 灯箱点击放大；
   - **专属凭据与客户端一键导入动态插值**：教程正文与顶部指引自动注入当前用户专属主订阅链接与客户端专用深度导入协议（如 Clash Verge 一键导入 `clash://install-config?url=...`、Shadowrocket 一键导入 `sub://...`），0 基础用户无需手动复杂复制配置；
