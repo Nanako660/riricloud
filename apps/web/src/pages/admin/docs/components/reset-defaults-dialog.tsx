@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,34 +19,34 @@ interface ResetDefaultsDialogProps {
 }
 
 export function ResetDefaultsDialog({ onConfirm, isPending }: ResetDefaultsDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5 text-xs text-amber-600 hover:text-amber-700 border-amber-500/30">
           <RotateCcw className="size-3.5" />
-          <span>恢复官方预设</span>
+          <span>{t('admin:docs.resetDefaults')}</span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>恢复官方预设新手教程？</AlertDialogTitle>
+          <AlertDialogTitle>{t('admin:docs.reset.title')}</AlertDialogTitle>
           <AlertDialogDescription className="space-y-2 text-xs">
-            <p>
-              此操作将重置系统默认的 5 篇官方新手教程（Windows、macOS、iOS、Android 及常见排错 FAQ）至出厂预置内容。
-            </p>
+            <p>{t('admin:docs.reset.desc1')}</p>
             <p className="text-destructive font-medium">
-              如果您曾修改过这些默认文章的文案，修改内容将被覆盖。您自行新建的其他自定义文档将不受影响。
+              {t('admin:docs.reset.desc2')}
             </p>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={isPending}>{t('common:actions.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             disabled={isPending}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
-            {isPending ? '正在重置…' : '确认恢复预设'}
+            {isPending ? t('admin:docs.reset.resetting') : t('admin:docs.reset.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -22,26 +22,9 @@ export const BUILTIN_HELP_ARTICLES: DefaultHelpArticle[] = [
     sortOrder: 10,
     isPublished: true,
     locale: 'zh-CN',
-    content: `# Windows 新手指南：Clash Verge Rev 教程
+    content: `Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代理客户端，内置 Meta 内核，界面美观直观，非常适合新手使用。
 
-Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代理客户端，内置 Meta 内核，界面美观直观，非常适合新手使用。
-
----
-
-## 快速一键配置（新手推荐）
-
-如果你已经安装好了 Clash Verge Rev，直接点击下方的一键导入按钮即可唤起客户端并自动下载节点配置：
-
-[一键导入到 Clash Verge](clash://install-config?url={{clash_import_url}}&name={{site_name}})
-
-> [!TIP]
-> 如果一键导入未能唤起软件，请按照下方的图文步骤手动复制订阅地址导入。
-
----
-
-## 详细配置步骤
-
-### 第一步：下载并安装客户端
+## 第一步：下载并安装客户端
 1. 前往官方发布页下载 Windows 安装包：
    - 官方 GitHub 下载：[Clash Verge Rev Releases](https://github.com/clash-verge-rev/clash-verge-rev/releases)
    - 推荐下载以 \`_x64-setup.exe\` 结尾的安装文件。
@@ -51,23 +34,21 @@ Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代�
 > [!NOTE]
 > 如果 Windows Defender 弹出「Windows 已保护你的电脑」提示，请点击「更多信息」→「仍要运行」即可正常安装。
 
-### 第二步：导入订阅链接
-1. 点击上方或「我的订阅」页面的复制按钮，获取你的专属订阅地址：
+## 第二步：导入专属订阅
+1. 打开 Clash Verge 软件，点击左侧菜单栏的 **「订阅 (Profiles)」**。
+2. 在顶部的输入框中粘贴您的专属订阅地址（可在上方一键复制）：
    \`\`\`text
    {{subscription_url}}
    \`\`\`
-2. 打开 Clash Verge 软件，点击左侧菜单栏的 **「订阅 (Profiles)」**。
-3. 在顶部的输入框中粘贴刚刚复制的专属订阅地址，然后点击 **「保存 (Save)」** 或 **「导入」**。
-4. 软件将自动拉取最新的节点配置。导入完成后，**单击选中**该订阅配置（选中的配置会有高亮边框提示）。
+3. 点击 **「保存 (Save)」** 或 **「导入」** 按钮，软件将自动拉取最新的节点配置。
+4. 导入完成后，**单击选中**该订阅配置（选中的配置会有高亮边框提示）。
 
-### 第三步：选择节点并开启代理
+## 第三步：选择节点并开启代理
 1. 点击左侧的 **「代理 (Proxies)」** 标签页。
 2. 顶部模式选择 **「规则 (Rule)」** 模式（智能分流：国内网站直连，海外网站走节点）。
 3. 在展开的节点分组中，点击延迟测试，选择一个延迟较低（显示绿色数字如 80ms）的节点。
 4. 点击左侧的 **「设置 (Settings)」** 页面，找到 **「系统代理 (System Proxy)」** 开关并将其**打开**。
 5. 现在打开浏览器访问 [Google](https://www.google.com) 或 [YouTube](https://www.youtube.com)，即可畅游网络！
-
----
 
 ## 常见排错小贴士
 - **打开了系统代理却连不上？** 请检查电脑右下角系统时钟是否与网络北京时间完全一致，时间误差超过 1 分钟会导致握手失败。
@@ -84,23 +65,9 @@ Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代�
     sortOrder: 20,
     isPublished: true,
     locale: 'zh-CN',
-    content: `# macOS 新手指南：Clash Verge Rev 教程
+    content: `本教程适用于所有 macOS 用户（包括最新的 macOS Sequoia / Sonoma / Ventura），支持 Apple 芯片与 Intel 芯片机型。
 
-本教程适用于所有 macOS 用户（包括最新的 macOS Sequoia / Sonoma / Ventura），支持 Apple 芯片与 Intel 芯片机型。
-
----
-
-## 快速一键配置
-
-如果你已安装好客户端，点击下方按钮直接一键导入：
-
-[一键导入到 Clash Verge](clash://install-config?url={{clash_import_url}}&name={{site_name}})
-
----
-
-## 详细配置步骤
-
-### 第一步：根据芯片选择下载客户端
+## 第一步：根据芯片选择下载客户端
 1. 访问官方发布地址：[Clash Verge Rev Releases](https://github.com/clash-verge-rev/clash-verge-rev/releases)
 2. 根据你的 Mac 处理器型号选择对应的 \`.dmg\` 文件：
    - **Apple 芯片 (M1/M2/M3/M4 系列)**：下载包含 \`_aarch64.dmg\` 的版本。
@@ -110,16 +77,16 @@ Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代�
 > [!TIP]
 > 首次打开若系统提示「无法打开，因为无法验证开发者」：请打开 Mac「系统设置」→「隐私与安全性」，滑到下方点击「仍要打开」；或者在终端中运行：\`sudo xattr -r -d com.apple.quarantine /Applications/Clash\\ Verge.app\`。
 
-### 第二步：导入专属订阅
-1. 复制你的专属订阅地址：
+## 第二步：导入专属订阅
+1. 打开 Clash Verge，点击左侧 **「Profiles (订阅)」**。
+2. 在顶部输入框粘贴您的专属订阅链接（可在上方一键复制）：
    \`\`\`text
    {{subscription_url}}
    \`\`\`
-2. 打开 Clash Verge，点击左侧 **「Profiles (订阅)」**。
-3. 在顶部输入框粘贴你的订阅链接，点击 **「Save (保存)」** 自动下载配置。
+3. 点击 **「Save (保存)」** 自动下载配置。
 4. 点击该订阅卡片将其设置为当前激活状态。
 
-### 第三步：开启系统代理
+## 第三步：开启系统代理
 1. 点击左侧 **「Proxies (代理)」**，路由模式切换为 **「Rule (规则)」**。
 2. 展开节点列表，选择你期望使用的节点。
 3. 点击左侧 **「Settings (设置)」**，开启 **「System Proxy (系统代理)」** 开关。
@@ -136,41 +103,26 @@ Clash Verge Rev 是当前 Windows 平台上现代化、性能出色的图形代�
     sortOrder: 30,
     isPublished: true,
     locale: 'zh-CN',
-    content: `# iOS 新手指南：Shadowrocket (小火箭) 教程
+    content: `Shadowrocket（俗称「小火箭」）是 iOS 平台上功能全面、广受好评的代理客户端，规则分流完善，极其稳定省电。在 Safari 浏览器中，您可以直接点击上方卡片的「一键导入到客户端」自动完成配置。
 
-Shadowrocket（俗称「小火箭」）是 iOS 平台上功能全面、广受好评的代理客户端，规则分流完善，极其稳定省电。
-
----
-
-## 快速一键配置（强烈推荐）
-
-在 iPhone / iPad 的 **Safari 浏览器** 中打开本帮助中心页面，点击下方按钮即可自动打开 Shadowrocket 并导入全部节点：
-
-[一键导入到 Shadowrocket](shadowrocket://add/sub://{{shadowrocket_import_url}}?title={{site_name}})
-
----
-
-## 详细配置步骤
-
-### 第一步：准备并下载客户端
+## 第一步：准备并下载客户端
 > [!IMPORTANT]
 > Shadowrocket 在中国大陆 App Store 暂未上架。您需要准备一个**非国区 Apple ID**（如美区、日区、港区等）登录 App Store 搜索购买下载。
 > 官方应用图标为**白色圆圈 + 黑色小火箭图案**，认准原版，请勿下载仿冒的山寨软件。
 
-### 第二步：导入订阅节点
-如果你无法通过一键导入自动唤起，请手动导入：
-1. 复制你的专属订阅链接：
-   \`\`\`text
-   {{subscription_url}}
-   \`\`\`
-2. 打开 Shadowrocket，通常软件在检测到剪贴板有订阅链接时会自动弹出「是否添加」提示，点击 **「添加」** 即可。
-3. 若未自动提示：点击软件首页右上角的 **「+」号**：
+## 第二步：手动导入订阅节点
+如果你无法通过上方一键导入自动唤起，请手动导入：
+1. 打开 Shadowrocket，通常软件在检测到剪贴板有订阅链接时会自动弹出「是否添加」提示，点击 **「添加」** 即可。
+2. 若未自动提示：点击软件首页右上角的 **「+」号**：
    - **类型 (Type)**：选择 **「Subscribe (订阅)」**；
-   - **URL (链接)**：粘贴上方复制的专属订阅地址；
+   - **URL (链接)**：粘贴上方复制的专属订阅地址：
+     \`\`\`text
+     {{subscription_url}}
+     \`\`\`
    - **备注 (Remark)**：填写 \`{{site_name}}\`；
    - 点击右上角 **「完成 (Done)」** 保存，软件将自动更新下载节点。
 
-### 第三步：开启连接与授权
+## 第三步：开启连接与授权
 1. 在首页节点列表中，点击任意一个节点进行选中（节点前面出现黄色圆点表示已选中）。
 2. 在「全局路由」选项中，建议设置为 **「配置 (Config)」**（智能分流模式，国内应用不消耗代理流量）。
 3. 开启最上方的 **「未连接」** 开关。
@@ -188,41 +140,26 @@ Shadowrocket（俗称「小火箭」）是 iOS 平台上功能全面、广受好
     sortOrder: 40,
     isPublished: true,
     locale: 'zh-CN',
-    content: `# Android (安卓) 新手指南：Clash Meta 教程
+    content: `安卓平台推荐使用 **Clash Meta for Android (CMFA)**，对各类新型代理协议（VLESS、Hysteria 2、TUIC、Shadowsocks）拥有出色的兼容性。您也可以直接点击上方卡片的「一键导入」快速唤起。
 
-安卓平台推荐使用 **Clash Meta for Android (CMFA)**，对各类新型代理协议（VLESS、Hysteria 2、TUIC、Shadowsocks）拥有出色的兼容性。
-
----
-
-## 快速一键配置
-
-如果手机已安装好 Clash Meta，直接点击下方按钮一键导入配置：
-
-[一键导入到 Clash Meta](clash://install-config?url={{clash_import_url}}&name={{site_name}})
-
----
-
-## 详细配置步骤
-
-### 第一步：下载并安装 APK
+## 第一步：下载并安装 APK
 1. 前往 GitHub Releases 下载最新的安卓客户端安装包：
    - [Clash Meta for Android Releases](https://github.com/MetaCubeX/ClashMetaForAndroid/releases)
    - 普遍机型请下载以 \`_universal.apk\` 或 \`_arm64-v8a.apk\` 结尾的文件。
 2. 安装后打开应用程序。
 
-### 第二步：导入订阅
-1. 复制你的专属订阅地址：
-   \`\`\`text
-   {{subscription_url}}
-   \`\`\`
-2. 打开软件，点击 **「配置 (Profiles)」**。
-3. 点击右上角 **「新配置」** 或 **「+」号**，选择 **「从 URL 导入」**：
+## 第二步：导入专属订阅
+1. 打开软件，点击 **「配置 (Profiles)」**。
+2. 点击右上角 **「新配置」** 或 **「+」号**，选择 **「从 URL 导入」**：
    - 名称：\`{{site_name}}\`
-   - URL：粘贴上方复制的专属订阅链接
+   - URL：粘贴上方复制的专属订阅链接：
+     \`\`\`text
+     {{subscription_url}}
+     \`\`\`
    - 自动更新间隔：建议设置为 1440 分钟（24小时）
-4. 点击右上角 **保存图标** 开始下载配置，下载完成后**单选激活**该配置。
+3. 点击右上角 **保存图标** 开始下载配置，下载完成后**单选激活**该配置。
 
-### 第三步：开启连接
+## 第三步：开启连接与后台保活
 1. 返回软件主页，点击中间的 **「点击启动」** 灰色按钮。
 2. 首次启动时系统会弹出 **「网络连接请求 / 允许 VPN 权限」**，点击 **「确定」** 允许。
 3. 启动后，点击 **「代理」** 标签页，切换至 **「规则 (Rule)」** 模式。
@@ -242,11 +179,7 @@ Shadowrocket（俗称「小火箭」）是 iOS 平台上功能全面、广受好
     sortOrder: 50,
     isPublished: true,
     locale: 'zh-CN',
-    content: `# 新手常见问题与排错宝典
-
-如果你在使用代理服务过程中遇到任何问题，请先对照以下常见排查指南解决。
-
----
+    content: `如果你在使用代理服务过程中遇到任何问题，请先对照以下常见排查指南解决。
 
 ## Q1：软件显示已连接，但网页完全打不开（提示无法访问此网站）？
 

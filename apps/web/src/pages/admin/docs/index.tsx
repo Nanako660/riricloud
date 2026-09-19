@@ -7,9 +7,9 @@ import {
   Search,
   Trash2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
-import { CopyButton } from '@/components/shared/copy-button';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -75,16 +75,6 @@ export default function AdminDocsPage() {
     setEditorOpen(true);
   };
 
-  const handleDuplicate = (article: AdminHelpArticle) => {
-    setEditingArticle({
-      ...article,
-      id: '',
-      slug: `${article.slug}-copy`,
-      title: `${article.title} (副本)`
-    });
-    setEditorOpen(true);
-  };
-
   const handleSave = (payload: AdminHelpArticlePayload) => {
     if (editingArticle && editingArticle.id) {
       updateMutation.mutate(
@@ -105,14 +95,21 @@ export default function AdminDocsPage() {
     });
   };
 
+  const handleCopySlug = async (slug: string) => {
+    try {
+      await navigator.clipboard.writeText(slug);
+      toast.success(t('admin:docs.copiedSlug'));
+    } catch {
+      toast.error(t('common:actions.copyFailed'));
+    }
+  };
+
   return (
     <PageContainer>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageHeader
-          title={t('admin:docs.title', { defaultValue: '帮助文档管理' })}
-          description={t('admin:docs.subtitle', {
-            defaultValue: '维护面向 0 基础用户的客户端图文教程与常见排错指南，支持动态变量插值与出厂预设恢复。'
-          })}
+          title={t('admin:docs.title')}
+          description={t('admin:docs.subtitle')}
         />
         <div className="flex items-center gap-2 shrink-0">
           <ResetDefaultsDialog
@@ -121,7 +118,7 @@ export default function AdminDocsPage() {
           />
           <Button size="sm" className="gap-1.5 shadow-xs" onClick={handleOpenCreate}>
             <Plus className="size-4" />
-            <span>新建帮助文档</span>
+            <span>{t('admin:docs.newDoc')}</span>
           </Button>
         </div>
       </div>
@@ -131,26 +128,26 @@ export default function AdminDocsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Select value={platformFilter} onValueChange={setPlatformFilter}>
             <SelectTrigger className="w-[140px] h-8 text-xs">
-              <SelectValue placeholder="平台分类" />
+              <SelectValue placeholder={t('admin:docs.platform')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部平台</SelectItem>
-              <SelectItem value="WINDOWS">Windows</SelectItem>
-              <SelectItem value="MACOS">macOS</SelectItem>
-              <SelectItem value="IOS">iOS (苹果)</SelectItem>
-              <SelectItem value="ANDROID">Android (安卓)</SelectItem>
-              <SelectItem value="ROUTER">路由器</SelectItem>
-              <SelectItem value="FAQ">常见排错</SelectItem>
-              <SelectItem value="GENERAL">通用说明</SelectItem>
+              <SelectItem value="ALL">{t('admin:docs.platforms.all')}</SelectItem>
+              <SelectItem value="WINDOWS">{t('admin:docs.platforms.windows')}</SelectItem>
+              <SelectItem value="MACOS">{t('admin:docs.platforms.macos')}</SelectItem>
+              <SelectItem value="IOS">{t('admin:docs.platforms.ios')}</SelectItem>
+              <SelectItem value="ANDROID">{t('admin:docs.platforms.android')}</SelectItem>
+              <SelectItem value="ROUTER">{t('admin:docs.platforms.router')}</SelectItem>
+              <SelectItem value="FAQ">{t('admin:docs.platforms.faq')}</SelectItem>
+              <SelectItem value="GENERAL">{t('admin:docs.platforms.general')}</SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={localeFilter} onValueChange={setLocaleFilter}>
             <SelectTrigger className="w-[120px] h-8 text-xs">
-              <SelectValue placeholder="全部语言" />
+              <SelectValue placeholder={t('admin:docs.allLocales')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部语言</SelectItem>
+              <SelectItem value="ALL">{t('admin:docs.allLocales')}</SelectItem>
               <SelectItem value="zh-CN">简体中文</SelectItem>
               <SelectItem value="en-US">English</SelectItem>
             </SelectContent>
@@ -162,7 +159,7 @@ export default function AdminDocsPage() {
           <Input
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
-            placeholder="搜索文档标题或 slug…"
+            placeholder={t('admin:docs.searchPlaceholder')}
             className="pl-8 h-8 text-xs"
           />
         </div>
@@ -171,15 +168,15 @@ export default function AdminDocsPage() {
       {/* 文档列表表格 */}
       <div className="rounded-xl border border-border bg-card shadow-2xs overflow-hidden">
         {isLoading ? (
-          <div className="py-20 text-center text-xs text-muted-foreground">正在加载文档列表…</div>
+          <div className="py-20 text-center text-xs text-muted-foreground">{t('admin:docs.loading')}</div>
         ) : articles.length === 0 ? (
           <EmptyState
-            title="暂无帮助文档"
-            description="您可以点击右上角「新建帮助文档」，或者点击「恢复官方预设」灌入标准新手教程。"
+            title={t('admin:docs.emptyTitle')}
+            description={t('admin:docs.emptyDesc')}
             action={
               <Button size="sm" variant="outline" onClick={handleOpenCreate} className="gap-1.5 text-xs">
                 <Plus className="size-3.5" />
-                <span>立即新建</span>
+                <span>{t('admin:docs.createNow')}</span>
               </Button>
             }
           />
@@ -188,14 +185,14 @@ export default function AdminDocsPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
-                  <th className="py-3 px-4">标题与摘要</th>
-                  <th className="py-3 px-4">平台 / 客户端</th>
-                  <th className="py-3 px-4">Slug 标识</th>
-                  <th className="py-3 px-4">排序</th>
-                  <th className="py-3 px-4">语言</th>
-                  <th className="py-3 px-4">发布状态</th>
-                  <th className="py-3 px-4">更新时间</th>
-                  <th className="py-3 px-4 text-right">操作</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.title')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.platformClient')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.slug')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.sort')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.locale')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.status')}</th>
+                  <th className="py-3 px-4">{t('admin:docs.table.updatedAt')}</th>
+                  <th className="py-3 px-4 text-right">{t('admin:docs.table.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -222,7 +219,7 @@ export default function AdminDocsPage() {
                         </div>
                       </td>
 
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
                             {article.platform}
@@ -235,10 +232,23 @@ export default function AdminDocsPage() {
                         </div>
                       </td>
 
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-                          <span className="truncate max-w-[120px]">{article.slug}</span>
-                          <CopyButton value={article.slug} className="size-5" />
+                      {/* Slug 标识列：优化等宽样式与纯图标独立复制按钮，杜绝文字遮挡与换行 */}
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-muted/40 border border-border/70 px-2 py-0.5 rounded-md text-foreground/90">
+                          <span className="select-all">{article.slug}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-5 text-muted-foreground hover:text-foreground shrink-0 rounded"
+                            title={t('admin:docs.copySlug')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySlug(article.slug);
+                            }}
+                          >
+                            <Copy className="size-3" />
+                          </Button>
                         </div>
                       </td>
 
@@ -252,15 +262,15 @@ export default function AdminDocsPage() {
                         </Badge>
                       </td>
 
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={article.isPublished}
                             onCheckedChange={(checked) => handleTogglePublish(article, checked)}
-                            aria-label="发布开关"
+                            aria-label={t('admin:docs.table.status')}
                           />
-                          <span className={`text-[11px] ${article.isPublished ? 'text-emerald-600 font-medium' : 'text-muted-foreground'}`}>
-                            {article.isPublished ? '已发布' : '草稿'}
+                          <span className={`text-[11px] ${article.isPublished ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}`}>
+                            {article.isPublished ? t('admin:docs.table.published') : t('admin:docs.table.draft')}
                           </span>
                         </div>
                       </td>
@@ -269,51 +279,43 @@ export default function AdminDocsPage() {
                         {formatDateTime(article.updatedAt)}
                       </td>
 
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="icon"
                             className="size-7 text-muted-foreground hover:text-foreground"
                             onClick={() => handleOpenEdit(article)}
-                            title="编辑"
+                            title={t('admin:docs.edit')}
                           >
                             <Edit className="size-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-foreground"
-                            onClick={() => handleDuplicate(article)}
-                            title="复制副本"
-                          >
-                            <Copy className="size-3.5" />
-                          </Button>
+
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="size-7 text-muted-foreground hover:text-destructive"
-                                title="删除"
+                                title={t('admin:docs.delete')}
                               >
                                 <Trash2 className="size-3.5" />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>删除文档《{article.title}》？</AlertDialogTitle>
-                                <AlertDialogDescription className="text-xs">
-                                  删除后该文档将立即从用户侧帮助中心移除。此操作不可逆。
+                                <AlertDialogTitle>{t('admin:docs.deleteConfirmTitle')}</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {t('admin:docs.deleteConfirm', { title: article.title })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>取消</AlertDialogCancel>
+                                <AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel>
                                 <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   onClick={() => deleteMutation.mutate(article.id)}
-                                  className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                                 >
-                                  确认删除
+                                  {t('common:actions.delete')}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -329,7 +331,7 @@ export default function AdminDocsPage() {
         )}
       </div>
 
-      {/* 编辑弹窗 */}
+      {/* 新建/编辑文档分屏弹窗 */}
       <DocEditorDialog
         open={editorOpen}
         onOpenChange={setEditorOpen}

@@ -34,13 +34,27 @@ import { HelpQuickImport } from './components/help-quick-import';
 import { HelpToc } from './components/help-toc';
 import { getPlatformIcon } from './components/help-platform-icons';
 
-const PLATFORM_TABS: Array<{ value: PlatformType; label: string; icon: typeof Monitor }> = [
-  { value: 'ALL', label: '全部文档', icon: BookOpen },
-  { value: 'WINDOWS', label: 'Windows', icon: Monitor },
-  { value: 'MACOS', label: 'macOS', icon: Laptop },
-  { value: 'IOS', label: 'iOS (苹果)', icon: Smartphone },
-  { value: 'ANDROID', label: 'Android (安卓)', icon: Smartphone },
-  { value: 'FAQ', label: '常见排错 FAQ', icon: Sparkles }
+type HelpTabKey =
+  | 'help.tabs.all'
+  | 'help.tabs.windows'
+  | 'help.tabs.macos'
+  | 'help.tabs.ios'
+  | 'help.tabs.android'
+  | 'help.tabs.faq';
+
+interface PlatformTabConfig {
+  value: PlatformType;
+  labelKey: HelpTabKey;
+  icon: typeof Monitor;
+}
+
+const PLATFORM_CONFIGS: PlatformTabConfig[] = [
+  { value: 'ALL', labelKey: 'help.tabs.all', icon: BookOpen },
+  { value: 'WINDOWS', labelKey: 'help.tabs.windows', icon: Monitor },
+  { value: 'MACOS', labelKey: 'help.tabs.macos', icon: Laptop },
+  { value: 'IOS', labelKey: 'help.tabs.ios', icon: Smartphone },
+  { value: 'ANDROID', labelKey: 'help.tabs.android', icon: Smartphone },
+  { value: 'FAQ', labelKey: 'help.tabs.faq', icon: Sparkles }
 ];
 
 export default function HelpCenterPage() {
@@ -93,21 +107,19 @@ export default function HelpCenterPage() {
   return (
     <PageContainer>
       <PageHeader
-        title={t('user:help.title', { defaultValue: '使用文档与帮助中心' })}
-        description={t('user:help.subtitle', {
-          defaultValue: '面向 0 基础用户的主流客户端安装配置指南与连接排错手册。'
-        })}
+        title={t('user:help.title')}
+        description={t('user:help.subtitle')}
       />
 
       {/* 顶部平台分类筛选 Tab + 搜索框 */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-border/50">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-border/50">
         <Tabs
           value={currentPlatform}
           onValueChange={handleSelectPlatform}
           className="w-full sm:w-auto"
         >
           <TabsList className="grid grid-cols-3 sm:flex sm:flex-wrap h-auto p-1 gap-1">
-            {PLATFORM_TABS.map((tab) => {
+            {PLATFORM_CONFIGS.map((tab) => {
               const TabIcon = tab.icon;
               return (
                 <TabsTrigger
@@ -116,7 +128,7 @@ export default function HelpCenterPage() {
                   className="gap-1.5 px-3 py-1.5 text-xs font-medium"
                 >
                   <TabIcon className="size-3.5" />
-                  <span>{tab.label}</span>
+                  <span>{t(tab.labelKey)}</span>
                 </TabsTrigger>
               );
             })}
@@ -128,7 +140,7 @@ export default function HelpCenterPage() {
           <Input
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
-            placeholder="搜索教程标题或问题…"
+            placeholder={t('user:help.searchPlaceholder')}
             className="pl-8 h-9 text-xs"
           />
         </div>
@@ -137,23 +149,27 @@ export default function HelpCenterPage() {
       {/* 主体三栏响应式网格 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mt-4">
         {/* 左侧：文章列表目录 */}
-        <div className="lg:col-span-4 xl:col-span-3 space-y-3">
+        <div className="lg:col-span-4 xl:col-span-3 space-y-3 lg:sticky lg:top-4">
           <div className="rounded-xl border border-border bg-card p-3 shadow-2xs">
             <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-border/40 text-xs font-semibold text-muted-foreground">
-              <span>教程导航 ({articles.length})</span>
+              <span>{t('user:help.navCount', { count: articles.length })}</span>
               {currentPlatform !== 'ALL' && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
                   {currentPlatform}
                 </Badge>
               )}
             </div>
 
             {isListLoading ? (
-              <div className="py-8 text-center text-xs text-muted-foreground">正在加载文档列表…</div>
+              <div className="py-8 text-center text-xs text-muted-foreground">
+                {t('user:help.loading')}
+              </div>
             ) : articles.length === 0 ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">该分类下暂无文档</div>
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                {t('user:help.empty')}
+              </div>
             ) : (
-              <div className="overflow-y-auto max-h-[calc(100vh-280px)] pr-2">
+              <div className="overflow-y-auto max-h-[calc(100vh-280px)] pr-1">
                 <div className="space-y-1">
                   {articles.map((item) => {
                     const IconComp = getPlatformIcon(item.platform, item.icon);
@@ -208,17 +224,17 @@ export default function HelpCenterPage() {
             <CardContent className="p-4 space-y-2 text-xs">
               <div className="flex items-center gap-2 font-semibold text-foreground">
                 <Headphones className="size-4 text-primary" />
-                <span>仍然无法连接？</span>
+                <span>{t('user:help.needHelp')}</span>
               </div>
               <p className="text-muted-foreground leading-relaxed">
-                如果在阅读教程后仍然无法连接或遇到报错，欢迎联系人工技术支持。
+                {t('user:help.needHelpDesc')}
               </p>
               <SupportDialog
                 settings={publicSettings.data}
                 trigger={
                   <Button variant="outline" size="sm" className="w-full text-xs h-8 gap-1.5 mt-1">
                     <Headphones className="size-3.5" />
-                    <span>联系在线客服</span>
+                    <span>{t('user:help.contactSupport')}</span>
                   </Button>
                 }
               />
@@ -231,13 +247,13 @@ export default function HelpCenterPage() {
           {isDetailLoading ? (
             <Card>
               <CardContent className="py-20 text-center text-muted-foreground text-sm">
-                正在加载教程正文…
+                {t('user:help.loadingArticle')}
               </CardContent>
             </Card>
           ) : !articleDetail ? (
             <EmptyState
-              title="未选中或暂无可用文档"
-              description="请在左侧列表中选择一篇教程开始阅读。"
+              title={t('user:help.emptySelect')}
+              description={t('user:help.emptySelectDesc')}
             />
           ) : (
             <Card className="border-border bg-card shadow-2xs">
@@ -245,17 +261,17 @@ export default function HelpCenterPage() {
                 {/* 文章标题与元数据头 */}
                 <div className="space-y-2 pb-4 border-b border-border/50">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                    <Badge variant="secondary" className="text-xs px-2 py-0.5 font-normal">
                       {articleDetail.platform}
                     </Badge>
                     {articleDetail.clientName && (
-                      <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary">
+                      <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary font-normal">
                         {articleDetail.clientName}
                       </Badge>
                     )}
                     <span className="flex items-center gap-1 ml-auto text-[11px]">
                       <Calendar className="size-3" />
-                      <span>更新于 {formatDate(articleDetail.updatedAt)}</span>
+                      <span>{t('user:help.updatedAt', { date: formatDate(articleDetail.updatedAt) })}</span>
                     </span>
                   </div>
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
@@ -292,7 +308,9 @@ export default function HelpCenterPage() {
                       onClick={() => handleSelectArticle(prevArticle.slug)}
                     >
                       <ArrowLeft className="size-3.5" />
-                      <span className="truncate max-w-[180px]">上一篇：{prevArticle.title}</span>
+                      <span className="truncate max-w-[180px]">
+                        {t('user:help.prevArticle')}：{prevArticle.title}
+                      </span>
                     </Button>
                   ) : (
                     <div />
@@ -305,7 +323,9 @@ export default function HelpCenterPage() {
                       className="w-full sm:w-auto gap-2 text-xs ml-auto"
                       onClick={() => handleSelectArticle(nextArticle.slug)}
                     >
-                      <span className="truncate max-w-[180px]">下一篇：{nextArticle.title}</span>
+                      <span className="truncate max-w-[180px]">
+                        {t('user:help.nextArticle')}：{nextArticle.title}
+                      </span>
                       <ArrowRight className="size-3.5" />
                     </Button>
                   ) : (
@@ -318,12 +338,12 @@ export default function HelpCenterPage() {
         </div>
 
         {/* 右侧：目录大纲 TOC (在桌面大屏幕展示) */}
-        <div className="hidden xl:block xl:col-span-3 sticky top-6">
+        <div className="hidden xl:block xl:col-span-3 sticky top-4">
           <div className="rounded-xl border border-border/70 bg-card/60 backdrop-blur p-4 shadow-2xs space-y-4">
             {articleDetail ? (
               <HelpToc content={articleDetail.content} />
             ) : (
-              <div className="text-xs text-muted-foreground py-2">暂无目录</div>
+              <div className="text-xs text-muted-foreground py-2">{t('user:help.noToc')}</div>
             )}
           </div>
         </div>

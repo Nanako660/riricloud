@@ -453,19 +453,41 @@ const user = {
     allDocs: 'All Guides',
     searchPlaceholder: 'Search tutorials and questions…',
     navTitle: 'Tutorial Navigation',
+    navCount: 'Navigation ({{count}})',
+    loading: 'Loading tutorials…',
+    loadingArticle: 'Loading tutorial content…',
     empty: 'No articles found in this category',
+    emptySelect: 'No article selected',
+    emptySelectDesc: 'Please select an article from the left navigation to start reading.',
     needHelp: 'Still Having Issues?',
     needHelpDesc: 'If you still cannot connect after following the guide, contact our support team.',
     contactSupport: 'Contact Support',
     prevArticle: 'Previous',
     nextArticle: 'Next',
     tocTitle: 'On This Page',
-    quickImport: 'Quick Setup',
-    quickImportBadge: 'Credentials Injected',
-    quickImportDesc: 'One-click launch and configuration for popular clients',
-    oneClickImport: 'Import to {{client}}',
-    copySub: 'Copy Subscription URL',
-    subSecretTip: 'This link contains your private token. Keep it safe and do not share.'
+    noToc: 'No table of contents',
+    updatedAt: 'Updated on {{date}}',
+    tabs: {
+      all: 'All Guides',
+      windows: 'Windows',
+      macos: 'macOS',
+      ios: 'iOS',
+      android: 'Android',
+      router: 'Router',
+      faq: 'FAQ',
+      general: 'General'
+    },
+    quickImport: {
+      title: 'Quick Client Setup',
+      badge: 'Credentials Injected',
+      desc: 'One-click launch and configuration for popular clients',
+      oneClickBtn: 'Import to {{client}}',
+      copySub: 'Copy Subscription',
+      copied: 'Subscription URL copied to clipboard',
+      subUrlLabel: 'Your Private Subscription URL:',
+      securityTip: 'This link contains your private connection credentials. Keep it safe and do not share.',
+      launchTip: 'Attempting to launch {{client}}. If it does not open, please copy the URL manually.'
+    }
   }
 } as const;
 

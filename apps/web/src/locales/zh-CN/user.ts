@@ -453,19 +453,41 @@ const user = {
     allDocs: '全部文档',
     searchPlaceholder: '搜索教程标题或问题…',
     navTitle: '教程导航',
+    navCount: '教程导航 ({{count}})',
+    loading: '正在加载文档列表…',
+    loadingArticle: '正在加载教程正文…',
     empty: '该分类下暂无文档',
+    emptySelect: '未选中或暂无可用文档',
+    emptySelectDesc: '请在左侧列表中选择一篇教程开始阅读。',
     needHelp: '仍然无法连接？',
     needHelpDesc: '如果在阅读教程后仍然无法连接或遇到报错，欢迎联系人工技术支持。',
     contactSupport: '联系在线客服',
     prevArticle: '上一篇',
     nextArticle: '下一篇',
     tocTitle: '本页目录',
-    quickImport: '快速快捷配置',
-    quickImportBadge: '已填入专属凭据',
-    quickImportDesc: '支持一键自动唤起软件并下载节点，零基础一键上手',
-    oneClickImport: '一键导入到 {{client}}',
-    copySub: '复制专属订阅',
-    subSecretTip: '该链接包含您的加密连接密钥，切勿分享给他人，支持多客户端自动协商兼容'
+    noToc: '暂无目录',
+    updatedAt: '更新于 {{date}}',
+    tabs: {
+      all: '全部文档',
+      windows: 'Windows',
+      macos: 'macOS',
+      ios: 'iOS (苹果)',
+      android: 'Android (安卓)',
+      router: '路由器',
+      faq: '常见排错 FAQ',
+      general: '通用指南'
+    },
+    quickImport: {
+      title: '客户端快速一键配置',
+      badge: '已填入专属凭据',
+      desc: '支持一键自动唤起软件并下载节点，零基础一键上手',
+      oneClickBtn: '一键导入到 {{client}}',
+      copySub: '复制专属订阅',
+      copied: '已复制专属订阅链接',
+      subUrlLabel: '您的专属订阅链接：',
+      securityTip: '该链接包含您的加密连接密钥，切勿分享给他人，支持多客户端自动协商兼容',
+      launchTip: '正在尝试唤起 {{client}}，若未自动弹出请手动复制链接导入'
+    }
   }
 } as const;
 

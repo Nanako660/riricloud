@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { slugify } from '@/lib/slugify';
 import { ListCollapse } from 'lucide-react';
 
@@ -13,6 +14,7 @@ interface HelpTocProps {
 }
 
 export function HelpToc({ content }: HelpTocProps) {
+  const { t } = useTranslation('user');
   const [items, setItems] = useState<TocItem[]>([]);
   const [activeId, setActiveId] = useState<string>('');
 
@@ -64,7 +66,7 @@ export function HelpToc({ content }: HelpTocProps) {
     <div className="space-y-2 text-xs">
       <div className="flex items-center gap-1.5 font-semibold text-foreground/80 px-2 py-1">
         <ListCollapse className="size-3.5 text-primary" />
-        <span>本页目录</span>
+        <span>{t('help.tocTitle')}</span>
       </div>
       <nav className="space-y-0.5 border-l border-border/60 pl-2">
         {items.map((item) => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
@@ -85,8 +86,10 @@ export function DocEditorDialog({
   onSave,
   isSaving
 }: DocEditorDialogProps) {
+  const { t } = useTranslation(['admin', 'common']);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
 
   const form = useForm<ArticleFormValues>({
@@ -108,7 +111,7 @@ export function DocEditorDialog({
   useFormResetOnKey({
     open,
     resetKey: article?.id ?? 'create',
-    reset: () =>
+    reset: () => {
       form.reset(
         article
           ? {
@@ -135,7 +138,8 @@ export function DocEditorDialog({
               isPublished: true,
               locale: 'zh-CN'
             }
-      )
+      );
+    }
   });
 
   const insertSnippet = (snippet: string) => {
@@ -166,7 +170,7 @@ export function DocEditorDialog({
         <DialogHeader className="shrink-0 pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold">
-              {article ? '编辑帮助文档' : '新建帮助文档'}
+              {article ? t('admin:docs.editor.editTitle') : t('admin:docs.editor.newTitle')}
             </DialogTitle>
             {/* 视图切换模式 */}
             <div className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5">
@@ -178,7 +182,7 @@ export function DocEditorDialog({
                 onClick={() => setViewMode('split')}
               >
                 <Columns2 className="size-3.5" />
-                <span className="hidden sm:inline">分屏预览</span>
+                <span className="hidden sm:inline">{t('admin:docs.editor.splitView')}</span>
               </Button>
               <Button
                 type="button"
@@ -188,7 +192,7 @@ export function DocEditorDialog({
                 onClick={() => setViewMode('edit')}
               >
                 <FileCode2 className="size-3.5" />
-                <span className="hidden sm:inline">纯编辑</span>
+                <span className="hidden sm:inline">{t('admin:docs.editor.editView')}</span>
               </Button>
               <Button
                 type="button"
@@ -198,12 +202,12 @@ export function DocEditorDialog({
                 onClick={() => setViewMode('preview')}
               >
                 <Eye className="size-3.5" />
-                <span className="hidden sm:inline">纯预览</span>
+                <span className="hidden sm:inline">{t('admin:docs.editor.previewView')}</span>
               </Button>
             </div>
           </div>
           <DialogDescription className="text-xs">
-            支持标准 Markdown 语法、GFM 表格、GitHub Alert 提示块以及专属动态订阅占位符。
+            {t('admin:docs.editor.desc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -216,9 +220,9 @@ export function DocEditorDialog({
                 name="title"
                 render={({ field }) => (
                   <FormItem className="space-y-1 sm:col-span-2">
-                    <FormLabel className="text-xs">文档标题 *</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.titleLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：Windows 新手指南：Clash Verge Rev 安装" className="h-8 text-xs" {...field} />
+                      <Input placeholder={t('admin:docs.editor.titlePlaceholder')} className="h-8 text-xs" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -230,9 +234,9 @@ export function DocEditorDialog({
                 name="slug"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">唯一 Slug *</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.slugLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：windows-clash-verge" className="h-8 text-xs font-mono" {...field} />
+                      <Input placeholder={t('admin:docs.editor.slugPlaceholder')} className="h-8 text-xs font-mono" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -244,21 +248,22 @@ export function DocEditorDialog({
                 name="platform"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">平台分类</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.platformLabel')}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="选择分类" />
+                          <SelectValue placeholder={t('admin:docs.platform')} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="ALL">通用 (ALL)</SelectItem>
-                        <SelectItem value="WINDOWS">Windows</SelectItem>
-                        <SelectItem value="MACOS">macOS</SelectItem>
-                        <SelectItem value="IOS">iOS (苹果)</SelectItem>
-                        <SelectItem value="ANDROID">Android (安卓)</SelectItem>
-                        <SelectItem value="ROUTER">路由器 (Router)</SelectItem>
-                        <SelectItem value="FAQ">常见排错 (FAQ)</SelectItem>
+                        <SelectItem value="ALL">{t('admin:docs.platforms.all')}</SelectItem>
+                        <SelectItem value="WINDOWS">{t('admin:docs.platforms.windows')}</SelectItem>
+                        <SelectItem value="MACOS">{t('admin:docs.platforms.macos')}</SelectItem>
+                        <SelectItem value="IOS">{t('admin:docs.platforms.ios')}</SelectItem>
+                        <SelectItem value="ANDROID">{t('admin:docs.platforms.android')}</SelectItem>
+                        <SelectItem value="ROUTER">{t('admin:docs.platforms.router')}</SelectItem>
+                        <SelectItem value="FAQ">{t('admin:docs.platforms.faq')}</SelectItem>
+                        <SelectItem value="GENERAL">{t('admin:docs.platforms.general')}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -271,9 +276,9 @@ export function DocEditorDialog({
                 name="clientName"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">客户端名称 (选填)</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.clientNameLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：Clash Verge Rev" className="h-8 text-xs" {...field} />
+                      <Input placeholder={t('admin:docs.editor.clientNamePlaceholder')} className="h-8 text-xs" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -285,9 +290,9 @@ export function DocEditorDialog({
                 name="icon"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">图标标识 (选填)</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.iconLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="如：Monitor, Laptop, Smartphone" className="h-8 text-xs" {...field} />
+                      <Input placeholder={t('admin:docs.editor.iconPlaceholder')} className="h-8 text-xs" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -299,7 +304,7 @@ export function DocEditorDialog({
                 name="sortOrder"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">排序权重 (越小越靠前)</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.sortOrderLabel')}</FormLabel>
                     <FormControl>
                       <Input type="number" className="h-8 text-xs" {...field} />
                     </FormControl>
@@ -313,11 +318,11 @@ export function DocEditorDialog({
                 name="locale"
                 render={({ field }) => (
                   <FormItem className="space-y-1">
-                    <FormLabel className="text-xs">语言版本</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.localeLabel')}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="语言" />
+                          <SelectValue placeholder={t('admin:docs.locale')} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -335,9 +340,9 @@ export function DocEditorDialog({
                 name="summary"
                 render={({ field }) => (
                   <FormItem className="space-y-1 sm:col-span-3">
-                    <FormLabel className="text-xs">简要说明</FormLabel>
+                    <FormLabel className="text-xs">{t('admin:docs.editor.summaryLabel')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="简短摘要，展示在目录卡片下方" className="h-8 text-xs" {...field} />
+                      <Input placeholder={t('admin:docs.editor.summaryPlaceholder')} className="h-8 text-xs" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -350,7 +355,7 @@ export function DocEditorDialog({
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border border-border p-2 space-y-0 mt-3">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-xs">上架发布</FormLabel>
+                      <FormLabel className="text-xs">{t('admin:docs.editor.isPublishedLabel')}</FormLabel>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -362,7 +367,7 @@ export function DocEditorDialog({
 
             {/* 动态占位符与语法快捷插入工具栏 */}
             <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-lg bg-muted/30 border border-border text-xs shrink-0">
-              <span className="text-muted-foreground text-[11px] font-medium mr-1">快捷插入:</span>
+              <span className="text-muted-foreground text-[11px] font-medium mr-1">{t('admin:docs.editor.insertToolbar')}</span>
               <Button
                 type="button"
                 variant="outline"
@@ -370,7 +375,7 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('`{{subscription_url}}`')}
               >
-                + 专属订阅链接
+                + {t('admin:docs.editor.insertSubUrl')}
               </Button>
               <Button
                 type="button"
@@ -379,7 +384,7 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('[一键导入到 Clash](clash://install-config?url={{clash_import_url}}&name={{site_name}})')}
               >
-                + Clash 导入按钮
+                + {t('admin:docs.editor.insertClashUrl')}
               </Button>
               <Button
                 type="button"
@@ -388,7 +393,16 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('[一键导入到 Shadowrocket](shadowrocket://add/sub://{{shadowrocket_import_url}}?title={{site_name}})')}
               >
-                + 小火箭导入按钮
+                + {t('admin:docs.editor.insertShadowrocketUrl')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-[11px] px-2 font-mono"
+                onClick={() => insertSnippet('{{site_name}}')}
+              >
+                + {t('admin:docs.editor.insertSiteName')}
               </Button>
               <Button
                 type="button"
@@ -397,7 +411,7 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('> [!NOTE]\n> 这里填写需要提醒新手的关键注意事项。')}
               >
-                + Note 提示框
+                + Note
               </Button>
               <Button
                 type="button"
@@ -406,7 +420,7 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('> [!TIP]\n> 这里填写实用操作技巧或快捷键。')}
               >
-                + Tip 技巧框
+                + Tip
               </Button>
               <Button
                 type="button"
@@ -415,7 +429,7 @@ export function DocEditorDialog({
                 className="h-6 text-[11px] px-2 font-mono"
                 onClick={() => insertSnippet('> [!WARNING]\n> 这里填写重要警告，避免用户误操作。')}
               >
-                + Warning 警告框
+                + Warning
               </Button>
             </div>
 
@@ -425,9 +439,9 @@ export function DocEditorDialog({
               {(viewMode === 'split' || viewMode === 'edit') && (
                 <div className={`${viewMode === 'split' ? 'lg:col-span-6 border-b lg:border-b-0 lg:border-r border-border' : 'lg:col-span-12'} flex flex-col h-full overflow-hidden`}>
                   <div className="px-3 py-1.5 bg-muted/50 border-b border-border text-[11px] font-semibold text-muted-foreground flex items-center justify-between shrink-0">
-                    <span>Markdown 源码</span>
-                    <Badge variant="outline" className="text-[10px] h-4">
-                      {currentContent.length} 字符
+                    <span>Markdown</span>
+                    <Badge variant="outline" className="text-[10px] h-4 font-mono font-normal">
+                      {currentContent.length} chars
                     </Badge>
                   </div>
                   <div className="flex-1 overflow-auto">
@@ -453,9 +467,9 @@ export function DocEditorDialog({
               {(viewMode === 'split' || viewMode === 'preview') && (
                 <div className={`${viewMode === 'split' ? 'lg:col-span-6' : 'lg:col-span-12'} flex flex-col h-full overflow-hidden`}>
                   <div className="px-3 py-1.5 bg-muted/50 border-b border-border text-[11px] font-semibold text-muted-foreground flex items-center justify-between shrink-0">
-                    <span>实时排版预览效果</span>
-                    <Badge variant="secondary" className="text-[10px] h-4">
-                      渲染预览
+                    <span>Preview</span>
+                    <Badge variant="secondary" className="text-[10px] h-4 font-normal">
+                      Live
                     </Badge>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 bg-card/40">
@@ -468,11 +482,11 @@ export function DocEditorDialog({
             {/* 对话框操作底栏 */}
             <DialogFooter className="shrink-0 pt-2 border-t border-border/50">
               <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                取消
+                {t('common:actions.cancel')}
               </Button>
               <Button type="submit" size="sm" disabled={isSaving} className="gap-1.5">
                 <Save className="size-3.5" />
-                <span>{isSaving ? '正在保存…' : '保存文档'}</span>
+                <span>{isSaving ? t('common:actions.saving') : t('admin:docs.editor.saveDoc')}</span>
               </Button>
             </DialogFooter>
           </form>
