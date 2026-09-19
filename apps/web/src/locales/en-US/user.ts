@@ -464,9 +464,17 @@ const user = {
     contactSupport: 'Contact Support',
     prevArticle: 'Previous',
     nextArticle: 'Next',
-    tocTitle: 'On This Page',
+    tocTitle: 'On this page',
     noToc: 'No table of contents',
     updatedAt: 'Updated on {{date}}',
+    copyPageLink: 'Copy page link',
+    linkCopied: 'Page link copied to clipboard',
+    groups: {
+      desktop: 'DESKTOP CLIENTS',
+      mobile: 'MOBILE CLIENTS',
+      troubleshooting: 'TROUBLESHOOTING & FAQ',
+      all: 'ALL GUIDES'
+    },
     tabs: {
       all: 'All Guides',
       windows: 'Windows',

@@ -467,6 +467,14 @@ const user = {
     tocTitle: '本页目录',
     noToc: '暂无目录',
     updatedAt: '更新于 {{date}}',
+    copyPageLink: '复制本页链接',
+    linkCopied: '本页链接已复制到剪贴板',
+    groups: {
+      desktop: '桌面客户端',
+      mobile: '移动客户端',
+      troubleshooting: '常见排错与指南',
+      all: '全部文档'
+    },
     tabs: {
       all: '全部文档',
       windows: 'Windows',

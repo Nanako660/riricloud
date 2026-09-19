@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, CheckCircle2, Copy, Download, Rocket } from 'lucide-react';
+import { Check, Copy, Download, Rocket } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { UserSubscriptionVariables } from '../use-help-articles';
 
 interface HelpQuickImportProps {
@@ -53,64 +52,66 @@ export function HelpQuickImport({ clientName, platform, variables }: HelpQuickIm
   };
 
   return (
-    <Card className="border-primary/25 bg-primary/[0.02] shadow-xs my-4 overflow-hidden">
-      <CardContent className="p-4 sm:p-5 space-y-3.5">
-        {/* 顶部标题与一键唤起主操作 */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary mt-0.5">
-              <Rocket className="size-4" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm sm:text-base text-foreground">
-                  {t('user:help.quickImport.title')}
-                </span>
-                <Badge variant="outline" className="text-[10px] font-normal border-primary/40 text-primary py-0 h-4">
-                  {t('user:help.quickImport.badge')}
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {t('user:help.quickImport.desc')}
-              </p>
-            </div>
+    <div className="my-5 rounded-lg border border-border/70 bg-muted/20 p-3 sm:p-3.5 transition-colors">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* 左侧：微型说明与一键导入 */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Rocket className="size-3.5" />
           </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <span>{t('user:help.quickImport.title')}</span>
+              <span className="text-[10px] font-normal text-muted-foreground hidden sm:inline">
+                ({clientLabel})
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {t('user:help.quickImport.desc')}
+            </p>
+          </div>
+        </div>
 
+        {/* 右侧：专属订阅胶囊与操作 */}
+        <div className="flex items-center gap-2 self-stretch sm:self-auto">
           {importUrl ? (
             <Button
               size="sm"
-              className="gap-1.5 shadow-xs font-medium text-xs self-start sm:self-auto shrink-0"
+              variant="default"
+              className="h-7 px-2.5 text-xs gap-1 font-medium shrink-0"
               onClick={handleOneClickImport}
             >
-              <Download className="size-3.5" />
+              <Download className="size-3" />
               <span>{t('user:help.quickImport.oneClickBtn', { client: clientLabel })}</span>
             </Button>
           ) : null}
-        </div>
 
-        {/* 专属订阅 URL 单行胶囊与独立复制按钮 */}
-        <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-background/80 p-1.5 pl-3 shadow-2xs">
-          <span className="text-xs font-mono text-muted-foreground truncate flex-1 select-all" title={variables.subUrl}>
-            {variables.subUrl}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-            className="h-7 px-2.5 text-xs gap-1.5 shrink-0"
-          >
-            {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-            <span>{copied ? t('common:actions.copied') : t('user:help.quickImport.copySub')}</span>
-          </Button>
+          <TooltipProvider>
+            <div className="flex items-center gap-1 rounded-md border border-border/60 bg-background/80 px-2 py-0.5 max-w-[200px] sm:max-w-[240px]">
+              <span className="text-[11px] font-mono text-muted-foreground truncate select-all">
+                {variables.subUrl}
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleCopy}
+                    className="size-5 shrink-0 hover:bg-muted"
+                  >
+                    {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3 text-muted-foreground" />}
+                    <span className="sr-only">{t('user:help.quickImport.copySub')}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">{copied ? t('common:actions.copied') : t('user:help.quickImport.copySub')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
-
-        {/* 安全防泄露提示 */}
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
-          <span>{t('user:help.quickImport.securityTip')}</span>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

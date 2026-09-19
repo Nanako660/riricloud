@@ -4,29 +4,22 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   ArrowRight,
-  BookOpen,
-  Calendar,
-  ChevronRight,
+  Check,
+  Copy,
   Headphones,
-  Laptop,
-  Monitor,
   Search,
-  Smartphone,
-  Sparkles
+  X
 } from 'lucide-react';
-import { PageContainer, PageHeader } from '@/components/shared/page-container';
+import { toast } from 'sonner';
+import { PageContainer } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { MarkdownRenderer } from '@/components/shared/markdown-renderer';
 import { SupportDialog } from '@/components/shared/support-dialog';
 import { usePublicSettings } from '@/lib/public-settings';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { formatDate } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  type PlatformType,
   useHelpArticleDetail,
   useHelpArticles
 } from './use-help-articles';
@@ -34,45 +27,23 @@ import { HelpQuickImport } from './components/help-quick-import';
 import { HelpToc } from './components/help-toc';
 import { getPlatformIcon } from './components/help-platform-icons';
 
-type HelpTabKey =
-  | 'help.tabs.all'
-  | 'help.tabs.windows'
-  | 'help.tabs.macos'
-  | 'help.tabs.ios'
-  | 'help.tabs.android'
-  | 'help.tabs.faq';
-
-interface PlatformTabConfig {
-  value: PlatformType;
-  labelKey: HelpTabKey;
-  icon: typeof Monitor;
-}
-
-const PLATFORM_CONFIGS: PlatformTabConfig[] = [
-  { value: 'ALL', labelKey: 'help.tabs.all', icon: BookOpen },
-  { value: 'WINDOWS', labelKey: 'help.tabs.windows', icon: Monitor },
-  { value: 'MACOS', labelKey: 'help.tabs.macos', icon: Laptop },
-  { value: 'IOS', labelKey: 'help.tabs.ios', icon: Smartphone },
-  { value: 'ANDROID', labelKey: 'help.tabs.android', icon: Smartphone },
-  { value: 'FAQ', labelKey: 'help.tabs.faq', icon: Sparkles }
-];
-
 export default function HelpCenterPage() {
   const { t, i18n } = useTranslation(['user', 'common']);
   const [searchParams, setSearchParams] = useSearchParams();
   const publicSettings = usePublicSettings();
 
-  const currentPlatform = (searchParams.get('platform') || 'ALL') as PlatformType;
   const currentSlug = searchParams.get('slug') || '';
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
 
+  // 获取全量文档（不在服务端做单一平台硬过滤，以支持左侧分组全览和跨平台即时搜索）
   const { data: articles = [], isLoading: isListLoading } = useHelpArticles(
-    currentPlatform,
+    undefined,
     i18n.language,
-    searchKeyword
+    searchKeyword.trim() || undefined
   );
 
-  // 默认选中第一篇或指定的 slug
+  // 默认选中指定的 slug 或第一篇
   const activeSlug = useMemo(() => {
     if (currentSlug && articles.some((a) => a.slug === currentSlug)) {
       return currentSlug;
@@ -90,14 +61,72 @@ export default function HelpCenterPage() {
     });
   };
 
-  const handleSelectPlatform = (platform: string) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('platform', platform);
-      next.delete('slug'); // 切换分类后自动选该分类第一篇
-      return next;
-    });
+  const handleCopyPageLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      toast.success(t('help.linkCopied', { defaultValue: '本页链接已复制到剪贴板' }));
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      toast.error(t('common:actions.copyFailed', { defaultValue: '复制失败' }));
+    }
   };
+
+  // 左侧分组组织
+  const groupedArticles = useMemo(() => {
+    if (searchKeyword.trim()) {
+      return [
+        {
+          id: 'search',
+          title: `${t('help.groups.all')} (${articles.length})`,
+          items: articles
+        }
+      ];
+    }
+
+    const desktopItems = articles.filter(
+      (a) => a.platform === 'WINDOWS' || a.platform === 'MACOS'
+    );
+    const mobileItems = articles.filter(
+      (a) => a.platform === 'IOS' || a.platform === 'ANDROID'
+    );
+    const otherItems = articles.filter(
+      (a) => !['WINDOWS', 'MACOS', 'IOS', 'ANDROID'].includes(a.platform)
+    );
+
+    const groups = [];
+    if (desktopItems.length > 0) {
+      groups.push({
+        id: 'desktop',
+        title: t('help.groups.desktop'),
+        items: desktopItems
+      });
+    }
+    if (mobileItems.length > 0) {
+      groups.push({
+        id: 'mobile',
+        title: t('help.groups.mobile'),
+        items: mobileItems
+      });
+    }
+    if (otherItems.length > 0) {
+      groups.push({
+        id: 'troubleshooting',
+        title: t('help.groups.troubleshooting'),
+        items: otherItems
+      });
+    }
+
+    if (groups.length === 0 && articles.length > 0) {
+      groups.push({
+        id: 'all',
+        title: t('help.groups.all'),
+        items: articles
+      });
+    }
+
+    return groups;
+  }, [articles, searchKeyword, t]);
 
   // 前一篇 / 后一篇计算
   const currentIndex = articles.findIndex((a) => a.slug === activeSlug);
@@ -106,247 +135,209 @@ export default function HelpCenterPage() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title={t('user:help.title')}
-        description={t('user:help.subtitle')}
-      />
+      {/* 现代化纯净无边框三栏流式布局 (对标 TypeSafe / Mintlify) */}
+      <div className="flex flex-col lg:flex-row items-start gap-8 lg:gap-12 py-2">
+        {/* 左侧边栏：极简树状导航与搜索 */}
+        <aside className="w-full lg:w-60 xl:w-64 shrink-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-5rem)] overflow-y-auto pr-1">
+          {/* 搜索框 */}
+          <div className="relative mb-5">
+            <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+            <Input
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              placeholder={t('help.searchPlaceholder')}
+              className="h-8 pl-8 pr-7 text-xs bg-muted/40 focus-visible:bg-background border-border/60"
+            />
+            {searchKeyword && (
+              <button
+                type="button"
+                onClick={() => setSearchKeyword('')}
+                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
 
-      {/* 顶部平台分类筛选 Tab + 搜索框 */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-border/50">
-        <Tabs
-          value={currentPlatform}
-          onValueChange={handleSelectPlatform}
-          className="w-full sm:w-auto"
-        >
-          <TabsList className="grid grid-cols-3 sm:flex sm:flex-wrap h-auto p-1 gap-1">
-            {PLATFORM_CONFIGS.map((tab) => {
-              const TabIcon = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className="gap-1.5 px-3 py-1.5 text-xs font-medium"
-                >
-                  <TabIcon className="size-3.5" />
-                  <span>{t(tab.labelKey)}</span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
-
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-          <Input
-            value={searchKeyword}
-            onChange={(e) => setSearchKeyword(e.target.value)}
-            placeholder={t('user:help.searchPlaceholder')}
-            className="pl-8 h-9 text-xs"
-          />
-        </div>
-      </div>
-
-      {/* 主体三栏响应式网格 */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start mt-4">
-        {/* 左侧：文章列表目录 */}
-        <div className="lg:col-span-4 xl:col-span-3 space-y-3 lg:sticky lg:top-4">
-          <div className="rounded-xl border border-border bg-card p-3 shadow-2xs">
-            <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-border/40 text-xs font-semibold text-muted-foreground">
-              <span>{t('user:help.navCount', { count: articles.length })}</span>
-              {currentPlatform !== 'ALL' && (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">
-                  {currentPlatform}
-                </Badge>
-              )}
+          {/* 分组导航列表 */}
+          {isListLoading ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              {t('help.loading')}
             </div>
+          ) : articles.length === 0 ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              {t('help.empty')}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {groupedArticles.map((group) => (
+                <div key={group.id} className="space-y-1.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/75 px-2">
+                    {group.title}
+                  </p>
+                  <nav className="space-y-0.5">
+                    {group.items.map((item) => {
+                      const IconComp = getPlatformIcon(item.platform, item.icon);
+                      const isSelected = item.slug === activeSlug;
 
-            {isListLoading ? (
-              <div className="py-8 text-center text-xs text-muted-foreground">
-                {t('user:help.loading')}
-              </div>
-            ) : articles.length === 0 ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">
-                {t('user:help.empty')}
-              </div>
-            ) : (
-              <div className="overflow-y-auto max-h-[calc(100vh-280px)] pr-1">
-                <div className="space-y-1">
-                  {articles.map((item) => {
-                    const IconComp = getPlatformIcon(item.platform, item.icon);
-                    const isSelected = item.slug === activeSlug;
-
-                    return (
-                      <button
-                        key={item.slug}
-                        type="button"
-                        onClick={() => handleSelectArticle(item.slug)}
-                        className={`w-full text-left rounded-lg p-2.5 transition flex items-start gap-2.5 ${
-                          isSelected
-                            ? 'bg-primary/10 border border-primary/30 text-foreground font-medium shadow-2xs'
-                            : 'hover:bg-muted/60 text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        <span
-                          className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md ${
-                            isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground/70'
+                      return (
+                        <button
+                          key={item.slug}
+                          type="button"
+                          onClick={() => handleSelectArticle(item.slug)}
+                          className={`group flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                            isSelected
+                              ? 'font-medium text-primary bg-primary/10'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
                           }`}
                         >
-                          <IconComp className="size-3.5" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-medium">{item.title}</span>
-                          </div>
-                          {item.summary && (
-                            <p className="line-clamp-2 text-[11px] text-muted-foreground/80 mt-1 leading-snug">
-                              {item.summary}
-                            </p>
-                          )}
-                          {item.clientName && (
-                            <div className="mt-1.5 flex items-center gap-1">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-border/70 text-muted-foreground font-normal">
-                                {item.clientName}
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                        <ChevronRight className={`size-3.5 mt-1 shrink-0 opacity-40 ${isSelected ? 'text-primary opacity-100' : ''}`} />
-                      </button>
-                    );
-                  })}
+                          <IconComp
+                            className={`size-3.5 shrink-0 transition-colors ${
+                              isSelected ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
+                            }`}
+                          />
+                          <span className="truncate flex-1">{item.title}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          )}
+
+          {/* 底部客服链接 */}
+          <div className="pt-6 mt-8 border-t border-border/40">
+            <SupportDialog
+              settings={publicSettings.data}
+              trigger={
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1"
+                >
+                  <Headphones className="size-3.5 text-primary" />
+                  <span>{t('help.contactSupport')}</span>
+                </button>
+              }
+            />
           </div>
+        </aside>
 
-          {/* 桌面端客服支持卡片 */}
-          <Card className="border-border/60 bg-muted/20">
-            <CardContent className="p-4 space-y-2 text-xs">
-              <div className="flex items-center gap-2 font-semibold text-foreground">
-                <Headphones className="size-4 text-primary" />
-                <span>{t('user:help.needHelp')}</span>
-              </div>
-              <p className="text-muted-foreground leading-relaxed">
-                {t('user:help.needHelpDesc')}
-              </p>
-              <SupportDialog
-                settings={publicSettings.data}
-                trigger={
-                  <Button variant="outline" size="sm" className="w-full text-xs h-8 gap-1.5 mt-1">
-                    <Headphones className="size-3.5" />
-                    <span>{t('user:help.contactSupport')}</span>
-                  </Button>
-                }
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* 中间：文档正文主阅读区 */}
-        <div className="lg:col-span-8 xl:col-span-6 space-y-4">
+        {/* 中间正文阅读流 (纯净无边框，限制舒适阅读宽度) */}
+        <main className="flex-1 min-w-0 max-w-3xl w-full">
           {isDetailLoading ? (
-            <Card>
-              <CardContent className="py-20 text-center text-muted-foreground text-sm">
-                {t('user:help.loadingArticle')}
-              </CardContent>
-            </Card>
+            <div className="py-24 text-center text-sm text-muted-foreground">
+              {t('help.loadingArticle')}
+            </div>
           ) : !articleDetail ? (
             <EmptyState
-              title={t('user:help.emptySelect')}
-              description={t('user:help.emptySelectDesc')}
+              title={t('help.emptySelect')}
+              description={t('help.emptySelectDesc')}
             />
           ) : (
-            <Card className="border-border bg-card shadow-2xs">
-              <CardContent className="p-5 sm:p-7 space-y-5">
-                {/* 文章标题与元数据头 */}
-                <div className="space-y-2 pb-4 border-b border-border/50">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="secondary" className="text-xs px-2 py-0.5 font-normal">
-                      {articleDetail.platform}
-                    </Badge>
-                    {articleDetail.clientName && (
-                      <Badge variant="outline" className="text-xs px-2 py-0.5 border-primary/30 text-primary font-normal">
-                        {articleDetail.clientName}
-                      </Badge>
-                    )}
-                    <span className="flex items-center gap-1 ml-auto text-[11px]">
-                      <Calendar className="size-3" />
-                      <span>{t('user:help.updatedAt', { date: formatDate(articleDetail.updatedAt) })}</span>
-                    </span>
-                  </div>
-                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-                    {articleDetail.title}
-                  </h1>
-                  {articleDetail.summary && (
-                    <p className="text-sm text-muted-foreground leading-relaxed pt-1">
-                      {articleDetail.summary}
-                    </p>
-                  )}
+            <div>
+              {/* 文档头部 */}
+              <div className="pb-6 border-b border-border/50">
+                <div className="flex items-center justify-between gap-4 mb-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    {articleDetail.platform} GUIDE
+                  </span>
+
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyPageLink}
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5"
+                        >
+                          {copiedLink ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                          <span className="text-[11px] font-normal">
+                            {copiedLink ? t('common:actions.copied') : t('help.copyPageLink')}
+                          </span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-xs">{t('help.copyPageLink')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
-                {/* 如果是客户端类教程，展示置顶快捷配置卡片 */}
-                {articleDetail.variables && (
-                  <HelpQuickImport
-                    clientName={articleDetail.clientName}
-                    platform={articleDetail.platform}
-                    variables={articleDetail.variables}
-                  />
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-foreground">
+                  {articleDetail.title}
+                </h1>
+
+                {articleDetail.summary && (
+                  <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
+                    {articleDetail.summary}
+                  </p>
+                )}
+              </div>
+
+              {/* 快捷配置条 (轻量无侵入) */}
+              {articleDetail.clientName && articleDetail.variables?.subUrl && (
+                <HelpQuickImport
+                  clientName={articleDetail.clientName}
+                  platform={articleDetail.platform}
+                  variables={articleDetail.variables}
+                />
+              )}
+
+              {/* Markdown 正文 */}
+              <div className="py-6">
+                <MarkdownRenderer content={articleDetail.content} />
+              </div>
+
+              {/* 底部上一篇 / 下一篇导航条 */}
+              <div className="flex items-center justify-between gap-4 pt-6 mt-10 border-t border-border/50 text-xs">
+                {prevArticle ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectArticle(prevArticle.slug)}
+                    className="group flex flex-col items-start gap-1 p-2 rounded-lg hover:bg-muted/40 transition text-left"
+                  >
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground group-hover:text-foreground">
+                      <ArrowLeft className="size-3" />
+                      {t('help.prevArticle')}
+                    </span>
+                    <span className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs">
+                      {prevArticle.title}
+                    </span>
+                  </button>
+                ) : (
+                  <div />
                 )}
 
-                {/* Markdown 正文渲染 */}
-                <div className="pt-2">
-                  <MarkdownRenderer content={articleDetail.content} />
-                </div>
-
-                {/* 底部前一篇 / 后一篇导航 */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 mt-8 border-t border-border/60">
-                  {prevArticle ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full sm:w-auto gap-2 text-xs"
-                      onClick={() => handleSelectArticle(prevArticle.slug)}
-                    >
-                      <ArrowLeft className="size-3.5" />
-                      <span className="truncate max-w-[180px]">
-                        {t('user:help.prevArticle')}：{prevArticle.title}
-                      </span>
-                    </Button>
-                  ) : (
-                    <div />
-                  )}
-
-                  {nextArticle ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full sm:w-auto gap-2 text-xs ml-auto"
-                      onClick={() => handleSelectArticle(nextArticle.slug)}
-                    >
-                      <span className="truncate max-w-[180px]">
-                        {t('user:help.nextArticle')}：{nextArticle.title}
-                      </span>
-                      <ArrowRight className="size-3.5" />
-                    </Button>
-                  ) : (
-                    <div />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                {nextArticle ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectArticle(nextArticle.slug)}
+                    className="group flex flex-col items-end gap-1 p-2 rounded-lg hover:bg-muted/40 transition text-right"
+                  >
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground group-hover:text-foreground">
+                      {t('help.nextArticle')}
+                      <ArrowRight className="size-3" />
+                    </span>
+                    <span className="font-medium text-foreground truncate max-w-[200px] sm:max-w-xs">
+                      {nextArticle.title}
+                    </span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+              </div>
+            </div>
           )}
-        </div>
+        </main>
 
-        {/* 右侧：目录大纲 TOC (在桌面大屏幕展示) */}
-        <div className="hidden xl:block xl:col-span-3 sticky top-4">
-          <div className="rounded-xl border border-border/70 bg-card/60 backdrop-blur p-4 shadow-2xs space-y-4">
-            {articleDetail ? (
-              <HelpToc content={articleDetail.content} />
-            ) : (
-              <div className="text-xs text-muted-foreground py-2">{t('user:help.noToc')}</div>
-            )}
-          </div>
-        </div>
+        {/* 右侧：本页目录 TOC (大屏粘性浮动，无边框纯文本) */}
+        <aside className="hidden xl:block w-48 xl:w-56 shrink-0 sticky top-6 max-h-[calc(100vh-5rem)] overflow-y-auto pl-2">
+          {articleDetail?.content ? (
+            <HelpToc content={articleDetail.content} />
+          ) : null}
+        </aside>
       </div>
     </PageContainer>
   );
