@@ -14,7 +14,7 @@
 [![Prisma](https://img.shields.io/badge/Prisma-6.x-2D3748.svg?logo=prisma)](https://prisma.io)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
 
-[📖 系统概述](#-系统概述) • [📐 系统架构](#-系统架构) • [🚀 快速开始](#-快速开始) • [📦 生产部署](#-生产部署) • [🌐 开放接口与扩展](#-开放接口与扩展) • [🛠️ 技术栈](#️-技术栈) • [📂 目录结构](#-目录结构) • [📚 官方文档库](#-官方设计与技术文档) • [🗺️ 路线图](#️-路线图-roadmap)
+[📖 系统概述](#-系统概述) • [✨ 项目演示](#-项目演示) • [📐 系统架构](#-系统架构) • [🚀 快速开始](#-快速开始) • [📦 生产部署](#-生产部署) • [🌐 开放接口与扩展](#-开放接口与扩展) • [🛠️ 技术栈](#️-技术栈) • [📂 目录结构](#-目录结构) • [📚 官方文档库](#-官方设计与技术文档) • [🗺️ 路线图](#️-路线图-roadmap)
 
 </div>
 
@@ -27,6 +27,54 @@
 - **主控端 (Master Server & Web Dashboard)**：基于 NestJS 11 + React 19 + SQLite (WAL 模式) 构建。负责用户鉴权、节点纳管、中继线路编排、订阅模板编译、实时遥测收集与二进制升级分发；主控端内置本机 Agent 与 Sing-box 内核，支持单机独立开箱即用。
 - **边缘节点端 (Edge Node Agent)**：基于 Go 编写的跨平台单静态二进制守护程序（`riri-agent`），托管 Sing-box 代理内核。支持通过 WebSocket (WSS) 长连接或 HTTP 定时轮询与主控端通信，负责内核进程生命周期管理、配置原子更新、网络探针诊断与用户流量统计采集。
 - **客户端订阅引擎**：根据用户的套餐权限与模板策略，统一输出 Clash Meta (Mihomo)、Sing-box Client JSON 以及通用 Base64/URI 链接，并在响应头中返回 `Subscription-Userinfo` 流量与有效期元数据。
+
+---
+
+## ✨ 项目演示
+
+以下为系统在 **1080p 分辨率** 下的真实运行界面捕获（点击图片可查看高清原图）：
+
+### 1. 官网落地页 (Landing Page)
+- **产品功能与服务介绍**：展示平台接入能力、分流加速特性与全天候运行保障说明。
+- **自适应响应式设计**：原生适配桌面端、平板与移动端视口，支持明亮与暗黑外观即时切换。
+
+[![官网落地页](docs/assets/screenshots/01-landing-page.png)](docs/assets/screenshots/01-landing-page.png)
+
+---
+
+### 2. 用户仪表盘与订阅管理 (User Dashboard & Subscription)
+- **用量与有效期直观展示**：清晰呈现已用/剩余流量配额、重置周期与账户到期时间。
+- **通用订阅一键导入**：支持 Clash Meta (Mihomo)、Sing-box Client JSON 与通用 Base64 订阅输出，提供一键复制与订阅凭证重置。
+- **可用节点与测速状态**：展示当前套餐可访问的全部线路列表，并支持实时延迟显示。
+
+[![用户仪表盘与订阅管理](docs/assets/screenshots/02-user-subscription.png)](docs/assets/screenshots/02-user-subscription.png)
+
+---
+
+### 3. 节点纳管控制中心 (Admin Node Management)
+- **多节点集中管理**：统一纳管 Master 本机内置 Agent 与多台远程 VPS 节点（如香港、东京、洛杉矶等）。
+- **系统遥测与健康状态**：通过 WebSocket 长连接实时汇总节点 CPU、内存占用、瞬时网络速率与 Sing-box 内核运行状态。
+- **便捷运维操作**：支持一键接入节点、重启内核、网络探针诊断与在线版本升级。
+
+[![管理员节点管理](docs/assets/screenshots/03-admin-nodes.png)](docs/assets/screenshots/03-admin-nodes.png)
+
+---
+
+### 4. 可视化中继线路编排 (Admin Line Topology & Relay)
+- **节点与协议解耦**：将服务器实例与代理协议分离，单台节点可配置多种协议与多个独立端口。
+- **灵活拓扑结构**：支持直连出站（Direct）、单跳盲转发（Blind Forwarding Relay）以及跨节点桥接落地隧道。
+- **线路计费与标签匹配**：按线路设置独立的流量倍率（如 0.8x、1.5x、2.0x）与客户端标签筛选规则。
+
+[![可视化中继线路编排](docs/assets/screenshots/04-admin-lines.png)](docs/assets/screenshots/04-admin-lines.png)
+
+---
+
+### 5. 流量监控与用量审计 (Admin Traffic Analytics)
+- **吞吐趋势走势图**：基于独立时序数据库记录节点历史传输速率与峰值负载波动。
+- **多维用量汇总**：统计总计费流量、上行/下行总量、当前速率、活跃节点数与在线用户数。
+- **线路消耗占比分析**：以图表直观展示各条线路的物理流量消耗，协助分析带宽负载。
+
+[![管理员流量监控与审计](docs/assets/screenshots/05-admin-traffic.png)](docs/assets/screenshots/05-admin-traffic.png)
 
 ---
 
