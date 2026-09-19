@@ -1,12 +1,17 @@
-import { isValidElement, type ReactNode } from 'react';
+import { isValidElement, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CopyButton } from '@/components/shared/copy-button';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ImageLightbox } from '@/components/shared/image-lightbox';
 import { slugify } from '@/lib/slugify';
 import {
   AlertCircle,
   AlertTriangle,
+  Check,
+  Copy,
   ExternalLink,
   Info,
   Lightbulb,
@@ -17,6 +22,44 @@ import {
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+}
+
+function CodeCopyButton({ value }: { value: string }) {
+  const { t } = useTranslation('common');
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success(t('actions.copied'));
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error(t('actions.copyFailed'));
+    }
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 rounded hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+            onClick={onCopy}
+          >
+            {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+            <span className="sr-only">{t('actions.copy')}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <p className="text-xs">{copied ? t('actions.copied') : t('actions.copy')}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 function getNodeText(node: ReactNode): string {
@@ -150,7 +193,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
               <div className="relative group my-3 rounded-lg border border-border bg-muted/40 overflow-hidden font-mono text-xs">
                 <div className="flex items-center justify-between px-3 py-1.5 bg-muted/70 border-b border-border/50 text-muted-foreground text-[11px]">
                   <span>{match ? match[1].toUpperCase() : '代码'}</span>
-                  <CopyButton value={codeString} className="h-6 w-6" />
+                  <CodeCopyButton value={codeString} />
                 </div>
                 <pre className="p-3 overflow-x-auto leading-5 text-foreground/90">
                   <code>{children}</code>

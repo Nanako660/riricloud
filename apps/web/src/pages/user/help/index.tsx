@@ -135,10 +135,10 @@ export default function HelpCenterPage() {
 
   return (
     <PageContainer>
-      {/* 现代化纯净无边框三栏流式布局 (对标 TypeSafe / Mintlify) */}
-      <div className="flex flex-col lg:flex-row items-start gap-8 lg:gap-12 py-2">
+      {/* 现代化纯净无边框三栏流式布局 (居中且向两侧充分延展) */}
+      <div className="flex flex-col lg:flex-row items-start justify-center gap-6 xl:gap-10 py-2 w-full">
         {/* 左侧边栏：极简树状导航与搜索 */}
-        <aside className="w-full lg:w-60 xl:w-64 shrink-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-5rem)] overflow-y-auto pr-1">
+        <aside className="w-full lg:w-64 xl:w-72 shrink-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-5rem)] overflow-y-auto pr-1">
           {/* 搜索框 */}
           <div className="relative mb-5">
             <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
@@ -223,8 +223,8 @@ export default function HelpCenterPage() {
           </div>
         </aside>
 
-        {/* 中间正文阅读流 (纯净无边框，限制舒适阅读宽度) */}
-        <main className="flex-1 min-w-0 max-w-3xl w-full">
+        {/* 中间正文阅读流 (居中且往两侧充分填充) */}
+        <main className="flex-1 min-w-0 max-w-4xl xl:max-w-5xl w-full">
           {isDetailLoading ? (
             <div className="py-24 text-center text-sm text-muted-foreground">
               {t('help.loadingArticle')}
@@ -333,7 +333,7 @@ export default function HelpCenterPage() {
         </main>
 
         {/* 右侧：本页目录 TOC (大屏粘性浮动，无边框纯文本) */}
-        <aside className="hidden xl:block w-48 xl:w-56 shrink-0 sticky top-6 max-h-[calc(100vh-5rem)] overflow-y-auto pl-2">
+        <aside className="hidden xl:block w-52 xl:w-60 shrink-0 sticky top-6 max-h-[calc(100vh-5rem)] overflow-y-auto pl-3">
           {articleDetail?.content ? (
             <HelpToc content={articleDetail.content} />
           ) : null}

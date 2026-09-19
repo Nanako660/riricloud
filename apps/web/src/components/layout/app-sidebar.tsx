@@ -37,9 +37,9 @@ export function AppSidebar() {
       items: [
         { to: '/subscription', label: t('nav.mySubscription'), icon: WalletCards, end: false },
         { to: '/proxy-pool', label: t('nav.directProxy'), icon: Network, end: false },
-        { to: '/help', label: t('nav.help', { defaultValue: '使用文档' }), icon: BookOpen, end: false },
         { to: '/market', label: t('nav.market'), icon: ShoppingBag, end: false },
-        { to: '/profile', label: t('nav.profile'), icon: Wallet, end: false }
+        { to: '/profile', label: t('nav.profile'), icon: Wallet, end: false },
+        { to: '/help', label: t('nav.help', { defaultValue: '使用文档' }), icon: BookOpen, end: false }
       ]
     },
     ...(isAdmin
