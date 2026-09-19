@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.8.20] - 2026-09-20
+
+### Added
 - **首页门户与管理端可视化设置体系 (Home Page & Visual Configuration)**：
   - **美观简洁 shadcn/ui 官方风格首页 (`/`)**：基于 shadcn/ui New York 纯正设计规范，以冷灰 Zinc 语义 Token、毛玻璃效果与优雅卡片微阴影打造轻量现代的首页门户；包含粘性毛玻璃顶栏（Sticky Header）、Hero 核心导流区（微圆角徽标、大字标题、CTA 引导与生活化感知亮点微胶囊）、核心特性 6 宫格网格（Lucide 矢量图标、Hover 边框高亮与阴影微抬升）、公开套餐预览（对接 `/api/plans/public` 展示周期资费与权益）、常见问答手风琴（FAQ Accordion）及客服版权页脚；
   - **全方位中英双语国际化支持 (Complete i18n Alignment)**：新增 `landing` 独立命名空间，所有前台展示内容、引导按键、默认特性（6 大维度）与常见问题（4 大答疑）均提供地道双语字典；
