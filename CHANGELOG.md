@@ -19,6 +19,15 @@
 ### Fixed
 
 
+## [0.8.23] - 2026-09-20
+
+### Fixed
+- **Docker 容器入口脚本变量作用域修复 (`scripts/docker-entrypoint.js`)**：
+  - 修复重构启动自检后 `main()` 中引用 `autoSeed` 导致的 `ReferenceError: autoSeed is not defined` 异常；
+  - 新增 `apps/server/src/prisma/docker-entrypoint.spec.ts` 自动化回归测试套件，全面防范未定义变量与入口执行异常。
+
+
+
 ## [0.8.22] - 2026-09-20
 
 ### Added
