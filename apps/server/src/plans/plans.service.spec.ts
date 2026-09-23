@@ -92,13 +92,18 @@ describe('PlansService', () => {
   });
 
   it('存在购买台账时禁止删除套餐', async () => {
-    prisma.plan.findUnique.mockResolvedValue({
-      id: 'free',
-      _count: { subscriptions: 0, purchases: 1 }
-    });
+    const tx = {
+      plan: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'free', _count: { subscriptions: 0, purchases: 1 } }),
+        delete: jest.fn()
+      },
+      redeemCode: { count: jest.fn().mockResolvedValue(0) },
+      redeemCodeCategory: { updateMany: jest.fn() }
+    };
+    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
 
     await expect(service.remove('free')).rejects.toThrow('已有订阅或购买记录');
-    expect(prisma.plan.delete).not.toHaveBeenCalled();
+    expect(tx.plan.delete).not.toHaveBeenCalled();
   });
 
   it('创建套餐时支持保存并序列化 badgeText, isFeatured 与 features', async () => {

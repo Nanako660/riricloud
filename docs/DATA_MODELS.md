@@ -115,9 +115,10 @@ model PlanPurchaseIdentity {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users        User[]
-  emailAliases PlanPurchaseEmailAlias[]
-  purchases    PlanPurchase[]
+  users             User[]
+  emailAliases      PlanPurchaseEmailAlias[]
+  purchases         PlanPurchase[]
+  redeemCodeUsages  RedeemCodeCategoryUsage[]
 }
 
 model PlanPurchaseEmailAlias {
@@ -406,8 +407,9 @@ model Plan {
   updatedAt         DateTime @updatedAt
 
   template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  subscriptions Subscription[]
-  purchases     PlanPurchase[]
+  subscriptions       Subscription[]
+  purchases           PlanPurchase[]
+  redeemCodeCategories RedeemCodeCategory[]
 
   @@index([isPublic])
   @@index([sortOrder])
@@ -451,6 +453,7 @@ model Subscription {
   subscriptionToken String    @unique @default(uuid())
   canceledAt        DateTime?
   trafficPeriodStartAt DateTime? // 当前流量周期起点；旧订阅首次启用策略时惰性初始化
+  planSnapshotJson  String?   // 套餐卡兑换时冻结的完整套餐权益快照，避免编辑套餐影响已发卡权益
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -506,25 +509,70 @@ model BalanceTransaction {
 }
 
 // ==============================
-// 2.7 充值卡密 (RedeemCode，v0.4.20)
+// 2.7 卡密分类、额度占用与兑换凭据 (v0.9.0)
+// 分类的 limitPerIdentity 为购买身份累计上限，null 表示不限；标签仅用于管理筛选。
+// 每次成功兑换的分类额度与卡密履约在同一 SQLite 事务中提交。
 // ==============================
-model RedeemCode {
-  id                  String    @id @default(uuid())
-  code                String    @unique
-  amount              Int       // 面额，单位为分
-  status              String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
-  expiresAt           DateTime?
-  note                String?
-  redeemedAt          DateTime?
-  redeemedByUserId    String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+model RedeemCodeCategory {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  tagsJson         String   @default("[]")
+  rewardType       String   @default("BALANCE") // BALANCE | PLAN
+  rewardAmount     Int?     // 余额奖励，单位分
+  planId           String?
+  limitPerIdentity Int?     @default(1) // null 表示不限
+  isActive         Boolean  @default(true) // 归档仅阻止新生成，不影响已发卡兑换
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  redeemedBy          User?              @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
-  balanceTransaction  BalanceTransaction?
+  redeemCodes RedeemCode[]
+  usages      RedeemCodeCategoryUsage[]
+  plan        Plan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+}
+
+model RedeemCodeCategoryUsage {
+  identityId String
+  categoryId String
+  usedCount  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  identity PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  category RedeemCodeCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([identityId, categoryId])
+  @@index([categoryId])
+}
+
+// 卡密删除是软隐藏，不改变核销状态或兑换能力；奖励快照在生成时固化。
+model RedeemCode {
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  amount             Int       @default(0) // 余额快照金额，单位分；套餐卡为 0
+  categoryId         String?
+  rewardType         String    @default("BALANCE") // BALANCE | PLAN
+  rewardSnapshotJson String?   // 余额金额或完整套餐权益快照
+  planId             String?   // 套餐奖励关联，用于保护仍未兑换的套餐
+  status             String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
+  expiresAt          DateTime?
+  note               String?
+  redeemedAt         DateTime?
+  redeemedByUserId   String?
+  deletedAt          DateTime? // 仅从默认管理列表隐藏，不作废卡密
+  deletedByUserId    String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  redeemedBy         User?               @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  category           RedeemCodeCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  balanceTransaction BalanceTransaction?
 
   @@index([status, createdAt])
   @@index([expiresAt])
+  @@index([categoryId, status])
+  @@index([deletedAt])
+  @@index([planId, status])
   @@index([redeemedByUserId])
 }
 

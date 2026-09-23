@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { hashAuthValue, normalizeEmail } from '../common/auth-security';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type PlanPurchaseSource = 'SELF_BUY' | 'SELF_UPGRADE' | 'REGISTRATION' | 'ADMIN' | 'MIGRATED';
+export type PlanPurchaseSource = 'SELF_BUY' | 'SELF_UPGRADE' | 'REGISTRATION' | 'ADMIN' | 'MIGRATED' | 'REDEEM_CODE';
 
 type DbClient = Prisma.TransactionClient | PrismaService;
 

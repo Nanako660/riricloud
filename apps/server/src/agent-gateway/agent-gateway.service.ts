@@ -36,6 +36,7 @@ import { SettingsService } from '../system/settings.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
 import { isLineAuthorized } from '../common/line-access';
 import { getTrafficPeriod } from '../common/traffic-reset';
+import { applyPlanSnapshot } from '../subscription/plan-snapshot';
 import { hashAgentToken } from '../common/agent-token';
 import { decryptSecret } from '../common/secret-crypto';
 import { normalizeBinaryVersion } from '../common/binary-version';
@@ -80,6 +81,7 @@ type SubscriptionSnapshot = {
   trafficLimitBytes: bigint;
   trafficUsedBytes: bigint;
   expireAt: Date | null;
+  planSnapshotJson?: string | null;
   user: SubscriptionUserSnapshot;
   plan?: {
     lineMatchMode: string;
@@ -708,11 +710,13 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
             trafficPeriodStartAt: true,
             trafficLimitBytes: true,
             trafficUsedBytes: true,
+            planSnapshotJson: true,
             plan: { select: { durationDays: true, trafficResetMode: true } }
           }
         });
         const timezone = (await this.settingsService?.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
-        for (const item of subscriptions) {
+        for (const rawItem of subscriptions) {
+          const item = applyPlanSnapshot(rawItem) as typeof rawItem;
           subscriptionByUser.set(item.userId, item.id);
           if (typeof item.trafficLimitBytes === 'bigint' && typeof item.trafficUsedBytes === 'bigint') {
             quotaByUser.set(item.userId, { limit: item.trafficLimitBytes, used: item.trafficUsedBytes });
@@ -1535,6 +1539,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           plan: { select: { lineMatchMode: true, lineTagsJson: true, lineIdsJson: true } }
         }
       });
+      entitledSubscriptions = entitledSubscriptions.map((subscription) => applyPlanSnapshot(subscription) as typeof subscription);
       entitledSubscriptions = entitledSubscriptions.filter((subscription) =>
         subscription.user.isActive &&
         (!enforceEmailVerification || !!subscription.user.emailVerifiedAt || subscription.user.role === 'ADMIN') &&
