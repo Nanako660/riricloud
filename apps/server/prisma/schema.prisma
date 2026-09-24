@@ -55,6 +55,7 @@ model PlanPurchaseIdentity {
   users        User[]
   emailAliases PlanPurchaseEmailAlias[]
   purchases    PlanPurchase[]
+  redeemCodeUsages RedeemCodeCategoryUsage[]
 }
 
 model PlanPurchaseEmailAlias {
@@ -73,7 +74,7 @@ model PlanPurchase {
   identityId     String
   planId         String
   sequence       Int
-  source         String // SELF_BUY | SELF_UPGRADE | REGISTRATION | ADMIN | MIGRATED
+  source         String // SELF_BUY | SELF_UPGRADE | REGISTRATION | ADMIN | MIGRATED | REDEEM_CODE
   subscriptionId String?
   purchasedAt    DateTime @default(now())
 
@@ -253,6 +254,7 @@ model Plan {
   template      SubscriptionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   subscriptions Subscription[]
   purchases     PlanPurchase[]
+  redeemCodeCategories RedeemCodeCategory[]
 
   @@index([isPublic])
   @@index([sortOrder])
@@ -380,6 +382,7 @@ model Subscription {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan          Plan           @relation(fields: [planId], references: [id])
   planPurchases PlanPurchase[]
+  planSnapshotJson String? // immutable benefits for a redeemed plan code
 
   @@index([status])
   @@index([expireAt])
@@ -422,24 +425,67 @@ model BalanceTransaction {
   @@index([referenceId])
 }
 
-// 管理员生成的充值卡密；code 始终以大写形式落库。
+// 卡密分类同时定义奖励与按购买身份的累计兑换上限；null 上限表示不限。
+model RedeemCodeCategory {
+  id                     String   @id @default(uuid())
+  name                   String   @unique
+  tagsJson               String   @default("[]")
+  rewardType             String   @default("BALANCE") // BALANCE | PLAN
+  rewardAmount           Int?
+  planId                 String?
+  limitPerIdentity       Int?     @default(1)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  redeemCodes RedeemCode[]
+  usages      RedeemCodeCategoryUsage[]
+  plan        Plan?    @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+}
+
+model RedeemCodeCategoryUsage {
+  identityId String
+  categoryId String
+  usedCount  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  identity PlanPurchaseIdentity @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  category RedeemCodeCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([identityId, categoryId])
+  @@index([categoryId])
+}
+
+// 管理员生成的卡密；code 始终以大写形式落库。删除只隐藏，不能影响卡密履约。
 model RedeemCode {
   id               String    @id @default(uuid())
   code             String    @unique
-  amount           Int
+  amount           Int       @default(0)
+  categoryId       String?
+  rewardType       String    @default("BALANCE")
+  rewardSnapshotJson String?
+  planId           String?
   status           String    @default("UNUSED") // UNUSED | REDEEMED | REVOKED
   expiresAt        DateTime?
   note             String?
   redeemedAt       DateTime?
   redeemedByUserId String?
+  deletedAt        DateTime?
+  deletedByUserId  String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   redeemedBy         User?               @relation("RedeemedCodes", fields: [redeemedByUserId], references: [id], onDelete: SetNull)
+  category           RedeemCodeCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   balanceTransaction BalanceTransaction?
 
   @@index([status, createdAt])
   @@index([expiresAt])
+  @@index([categoryId, status])
+  @@index([deletedAt])
+  @@index([planId, status])
   @@index([redeemedByUserId])
 }
 

@@ -29,10 +29,11 @@ import type { Prisma } from '@prisma/client';
 import type { SubscriptionTemplateConfig } from './builders';
 import { SettingsService } from '../system/settings.service';
 import { WalletService } from '../wallet/wallet.service';
-import { getTrafficPeriod, TRAFFIC_RESET_MODES } from '../common/traffic-reset';
+import { getTrafficPeriod } from '../common/traffic-reset';
 import type { PlanPurchaseSource } from './plan-purchases.service';
 import { PlanPurchasesService } from './plan-purchases.service';
 import { formatSpeedLimit } from '../common/speed-format';
+import { applyPlanSnapshot, type RedeemedPlanSnapshot } from './plan-snapshot';
 
 type SubscriptionPlan = {
   id: string;
@@ -80,6 +81,7 @@ type SubscriptionRecord = {
   canceledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  planSnapshotJson?: string | null;
   user?: SubscriptionUser | null;
   plan?: SubscriptionPlan | null;
 };
@@ -145,7 +147,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getSubscription(token: string, opts: { type?: string; userAgent?: string; templateId?: string } = {}) {
-    const foundSubscription = await this.findByToken(token);
+    const rawSubscription = await this.findByToken(token);
+    const foundSubscription = rawSubscription ? applyPlanSnapshot(rawSubscription) as SubscriptionRecord : null;
     const subscription = foundSubscription && foundSubscription.plan?.trafficResetMode
       ? (await this.ensureTrafficReset(foundSubscription)).subscription
       : foundSubscription;
@@ -271,6 +274,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         expireAt: addDays(now, plan.durationDays),
         subscriptionToken: randomUUID(),
         canceledAt: null,
+        planSnapshotJson: null,
         trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, now)
       };
       const subscription = current
@@ -288,6 +292,46 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (transactionClient) return result;
     void this.agentGateway?.pushConfigToAll();
     return this.get(result.id);
+  }
+
+  async activateRedeemedPlan(userId: string, snapshot: RedeemedPlanSnapshot, transactionClient: Prisma.TransactionClient) {
+    this.requireSubscriptionDelegate();
+    const plan = await transactionClient.plan.findUnique({ where: { id: snapshot.id } });
+    if (!plan) throw new NotFoundException('套餐不存在，无法履约该套餐卡');
+    const now = new Date();
+    const current = await transactionClient.subscription.findUnique({ where: { userId } });
+    if (current && this.isSubscriptionActive(current)) throw new ConflictException('已有有效订阅，请在当前订阅结束后重试套餐卡兑换');
+    const effectivePlan = { ...snapshot, trafficLimitBytes: BigInt(snapshot.trafficLimitBytes) };
+    const data = {
+      planId: plan.id,
+      planSnapshotJson: JSON.stringify(snapshot),
+      status: 'ACTIVE',
+      trafficLimitBytes: BigInt(snapshot.trafficLimitBytes),
+      trafficUsedBytes: BigInt(0),
+      startedAt: now,
+      expireAt: addDays(now, snapshot.durationDays),
+      subscriptionToken: randomUUID(),
+      canceledAt: null,
+      trafficPeriodStartAt: this.getInitialTrafficPeriodStart(effectivePlan, now)
+    };
+    let subscription: { id: string };
+    if (current) {
+      if (this.planPurchases) {
+        await this.planPurchases.claim(userId, plan, 'REDEEM_CODE', current.id, transactionClient);
+      }
+      subscription = await transactionClient.subscription.update({ where: { id: current.id }, data });
+    } else {
+      subscription = await transactionClient.subscription.create({ data: { ...data, userId } });
+      if (this.planPurchases) {
+        await this.planPurchases.claim(userId, plan, 'REDEEM_CODE', subscription.id, transactionClient);
+      }
+    }
+    await this.syncUserMirror(transactionClient, userId, subscription as SubscriptionRecord);
+    return subscription;
+  }
+
+  notifyFulfillmentCompleted() {
+    void this.agentGateway?.pushConfigToAll();
   }
 
   async upgrade(userId: string, planId: string) {
@@ -313,6 +357,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
           expireAt: addDays(new Date(), plan.durationDays),
           status: 'ACTIVE',
           canceledAt: null,
+          planSnapshotJson: null,
           trafficPeriodStartAt: this.getInitialTrafficPeriodStart(plan, new Date())
         }
       });
@@ -333,8 +378,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     if (!current || !['ACTIVE', 'CANCELED'].includes(current.status)) {
       throw new ConflictException('当前没有可续费的订阅');
     }
-    const plan = await this.prisma.plan.findUnique({ where: { id: current.planId } });
-    if (!plan) throw new NotFoundException('套餐不存在');
+    const rawPlan = await this.prisma.plan.findUnique({ where: { id: current.planId } });
+    if (!rawPlan) throw new NotFoundException('套餐不存在');
+    const effectiveCurrent = applyPlanSnapshot({ ...current, planSnapshotJson: current.planSnapshotJson, plan: rawPlan }) as typeof current & { plan: typeof rawPlan };
+    const plan = effectiveCurrent.plan;
     if (plan.allowRenewal === false) throw new ConflictException('该套餐不支持续费');
     const now = new Date();
     const baseExpireAt = current.expireAt && current.expireAt.getTime() > now.getTime() ? current.expireAt : now;
@@ -373,14 +420,14 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
 
   async getForUser(userId: string) {
     const delegate = this.requireSubscriptionDelegate();
-    const subscription = await delegate.findUnique({
+    const rawSubscription = await delegate.findUnique({
       where: { userId },
       include: {
         user: { select: { id: true, email: true, isActive: true, extraLineGrants: { select: { lineId: true } } } },
         plan: { include: { template: true } }
       }
     });
-    if (!subscription) {
+    if (!rawSubscription) {
       return {
         subscription: null,
         lines: [],
@@ -388,9 +435,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? []
       };
     }
+    const subscription = applyPlanSnapshot(rawSubscription) as unknown as SubscriptionRecord;
     const current = subscription.plan?.trafficResetMode
-      ? (await this.ensureTrafficReset(subscription as unknown as SubscriptionRecord)).subscription
-      : subscription as unknown as SubscriptionRecord;
+      ? (await this.ensureTrafficReset(subscription)).subscription
+      : subscription;
     return {
       subscription: this.toView(current),
       lines: await this.getLinesForSubscription(current),
@@ -490,6 +538,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         where: { id },
         data: {
           ...(dto.planId ? { planId: dto.planId } : {}),
+          ...(planChanged ? { planSnapshotJson: null } : {}),
           ...(dto.status ? { status: dto.status } : {}),
           trafficLimitBytes: limit,
           trafficUsedBytes: used,
@@ -637,13 +686,12 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   private async resetDueTrafficPeriods(now = new Date()): Promise<number> {
     const settings = await this.settingsService?.getSettings();
     const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
-    const subscriptions = await this.prisma.subscription.findMany({
-      where: { plan: { trafficResetMode: { in: TRAFFIC_RESET_MODES.filter((mode) => mode !== 'NONE') } } },
-      include: { plan: true }
-    });
+    const subscriptions = await this.prisma.subscription.findMany({ include: { plan: true } });
     const due = subscriptions
-      .map((subscription) => {
-        const period = getTrafficPeriod(subscription.plan.trafficResetMode, now, subscription.startedAt, subscription.plan.durationDays, timeZone);
+      .map((raw) => {
+        const subscription = applyPlanSnapshot(raw) as typeof raw;
+        const mode = subscription.plan?.trafficResetMode ?? 'NONE';
+        const period = getTrafficPeriod(mode, now, subscription.startedAt, subscription.plan?.durationDays ?? 0, timeZone);
         const previous = subscription.trafficPeriodStartAt;
         return { subscription, period, shouldReset: Boolean(period && previous && previous.getTime() < period.startAt.getTime()) };
       })
@@ -673,7 +721,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async ensureTrafficReset(subscription: SubscriptionRecord, now = new Date()): Promise<{ subscription: SubscriptionRecord; changed: boolean }> {
-    const plan = subscription.plan;
+    const effective = applyPlanSnapshot(subscription) as SubscriptionRecord;
+    const plan = effective.plan;
     const mode = plan?.trafficResetMode ?? 'NONE';
     const settings = await this.settingsService?.getSettings();
     const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
@@ -755,8 +804,9 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getLinesForSubscription(subscription: SubscriptionRecord) {
+    const effective = applyPlanSnapshot(subscription) as SubscriptionRecord;
     return this.linesService.getAvailableForPlan(
-      subscription.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' },
+      effective.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' },
       this.getExtraLineIds(subscription)
     );
   }
@@ -843,6 +893,7 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private toView(subscription: SubscriptionRecord, timeZone = 'Asia/Shanghai') {
+    subscription = applyPlanSnapshot(subscription) as SubscriptionRecord;
     const trafficResetMode = subscription.plan?.trafficResetMode ?? 'NONE';
     const period = subscription.plan
       ? getTrafficPeriod(trafficResetMode, new Date(), subscription.startedAt, subscription.plan.durationDays, timeZone)

@@ -77,7 +77,10 @@ describe('UsersService', () => {
             trafficUsedBytes: BigInt(1073741824),
             startedAt: new Date(),
             expireAt: null,
-            plan: { id: 'p1', name: '体验套餐' }
+            planSnapshotJson: JSON.stringify({
+              id: 'p1', name: '体验套餐', durationDays: 30, trafficResetMode: 'NONE', trafficLimitBytes: '214748364800'
+            }),
+            plan: { id: 'p1', name: '体验套餐', durationDays: 30, trafficResetMode: 'NONE' }
           }
         }],
         1
@@ -99,6 +102,9 @@ describe('UsersService', () => {
         trafficUsedBytes: 1073741824,
         plan: { id: 'p1', name: '体验套餐' }
       });
+      expect(result.data[0].subscription?.plan).toEqual({ id: 'p1', name: '体验套餐' });
+      expect(result.data[0].subscription).not.toHaveProperty('planSnapshotJson');
+      expect(() => JSON.stringify(result)).not.toThrow();
       expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: {
           OR: [{ email: { contains: 'demo' } }, { nickname: { contains: 'demo' } }],

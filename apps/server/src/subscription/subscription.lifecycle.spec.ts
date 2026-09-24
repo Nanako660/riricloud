@@ -21,6 +21,7 @@ describe('SubscriptionService lifecycle', () => {
   };
   const tx = {
     subscription: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
+    plan: { findUnique: jest.fn() },
     userLineGrant: { deleteMany: jest.fn(), createMany: jest.fn() },
     user: { update: jest.fn() },
     balanceTransaction: { create: jest.fn() },
@@ -53,6 +54,49 @@ describe('SubscriptionService lifecycle', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+
+  const redeemedSnapshot = {
+    id: 'p1', name: '体验快照', description: null, price: 0, durationDays: 30, trafficLimitBytes: '2048',
+    trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]', templateId: null,
+    badgeText: null, isFeatured: false, featuresJson: '[]', cardConfigJson: '{}', isPublic: true, sortOrder: 0,
+    purchaseLimitPerUser: 1, allowRenewal: false, speedLimitMbps: null, appendSpeedBadge: '', template: null
+  } as const;
+
+  it('套餐卡复用失效订阅时，在购买台账中直接关联真实订阅 ID', async () => {
+    tx.plan.findUnique.mockResolvedValue(plan);
+    tx.subscription.findUnique.mockResolvedValue({ ...subscription, status: 'EXPIRED', expireAt: new Date(Date.now() - 86400000) });
+    tx.subscription.update.mockResolvedValue({ ...subscription, status: 'ACTIVE' });
+
+    await service.activateRedeemedPlan('u1', redeemedSnapshot, tx as never);
+
+    expect(planPurchases.claim).toHaveBeenCalledWith('u1', plan, 'REDEEM_CODE', 's1', tx);
+    expect(tx.planPurchase.update).not.toHaveBeenCalled();
+  });
+
+  it('套餐卡创建新订阅后再写入绑定真实订阅 ID 的购买台账', async () => {
+    const created = { ...subscription, id: 's-new', status: 'ACTIVE' };
+    tx.plan.findUnique.mockResolvedValue(plan);
+    tx.subscription.findUnique.mockResolvedValue(null);
+    tx.subscription.create.mockResolvedValue(created);
+
+    await service.activateRedeemedPlan('u1', redeemedSnapshot, tx as never);
+
+    expect(planPurchases.claim).toHaveBeenCalledWith('u1', plan, 'REDEEM_CODE', 's-new', tx);
+    expect(tx.subscription.create.mock.invocationCallOrder[0]).toBeLessThan(planPurchases.claim.mock.invocationCallOrder[0]);
+    expect(tx.planPurchase.update).not.toHaveBeenCalled();
+  });
+
+  it('套餐卡遇到有效订阅时不写购买台账或更改订阅', async () => {
+    tx.plan.findUnique.mockResolvedValue(plan);
+    tx.subscription.findUnique.mockResolvedValue(subscription);
+
+    await expect(service.activateRedeemedPlan('u1', redeemedSnapshot, tx as never)).rejects.toThrow(ConflictException);
+
+    expect(planPurchases.claim).not.toHaveBeenCalled();
+    expect(tx.subscription.update).not.toHaveBeenCalled();
+    expect(tx.subscription.create).not.toHaveBeenCalled();
+  });
 
   it('首次订购创建唯一订阅并同步 User 镜像字段', async () => {
     prisma.plan.findUnique.mockResolvedValue(plan);

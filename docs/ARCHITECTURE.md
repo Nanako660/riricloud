@@ -88,6 +88,7 @@ graph TB
 - **入站配置组装 (`apps/server/common/inbound.ts`)**：入站参数归一化（默认值填充/密钥自动生成/必填校验）、服务端入站 JSON 与客户端 TLS/Transport JSON 组装的单一实现，`config_sync` 与订阅 builders 复用，避免两处各持一份协议知识；其中 WebSocket `host` 统一映射为 `headers.Host`，SS2022 用户密钥按算法长度归一化。ShadowTLS 固定为 v3 + SS2022 内层，配置生成两个入站：公网 ShadowTLS 外层通过 `detour` 接入仅监听回环地址的 SS 入站，用户凭证只用于外层用户鉴权。
 - **套餐与订阅控制面 (`apps/server/plans`、`apps/server/subscription`、`apps/server/subscription-templates`)**：Plan 决定线路标签/显式 ID 授权范围与流量重置策略，Subscription 维护用户唯一订阅和当前流量周期，UserLineGrant 维护独立于订阅生命周期的用户额外线路授权，Template 驱动 Clash/Sing-box 的策略组、规则、DNS 与顶层覆写；订阅和 User 兼容镜像在事务中同步。
 - **套餐购买台账与限购 (`PlanPurchaseIdentity` / `PlanPurchase`)**：Plan 可配置每位用户的限购次数与是否允许续费；购买身份通过邮箱 HMAC 别名与可删除的 User 解耦，订阅取消、过期、升配或账号删除后购买记录仍保留。自助订购/升配、注册默认套餐和管理员发放统一写入购买台账，唯一约束 `(identityId, planId, sequence)` 负责并发兜底；续费只校验套餐允许续费，不消耗限购次数。免费套餐默认限购 1 次且不可续费，管理员补发可通过 `ADMIN` 来源破例但仍记账。
+- **卡密分类与兑换履约 (`apps/server/src/redeem-codes`)**：每张卡密保存生成时的余额金额或完整套餐权益快照；分类额度以共享购买身份为键累计，不使用标签计数。兑换在单一 SQLite 事务中条件核销卡密、原子递增分类额度，并提交余额流水或订阅/套餐购买台账，确保同卡并发只履约一次且跨账号共享身份不能突破上限。套餐卡与其他来源共用购买限购；有效订阅时拒绝且回滚，不核销。软删除只隐藏后台记录，不影响兑换，显式作废才禁止兑换；过期清理同样只软删除。
 - **持久化层 (Prisma + 双 SQLite 物理分库)**：零外部服务与网络数据库依赖，由主业务库（`app.db` / `riri.db`，由 `@prisma/client` 管理）与时序日志库（`telemetry.db`，由 `@prisma/telemetry-client` 管理）组成。两库物理隔离并分别开启独立 WAL 模式与 10s `busy_timeout`，高频的小时流量时序（`TrafficHourlyMetric`）、节点网卡速率（`NodeRateMetric`）与全链路日志（`SystemLog`）写入与业务账务完全物理分流，彻底杜绝单文件 SQLite 写锁争用风险。
 
 ### 2.2 边缘节点守护程序 (Node Agent - `apps/agent`)

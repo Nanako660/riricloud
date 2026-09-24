@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -67,30 +67,6 @@ export class WalletService {
     return { data: data.map((item) => this.toTransactionView(item)), total, page, pageSize };
   }
 
-  async redeem(userId: string, codeInput: string) {
-    this.assertRedeemRateLimit(userId);
-    const code = normalizeCode(codeInput);
-    const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      const redeemCode = await tx.redeemCode.findUnique({ where: { code } });
-      if (!redeemCode) throw new NotFoundException('卡密不存在');
-      if (redeemCode.status !== 'UNUSED') throw new ConflictException('卡密已使用或已作废');
-      if (redeemCode.expiresAt && redeemCode.expiresAt <= now) throw new ConflictException('卡密已过期');
-
-      const claimed = await tx.redeemCode.updateMany({
-        where: {
-          id: redeemCode.id,
-          status: 'UNUSED',
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
-        },
-        data: { status: 'REDEEMED', redeemedAt: now, redeemedByUserId: userId }
-      });
-      if (claimed.count !== 1) throw new ConflictException('卡密已使用或已作废');
-
-      const result = await this.applyBalanceChange(tx, userId, redeemCode.amount, 'REDEEM', '卡密充值', redeemCode.id, redeemCode.id);
-      return { code: redeemCode.code, amount: redeemCode.amount, ...result };
-    });
-  }
 
   async adjustBalance(userId: string, amount: number, type: BalanceTransactionType, description?: string, referenceId?: string) {
     return this.prisma.$transaction((tx) => this.applyBalanceChange(tx, userId, amount, type, description, referenceId));
@@ -131,7 +107,7 @@ export class WalletService {
     return { balance: updated.balance, transaction: this.toTransactionView(transaction) };
   }
 
-  private assertRedeemRateLimit(userId: string): void {
+  assertRedeemRateLimit(userId: string): void {
     if (!this.rateLimitService) return;
     const allowed = this.rateLimitService.consume(`wallet-redeem:${userId}`, WalletService.REDEEM_RATE_LIMIT, WalletService.REDEEM_RATE_WINDOW_MS);
     if (!allowed) throw new HttpException('兑换尝试过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS);
@@ -157,8 +133,4 @@ export class WalletService {
       createdAt: record.createdAt
     };
   }
-}
-
-function normalizeCode(value: string) {
-  return value.trim().toUpperCase();
 }

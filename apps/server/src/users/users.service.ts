@@ -20,6 +20,7 @@ import { assertEmailLength, assertPasswordPolicy, buildPasswordStrengthPolicy, n
 import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from './user-identity';
 import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
 import { PlanPurchasesService } from '../subscription/plan-purchases.service';
+import { applyPlanSnapshot } from '../subscription/plan-snapshot';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -39,6 +40,7 @@ type UserSubscriptionSnapshot = {
   expireAt: Date | null;
   trafficPeriodStartAt: Date | null;
   subscriptionToken: string;
+  planSnapshotJson?: string | null;
   plan?: {
     id: string;
     name: string;
@@ -83,6 +85,7 @@ const ADMIN_USER_SELECT = {
       startedAt: true,
       expireAt: true,
       trafficPeriodStartAt: true,
+      planSnapshotJson: true,
       plan: { select: { id: true, name: true, durationDays: true, trafficResetMode: true } }
     }
   },
@@ -281,28 +284,33 @@ export class UsersService {
 
   private formatAdminUser(user: AdminUserQueryResult, timeZone: string) {
     const { extraLineGrants, ...u } = user;
+    const subscription = u.subscription ? applyPlanSnapshot(u.subscription) : null;
     return {
       ...u,
       emailVerifiedAt: u.emailVerifiedAt ? (u.emailVerifiedAt instanceof Date ? u.emailVerifiedAt.toISOString() : u.emailVerifiedAt) : null,
       trafficLimitBytes: Number(u.trafficLimitBytes),
       trafficUsedBytes: Number(u.trafficUsedBytes),
-      subscription: u.subscription
+      subscription: subscription
         ? {
-            ...u.subscription,
-            trafficLimitBytes: Number(u.subscription.trafficLimitBytes),
-            trafficUsedBytes: Number(u.subscription.trafficUsedBytes),
-            trafficResetMode: u.subscription.plan?.trafficResetMode ?? 'NONE',
-            nextTrafficResetAt: u.subscription.plan
+            id: subscription.id,
+            status: subscription.status,
+            trafficLimitBytes: Number(subscription.trafficLimitBytes),
+            trafficUsedBytes: Number(subscription.trafficUsedBytes),
+            startedAt: subscription.startedAt,
+            expireAt: subscription.expireAt,
+            trafficResetMode: subscription.plan?.trafficResetMode ?? 'NONE',
+            nextTrafficResetAt: subscription.plan
               ? getTrafficPeriod(
-                  u.subscription.plan.trafficResetMode,
+                  subscription.plan.trafficResetMode,
                   new Date(),
-                  u.subscription.startedAt,
-                  u.subscription.plan.durationDays,
+                  subscription.startedAt,
+                  subscription.plan.durationDays,
                   timeZone
                 )?.nextResetAt ?? null
               : null,
             extraLineIds: (extraLineGrants ?? []).map((grant: { lineId: string }) => grant.lineId),
-            plan: u.subscription.plan
+            // 用户管理 API 仅返回约定字段，避免泄漏套餐快照及其中无法直接 JSON 序列化的 BigInt。
+            plan: subscription.plan ? { id: subscription.plan.id, name: subscription.plan.name } : null
           }
         : null
     };
@@ -458,9 +466,10 @@ export class UsersService {
       throw new UnauthorizedException();
     }
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
-    const subscription = subscriptionDelegate
+    const rawSubscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
+    const subscription = rawSubscription ? applyPlanSnapshot(rawSubscription) as typeof rawSubscription : null;
     const extraLineIds = await this.getExtraLineIds(userId);
     const lines = this.linesService
       ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' }, extraLineIds)
@@ -488,9 +497,10 @@ export class UsersService {
       throw new UnauthorizedException();
     }
     const subscriptionDelegate = (this.prisma as unknown as { subscription?: UserSubscriptionDelegate }).subscription;
-    const subscription = subscriptionDelegate
+    const rawSubscription = subscriptionDelegate
       ? await subscriptionDelegate.findUnique({ where: { userId }, include: { plan: true } })
       : null;
+    const subscription = rawSubscription ? applyPlanSnapshot(rawSubscription) as typeof rawSubscription : null;
     const extraLineIds = await this.getExtraLineIds(userId);
     const lines = this.linesService
       ? await this.linesService.getAvailableForPlan(subscription?.plan ?? { lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]' }, extraLineIds)

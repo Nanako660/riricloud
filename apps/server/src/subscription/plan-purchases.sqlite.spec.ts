@@ -86,6 +86,19 @@ describe('PlanPurchasesService SQLite concurrency', () => {
     expect(await prisma.planPurchase.count({ where: { identityId: 'identity-1', planId: 'plan-free' } })).toBe(1);
   });
 
+  it('SQLite 事务并发领取同一套餐时唯一序号约束阻止突破购买限额', async () => {
+    const results = await Promise.allSettled([
+      prisma.$transaction((tx) => service.claim('user-1', { id: 'plan-transaction-race', purchaseLimitPerUser: 1 }, 'REDEEM_CODE', 'subscription-a', tx as never)),
+      prisma.$transaction((tx) => service.claim('user-1', { id: 'plan-transaction-race', purchaseLimitPerUser: 1 }, 'REDEEM_CODE', 'subscription-b', tx as never))
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toMatchObject({ status: 409 });
+    expect(await prisma.planPurchase.count({ where: { identityId: 'identity-1', planId: 'plan-transaction-race' } })).toBe(1);
+  });
+
   it('取消或过期后再次领取同一免费套餐仍被拒绝', async () => {
     await expect(
       service.claim('user-1', { id: 'plan-free', purchaseLimitPerUser: 1 }, 'SELF_BUY', null)

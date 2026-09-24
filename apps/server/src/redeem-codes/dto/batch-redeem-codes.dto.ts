@@ -10,12 +10,18 @@ export class BatchRedeemCodesDto {
   @Max(1000)
   count!: number;
 
-  @ApiProperty({ example: 50, description: '面额，单位为分' })
+  @ApiPropertyOptional({ example: 50, description: '兼容历史接口；单位为分。新管理端按分类奖励自动确定' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(2147483647)
-  amount!: number;
+  @IsOptional()
+  amount?: number;
+
+  @ApiPropertyOptional({ description: '卡密分类 ID；省略时使用不限额历史分类以兼容旧客户端' })
+  @IsString()
+  @IsOptional()
+  categoryId?: string;
 
   @ApiPropertyOptional({ example: 'RIRI', description: '仅允许大写字母、数字和短横线' })
   @IsString()

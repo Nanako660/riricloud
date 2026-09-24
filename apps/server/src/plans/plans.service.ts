@@ -102,16 +102,24 @@ export class PlansService {
   }
 
   async remove(id: string) {
-    const plan = await this.prisma.plan.findUnique({
-      where: { id },
-      include: { _count: { select: { subscriptions: true, purchases: true } } }
+    return this.prisma.$transaction(async (tx) => {
+      const plan = await tx.plan.findUnique({
+        where: { id },
+        include: { _count: { select: { subscriptions: true, purchases: true } } }
+      });
+      if (!plan) throw new NotFoundException('套餐不存在');
+      const unusedRedeemCodes = await tx.redeemCode.count({ where: { planId: id, status: 'UNUSED' } });
+      if (unusedRedeemCodes > 0) {
+        throw new ConflictException('仍有未兑换套餐卡引用该套餐，请先作废或等待兑换后再删除');
+      }
+      if (plan._count.subscriptions > 0 || plan._count.purchases > 0) {
+        throw new ConflictException('已有订阅或购买记录使用该套餐，请先下架而不要删除');
+      }
+      // 分类不物理删除；套餐被移除后归档并清除配置引用，已发出的卡仍按奖励快照履约。
+      await tx.redeemCodeCategory.updateMany({ where: { planId: id }, data: { isActive: false, planId: null } });
+      await tx.plan.delete({ where: { id } });
+      return { deleted: true };
     });
-    if (!plan) throw new NotFoundException('套餐不存在');
-    if (plan._count.subscriptions > 0 || plan._count.purchases > 0) {
-      throw new ConflictException('已有订阅或购买记录使用该套餐，请先下架而不要删除');
-    }
-    await this.prisma.plan.delete({ where: { id } });
-    return { deleted: true };
   }
 
   async getAvailableLines(id: string) {

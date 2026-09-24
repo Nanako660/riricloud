@@ -145,6 +145,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "subscriptionToken" TEXT NOT NULL,
         "canceledAt" DATETIME,
         "trafficPeriodStartAt" DATETIME,
+        "planSnapshotJson" TEXT,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY ("planId") REFERENCES "Plan" ("id") ON DELETE RESTRICT,

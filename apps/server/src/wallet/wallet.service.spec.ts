@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, HttpException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from './wallet.service';
@@ -6,9 +6,8 @@ import { WalletService } from './wallet.service';
 describe('WalletService', () => {
   let service: WalletService;
   const prisma = {
-    user: { findUnique: jest.fn() },
-    balanceTransaction: { aggregate: jest.fn(), count: jest.fn(), findMany: jest.fn() },
-    redeemCode: { findUnique: jest.fn(), updateMany: jest.fn() },
+    user: { findUnique: jest.fn(), update: jest.fn() },
+    balanceTransaction: { aggregate: jest.fn(), count: jest.fn(), findMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn()
   };
 
@@ -27,22 +26,12 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ _sum: { amount: 3000 } })
       .mockResolvedValueOnce({ _sum: { amount: -1750 } });
     prisma.balanceTransaction.count.mockResolvedValue(4);
-
-    await expect(service.getWallet('u1')).resolves.toEqual({
-      balance: 1250,
-      totalIncome: 3000,
-      totalExpense: 1750,
-      transactionCount: 4
-    });
+    await expect(service.getWallet('u1')).resolves.toEqual({ balance: 1250, totalIncome: 3000, totalExpense: 1750, transactionCount: 4 });
   });
 
-  it('卡密核销与余额流水在同一事务内完成', async () => {
+  it('事务内增加余额并创建关联卡密的账务流水', async () => {
     const now = new Date();
     const tx = {
-      redeemCode: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'rc1', code: 'RIRI-ABC', amount: 1000, status: 'UNUSED', expiresAt: new Date(now.getTime() + 60000) }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 })
-      },
       user: {
         findUnique: jest.fn().mockResolvedValue({ balance: 500 }),
         update: jest.fn().mockResolvedValue({ balance: 1500 })
@@ -51,22 +40,10 @@ describe('WalletService', () => {
         create: jest.fn().mockResolvedValue({ id: 'bt1', userId: 'u1', amount: 1000, balanceBefore: 500, balanceAfter: 1500, type: 'REDEEM', description: '卡密充值', referenceId: 'rc1', redeemCodeId: 'rc1', createdAt: now })
       }
     };
-    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
-
-    await expect(service.redeem('u1', ' riri-abc ')).resolves.toMatchObject({ code: 'RIRI-ABC', amount: 1000, balance: 1500 });
-    expect(tx.redeemCode.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'rc1', status: 'UNUSED' }) }));
+    const result = await service.applyBalanceChange(tx as never, 'u1', 1000, 'REDEEM', '卡密充值', 'rc1', 'rc1');
+    expect(result.balance).toBe(1500);
+    expect(tx.user.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'u1' }, data: { balance: { increment: 1000 } } }));
     expect(tx.balanceTransaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: 1000, redeemCodeId: 'rc1' }) }));
-  });
-
-  it('并发抢兑时只允许成功领取卡密的事务继续', async () => {
-    const tx = {
-      redeemCode: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'rc1', code: 'RIRI-ABC', amount: 1000, status: 'UNUSED', expiresAt: null }),
-        updateMany: jest.fn().mockResolvedValue({ count: 0 })
-      }
-    };
-    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
-    await expect(service.redeem('u1', 'RIRI-ABC')).rejects.toThrow(ConflictException);
   });
 
   it('拒绝把余额调到负数', async () => {
@@ -74,39 +51,32 @@ describe('WalletService', () => {
       user: { findUnique: jest.fn().mockResolvedValue({ balance: 100 }), update: jest.fn() },
       balanceTransaction: { create: jest.fn() }
     };
-    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
-    await expect(service.adjustBalance('u1', -101, 'ADMIN_ADJUST')).rejects.toThrow(BadRequestException);
+    await expect(service.applyBalanceChange(tx as never, 'u1', -101, 'ADMIN_ADJUST')).rejects.toThrow(BadRequestException);
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 
-  it('兑换触发限流时返回 429 且不进入核销事务', async () => {
+  it('限流拒绝兑换尝试并返回 429', () => {
     const consume = jest.fn().mockReturnValue(false);
     const limited = new WalletService(prisma as never, { consume } as never);
-    await expect(limited.redeem('u1', 'RIRI-ABC')).rejects.toThrow(HttpException);
+    expect(() => limited.assertRedeemRateLimit('u1')).toThrow(HttpException);
     expect(consume).toHaveBeenCalledWith('wallet-redeem:u1', expect.any(Number), expect.any(Number));
-    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('限流窗口内的正常兑换放行', async () => {
+  it('限流窗口内允许继续进入兑换履约', () => {
     const consume = jest.fn().mockReturnValue(true);
     const limited = new WalletService(prisma as never, { consume } as never);
+    expect(() => limited.assertRedeemRateLimit('u1')).not.toThrow();
+    expect(consume).toHaveBeenCalledTimes(1);
+  });
+
+  it('调整余额仍在同一数据库事务中执行', async () => {
     const tx = {
-      redeemCode: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'rc1', code: 'RIRI-ABC', amount: 100, status: 'UNUSED', expiresAt: null }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 })
-      },
-      user: {
-        findUnique: jest.fn().mockResolvedValue({ balance: 0 }),
-        update: jest.fn().mockResolvedValue({ balance: 100 })
-      },
-      balanceTransaction: {
-        create: jest.fn().mockResolvedValue({ id: 'bt1', userId: 'u1', amount: 100, balanceBefore: 0, balanceAfter: 100, type: 'REDEEM', description: '卡密充值', referenceId: 'rc1', redeemCodeId: 'rc1', createdAt: new Date() })
-      }
+      user: { findUnique: jest.fn().mockResolvedValue({ balance: 100 }), update: jest.fn().mockResolvedValue({ balance: 150 }) },
+      balanceTransaction: { create: jest.fn().mockResolvedValue({ id: 'bt2', userId: 'u1', amount: 50, balanceBefore: 100, balanceAfter: 150, type: 'ADMIN_ADJUST', description: null, referenceId: null, redeemCodeId: null, createdAt: new Date() }) }
     };
     prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
-
-    await expect(limited.redeem('u1', 'RIRI-ABC')).resolves.toMatchObject({ balance: 100 });
-    expect(consume).toHaveBeenCalled();
+    await expect(service.adjustBalance('u1', 50, 'ADMIN_ADJUST')).resolves.toMatchObject({ balance: 150 });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('查询不存在的用户时抛出 NotFoundException', async () => {

@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export const REDEEM_CODE_STATUSES = ['UNUSED', 'REDEEMED', 'REVOKED', 'EXPIRED'] as const;
@@ -31,4 +31,15 @@ export class QueryRedeemCodesDto {
   @IsOptional()
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
   search?: string;
+
+  @ApiPropertyOptional({ description: '按分类筛选' })
+  @IsString()
+  @IsOptional()
+  categoryId?: string;
+
+  @ApiPropertyOptional({ description: '仅查看软删除记录' })
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  @IsOptional()
+  deletedOnly?: boolean;
 }
