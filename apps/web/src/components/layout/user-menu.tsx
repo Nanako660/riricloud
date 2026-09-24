@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { useCurrentUser } from '@/lib/current-user';
 import { useAuthStore } from '@/stores/auth';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,14 +38,14 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
+        <IconButton
           variant="ghost"
-          size="icon"
-          className="size-8 rounded-full bg-primary/10 text-primary font-semibold text-xs border border-primary/20 hover:bg-primary/20 transition-colors"
-          aria-label="用户菜单"
+          size="icon-sm"
+          className="rounded-full bg-primary/10 text-primary font-semibold text-xs border border-primary/20 hover:bg-primary/20 transition-colors"
+          aria-label={t('userMenu.menuLabel')}
         >
           {userInitial}
-        </Button>
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-lg">
         <DropdownMenuLabel className="p-2 font-normal">

@@ -5,6 +5,7 @@ import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -228,13 +229,13 @@ export default function AdminLinesPage() {
                     <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={line.status === 'ACTIVE' ? 'default' : 'secondary'}>{line.status === 'ACTIVE' ? t('admin:lines.statusActive') : t('admin:lines.statusDisabled')}</Badge>{!line.isPublic && <span className="text-xs text-muted-foreground">{t('admin:lines.privateLine')}</span>}</div></TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.moveUp')} disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.moveDown')} disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.instantSpeedtest')} title={t('admin:lines.instantSpeedtestTitle')} disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => setSpeedtestingLine(line)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.testResolve')} disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.duplicateLine')} disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.editLine')} onClick={() => openEdit(line)}><Pencil /></Button>
-                        <Button variant="ghost" size="icon" aria-label={t('admin:lines.deleteLine')} onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></Button>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.moveUp')} disabled={index === 0 || reorder.isPending} onClick={() => move(line, -1)}><ArrowUp /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.moveDown')} disabled={index === lines.length - 1 || reorder.isPending} onClick={() => move(line, 1)}><ArrowDown /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.instantSpeedtest')} tooltip={t('admin:lines.instantSpeedtestTitle')} disabled={speedtest.isPending && speedtest.variables === line.id} onClick={() => setSpeedtestingLine(line)}><Activity className={cn('size-4', speedtest.isPending && speedtest.variables === line.id && 'animate-spin text-primary')} /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.testResolve')} disabled={testResolve.isPending} onClick={() => testResolve.mutate(line.id)}><Zap /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.duplicateLine')} disabled={duplicate.isPending} onClick={() => duplicate.mutate(line.id)}><Copy /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.editLine')} onClick={() => openEdit(line)}><Pencil /></IconButton>
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:lines.deleteLine')} onClick={() => setDeleting(line)}><Trash2 className="text-destructive" /></IconButton>
                       </div>
                     </TableCell>
                   </TableRow>

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Cloud, HelpCircle, Mail, MessageSquare, Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 
 interface LandingFooterProps {
   siteName: string;
@@ -80,54 +80,52 @@ export function LandingFooter({
             </p>
             <div className="flex flex-wrap gap-2">
               {supportTelegramUrl && (
-                <Button variant="outline" size="icon" className="size-8" asChild>
-                  <a
-                    href={supportTelegramUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Telegram"
-                    aria-label="Telegram"
-                  >
-                    <Send className="size-3.5" />
+                <IconButton
+                  variant="outline"
+                  size="icon-sm"
+                  asChild
+                  aria-label={t('footer.telegramSupport')}
+                >
+                  <a href={supportTelegramUrl} target="_blank" rel="noreferrer">
+                    <Send className="size-4" />
                   </a>
-                </Button>
+                </IconButton>
               )}
               {supportDiscordUrl && (
-                <Button variant="outline" size="icon" className="size-8" asChild>
-                  <a
-                    href={supportDiscordUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Discord"
-                    aria-label="Discord"
-                  >
-                    <MessageSquare className="size-3.5" />
+                <IconButton
+                  variant="outline"
+                  size="icon-sm"
+                  asChild
+                  aria-label={t('footer.discordCommunity')}
+                >
+                  <a href={supportDiscordUrl} target="_blank" rel="noreferrer">
+                    <MessageSquare className="size-4" />
                   </a>
-                </Button>
+                </IconButton>
               )}
               {supportEmail && (
-                <Button variant="outline" size="icon" className="size-8" asChild>
-                  <a
-                    href={`mailto:${supportEmail}`}
-                    title={supportEmail}
-                    aria-label="Email Support"
-                  >
-                    <Mail className="size-3.5" />
+                <IconButton
+                  variant="outline"
+                  size="icon-sm"
+                  asChild
+                  aria-label={t('footer.emailSupport', { email: supportEmail })}
+                >
+                  <a href={`mailto:${supportEmail}`}>
+                    <Mail className="size-4" />
                   </a>
-                </Button>
+                </IconButton>
               )}
               {supportCustomUrl && (
-                <Button variant="outline" size="icon" className="size-8" asChild>
-                  <a
-                    href={supportCustomUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Help Center"
-                    aria-label="Help Center"
-                  >
-                    <HelpCircle className="size-3.5" />
+                <IconButton
+                  variant="outline"
+                  size="icon-sm"
+                  asChild
+                  aria-label={t('footer.helpCenter')}
+                >
+                  <a href={supportCustomUrl} target="_blank" rel="noreferrer">
+                    <HelpCircle className="size-4" />
                   </a>
-                </Button>
+                </IconButton>
               )}
             </div>
             <p className="text-[11px] text-muted-foreground">

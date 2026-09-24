@@ -14,6 +14,7 @@ import {
   Wand2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -319,38 +320,35 @@ export function TemplateRulesEditor({ value, onChange, targets }: { value: unkno
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
+                    <IconButton
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-xs"
                       aria-label={t('admin:templateRules.moveUp')}
                       disabled={index === 0}
                       onClick={() => onChange(swap(rules, index, index - 1))}
                     >
-                      <ArrowUp className="size-3.5" />
-                    </Button>
-                    <Button
+                      <ArrowUp className="size-4" />
+                    </IconButton>
+                    <IconButton
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-xs"
                       aria-label={t('admin:templateRules.moveDown')}
                       disabled={index === rules.length - 1}
                       onClick={() => onChange(swap(rules, index, index + 1))}
                     >
-                      <ArrowDown className="size-3.5" />
-                    </Button>
-                    <Button
+                      <ArrowDown className="size-4" />
+                    </IconButton>
+                    <IconButton
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      size="icon-xs" className="text-muted-foreground hover:text-destructive"
                       aria-label={t('admin:templateRules.deleteRule')}
                       onClick={() => onChange(rules.filter((_, itemIndex) => itemIndex !== index))}
                     >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                      <Trash2 className="size-4" />
+                    </IconButton>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">

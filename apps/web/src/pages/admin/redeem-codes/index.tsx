@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { CopyButton } from '@/components/shared/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -13,7 +14,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Pagination, PaginationInfo, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
@@ -77,7 +77,17 @@ export default function RedeemCodesPage() {
           <Select value={categoryId} onValueChange={setCategoryId}><SelectTrigger className="w-full sm:w-44"><SelectValue placeholder={t('admin:redeemCodes.category')} /></SelectTrigger><SelectContent><SelectItem value="ALL">{t('admin:redeemCodes.allCategories')}</SelectItem>{categories.data?.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
           <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}><SelectTrigger className="w-full sm:w-36"><SelectValue placeholder={t('admin:redeemCodes.filterStatus')} /></SelectTrigger><SelectContent><SelectItem value="ALL">{t('admin:redeemCodes.statusAll')}</SelectItem>{Object.entries(labels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
           <Select value={deletedOnly ? 'DELETED' : 'ACTIVE'} onValueChange={(value) => setDeletedOnly(value === 'DELETED')}><SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ACTIVE">{t('admin:redeemCodes.activeCodes')}</SelectItem><SelectItem value="DELETED">{t('admin:redeemCodes.deletedCodes')}</SelectItem></SelectContent></Select>
-          {!deletedOnly && <Tooltip><TooltipTrigger asChild><Button type="button" variant="outline" size="icon" aria-label={revealed ? t('admin:redeemCodes.hidePlaintext') : t('admin:redeemCodes.showPlaintext')} onClick={() => setRevealed((value) => !value)}>{revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</Button></TooltipTrigger><TooltipContent>{revealed ? t('admin:redeemCodes.hidePlaintext') : t('admin:redeemCodes.showPlaintext')}</TooltipContent></Tooltip>}
+          {!deletedOnly && (
+            <IconButton
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={revealed ? t('admin:redeemCodes.hidePlaintext') : t('admin:redeemCodes.showPlaintext')}
+              onClick={() => setRevealed((value) => !value)}
+            >
+              {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </IconButton>
+          )}
           <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="outline" disabled={mutations.exportCodes.isPending}><Download className="size-4" />{t('admin:redeemCodes.export')}</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => mutations.exportCodes.mutate('csv')}>{t('admin:redeemCodes.exportCsv')}</DropdownMenuItem><DropdownMenuItem onClick={() => mutations.exportCodes.mutate('txt')}>{t('admin:redeemCodes.exportTxt')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
           {!deletedOnly && <Button type="button" variant="outline" onClick={() => setCleanupOpen(true)}><Eraser className="size-4" />{t('admin:redeemCodes.cleanupExpired')}</Button>}
         </div>
@@ -92,7 +102,7 @@ export default function RedeemCodesPage() {
         <TableCell><div className="flex items-center gap-1.5"><code className="whitespace-nowrap text-xs">{revealed ? item.code : maskRedeemCode(item.code)}</code>{revealed && <CopyButton value={item.code} className="h-6 px-2 text-xs" />}</div></TableCell>
         <TableCell>{item.category?.name ?? '—'}</TableCell><TableCell className="tabular-nums">{formatReward(item)}</TableCell><TableCell><Badge variant={item.deletedAt ? 'outline' : item.status === 'REDEEMED' ? 'secondary' : item.status === 'UNUSED' ? 'default' : 'destructive'}>{item.deletedAt ? t('admin:redeemCodes.deletedBadge') : labels[item.status]}</Badge></TableCell>
         <TableCell className="whitespace-nowrap text-xs">{item.expiresAt ? formatDateTime(item.expiresAt) : t('common:time.permanent')}</TableCell><TableCell className="whitespace-nowrap text-xs">{item.redeemedBy ? item.redeemedBy.nickname || item.redeemedBy.email : '—'}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.redeemedAt ? formatDateTime(item.redeemedAt) : '—'}</TableCell><TableCell>{item.note || '—'}</TableCell><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(item.createdAt)}</TableCell>
-        <TableCell className="text-right">{item.deletedAt ? <Button variant="ghost" size="icon" aria-label={t('admin:redeemCodes.restore')} disabled={mutations.restore.isPending} onClick={() => mutations.restore.mutate(item.id)}><Undo2 className="size-4" /></Button> : <div className="flex justify-end">{item.status === 'UNUSED' && <Button variant="ghost" size="icon" aria-label={t('admin:redeemCodes.revoke')} onClick={() => setRevokeTarget(item)}><Trash2 className="size-4 text-destructive" /></Button>}<Button variant="ghost" size="icon" aria-label={t('admin:redeemCodes.deleteAction')} onClick={() => { setSelectedIds(new Set([item.id])); setDeleteOpen(true); }}><Archive className="size-4" /></Button></div>}</TableCell>
+        <TableCell className="text-right">{item.deletedAt ? <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:redeemCodes.restore')} disabled={mutations.restore.isPending} onClick={() => mutations.restore.mutate(item.id)}><Undo2 className="size-4" /></IconButton> : <div className="flex justify-end">{item.status === 'UNUSED' && <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:redeemCodes.revoke')} onClick={() => setRevokeTarget(item)}><Trash2 className="size-4 text-destructive" /></IconButton>}<IconButton variant="ghost" size="icon-sm" aria-label={t('admin:redeemCodes.deleteAction')} onClick={() => { setSelectedIds(new Set([item.id])); setDeleteOpen(true); }}><Archive className="size-4" /></IconButton></div>}</TableCell>
       </TableRow>)}</TableBody></Table></div>
       {!rows.length && <EmptyState title={query.isPending ? t('common:actions.loading') : t('admin:redeemCodes.emptyCodes')} description={t('admin:redeemCodes.subtitle')} />}
       {rows.length > 0 && <div className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground"><div>{t('admin:redeemCodes.totalRecords', { count: total })}</div><Pagination><PaginationPrevious onClick={() => setPage((value) => Math.max(value - 1, 1))} disabled={page <= 1} /><PaginationInfo page={page} totalPages={totalPages} /><PaginationNext onClick={() => setPage((value) => Math.min(value + 1, totalPages))} disabled={page >= totalPages} /></Pagination></div>}

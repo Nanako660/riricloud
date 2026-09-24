@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/ui/icon-button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdminPlans } from '../plans/use-plans';
 import { useAdminLines } from '../lines/use-lines';
@@ -198,72 +198,59 @@ export default function AdminUsersPage() {
           const isSelf = u.id === selfId;
           return (
             <div className="flex justify-end gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label={t('admin:users.trafficDetails')} onClick={() => setTrafficUser(u)}>
-                    <Activity className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('admin:users.trafficDetails')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label={t('admin:users.adjustBalance')} onClick={() => setAdjusting(u)}>
-                    <WalletCards className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('admin:users.adjustBalance')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label={t('admin:users.editUser')} onClick={() => { setEditing(u); setFormOpen(true); }}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('admin:users.editUser')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-block">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('admin:users.resetToken')}
-                      disabled={!u.subscription || resetSubscriptionToken.isPending}
-                      onClick={() => setResetting(u)}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{u.subscription ? t('admin:users.resetToken') : t('admin:users.noSubscription')}</TooltipContent>
-              </Tooltip>
+              <IconButton
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('admin:users.trafficDetails')}
+                onClick={() => setTrafficUser(u)}
+              >
+                <Activity className="size-4" />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('admin:users.adjustBalance')}
+                onClick={() => setAdjusting(u)}
+              >
+                <WalletCards className="size-4" />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('admin:users.editUser')}
+                onClick={() => { setEditing(u); setFormOpen(true); }}
+              >
+                <Pencil className="size-4" />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('admin:users.resetToken')}
+                tooltip={u.subscription ? t('admin:users.resetToken') : t('admin:users.noSubscription')}
+                disabled={!u.subscription || resetSubscriptionToken.isPending}
+                onClick={() => setResetting(u)}
+              >
+                <RefreshCw className="size-4" />
+              </IconButton>
               {!isSelf ? (
                 <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={u.isActive ? t('admin:users.banUser') : t('admin:users.unbanUser')}
-                        disabled={bulkActive.isPending}
-                        onClick={() =>
-                          bulkActive.mutate({ ids: [u.id], isActive: !u.isActive })
-                        }
-                      >
-                        {u.isActive ? <ShieldOff className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{u.isActive ? t('admin:users.banUser') : t('admin:users.unbanUser')}</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label={t('common:actions.delete')} onClick={() => setDeleting(u)}>
-                        <Trash2 className="text-destructive h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t('common:actions.delete')}</TooltipContent>
-                  </Tooltip>
+                  <IconButton
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={u.isActive ? t('admin:users.banUser') : t('admin:users.unbanUser')}
+                    disabled={bulkActive.isPending}
+                    onClick={() => bulkActive.mutate({ ids: [u.id], isActive: !u.isActive })}
+                  >
+                    {u.isActive ? <ShieldOff className="size-4" /> : <ShieldCheck className="size-4" />}
+                  </IconButton>
+                  <IconButton
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('common:actions.delete')}
+                    onClick={() => setDeleting(u)}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </IconButton>
                 </>
               ) : null}
             </div>

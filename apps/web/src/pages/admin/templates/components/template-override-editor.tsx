@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { TemplateCodeEditor } from './template-code-editor';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -389,16 +390,16 @@ export function TemplateOverrideEditor({
           </Button>
 
           {/* 清空 */}
-          <Button
+          <IconButton
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-destructive"
             onClick={handleClear}
-            title={t('admin:templateOverride.clearTitle')}
+            aria-label={t('admin:templateOverride.clearTitle')}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+            <Trash2 className="size-4" />
+          </IconButton>
         </div>
       </div>
 

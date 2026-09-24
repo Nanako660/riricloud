@@ -3,6 +3,7 @@ import { useFieldArray, type FieldPath, type UseFormReturn } from 'react-hook-fo
 import type { InputHTMLAttributes, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -82,7 +83,7 @@ export function HeaderEditor({ form, name, label }: { form: UseFormReturn<LineFo
         <div key={field.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <Input aria-label={`${label} ${t('admin:lineForm.headerKeyPlaceholder')} ${index + 1}`} placeholder={t('admin:lineForm.headerKeyPlaceholder')} {...form.register(`${name}.${index}.key` as const)} />
           <Input aria-label={`${label} ${t('admin:lineForm.headerValuePlaceholder')} ${index + 1}`} placeholder={t('admin:lineForm.headerValuePlaceholder')} {...form.register(`${name}.${index}.value` as const)} />
-          <Button type="button" size="icon" variant="ghost" aria-label={`${t('common:actions.delete')} ${label} ${index + 1}`} onClick={() => remove(index)}><Trash2 /></Button>
+          <IconButton type="button" size="icon-sm" variant="ghost" aria-label={`${t('common:actions.delete')} ${label} ${index + 1}`} onClick={() => remove(index)}><Trash2 /></IconButton>
         </div>
       ))}
     </div>

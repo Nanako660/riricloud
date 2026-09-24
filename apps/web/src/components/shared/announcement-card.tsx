@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Megaphone, X } from 'lucide-react';
 import { usePublicSettings } from '@/lib/public-settings';
 import { MarkdownText } from '@/components/shared/markdown-text';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 
 import { useTranslation } from 'react-i18next';
@@ -25,9 +25,9 @@ export function AnnouncementCard() {
       <CardContent className="flex items-start gap-3 p-4">
         <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
         <div className="min-w-0 flex-1"><MarkdownText content={announcement} /></div>
-        <Button
+        <IconButton
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           className="-mr-2 -mt-2 shrink-0"
           aria-label={t('user:announcement.dismiss')}
           onClick={() => {
@@ -36,7 +36,7 @@ export function AnnouncementCard() {
           }}
         >
           <X />
-        </Button>
+        </IconButton>
       </CardContent>
     </Card>
   );

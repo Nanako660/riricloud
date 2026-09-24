@@ -4,6 +4,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { PanelLeft } from 'lucide-react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -108,24 +109,24 @@ Sidebar.displayName = 'Sidebar';
 const SidebarTrigger = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<typeof Button>
->(({ className, onClick, ...props }, ref) => {
+>(({ className, onClick, 'aria-label': ariaLabel, ...props }, ref) => {
   const { toggleSidebar } = useSidebar();
   const { t } = useTranslation('common');
   return (
-    <Button
+    <IconButton
       ref={ref}
       variant="ghost"
-      size="icon"
-      className={cn('h-8 w-8', className)}
+      size="icon-sm"
+      className={className}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
       }}
       {...props}
+      aria-label={ariaLabel ?? t('actions.toggleSidebar')}
     >
-      <PanelLeft className="h-4 w-4" />
-      <span className="sr-only">{t('actions.toggleSidebar')}</span>
-    </Button>
+      <PanelLeft className="size-4" />
+    </IconButton>
   );
 });
 SidebarTrigger.displayName = 'SidebarTrigger';

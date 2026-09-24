@@ -17,6 +17,7 @@ import { MarkdownRenderer } from '@/components/shared/markdown-renderer';
 import { SupportDialog } from '@/components/shared/support-dialog';
 import { usePublicSettings } from '@/lib/public-settings';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -146,16 +147,19 @@ export default function HelpCenterPage() {
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               placeholder={t('help.searchPlaceholder')}
-              className="h-8 pl-8 pr-7 text-xs bg-muted/40 focus-visible:bg-background border-border/60"
+              className="h-8 pl-8 pr-9 text-xs bg-muted/40 focus-visible:bg-background border-border/60"
             />
             {searchKeyword && (
-              <button
+              <IconButton
                 type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="absolute right-1 top-1/2 -translate-y-1/2"
+                aria-label={t('common:actions.clear')}
                 onClick={() => setSearchKeyword('')}
-                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
               >
-                <X className="size-3.5" />
-              </button>
+                <X className="size-4" />
+              </IconButton>
             )}
           </div>
 

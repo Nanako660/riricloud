@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { X } from 'lucide-react';
 
 interface ImageLightboxProps {
   src: string;
@@ -27,14 +26,6 @@ export function ImageLightbox({ src, alt, className }: ImageLightboxProps) {
         >
           <DialogTitle className="sr-only">{alt || '图片放大预览'}</DialogTitle>
           <div className="relative flex flex-col items-center justify-center">
-            <button
-              type="button"
-              className="absolute -top-2 -right-2 z-10 rounded-full bg-muted/80 p-1.5 text-muted-foreground hover:text-foreground transition"
-              onClick={() => setOpen(false)}
-              aria-label="关闭预览"
-            >
-              <X className="size-4" />
-            </button>
             <img
               src={src}
               alt={alt || '大图'}

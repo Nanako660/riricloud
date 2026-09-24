@@ -58,6 +58,10 @@ const landing = {
     defaultDescription: '简单、极速、安全的高品质多设备网络加速服务。',
     quickLinks: '快速导航',
     supportChannels: '技术支持',
+    telegramSupport: 'Telegram 支持',
+    discordCommunity: 'Discord 社区',
+    emailSupport: '客服邮箱：{{email}}',
+    helpCenter: '帮助中心',
     communityNotice: '加入官方交流群组以获取节点维护与更新通告。',
     backToTop: '回到顶部 ↑'
   }

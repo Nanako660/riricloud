@@ -58,6 +58,10 @@ const landing = {
     defaultDescription: 'Simple, ultra-fast, and secure premium network acceleration for all your devices.',
     quickLinks: 'Quick Links',
     supportChannels: 'Support & Community',
+    telegramSupport: 'Telegram Support',
+    discordCommunity: 'Discord Community',
+    emailSupport: 'Support email: {{email}}',
+    helpCenter: 'Help Center',
     communityNotice: 'Join our official groups for maintenance alerts and system announcements.',
     backToTop: 'Back to Top ↑'
   }

@@ -5,11 +5,11 @@ import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/r
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDateTime } from '@/lib/utils';
 import {
   BINARY_COMPATIBILITY_LABELS,
@@ -185,21 +185,16 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                           </p>
                         </div>
                         {task.status === 'FAILED' || task.status === 'COMPLETED' ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="size-7"
-                                aria-label={t('admin:binaries.retryTaskAria')}
-                                disabled={retryDeployment.isPending}
-                                onClick={() => retryDeployment.mutate({ nodeId: task.node?.id ?? task.nodeId, taskId: task.id })}
-                              >
-                                {retryDeployment.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>{t('admin:binaries.retryTaskTooltip')}</TooltipContent>
-                          </Tooltip>
+                          <IconButton
+                            variant="outline"
+                            size="icon-xs"
+                            aria-label={t('admin:binaries.retryTaskAria')}
+                            tooltip={t('admin:binaries.retryTaskTooltip')}
+                            disabled={retryDeployment.isPending}
+                            onClick={() => retryDeployment.mutate({ nodeId: task.node?.id ?? task.nodeId, taskId: task.id })}
+                          >
+                            {retryDeployment.isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+                          </IconButton>
                         ) : null}
                       </div>
                     ))}

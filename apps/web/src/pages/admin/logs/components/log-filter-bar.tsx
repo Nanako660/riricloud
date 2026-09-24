@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, Radio, RefreshCw, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -119,17 +120,16 @@ export function LogFilterBar({
           </Button>
 
           {/* 刷新 */}
-          <Button
+          <IconButton
             type="button"
             variant="outline"
-            size="icon"
+            size="icon-sm"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="size-8"
-            title={t('admin:logs.refreshTitle')}
+            aria-label={t('admin:logs.refreshTitle')}
           >
-            <RefreshCw className={cn('size-3.5', isRefreshing && 'animate-spin')} />
-          </Button>
+            <RefreshCw className={cn('size-4', isRefreshing && 'animate-spin')} />
+          </IconButton>
 
           {/* 导出下拉 */}
           <Select onValueChange={(val) => onExport(val as 'json' | 'csv')}>
@@ -144,16 +144,16 @@ export function LogFilterBar({
           </Select>
 
           {/* 清理对话框 */}
-          <Button
+          <IconButton
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             onClick={onOpenCleanup}
-            className="size-8 text-destructive hover:bg-destructive/10"
-            title={t('admin:logs.cleanupTitle')}
+            className="text-destructive hover:bg-destructive/10"
+            aria-label={t('admin:logs.cleanupTitle')}
           >
-            <Trash2 className="size-3.5" />
-          </Button>
+            <Trash2 className="size-4" />
+          </IconButton>
         </div>
       </div>
 
@@ -200,16 +200,19 @@ export function LogFilterBar({
             placeholder={t('admin:logs.traceIdPlaceholder')}
             value={filter.traceId}
             onChange={(e) => onChange({ traceId: e.target.value, page: 1 })}
-            className="h-8 pr-7 text-xs font-mono"
+            className="h-8 pr-10 text-xs font-mono"
           />
           {filter.traceId && (
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="absolute right-1 top-1/2 -translate-y-1/2"
+              aria-label={t('common:actions.clear')}
               onClick={() => onChange({ traceId: '', page: 1 })}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
-              <X className="size-3" />
-            </button>
+              <X className="size-4" />
+            </IconButton>
           )}
         </div>
 
@@ -220,16 +223,19 @@ export function LogFilterBar({
             placeholder={t('admin:logs.keywordPlaceholder')}
             value={filter.keyword}
             onChange={(e) => onChange({ keyword: e.target.value, page: 1 })}
-            className="h-8 pl-8 pr-7 text-xs"
+            className="h-8 pl-8 pr-10 text-xs"
           />
           {filter.keyword && (
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="absolute right-1 top-1/2 -translate-y-1/2"
+              aria-label={t('common:actions.clear')}
               onClick={() => onChange({ keyword: '', page: 1 })}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
-              <X className="size-3" />
-            </button>
+              <X className="size-4" />
+            </IconButton>
           )}
         </div>
       </div>
@@ -238,16 +244,18 @@ export function LogFilterBar({
       {filter.module && (
         <div className="flex items-center gap-2 pt-1 border-t border-border/40">
           <span className="text-[11px] text-muted-foreground">{t('admin:logs.filteringModule')}</span>
-          <Badge variant="secondary" className="h-5 gap-1 px-2 font-mono text-[11px]">
+          <Badge variant="secondary" className="min-h-7 gap-1 py-0.5 pl-2 pr-0.5 font-mono text-[11px]">
             <span>[{filter.module}]</span>
-            <button
+            <IconButton
               type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="ml-0.5"
+              aria-label={t('admin:logs.clearModuleFilter')}
               onClick={() => onChange({ module: '', page: 1 })}
-              className="text-muted-foreground hover:text-foreground ml-0.5"
-              title={t('admin:logs.clearModuleFilter')}
             >
-              <X className="size-3" />
-            </button>
+              <X className="size-4" />
+            </IconButton>
           </Badge>
         </div>
       )}

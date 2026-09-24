@@ -28,6 +28,7 @@ import type { SettingsForm } from '../index';
 import type { LandingFeatureItem, LandingFaqItem } from '@/pages/landing/types';
 import { DEFAULT_FEATURES_ZH, DEFAULT_FAQS_ZH, getEffectiveFeatures, getEffectiveFaqs } from '@/pages/landing/default-content';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FormDescription, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
@@ -414,48 +415,46 @@ export function LandingSettingsTab() {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button
+                  <IconButton
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="size-7"
+                    size="icon-xs"
                     disabled={idx === 0}
                     onClick={() => moveFeature(idx, 'up')}
-                    title="上移"
+                    aria-label={t('common:actions.moveUp')}
                   >
-                    <ArrowUp className="size-3.5" />
-                  </Button>
-                  <Button
+                    <ArrowUp className="size-4" />
+                  </IconButton>
+                  <IconButton
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="size-7"
+                    size="icon-xs"
                     disabled={idx === currentFeatures.length - 1}
                     onClick={() => moveFeature(idx, 'down')}
-                    title="下移"
+                    aria-label={t('common:actions.moveDown')}
                   >
-                    <ArrowDown className="size-3.5" />
-                  </Button>
-                  <Button
+                    <ArrowDown className="size-4" />
+                  </IconButton>
+                  <IconButton
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="size-7 text-primary"
+                    size="icon-xs"
+                    className="text-primary"
                     onClick={() => openEditFeature(item)}
-                    title="编辑"
+                    aria-label={t('common:actions.edit')}
                   >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
+                    <Pencil className="size-4" />
+                  </IconButton>
+                  <IconButton
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="size-7 text-destructive hover:text-destructive"
+                    size="icon-xs"
+                    className="text-destructive hover:text-destructive"
                     onClick={() => deleteFeature(item.id)}
-                    title="删除"
+                    aria-label={t('common:actions.delete')}
                   >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                    <Trash2 className="size-4" />
+                  </IconButton>
                 </div>
               </div>
             );
@@ -515,48 +514,44 @@ export function LandingSettingsTab() {
               </div>
 
               <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                <Button
+                <IconButton
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  className="size-7"
+                  size="icon-xs"
                   disabled={idx === 0}
                   onClick={() => moveFaq(idx, 'up')}
-                  title="上移"
+                  aria-label={t('common:actions.moveUp')}
                 >
-                  <ArrowUp className="size-3.5" />
-                </Button>
-                <Button
+                  <ArrowUp className="size-4" />
+                </IconButton>
+                <IconButton
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  className="size-7"
+                  size="icon-xs"
                   disabled={idx === currentFaqs.length - 1}
                   onClick={() => moveFaq(idx, 'down')}
-                  title="下移"
+                  aria-label={t('common:actions.moveDown')}
                 >
-                  <ArrowDown className="size-3.5" />
-                </Button>
-                <Button
+                  <ArrowDown className="size-4" />
+                </IconButton>
+                <IconButton
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  className="size-7 text-primary"
+                  size="icon-xs" className="text-primary"
                   onClick={() => openEditFaq(item)}
-                  title="编辑"
+                  aria-label={t('common:actions.edit')}
                 >
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
+                  <Pencil className="size-4" />
+                </IconButton>
+                <IconButton
                   type="button"
                   variant="ghost"
-                  size="icon"
-                  className="size-7 text-destructive hover:text-destructive"
+                  size="icon-xs" className="text-destructive hover:text-destructive"
                   onClick={() => deleteFaq(item.id)}
-                  title="删除"
+                  aria-label={t('common:actions.delete')}
                 >
-                  <Trash2 className="size-3.5" />
-                </Button>
+                  <Trash2 className="size-4" />
+                </IconButton>
               </div>
             </div>
           ))}

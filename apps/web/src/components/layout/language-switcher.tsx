@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Globe, Check } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,9 +30,9 @@ export function LanguageSwitcher({ showLabel = false, className }: LanguageSwitc
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
+        <IconButton
           variant="ghost"
-          size={showLabel ? 'sm' : 'icon'}
+          size={showLabel ? 'sm' : 'icon-sm'}
           className={className}
           title={t('languages.switcherTitle')}
           aria-label={t('languages.switcherTitle')}
@@ -40,7 +40,7 @@ export function LanguageSwitcher({ showLabel = false, className }: LanguageSwitc
           <Globe className="size-4 shrink-0" />
           {showLabel && <span className="ml-1.5 text-xs font-medium">{currentOption.label}</span>}
           <span className="sr-only">{t('languages.switcherTitle')}</span>
-        </Button>
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36">
         {SUPPORTED_LANGUAGES.map((lang) => {

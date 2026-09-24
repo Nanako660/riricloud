@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -154,9 +155,9 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-7" aria-label="Actions">
+                        <IconButton variant="ghost" size="icon-sm" aria-label={t('user:proxyPool.actionsLabel')}>
                           <MoreHorizontal className="size-4" />
-                        </Button>
+                        </IconButton>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem onSelect={() => onEdit(item)}>
@@ -211,16 +212,15 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                     <code className="min-w-0 flex-1 truncate font-mono text-[11px] font-semibold text-foreground select-all">
                       {item.username}
                     </code>
-                    <Button
+                    <IconButton
                       type="button"
                       variant="ghost"
-                      size="icon"
-                      className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                      aria-label="Copy username"
+                      size="icon-xs" className="shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label={t('user:proxyPool.copyUsername')}
                       onClick={() => void copyText(item.username, t('user:proxyPool.usernameLabel'))}
                     >
-                      <Copy className="size-3" />
-                    </Button>
+                      <Copy className="size-4" />
+                    </IconButton>
                   </div>
 
                   <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1 text-xs transition-colors hover:bg-muted/50">
@@ -229,26 +229,24 @@ export function ProxyKeySection({ keys, limit, isPending, onCreate, onEdit }: Pr
                       {revealed[item.id] ? item.password : '••••••••••••••••'}
                     </code>
                     <div className="flex items-center gap-0.5 shrink-0">
-                      <Button
+                      <IconButton
                         type="button"
                         variant="ghost"
-                        size="icon"
-                        className="size-6 text-muted-foreground hover:text-foreground"
-                        aria-label={revealed[item.id] ? 'Hide password' : 'Show password'}
+                        size="icon-xs" className="text-muted-foreground hover:text-foreground"
+                        aria-label={revealed[item.id] ? t('user:proxyPool.hidePassword') : t('user:proxyPool.showPassword')}
                         onClick={() => setRevealed((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
                       >
-                        {revealed[item.id] ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                      </Button>
-                      <Button
+                        {revealed[item.id] ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </IconButton>
+                      <IconButton
                         type="button"
                         variant="ghost"
-                        size="icon"
-                        className="size-6 text-muted-foreground hover:text-foreground"
-                        aria-label="Copy password"
+                        size="icon-xs" className="text-muted-foreground hover:text-foreground"
+                        aria-label={t('user:proxyPool.copyPassword')}
                         onClick={() => void copyText(item.password, t('user:proxyPool.passwordLabel'))}
                       >
-                        <Copy className="size-3" />
-                      </Button>
+                        <Copy className="size-4" />
+                      </IconButton>
                     </div>
                   </div>
                 </div>

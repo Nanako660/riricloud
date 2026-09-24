@@ -5,6 +5,7 @@ import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -97,7 +98,7 @@ export default function AdminCertificatesPage() {
                     <TableCell className="max-w-56 truncate text-sm text-muted-foreground">{certificate.issuer}</TableCell>
                     <TableCell><div className="flex flex-col items-start gap-1"><Badge variant={statusVariant(certificate.status)}>{statusLabels[certificate.status]}</Badge><span className="text-xs text-muted-foreground">{t('admin:certificates.validUntil', { date: formatDate(certificate.validTo) })}</span></div></TableCell>
                     <TableCell><span className="font-medium">{certificate.lineCount}</span><span className="ml-1 text-xs text-muted-foreground">{t('admin:certificates.associatedLines')}</span></TableCell>
-                    <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" aria-label={t('admin:certificates.editCert')} onClick={() => openEdit(certificate)}><Pencil /></Button><Button variant="ghost" size="icon" aria-label={t('common:actions.delete')} onClick={() => setDeleting(certificate)}><Trash2 className="text-destructive" /></Button></div></TableCell>
+                    <TableCell><div className="flex justify-end gap-1"><IconButton variant="ghost" size="icon-sm" aria-label={t('admin:certificates.editCert')} onClick={() => openEdit(certificate)}><Pencil /></IconButton><IconButton variant="ghost" size="icon-sm" aria-label={t('common:actions.delete')} onClick={() => setDeleting(certificate)}><Trash2 className="text-destructive" /></IconButton></div></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

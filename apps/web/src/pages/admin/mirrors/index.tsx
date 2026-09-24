@@ -11,6 +11,7 @@ import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/r
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -260,45 +261,45 @@ export default function AdminMirrorsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button
+                        <IconButton
                           variant="ghost"
-                          size="icon"
+                          size="icon-sm"
                           aria-label={t('admin:mirrors.testMirror')}
                           title={t('admin:mirrors.testMirror')}
                           disabled={mutations.test.isPending}
                           onClick={() => mutations.test.mutate(mirror.id, { onSuccess: setTestResult })}
                         >
                           <RefreshCw />
-                        </Button>
+                        </IconButton>
                         {mirror.accessMode === 'SHARE' && (
-                          <Button
+                          <IconButton
                             variant="ghost"
-                            size="icon"
+                            size="icon-sm"
                             aria-label={t('admin:mirrors.rotateToken')}
                             title={t('admin:mirrors.rotateToken')}
                             onClick={() => mutations.rotate.mutate(mirror.id, { onSuccess: (result) => setShareToken(result.shareToken) })}
                           >
                             <RotateCcw />
-                          </Button>
+                          </IconButton>
                         )}
-                        <Button
+                        <IconButton
                           variant="ghost"
-                          size="icon"
+                          size="icon-sm"
                           aria-label={t('admin:mirrors.editMirror')}
                           title={t('admin:mirrors.editMirror')}
                           onClick={() => { setEditing(mirror); setFormOpen(true); }}
                         >
                           <Pencil />
-                        </Button>
-                        <Button
+                        </IconButton>
+                        <IconButton
                           variant="ghost"
-                          size="icon"
+                          size="icon-sm"
                           aria-label={t('common:actions.delete')}
                           title={t('common:actions.delete')}
                           onClick={() => setDeleting(mirror)}
                         >
                           <Trash2 className="text-destructive" />
-                        </Button>
+                        </IconButton>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -345,9 +346,9 @@ export default function AdminMirrorsPage() {
             <Label>Token</Label>
             <div className="flex gap-2">
               <Input readOnly value={shareToken ?? ''} className="font-mono text-xs" />
-              <Button size="icon" aria-label={t('common:actions.copy')} title={t('common:actions.copy')} onClick={() => shareToken && void navigator.clipboard.writeText(`${window.location.origin}/mirror/share/${shareToken}`)}>
+              <IconButton size="icon-sm" aria-label={t('common:actions.copy')} title={t('common:actions.copy')} onClick={() => shareToken && void navigator.clipboard.writeText(`${window.location.origin}/mirror/share/${shareToken}`)}>
                 <Copy />
-              </Button>
+              </IconButton>
             </div>
             <p className="break-all text-xs text-muted-foreground">{window.location.origin}/mirror/share/{shareToken}</p>
           </div>

@@ -25,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -273,19 +274,19 @@ export default function ProfilePage() {
                   <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground truncate max-w-[220px] sm:max-w-[320px]">
                     {user.data.nickname || t('user:profile.unnamedUser')}
                   </h2>
-                  <Button
+                  <IconButton
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="size-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                    size="icon-xs"
+                    className="rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
                     onClick={() => {
                       nicknameForm.reset({ nickname: user.data.nickname || '' });
                       setNicknameOpen(true);
                     }}
-                    title={t('user:profile.editNickname')}
+                    aria-label={t('user:profile.editNickname')}
                   >
-                    <Pencil className="size-3.5" />
-                  </Button>
+                    <Pencil className="size-4" />
+                  </IconButton>
                   <Badge variant={user.data.role === 'ADMIN' ? 'default' : 'secondary'} className="gap-1 font-normal">
                     {user.data.role === 'ADMIN' ? (
                       <>

@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -236,19 +237,19 @@ export default function AdminDocsPage() {
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-muted/40 border border-border/70 px-2 py-0.5 rounded-md text-foreground/90">
                           <span className="select-all">{article.slug}</span>
-                          <Button
+                          <IconButton
                             type="button"
                             variant="ghost"
-                            size="icon"
-                            className="size-5 text-muted-foreground hover:text-foreground shrink-0 rounded"
+                            size="icon-xs"
+                            className="shrink-0 rounded text-muted-foreground hover:text-foreground"
                             title={t('admin:docs.copySlug')}
                             onClick={(e) => {
                               e.stopPropagation();
                               handleCopySlug(article.slug);
-                            }}
+                            }} aria-label={t('admin:docs.copySlug')}
                           >
-                            <Copy className="size-3" />
-                          </Button>
+                            <Copy className="size-4" />
+                          </IconButton>
                         </div>
                       </td>
 
@@ -281,26 +282,26 @@ export default function AdminDocsPage() {
 
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
-                          <Button
+                          <IconButton
                             variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-foreground"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-foreground"
                             onClick={() => handleOpenEdit(article)}
-                            title={t('admin:docs.edit')}
+                            title={t('admin:docs.edit')} aria-label={t('admin:docs.edit')}
                           >
-                            <Edit className="size-3.5" />
-                          </Button>
+                            <Edit className="size-4" />
+                          </IconButton>
 
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button
+                              <IconButton
                                 variant="ghost"
-                                size="icon"
-                                className="size-7 text-muted-foreground hover:text-destructive"
-                                title={t('admin:docs.delete')}
+                                size="icon-sm"
+                                className="text-muted-foreground hover:text-destructive"
+                                title={t('admin:docs.delete')} aria-label={t('admin:docs.delete')}
                               >
-                                <Trash2 className="size-3.5" />
-                              </Button>
+                                <Trash2 className="size-4" />
+                              </IconButton>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>

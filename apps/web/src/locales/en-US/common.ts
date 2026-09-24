@@ -60,6 +60,8 @@ const common = {
     disable: 'Disable',
     select: 'Select',
     clear: 'Clear',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
     apply: 'Apply',
     back: 'Back',
     revoke: 'Revoke',
@@ -211,6 +213,7 @@ const common = {
     helpSupport: 'Help & Support'
   },
   userMenu: {
+    menuLabel: 'User menu',
     roleAdmin: 'Super Admin',
     roleUser: 'Standard User',
     profile: 'Profile',
