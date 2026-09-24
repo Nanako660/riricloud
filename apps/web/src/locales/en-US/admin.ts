@@ -2313,7 +2313,8 @@ const admin = {
     commonPresets: 'Presets: ',
     emptyDirect: 'No direct DNS configured. Add from presets above or type below',
     emptyProxy: 'No proxy DNS configured. Add from presets above or type below',
-    removeAria: 'Remove this DNS',
+    removeDirectAria: 'Remove direct DNS {{address}}',
+    removeProxyAria: 'Remove proxy DNS {{address}}',
     directPlaceholder: 'Enter IP or DoH link, e.g. 223.5.5.5 or https://223.5.5.5/dns-query',
     proxyPlaceholder: 'Enter secure overseas DNS, e.g. https://1.1.1.1/dns-query',
     add: 'Add'

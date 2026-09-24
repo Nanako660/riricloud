@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, RotateCcw, Trash2, Zap } from 'lucide-react';
 import type { SettingsForm } from '../index';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Badge } from '@/components/ui/badge';
 import { FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -168,17 +169,17 @@ function SpeedTierRow({
           <Zap className="size-3" />
           {previewText}
         </Badge>
-        <Button
+        <IconButton
           type="button"
           variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground hover:text-destructive shrink-0 ml-1"
+          size="icon-sm"
+          className="ml-1 shrink-0 text-muted-foreground hover:text-destructive"
           disabled={isOnlyOne}
           onClick={onRemove}
-          title={t('admin:settings.speedTierDelete')}
+          aria-label={t('admin:settings.speedTierDelete')}
         >
-          <Trash2 className="size-3.5" />
-        </Button>
+          <Trash2 className="size-4" />
+        </IconButton>
       </div>
     </div>
   );

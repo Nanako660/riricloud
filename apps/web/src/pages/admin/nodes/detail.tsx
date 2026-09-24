@@ -16,6 +16,7 @@ import { CopyButton } from '@/components/shared/copy-button';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
@@ -300,9 +301,9 @@ export default function NodeDetailPage() {
     <PageContainer>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" asChild aria-label={t('common:actions.back')}>
+          <IconButton variant="ghost" size="icon-sm" asChild aria-label={t('common:actions.back')}>
             <Link to="/admin/nodes"><ArrowLeft className="h-4 w-4" /></Link>
-          </Button>
+          </IconButton>
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{node.name}</h1>
             <p className="truncate text-sm text-muted-foreground">{node.serverHost}</p>

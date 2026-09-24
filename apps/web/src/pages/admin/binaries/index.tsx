@@ -5,6 +5,7 @@ import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -333,14 +334,14 @@ export default function BinariesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={t('admin:binaries.details')} onClick={() => setDetailId(item.id)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:binaries.details')}</TooltipContent>
-                        </Tooltip>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:binaries.details')}
+                          onClick={() => setDetailId(item.id)}
+                        >
+                          <Eye className="size-4" />
+                        </IconButton>
 
                         {item.status === 'DRAFT' || item.status === 'DISABLED' ? (
                           <Button variant="outline" size="sm" className="h-8 gap-1 text-xs"
@@ -362,9 +363,9 @@ export default function BinariesPage() {
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={t('admin:binaries.colActions')}>
+                            <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:binaries.colActions')}>
                               <MoreHorizontal className="h-4 w-4" />
-                            </Button>
+                            </IconButton>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => setEditing(item)}>

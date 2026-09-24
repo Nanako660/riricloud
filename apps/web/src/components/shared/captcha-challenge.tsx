@@ -3,6 +3,7 @@ import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
@@ -69,7 +70,7 @@ export function CaptchaDialog({ open, mode, siteKey, action, onOpenChange, onVer
             </div>
             <div className="flex gap-2">
               <Input value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={t('auth:captcha.placeholder')} autoComplete="off" />
-              <Button type="button" variant="outline" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')} title={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
+              <IconButton type="button" variant="outline" size="icon-sm" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <DialogFooter>
@@ -122,7 +123,7 @@ export function CaptchaInline({ mode, siteKey, action, onChange }: CaptchaInline
     <div className="space-y-2 rounded-lg border p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium">{t('auth:captcha.title')}</p>
-        <Button type="button" variant="ghost" size="icon" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')} title={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
+        <IconButton type="button" variant="ghost" size="icon-sm" onClick={() => void loadLocal()} disabled={loading} aria-label={t('auth:captcha.clickToRefresh')}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton>
       </div>
       <div className="flex min-h-14 items-center justify-center rounded-md bg-muted/20 p-2">
         {local ? <div dangerouslySetInnerHTML={{ __html: local.svg }} /> : <span className="text-sm text-muted-foreground">{loading ? t('common:actions.loading') : t('common:status.failed')}</span>}

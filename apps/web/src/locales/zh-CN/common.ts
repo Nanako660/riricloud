@@ -60,6 +60,8 @@ const common = {
     disable: '禁用',
     select: '选择',
     clear: '清空',
+    moveUp: '上移',
+    moveDown: '下移',
     apply: '应用',
     back: '返回',
     revoke: '作废',
@@ -211,6 +213,7 @@ const common = {
     helpSupport: '帮助支持'
   },
   userMenu: {
+    menuLabel: '用户菜单',
     roleAdmin: '超级管理员',
     roleUser: '标准用户',
     profile: '个人中心',

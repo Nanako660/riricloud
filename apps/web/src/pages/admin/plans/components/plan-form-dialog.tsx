@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/ui/icon-button';
 import {
   type Plan,
   type PlanPayload,
@@ -888,33 +888,33 @@ export function PlanFormDialog({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <Label htmlFor="plan-features" className="text-xs">{t('admin:planForm.featuresLabel')}</Label>
-                    <TooltipProvider delayDuration={200}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-foreground inline-flex items-center"
-                            aria-label={t('admin:planForm.featuresSyntaxGuide')}
-                          >
-                            <HelpCircle className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-xs p-3 space-y-2">
+                    <IconButton
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={t('admin:planForm.featuresSyntaxGuide')}
+                      tooltipSide="top"
+                      tooltipClassName="max-w-xs p-3"
+                      tooltip={
+                        <div className="space-y-2">
                           <p className="font-semibold text-xs">{t('admin:planForm.featuresSyntaxTitle')}</p>
                           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                            <div><code className="bg-muted px-1 rounded text-primary">[zap]</code> {t('admin:planForm.featuresSyntaxZap')}</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[rocket]</code> {t('admin:planForm.featuresSyntaxRocket')}</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[crown]</code> {t('admin:planForm.featuresSyntaxCrown')}</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[shield]</code> {t('admin:planForm.featuresSyntaxShield')}</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[sparkles]</code> {t('admin:planForm.featuresSyntaxSparkles')}</div>
-                            <div><code className="bg-muted px-1 rounded text-primary">[star]</code> {t('admin:planForm.featuresSyntaxStar')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[zap]</code> {t('admin:planForm.featuresSyntaxZap')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[rocket]</code> {t('admin:planForm.featuresSyntaxRocket')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[crown]</code> {t('admin:planForm.featuresSyntaxCrown')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[shield]</code> {t('admin:planForm.featuresSyntaxShield')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[sparkles]</code> {t('admin:planForm.featuresSyntaxSparkles')}</div>
+                            <div><code className="rounded bg-muted px-1 text-primary">[star]</code> {t('admin:planForm.featuresSyntaxStar')}</div>
                           </div>
-                          <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/50">
+                          <p className="border-t border-border/50 pt-1 text-[10px] text-muted-foreground">
                             {t('admin:planForm.featuresSyntaxBold')}
                           </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                        </div>
+                      }
+                    >
+                      <HelpCircle className="size-4" />
+                    </IconButton>
                   </div>
                   <span className="text-[11px] text-muted-foreground">{t('admin:planForm.oneItemPerLine')}</span>
                 </div>

@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/ui/icon-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -159,35 +159,27 @@ export default function TemplatesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setPreviewing(template)}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:templates.preview')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => { setEditing(template); setOpen(true); }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:templates.editTemplate')}</TooltipContent>
-                        </Tooltip>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:templates.preview')}
+                          onClick={() => setPreviewing(template)}
+                        >
+                          <Eye className="size-4" />
+                        </IconButton>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:templates.editTemplate')}
+                          onClick={() => { setEditing(template); setOpen(true); }}
+                        >
+                          <Pencil className="size-4" />
+                        </IconButton>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
+                            <IconButton variant="ghost" size="icon-sm" aria-label={t('admin:templates.colActions')}>
+                              <MoreHorizontal className="size-4" />
+                            </IconButton>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem

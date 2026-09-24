@@ -5,13 +5,13 @@ import { useFieldArray, useForm, useFormContext, useWatch } from 'react-hook-for
 import { Plus, Settings2, Trash2 } from 'lucide-react';
 import type { SettingsForm } from '../index';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   EMPTY_PROBE_PRESET,
   MAX_PROBE_PRESETS,
@@ -116,12 +116,16 @@ function ProbePresetRow({ index, onRemove }: { index: number; onRemove: () => vo
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium">{t('admin:settings.probePresetTargetLabel', { index: index + 1 })}</p>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" aria-label={t('admin:settings.probePresetDeleteAria', { index: index + 1 })} onClick={onRemove}><Trash2 /></Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('admin:settings.probePresetDeleteTooltip')}</TooltipContent>
-        </Tooltip>
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t('admin:settings.probePresetDeleteAria', { index: index + 1 })}
+          tooltip={t('admin:settings.probePresetDeleteTooltip')}
+          onClick={onRemove}
+        >
+          <Trash2 className="size-4" />
+        </IconButton>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

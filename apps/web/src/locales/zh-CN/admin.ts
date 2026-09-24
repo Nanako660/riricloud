@@ -2313,7 +2313,8 @@ const admin = {
     commonPresets: '常用预设：',
     emptyDirect: '暂无直连 DNS，请从上方预设添加或在下方输入',
     emptyProxy: '暂无代理 DNS，请从上方预设添加或在下方输入',
-    removeAria: '移除此 DNS',
+    removeDirectAria: '移除直连 DNS {{address}}',
+    removeProxyAria: '移除代理 DNS {{address}}',
     directPlaceholder: '输入 IP 或 DoH 链接，例如 223.5.5.5 或 https://223.5.5.5/dns-query',
     proxyPlaceholder: '输入海外安全 DNS，例如 https://1.1.1.1/dns-query',
     add: '添加'

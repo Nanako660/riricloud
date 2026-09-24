@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Badge } from '@/components/ui/badge';
 
 export interface SemanticDnsConfig {
@@ -211,19 +212,21 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
               <Badge
                 key={`${item}-${index}`}
                 variant="secondary"
-                className="flex items-center gap-1 py-1 pl-2.5 pr-1.5 font-mono text-xs"
+                className="flex min-h-7 items-center gap-1 py-0.5 pl-2.5 pr-0.5 font-mono text-xs"
               >
                 <span className="max-w-[280px] truncate" title={item}>
                   {item}
                 </span>
-                <button
+                <IconButton
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="shrink-0 rounded-full"
                   onClick={() => removeDirect(index)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={t('admin:templateDns.removeAria')}
+                  aria-label={t('admin:templateDns.removeDirectAria', { address: item })}
                 >
-                  <X className="h-3 w-3" />
-                </button>
+                  <X className="size-4" />
+                </IconButton>
               </Badge>
             ))
           )}
@@ -290,19 +293,21 @@ export function TemplateDnsEditor({ value, onChange }: TemplateDnsEditorProps) {
               <Badge
                 key={`${item}-${index}`}
                 variant="secondary"
-                className="flex items-center gap-1 py-1 pl-2.5 pr-1.5 font-mono text-xs"
+                className="flex min-h-7 items-center gap-1 py-0.5 pl-2.5 pr-0.5 font-mono text-xs"
               >
                 <span className="max-w-[280px] truncate" title={item}>
                   {item}
                 </span>
-                <button
+                <IconButton
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="shrink-0 rounded-full"
                   onClick={() => removeProxy(index)}
-                  className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={t('admin:templateDns.removeAria')}
+                  aria-label={t('admin:templateDns.removeProxyAria', { address: item })}
                 >
-                  <X className="h-3 w-3" />
-                </button>
+                  <X className="size-4" />
+                </IconButton>
               </Badge>
             ))
           )}

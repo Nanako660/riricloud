@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
+import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/utils';
 
 const Sheet = DialogPrimitive.Root;
@@ -54,9 +55,16 @@ const SheetContent = React.forwardRef<
       <SheetOverlay />
       <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
-          <X className="h-4 w-4" />
-          <span className="sr-only">{t('actions.close')}</span>
+        <DialogPrimitive.Close asChild>
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-offset-background disabled:pointer-events-none"
+            aria-label={t('actions.close')}
+          >
+            <X className="size-4" />
+          </IconButton>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </SheetPortal>

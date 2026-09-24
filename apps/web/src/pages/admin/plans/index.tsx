@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/ui/icon-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
@@ -250,36 +250,25 @@ export default function PlansPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end items-center gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t('admin:plans.editPlan')}
-                              onClick={() => {
-                                setEditing(plan);
-                                setOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:plans.editPlan')}</TooltipContent>
-                        </Tooltip>
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t('common:actions.delete')}
-                              onClick={() => setDeleting(plan)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('common:actions.delete')}</TooltipContent>
-                        </Tooltip>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:plans.editPlan')}
+                          onClick={() => {
+                            setEditing(plan);
+                            setOpen(true);
+                          }}
+                        >
+                          <Pencil className="size-4" />
+                        </IconButton>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('common:actions.delete')}
+                          onClick={() => setDeleting(plan)}
+                        >
+                          <Trash2 className="size-4" />
+                        </IconButton>
                       </div>
                     </TableCell>
                   </TableRow>

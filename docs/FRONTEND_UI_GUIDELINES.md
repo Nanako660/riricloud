@@ -113,6 +113,8 @@ apps/web/src/
    - **Regular (16px / `size-4`)**：按钮内部图标、表单输入框前后缀、常规文本行。
    - **Medium (20px / `size-5`)**：卡片标题图标、导航菜单项图标。
    - **Large (24px / `size-6`)**：统计面板大卡片图标、状态占位图。
+   - **图标按钮尺寸**：常规工具栏/表格行操作使用 `icon-sm`（32px）；紧凑输入框、徽标或编辑器内联操作使用 `icon-xs`（28px）；仅无密度约束的独立主要操作使用 `icon`（36px）。图标按钮内部图形统一为 16px（`size-4`），不得用额外高度/宽度类覆盖按钮尺寸。
+   - **图标按钮 Tooltip 与无障碍名称**：仅图标操作必须使用 `@/components/ui/icon-button` 的 `IconButton`，提供本地化且能描述具体操作的 `aria-label`；组件默认以该名称展示 Tooltip，需要更贴合上下文的提示时通过 `tooltip` 指定。不得再手写仅含图标的 `Button` 或为其重复嵌套 Tooltip；富文本说明可通过 IconButton 的 Tooltip 属性呈现。
 5. **操作区域层级统一**：表单中承载 `Switch`、`Checkbox` 或操作按钮的区域必须使用 shadcn/ui `FormItem` / `Card` 结构；普通页面按既有卡片规范保持层级一致，线路编辑弹窗使用平面 `FormItem` 与 `Separator`，不增加边框容器或嵌套卡片。
 
 ### 4.2 严格禁止清单 (Don'ts)
@@ -256,7 +258,7 @@ toast.promise(reloadAgentPromise, {
 | :--- | :--- | :--- |
 | **常规数据录入 / 快速编辑** | `Dialog` 或 `Sheet` (抽屉) | 宽表单优先使用右侧 `Sheet` 抽屉，简短录入用居中 `Dialog` |
 | **危险/破坏性操作拦截** | `AlertDialog` | 删除节点、清空日志、重置 Token、删除用户等必须使用，确认按钮标红（`variant="destructive"`） |
-| **轻量级气泡说明 / 快捷提示** | `Tooltip` / `Popover` | 图标按钮悬浮说明必须加 `Tooltip`；复杂筛选器用 `Popover` |
+| **轻量级气泡说明 / 快捷提示** | `Tooltip` / `Popover` | 图标按钮统一由 `IconButton` 提供 `Tooltip`；复杂筛选器用 `Popover` |
 
 弹窗尺寸统一使用 `@/components/ui/dialog` 的 `DialogContent` 变体：普通数据表单使用默认 `2xl`，线路和模板等复杂编辑使用 `wide` `3xl`，确实简单的内容才使用 `compact` `lg`。所有弹窗在移动端使用视口两侧留白并限制最大高度，内容超出时在弹窗内部滚动；破坏性确认继续使用固定的 `AlertDialog` `lg` 宽度。
 

@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconButton } from '@/components/ui/icon-button';
 import { ImageLightbox } from '@/components/shared/image-lightbox';
 import { slugify } from '@/lib/slugify';
 import {
@@ -39,26 +38,21 @@ function CodeCopyButton({ value }: { value: string }) {
     }
   };
 
+  const actionLabel = copied ? t('actions.copied') : t('actions.copy');
+
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6 rounded hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
-            onClick={onCopy}
-          >
-            {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-            <span className="sr-only">{t('actions.copy')}</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">
-          <p className="text-xs">{copied ? t('actions.copied') : t('actions.copy')}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <IconButton
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0 rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      onClick={onCopy}
+      aria-label={actionLabel}
+      tooltipSide="left"
+      tooltip={<p className="text-xs">{actionLabel}</p>}
+    >
+      {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+    </IconButton>
   );
 }
 

@@ -6,6 +6,7 @@ import { PageContainer, PageHeader } from '@/components/shared/page-container';
 import { EmptyState } from '@/components/shared/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -221,45 +222,35 @@ export default function AdminNodesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t('admin:nodes.reloadConfig')}
-                              disabled={reloadNode.isPending}
-                              onClick={() => reloadNode.mutate(node.id)}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:nodes.reloadConfig')}</TooltipContent>
-                        </Tooltip>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:nodes.reloadConfig')}
+                          disabled={reloadNode.isPending}
+                          onClick={() => reloadNode.mutate(node.id)}
+                        >
+                          <RefreshCw className="size-4" />
+                        </IconButton>
                         {!node.isLocal && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={t('common:actions.delete')}
-                                onClick={() => setDeleting(node)}
-                              >
-                                <Trash2 className="text-destructive h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>{t('common:actions.delete')}</TooltipContent>
-                          </Tooltip>
+                          <IconButton
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t('common:actions.delete')}
+                            onClick={() => setDeleting(node)}
+                          >
+                            <Trash2 className="size-4 text-destructive" />
+                          </IconButton>
                         )}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={t('admin:nodes.details')} asChild>
-                              <Link to={`/admin/nodes/${node.id}`}>
-                                <ChevronRight className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('admin:nodes.details')}</TooltipContent>
-                        </Tooltip>
+                        <IconButton
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('admin:nodes.details')}
+                          asChild
+                        >
+                          <Link to={`/admin/nodes/${node.id}`}>
+                            <ChevronRight className="size-4" />
+                          </Link>
+                        </IconButton>
                       </div>
                     </TableCell>
                   </TableRow>
