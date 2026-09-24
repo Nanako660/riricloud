@@ -86,13 +86,7 @@ const ADMIN_USER_SELECT = {
       expireAt: true,
       trafficPeriodStartAt: true,
       planSnapshotJson: true,
-      plan: { select: {
-        id: true, name: true, description: true, price: true, durationDays: true, trafficLimitBytes: true,
-        trafficResetMode: true, lineMatchMode: true, lineTagsJson: true, lineIdsJson: true, templateId: true,
-        badgeText: true, isFeatured: true, featuresJson: true, cardConfigJson: true, isPublic: true, sortOrder: true,
-        purchaseLimitPerUser: true, allowRenewal: true, speedLimitMbps: true, appendSpeedBadge: true,
-        template: true
-      } }
+      plan: { select: { id: true, name: true, durationDays: true, trafficResetMode: true } }
     }
   },
   extraLineGrants: { select: { lineId: true } }
@@ -298,9 +292,12 @@ export class UsersService {
       trafficUsedBytes: Number(u.trafficUsedBytes),
       subscription: subscription
         ? {
-            ...subscription,
+            id: subscription.id,
+            status: subscription.status,
             trafficLimitBytes: Number(subscription.trafficLimitBytes),
             trafficUsedBytes: Number(subscription.trafficUsedBytes),
+            startedAt: subscription.startedAt,
+            expireAt: subscription.expireAt,
             trafficResetMode: subscription.plan?.trafficResetMode ?? 'NONE',
             nextTrafficResetAt: subscription.plan
               ? getTrafficPeriod(
@@ -312,7 +309,8 @@ export class UsersService {
                 )?.nextResetAt ?? null
               : null,
             extraLineIds: (extraLineGrants ?? []).map((grant: { lineId: string }) => grant.lineId),
-            plan: subscription.plan
+            // 用户管理 API 仅返回约定字段，避免泄漏套餐快照及其中无法直接 JSON 序列化的 BigInt。
+            plan: subscription.plan ? { id: subscription.plan.id, name: subscription.plan.name } : null
           }
         : null
     };
