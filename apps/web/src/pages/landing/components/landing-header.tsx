@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, Cloud, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { LanguageSwitcher } from '@/components/layout/language-switcher';
 import { UserMenu } from '@/components/layout/user-menu';
@@ -37,18 +38,23 @@ export function LandingHeader({
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         {/* Brand */}
         <div className="flex items-center gap-6">
-          <Link
-            to="/"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center gap-2.5 font-semibold text-foreground transition-opacity hover:opacity-90"
-          >
-            {logoUrl ? (
-              <img src={logoUrl} alt={siteName} className="size-6 rounded object-contain" />
-            ) : (
-              <Cloud className="size-6 text-primary" />
-            )}
-            <span className="text-base font-bold tracking-tight">{siteName}</span>
-          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="flex items-center gap-2.5 font-semibold text-foreground transition-opacity hover:opacity-90"
+              >
+                {logoUrl ? (
+                  <img src={logoUrl} alt={siteName} className="size-6 rounded object-contain" />
+                ) : (
+                  <Cloud className="size-6 text-primary" />
+                )}
+                <span className="text-base font-bold tracking-tight">{siteName}</span>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>{t('common:nav.home')}</TooltipContent>
+          </Tooltip>
 
           {/* Navigation Anchors */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">

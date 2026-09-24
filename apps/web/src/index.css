@@ -4,6 +4,10 @@
 
 /* shadcn/ui New York + Zinc 语义 CSS 变量（严禁业务代码硬编码 HEX，见 FRONTEND_UI_GUIDELINES） */
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
@@ -230,6 +234,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .animate-aurora-1,
   .animate-aurora-2,
   .animate-crystal-sheen,
