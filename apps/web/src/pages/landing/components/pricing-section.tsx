@@ -4,7 +4,7 @@ import { ArrowRight, Check, Gauge, Sparkles, Zap } from 'lucide-react';
 import { usePublicPlans, type Plan } from '@/pages/admin/plans/use-plans';
 import { useCurrentUser } from '@/lib/current-user';
 import { useAuthStore } from '@/stores/auth';
-import { formatBytes, formatCurrency } from '@/lib/utils';
+import { formatBytes, formatYuan } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ interface PricingSectionProps {
 }
 
 export function PricingSection({ registrationEnabled = false }: PricingSectionProps) {
-  const { t } = useTranslation('landing');
+  const { t } = useTranslation(['landing', 'common']);
   const { data: plans, isLoading } = usePublicPlans();
   const sessionQuery = useCurrentUser();
   const storeUser = useAuthStore((s) => s.user);
@@ -84,7 +84,7 @@ export function PricingSection({ registrationEnabled = false }: PricingSectionPr
                     )}
                     <div className="mt-4 flex items-baseline gap-1">
                       <span className="text-3xl font-extrabold tracking-tight text-foreground">
-                        {formatCurrency(plan.price)}
+                        {plan.price === 0 ? t('common:pricing.free') : formatYuan(plan.price)}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         / {plan.durationDays} {t('pricing.days', { defaultValue: '天' })}

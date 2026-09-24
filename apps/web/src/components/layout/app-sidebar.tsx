@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/sidebar';
 
 import { useTranslation } from 'react-i18next';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // 侧边导航：结构化分组（控制台 / 管理后台）
 export function AppSidebar() {
@@ -79,16 +80,20 @@ export function AppSidebar() {
   return (
     <Sidebar variant="inset" aria-label="主导航">
       <SidebarHeader className="h-14 justify-center px-4">
-        <Link
-          to="/"
-          className="flex items-center gap-2.5 px-1 rounded-md transition-opacity hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-          title={t('nav.home')}
-        >
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-            {logoUrl ? <img src={logoUrl} alt="" className="size-4.5 rounded object-contain" /> : <Cloud className="size-4" />}
-          </div>
-          <span className="truncate font-semibold tracking-tight text-sidebar-foreground text-sm">{siteName}</span>
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/"
+              className="flex items-center gap-2.5 px-1 rounded-md transition-opacity hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
+                {logoUrl ? <img src={logoUrl} alt="" className="size-4.5 rounded object-contain" /> : <Cloud className="size-4" />}
+              </div>
+              <span className="truncate font-semibold tracking-tight text-sidebar-foreground text-sm">{siteName}</span>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>{t('nav.home')}</TooltipContent>
+        </Tooltip>
       </SidebarHeader>
       <SidebarContent className="px-2">
         {groups.map((group) => (
