@@ -120,6 +120,24 @@ resolve_node() {
   command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
 }
 
+to_go_path() {
+  local p="$1"
+  case "${GO_BIN:-go}" in
+    *.exe)
+      if command -v wslpath >/dev/null 2>&1; then
+        wslpath -w "$p"
+      elif command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$p"
+      else
+        printf '%s\n' "$p"
+      fi
+      ;;
+    *)
+      printf '%s\n' "$p"
+      ;;
+  esac
+}
+
 resolve_go
 resolve_node
 
@@ -216,10 +234,11 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
       echo "编译定制 Sing-box ${target_os}/${target_arch}..."
       (
         cd "$SINGBOX_SOURCE_DIR"
+        go_sb_out="$(to_go_path "$CACHE_DIR/$SB_BIN")"
         CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" "$GO_BIN" build -trimpath \
           -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api,with_riri_device_tracking \
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}" \
-          -o "$CACHE_DIR/$SB_BIN" ./cmd/sing-box
+          -o "$go_sb_out" ./cmd/sing-box
       )
       touch "$CACHE_DIR/.riri-device-tracking-v2"
     fi
