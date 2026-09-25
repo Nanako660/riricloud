@@ -48,7 +48,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en-US',
+    fallbackLng: 'zh-CN',
     supportedLngs: ['zh-CN', 'en-US', 'ja-JP'],
     defaultNS: 'common',
     ns: ['common', 'auth', 'user', 'admin', 'errors', 'landing'],

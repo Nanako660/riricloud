@@ -1515,6 +1515,10 @@ const admin = {
     labelSmtpTestEmail: '宛先メールアドレス',
     btnSendTestEmail: 'テストメールを送信',
     sendingTestEmail: '送信中…',
+    placeholderFeatureTitle: '例：超高速 4K ストリーミング体験',
+    placeholderFeatureDesc: '機能やハイライトの概要を簡潔に紹介...',
+    placeholderFaqQuestion: '例：初心者ですが、どのように使い始めればよいですか？',
+    placeholderFaqAnswer: '詳しい回答・説明内容...',
     selectPlaceholder: '選択してください'
   },
   userTraffic: {
@@ -2496,6 +2500,14 @@ const admin = {
       confirm: 'プリセットの復元を確認',
       resetting: 'リセット中…',
       success: '公式プリセットの初心者ガイドを正常に復元しました'
+    },
+    validation: {
+      slugMin: 'Slug は2文字以上で入力してください',
+      slugMax: 'Slug は64文字以内で入力してください',
+      slugRegex: 'Slug には小文字の英数字とハイフンのみ使用できます',
+      titleMin: 'タイトルは2文字以上で入力してください',
+      titleMax: 'タイトルは128文字以内で入力してください',
+      contentRequired: '記事本文を入力してください'
     }
   }
 } as const;

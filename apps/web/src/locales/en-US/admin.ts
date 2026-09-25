@@ -1515,6 +1515,10 @@ const admin = {
     labelSmtpTestEmail: 'Recipient Email',
     btnSendTestEmail: 'Send Test Email',
     sendingTestEmail: 'Sending…',
+    placeholderFeatureTitle: 'e.g. Ultra-Fast 4K Experience',
+    placeholderFeatureDesc: 'Briefly describe this feature or highlight...',
+    placeholderFaqQuestion: 'e.g. How do I get started as a beginner?',
+    placeholderFaqAnswer: 'Detailed answer explanation...',
     selectPlaceholder: 'Select an option'
   },
   userTraffic: {
@@ -2496,6 +2500,14 @@ const admin = {
       confirm: 'Confirm Restore',
       resetting: 'Restoring…',
       success: 'Official default tutorials restored successfully'
+    },
+    validation: {
+      slugMin: 'Slug must be at least 2 characters',
+      slugMax: 'Slug must be at most 64 characters',
+      slugRegex: 'Slug only allows lowercase letters, numbers, and hyphens',
+      titleMin: 'Title must be at least 2 characters',
+      titleMax: 'Title must be at most 128 characters',
+      contentRequired: 'Article content cannot be empty'
     }
   }
 } as const;

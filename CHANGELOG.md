@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **中文第一基准（Chinese-First SSOT）与 i18n 机械门禁**：确立以简体中文（`zh-CN`）为前端多语言唯一 SSOT 基准源；新增 `pnpm gate:i18n`（`scripts/i18n-governance.mjs`）静态分析门禁，机械阻断 TSX 视图源码中未国际化的硬编码中文文本、属性与 Zod 校验文案；解耦非基准语言与日常 UI 交付，运行时通过 `fallbackLng: 'zh-CN'` 平滑回退兜底，并提供 `pnpm i18n:report` 命令审计输出多语言覆盖率看板与未翻译词条待办台账。
 - **前端全站日语 (`ja-JP`) 国际化适配**：新增 `common`、`auth`、`user`、`admin`、`errors`、`landing` 六大命名空间全量日语字典，消除语言切换器与货币格式化中的中英二元假设，支持浏览器 `ja-*` 语言自动探测、顶栏 `日本語` 即时切换、首页默认特性与常见问答（FAQ）日语化以及管理端帮助文档的日语筛选与编辑选项。
 
 ### Changed

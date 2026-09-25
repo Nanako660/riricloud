@@ -1,6 +1,7 @@
 const common = {
   nav: {
     home: 'ホームに戻る',
+    mainNav: 'メインナビゲーション',
     console: 'コンソール',
     mySubscription: 'マイサブスクリプション',
     directProxy: 'ダイレクトプロキシ',

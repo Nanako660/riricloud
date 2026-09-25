@@ -601,7 +601,7 @@ export function LandingSettingsTab() {
                 id="feature-title"
                 value={featureTitle}
                 onChange={(e) => setFeatureTitle(e.target.value)}
-                placeholder="例如：极速高清体验"
+                placeholder={t('admin:settings.placeholderFeatureTitle', { defaultValue: '例如：极速高清体验' })}
                 maxLength={60}
               />
             </div>
@@ -612,7 +612,7 @@ export function LandingSettingsTab() {
                 id="feature-desc"
                 value={featureDesc}
                 onChange={(e) => setFeatureDesc(e.target.value)}
-                placeholder="简要介绍该项服务体验或亮点..."
+                placeholder={t('admin:settings.placeholderFeatureDesc', { defaultValue: '简要介绍该项服务体验或亮点...' })}
                 rows={3}
                 maxLength={200}
               />
@@ -652,7 +652,7 @@ export function LandingSettingsTab() {
                 id="faq-question"
                 value={faqQuestion}
                 onChange={(e) => setFaqQuestion(e.target.value)}
-                placeholder="例如：我是新手小白，该如何开始使用？"
+                placeholder={t('admin:settings.placeholderFaqQuestion', { defaultValue: '例如：我是新手小白，该如何开始使用？' })}
                 maxLength={100}
               />
             </div>
@@ -663,7 +663,7 @@ export function LandingSettingsTab() {
                 id="faq-answer"
                 value={faqAnswer}
                 onChange={(e) => setFaqAnswer(e.target.value)}
-                placeholder="详细解答说明..."
+                placeholder={t('admin:settings.placeholderFaqAnswer', { defaultValue: '详细解答说明...' })}
                 rows={5}
                 maxLength={1000}
               />

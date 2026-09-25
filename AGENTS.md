@@ -66,6 +66,7 @@ riricloud/
 11. **不越权**：架构级决策（换框架、加外部服务、突破资源上限）不得自行实施——先提 RFC 改文档，获批准后再动代码。
 12. **视觉验证约束**：前端 UI 视觉验证为**按需执行**且**仅在 Antigravity 代理环境下执行**；严禁在自动化 CI / Git hook 中挂接视觉测试，严禁私自引入重型测试框架。UI 改动需核对并维护 [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md) 索引台账。
 13. **任务规划与归档机械约束**：所有中短期任务规划必须存放于 `docs/plans/`；严禁在 `docs/` 根目录散落 TODO/计划文档；规划任务 100% 完成后必须使用 `pnpm plan:archive <file>` 归档至 `docs/plans/archive/`，未归档将触发 `pnpm gate:docs` 门禁阻断。
+14. **中文第一基准与 i18n 机械门禁**：前端多语言以中文（`zh-CN`）为唯一 SSOT 基准。新增或修改 UI 文本时，强制要求且仅强制要求录入 `apps/web/src/locales/zh-CN/` 并通过 `t(...)` 引用；TSX 视图中严禁裸露未走 i18n 的硬编码中文文本/属性/Zod 校验（由 `pnpm gate:i18n` 机械阻断）；非基准语言（`en-US`、`ja-JP` 等）允许在 PR 中暂缺并异步补齐，未翻译词条在运行时平滑回退至中文（`fallbackLng: 'zh-CN'`），可通过 `pnpm i18n:report` 随时输出全量覆盖率与待补齐台账。
 
 ---
 
@@ -112,13 +113,15 @@ pnpm bump major            # 固化 [Unreleased] 为 MAJOR 版本（如 0.4.13 �
 pnpm plan:new <name>       # 创建新规划模板（放入 docs/plans/）
 pnpm plan:archive <file>   # 一键归档已完成规划（移入 docs/plans/archive/ 并刷新台账）
 
-# 质量门禁（提交前本地自查，五门禁一次全跑用 pnpm gate）
+# 质量门禁（提交前本地自查，六门禁一次全跑用 pnpm gate）
 pnpm gate:version  # 版本号合规、单仓一致性与 PR [Unreleased] 维护约束校验
 pnpm gate:docs     # 文档治理与规划归档机械约束校验
+pnpm gate:i18n     # 前端 TSX 源码无硬编码中文机械门禁校验
 pnpm gate:server   # tsc --noEmit + eslint + jest
 pnpm gate:web      # tsc --noEmit + eslint + vite build
 pnpm gate:agent    # go vet + gofmt + go test + go build（经 scripts/gate-agent.sh）
-pnpm gate          # gate:version + gate:docs + gate:server + gate:web + gate:agent 全跑
+pnpm gate          # gate:version + gate:docs + gate:i18n + gate:server + gate:web + gate:agent 全跑
+pnpm i18n:report   # 输出多语言字典覆盖率与未翻译键位待办台账
 
 # 数据库迁移与种子（server）
 pnpm --filter @riricloud/server exec prisma migrate dev
@@ -137,7 +140,7 @@ pnpm release:agent         # 发布 Agent 边缘端（Tag 为 agent-vA.B.C，仅
 
 1. **动代码前必先切分支**：执行 `git checkout -b <type>/<scope>-<desc>`（严禁在 main 分支编辑/暂存/提交）
 2. **完成特性开发并维护更新日志**：修改核心代码时在 `CHANGELOG.md` 顶部的 `## [Unreleased]` 中记录变更条目（日常 PR 保持 `package.json` 版本不变；发版时拉出 `release/vX.Y.Z` 分支执行 `pnpm bump`）
-3. **本地门禁自查**：`pnpm gate`（含 `gate:version` / `gate:docs` / `gate:server` / `gate:web` / `gate:agent`）全绿
+3. **本地门禁自查**：`pnpm gate`（含 `gate:version` / `gate:docs` / `gate:i18n` / `gate:server` / `gate:web` / `gate:agent`）全绿
 4. **原子提交**：`git add <files>` → `git commit -m "<type>(<scope>): <中文描述>"`（严禁 `--no-verify`）
 5. **推送并提 PR**：`git push -u origin <branch>` → `gh pr create --title "<type>(<scope>): <中文描述>" --body "..."`
 6. **等待 CI 并合并**：等待 GitHub Actions 门禁通过 → `gh pr merge --squash --delete-branch`

@@ -1515,6 +1515,10 @@ const admin = {
     labelSmtpTestEmail: '收件邮箱',
     btnSendTestEmail: '发送测试邮件',
     sendingTestEmail: '发送中…',
+    placeholderFeatureTitle: '例如：极速高清体验',
+    placeholderFeatureDesc: '简要介绍该项服务体验或亮点...',
+    placeholderFaqQuestion: '例如：我是新手小白，该如何开始使用？',
+    placeholderFaqAnswer: '详细解答说明...',
     selectPlaceholder: '请选择'
   },
   userTraffic: {
@@ -2496,6 +2500,14 @@ const admin = {
       confirm: '确认恢复预设',
       resetting: '正在重置…',
       success: '已成功恢复官方预设新手教程'
+    },
+    validation: {
+      slugMin: 'Slug 至少 2 个字符',
+      slugMax: 'Slug 最多 64 个字符',
+      slugRegex: 'Slug 仅限小写字母、数字和连字符',
+      titleMin: '标题至少 2 个字符',
+      titleMax: '标题最多 128 个字符',
+      contentRequired: '正文内容不能为空'
     }
   }
 } as const;
