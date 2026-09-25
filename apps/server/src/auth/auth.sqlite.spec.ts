@@ -47,6 +47,7 @@ describe('AuthService SQLite security', () => {
         "trafficLimitBytes" BIGINT NOT NULL DEFAULT 107374182400,
         "trafficUsedBytes" BIGINT NOT NULL DEFAULT 0,
         "expireAt" DATETIME,
+        "deviceLimit" INTEGER,
         "subscriptionToken" TEXT NOT NULL UNIQUE,
         "uuid" TEXT NOT NULL UNIQUE,
         "password" TEXT,

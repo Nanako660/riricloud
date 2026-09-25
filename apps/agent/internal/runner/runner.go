@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/Nanako660/riricloud/apps/agent/internal/config"
+	"github.com/Nanako660/riricloud/apps/agent/internal/devices"
 	"github.com/Nanako660/riricloud/apps/agent/internal/embedded"
 	"github.com/Nanako660/riricloud/apps/agent/internal/kernel"
 	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
@@ -70,6 +71,8 @@ func runForeground(ctx context.Context, options Options) error {
 
 	singboxMgr := singbox.NewManager(ctx, cfg.SingboxConfPath, cfg.SingboxBinPath, entry)
 	tunnelMgr := tunnel.NewManager(ctx, entry)
+	deviceTracker := devices.NewTracker(singboxMgr, entry)
+	go deviceTracker.Run(ctx)
 	defer tunnelMgr.Shutdown()
 
 	// 升级后进程接管：系统服务重启优先（systemd/SCM 立即从新二进制拉起），自拉起兜底。
@@ -99,6 +102,7 @@ func runForeground(ctx context.Context, options Options) error {
 			collector,
 			logRotator,
 		)
+		client.SetDeviceTracker(deviceTracker)
 		client.Run(ctx)
 	} else {
 		client := ws.NewClient(
@@ -114,6 +118,7 @@ func runForeground(ctx context.Context, options Options) error {
 			collector,
 			logRotator,
 		)
+		client.SetDeviceTracker(deviceTracker)
 		client.Run(ctx)
 	}
 	singboxMgr.Shutdown(5 * time.Second)

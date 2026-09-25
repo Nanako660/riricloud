@@ -23,6 +23,12 @@ export class UpdateUserDto {
   @IsOptional()
   expireAt?: string | null;
 
+  @ApiPropertyOptional({ example: 3, nullable: true, description: '同时在线设备数；null 跟随套餐，0 不限制，正数为用户覆盖' })
+  @ValidateIf((o) => o.deviceLimit !== undefined && o.deviceLimit !== null)
+  @IsInt()
+  @Min(0)
+  deviceLimit?: number | null;
+
   @ApiPropertyOptional({ description: '封禁=false / 解封=true' })
   @IsBoolean()
   @IsOptional()

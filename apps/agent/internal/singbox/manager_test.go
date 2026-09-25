@@ -569,3 +569,50 @@ func TestUpgradeKernelFilesRollsBackMainAndAuxiliaryWhenNewKernelCannotStart(t *
 	}
 	waitFor(t, 8*time.Second, m.Running)
 }
+
+func TestClashAPIAddressRequiresLoopbackIPLiteral(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+		invalid bool
+	}{
+		{name: "IPv4 loopback", address: "127.0.0.1:10086", want: "http://127.0.0.1:10086"},
+		{name: "IPv6 loopback", address: "[::1]:10086", want: "http://[::1]:10086"},
+		{name: "remote IP", address: "192.0.2.1:10086", invalid: true},
+		{name: "hostname", address: "localhost:10086", invalid: true},
+		{name: "invalid port", address: "127.0.0.1:0", invalid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("SINGBOX_CLASH_API_ADDR", "")
+			config, err := json.Marshal(map[string]any{
+				"experimental": map[string]any{
+					"clash_api": map[string]any{"external_controller": test.address},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			manager := &Manager{appliedConf: config}
+			got, err := manager.ClashAPIAddress()
+			if test.invalid {
+				if err == nil {
+					t.Fatalf("expected invalid address %q to be rejected, got %q", test.address, got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("ClashAPIAddress() = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
+func TestClashAPIAddressRejectsRemoteEnvironmentOverride(t *testing.T) {
+	t.Setenv("SINGBOX_CLASH_API_ADDR", "192.0.2.12:10086")
+	manager := &Manager{}
+	if address, err := manager.ClashAPIAddress(); err == nil || address != "" {
+		t.Fatalf("expected remote environment override to be rejected, got %q, %v", address, err)
+	}
+}

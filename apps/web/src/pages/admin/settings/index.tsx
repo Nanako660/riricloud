@@ -104,6 +104,8 @@ interface SystemSettings {
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
+  deviceLimitEnabled: boolean;
+  deviceOnlineWindowSecs: number;
   heartbeatTimeoutSecs: number;
   configSyncDebounceMs: number;
   defaultPollIntervalSecs: number;
@@ -185,6 +187,8 @@ function createSettingsSchema() {
     defaultTemplateId: z.string(),
     publicLinesEnabled: z.boolean(),
     includeUsageHeaders: z.boolean(),
+    deviceLimitEnabled: z.boolean(),
+    deviceOnlineWindowSecs: z.coerce.number().int().min(15).max(600),
     heartbeatTimeoutSecs: z.coerce.number().int().min(5).max(3600),
     configSyncDebounceMs: z.coerce.number().int().min(0).max(10000),
     defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
@@ -277,7 +281,7 @@ export default function AdminSettingsPage() {
       defaultPlanId: null, defaultBalance: 0, emailDomainMode: 'none',
       emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24, appendSubscriptionSpeedBadge: true,
       speedLimitUnitConversionEnabled: true, speedLimitColorTiers: DEFAULT_SPEED_TIERS,
-      defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, heartbeatTimeoutSecs: 15,
+      defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, deviceLimitEnabled: true, deviceOnlineWindowSecs: 60, heartbeatTimeoutSecs: 15,
       configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: 'https://github.com/Nanako660/riricloud', githubMirrorUrls: [], probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
@@ -439,6 +443,8 @@ export default function AdminSettingsPage() {
             </CardContent></Card></TabsContent>
 
              <TabsContent value="agent"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={Gauge} title={t('admin:settings.sectionAgent')} description={t('admin:settings.sectionAgentDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
+              <SettingsSwitch name="deviceLimitEnabled" label={t('admin:settings.fieldDeviceLimitEnabled')} description={t('admin:settings.descDeviceLimitEnabled')} className="md:col-span-2" />
+              <SettingsInput name="deviceOnlineWindowSecs" label={t('admin:settings.fieldDeviceOnlineWindowSecs')} type="number" min={15} max={600} description={t('admin:settings.descDeviceOnlineWindowSecs')} />
               <SettingsInput name="heartbeatTimeoutSecs" label={t('admin:settings.fieldHeartbeatTimeoutSecs')} type="number" min={5} max={3600} />
               <SettingsInput name="configSyncDebounceMs" label={t('admin:settings.fieldConfigSyncDebounceMs')} type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label={t('admin:settings.fieldDefaultPollIntervalSecs')} type="number" min={5} max={300} />
@@ -698,6 +704,8 @@ function toForm(settings: SystemSettings): SettingsForm {
     defaultTemplateId: settings.defaultTemplateId ?? 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
     includeUsageHeaders: settings.includeUsageHeaders,
+    deviceLimitEnabled: settings.deviceLimitEnabled ?? true,
+    deviceOnlineWindowSecs: settings.deviceOnlineWindowSecs ?? 60,
     heartbeatTimeoutSecs: settings.heartbeatTimeoutSecs,
     configSyncDebounceMs: settings.configSyncDebounceMs,
     defaultPollIntervalSecs: settings.defaultPollIntervalSecs,
@@ -777,6 +785,8 @@ function toPayload(values: SettingsForm) {
     defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,
     includeUsageHeaders: values.includeUsageHeaders,
+    deviceLimitEnabled: values.deviceLimitEnabled,
+    deviceOnlineWindowSecs: values.deviceOnlineWindowSecs,
     heartbeatTimeoutSecs: values.heartbeatTimeoutSecs,
     configSyncDebounceMs: values.configSyncDebounceMs,
     defaultPollIntervalSecs: values.defaultPollIntervalSecs,

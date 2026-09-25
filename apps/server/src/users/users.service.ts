@@ -21,6 +21,7 @@ import { defaultUserNickname, generateUniqueUserUid, normalizeNickname } from '.
 import { AuthAuditEvent, AuthAuditService } from '../common/auth-audit.service';
 import { PlanPurchasesService } from '../subscription/plan-purchases.service';
 import { applyPlanSnapshot } from '../subscription/plan-snapshot';
+import { resolveEffectiveDeviceLimit } from '../common/device-limit';
 
 type UserSubscriptionDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<UserSubscriptionSnapshot | null>;
@@ -73,6 +74,7 @@ const ADMIN_USER_SELECT = {
   balance: true,
   trafficLimitBytes: true,
   trafficUsedBytes: true,
+  deviceLimit: true,
   expireAt: true,
   isActive: true,
   createdAt: true,
@@ -86,7 +88,7 @@ const ADMIN_USER_SELECT = {
       expireAt: true,
       trafficPeriodStartAt: true,
       planSnapshotJson: true,
-      plan: { select: { id: true, name: true, durationDays: true, trafficResetMode: true } }
+      plan: { select: { id: true, name: true, durationDays: true, trafficResetMode: true, deviceLimit: true } }
     }
   },
   extraLineGrants: { select: { lineId: true } }
@@ -223,6 +225,14 @@ export class UsersService {
     return { userId, ...result };
   }
 
+  async getUserDevices(userId: string) {
+    return this.agentGateway.getUserDeviceManagement(userId);
+  }
+
+  async kickUserDevices(userId: string, ip?: string) {
+    return this.agentGateway.kickUserDevices(userId, ip);
+  }
+
   // ---------- 管理员接口 ----------
 
   // 分页列表：邮箱、角色、账号状态、订阅状态与套餐均由数据库过滤
@@ -276,9 +286,19 @@ export class UsersService {
       }),
       this.prisma.user.count({ where })
     ]);
-    const timeZone = (await this.settingsService.getSettings())?.systemTimezone ?? 'Asia/Shanghai';
+    const settings = await this.settingsService.getSettings();
+    const timeZone = settings?.systemTimezone ?? 'Asia/Shanghai';
+    const deviceCounts = await this.agentGateway.getBatchUserOnlineDeviceCounts(users.map((user) => user.id));
     // BigInt 在服务边界转 Number（< 2^53 无精度损失）
-    const data = users.map((u) => this.formatAdminUser(u, timeZone));
+    const data = users.map((user) => {
+      const formatted = this.formatAdminUser(user, timeZone);
+      const effective = resolveEffectiveDeviceLimit({
+        globalEnabled: settings?.deviceLimitEnabled !== false,
+        userDeviceLimit: user.deviceLimit,
+        planDeviceLimit: user.subscription?.plan?.deviceLimit
+      });
+      return { ...formatted, onlineDeviceCount: deviceCounts.get(user.id) ?? 0, ...effective };
+    });
     return { data, total, page, pageSize };
   }
 
@@ -344,6 +364,7 @@ export class UsersService {
       email,
       passwordHash: await bcrypt.hash(dto.password, 10),
       role: dto.role ?? 'USER',
+      deviceLimit: dto.deviceLimit ?? null,
       trafficLimitBytes,
       expireAt,
       subscriptionToken
@@ -397,6 +418,7 @@ export class UsersService {
     }
     const data: Record<string, unknown> = {};
     if (dto.role !== undefined) data.role = dto.role;
+    if (dto.deviceLimit !== undefined) data.deviceLimit = dto.deviceLimit;
     if (dto.trafficLimitBytes !== undefined) data.trafficLimitBytes = BigInt(dto.trafficLimitBytes);
     if (dto.expireAt !== undefined) data.expireAt = dto.expireAt ? new Date(dto.expireAt) : null;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;

@@ -206,4 +206,34 @@ describe('PlansService', () => {
     expect(transformed.cardConfig?.syncToSubscription).toBe(true);
     expect(transformed.cardConfig?.themeColor).toBe('emerald');
   });
+  it('创建套餐时保存设备限制，未指定时默认为不限', async () => {
+    prisma.subscriptionTemplate.findUnique.mockResolvedValue(null);
+    prisma.plan.create.mockResolvedValue({
+      id: 'p-device', name: '设备套餐', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, deviceLimit: 3
+    });
+
+    await service.create({ name: '设备套餐', durationDays: 30, trafficLimitBytes: 1024, deviceLimit: 3 });
+
+    expect(prisma.plan.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ deviceLimit: 3 }) }));
+  });
+
+  it('更新套餐时只在请求提供设备限制时写入该字段', async () => {
+    prisma.plan.findUnique.mockResolvedValue({
+      id: 'p-device', name: '设备套餐', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, deviceLimit: 3
+    });
+    prisma.plan.update.mockResolvedValue({
+      id: 'p-device', name: '设备套餐', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, deviceLimit: 5
+    });
+
+    await service.update('p-device', { deviceLimit: 5 });
+
+    expect(prisma.plan.update).toHaveBeenCalledWith({ where: { id: 'p-device' }, data: { deviceLimit: 5 } });
+  });
+
 });

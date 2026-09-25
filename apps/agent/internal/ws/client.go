@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/devices"
 	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
 	"github.com/Nanako660/riricloud/apps/agent/internal/mirror"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
@@ -55,6 +56,7 @@ type configSync struct {
 	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
 	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
 	PortSpeedLimits        map[int]int             `json:"portSpeedLimits,omitempty"`
+	UserDeviceLimits       map[string]int          `json:"userDeviceLimits"`
 }
 
 type heartbeatTraffic struct {
@@ -64,20 +66,21 @@ type heartbeatTraffic struct {
 }
 
 type heartbeatData struct {
-	ProtocolVersion  int                `json:"protocolVersion"`
-	CPUUsage         float64            `json:"cpuUsage"`
-	MemoryUsage      float64            `json:"memoryUsage"`
-	BandwidthRate    float64            `json:"bandwidthRate"`
-	UploadRate       float64            `json:"uploadRate"`
-	DownloadRate     float64            `json:"downloadRate"`
-	KernelRunning    bool               `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
-	AppliedVersion   int64              `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
-	LastError        string             `json:"lastError,omitempty"`  // 最近一次失败原因（可选字段，空串省略）
-	AgentVersion     string             `json:"agentVersion,omitempty"`
-	OSArch           string             `json:"osArch,omitempty"`
-	KernelVersion    string             `json:"kernelVersion,omitempty"`
-	TrafficSnapshots []heartbeatTraffic `json:"trafficSnapshots"`
-	Capabilities     []string           `json:"capabilities,omitempty"`
+	ProtocolVersion  int                  `json:"protocolVersion"`
+	CPUUsage         float64              `json:"cpuUsage"`
+	MemoryUsage      float64              `json:"memoryUsage"`
+	BandwidthRate    float64              `json:"bandwidthRate"`
+	UploadRate       float64              `json:"uploadRate"`
+	DownloadRate     float64              `json:"downloadRate"`
+	KernelRunning    bool                 `json:"kernelRunning"`        // 内核进程存活（可选字段，向后兼容）
+	AppliedVersion   int64                `json:"appliedConfigVersion"` // 当前生效配置版本（可选字段）
+	LastError        string               `json:"lastError,omitempty"`  // 最近一次失败原因（可选字段，空串省略）
+	AgentVersion     string               `json:"agentVersion,omitempty"`
+	OSArch           string               `json:"osArch,omitempty"`
+	KernelVersion    string               `json:"kernelVersion,omitempty"`
+	TrafficSnapshots []heartbeatTraffic   `json:"trafficSnapshots"`
+	Capabilities     []string             `json:"capabilities,omitempty"`
+	OnlineDevices    []devices.ReportItem `json:"onlineDevices"`
 }
 
 type mirrorRequest struct {
@@ -177,6 +180,18 @@ type restartAgentResult struct {
 	Message string `json:"message"`
 }
 
+type kickDevicesTask struct {
+	TaskID string             `json:"taskId"`
+	Items  []devices.KickItem `json:"items"`
+}
+
+type kickDevicesResult struct {
+	TaskID            string `json:"taskId"`
+	Success           bool   `json:"success"`
+	Message           string `json:"message"`
+	KickedConnections int    `json:"kickedConnections"`
+}
+
 type agentLogItem = logging.LogItem
 
 type logReportData struct {
@@ -203,6 +218,7 @@ type Client struct {
 	logRotator       *logging.RotatingWriter
 	shaper           *trafficshaper.Shaper
 	lastTrafficErrAt time.Time
+	deviceTracker    *devices.Tracker
 }
 
 func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
@@ -228,6 +244,9 @@ func NewClient(masterURL, token string, heartbeat time.Duration, singboxMgr *sin
 		shaper:        trafficshaper.NewShaper(log),
 	}
 }
+
+// SetDeviceTracker enables active-device reporting and local kick execution.
+func (c *Client) SetDeviceTracker(tracker *devices.Tracker) { c.deviceTracker = tracker }
 
 // Run 主循环：断线后指数退避重连（上限 60s + 抖动），ctx 取消即退出
 func (c *Client) Run(ctx context.Context) {
@@ -336,6 +355,9 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				c.sendApplyResult(conn, sync.Version, false, "invalid config_sync payload")
 				continue
 			}
+			if c.deviceTracker != nil {
+				c.deviceTracker.SetLimits(sync.UserDeviceLimits)
+			}
 			if c.logCollector != nil {
 				c.logCollector.SetSingboxCaptureLevel(sync.SingboxLogCaptureLevel)
 			}
@@ -382,6 +404,13 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				continue
 			}
 			c.handleRestart(conn, task)
+		case "kick_devices":
+			var task kickDevicesTask
+			if err := json.Unmarshal(msg.Data, &task); err != nil || task.TaskID == "" {
+				c.sendKickDevicesResult(conn, kickDevicesResult{TaskID: task.TaskID, Message: "invalid kick_devices payload"})
+				continue
+			}
+			go c.handleKickDevices(ctx, conn, task)
 		case "mirror_request":
 			var task mirrorRequest
 			if err := json.Unmarshal(msg.Data, &task); err != nil || task.TaskID == "" {
@@ -557,6 +586,31 @@ func (c *Client) handleProbe(ctx context.Context, conn *websocket.Conn, task pro
 	c.sendProbeResult(conn, task.TaskID, results, success)
 }
 
+func (c *Client) handleKickDevices(parent context.Context, conn *websocket.Conn, task kickDevicesTask) {
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	result := kickDevicesResult{TaskID: task.TaskID}
+	if c.deviceTracker == nil {
+		result.Message = "device tracking is unavailable"
+	} else {
+		count, err := c.deviceTracker.Kick(ctx, task.Items)
+		result.KickedConnections = count
+		result.Success = err == nil
+		result.Message = "ok"
+		if err != nil {
+			result.Message = err.Error()
+		}
+	}
+	c.sendKickDevicesResult(conn, result)
+}
+
+func (c *Client) sendKickDevicesResult(conn *websocket.Conn, result kickDevicesResult) {
+	data, err := json.Marshal(result)
+	if err == nil {
+		c.sendFrame(conn, "kick_devices_result", data)
+	}
+}
+
 func (c *Client) handleRestart(conn *websocket.Conn, task restartAgentTask) {
 	c.sendRestartResult(conn, task.TaskID, true, "ok")
 	go c.restartSelf(conn)
@@ -584,6 +638,10 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 					c.log.WithError(err).Debug("collect sing-box user traffic failed (throttled)")
 				}
 			}
+			capabilities := []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"}
+			if c.singboxMgr.SupportsClashAPI() {
+				capabilities = append(capabilities, "device_tracking")
+			}
 			payload := heartbeatData{
 				ProtocolVersion:  protocol.Version,
 				CPUUsage:         sample.CPUUsage,
@@ -598,7 +656,11 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				OSArch:           c.osArch,
 				KernelVersion:    kernel.Version,
 				TrafficSnapshots: make([]heartbeatTraffic, 0, len(trafficSnapshots)),
-				Capabilities:     []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"},
+				Capabilities:     capabilities,
+				OnlineDevices:    make([]devices.ReportItem, 0),
+			}
+			if c.deviceTracker != nil {
+				payload.OnlineDevices = c.deviceTracker.ReportItems()
 			}
 			for _, record := range trafficSnapshots {
 				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{

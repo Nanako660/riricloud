@@ -50,6 +50,8 @@ export const SETTING_KEYS = {
   DEFAULT_TEMPLATE_ID: 'defaultTemplateId',
   PUBLIC_LINES_ENABLED: 'publicLinesEnabled',
   INCLUDE_USAGE_HEADERS: 'includeUsageHeaders',
+  DEVICE_LIMIT_ENABLED: 'deviceLimitEnabled',
+  DEVICE_ONLINE_WINDOW_SECS: 'deviceOnlineWindowSecs',
   HEARTBEAT_TIMEOUT_SECS: 'heartbeatTimeoutSecs',
   CONFIG_SYNC_DEBOUNCE_MS: 'configSyncDebounceMs',
   DEFAULT_POLL_INTERVAL_SECS: 'defaultPollIntervalSecs',
@@ -127,6 +129,8 @@ export interface SystemSettings {
   defaultTemplateId: string | null;
   publicLinesEnabled: boolean;
   includeUsageHeaders: boolean;
+  deviceLimitEnabled: boolean;
+  deviceOnlineWindowSecs: number;
   heartbeatTimeoutSecs: number;
   configSyncDebounceMs: number;
   defaultPollIntervalSecs: number;
@@ -200,6 +204,8 @@ export type PublicSystemSettings = Pick<
   | 'subscriptionShortLinksEnabled'
   | 'subscriptionEffectsSyncEnabled'
   | 'speedLimitUnitConversionEnabled'
+  | 'deviceLimitEnabled'
+  | 'deviceOnlineWindowSecs'
   | 'speedLimitColorTiers'
   | 'customCss'
   | 'customHeadHtml'
@@ -250,6 +256,8 @@ export const DEFAULTS: SystemSettings = {
   defaultTemplateId: null,
   publicLinesEnabled: true,
   includeUsageHeaders: true,
+  deviceLimitEnabled: true,
+  deviceOnlineWindowSecs: 60,
   heartbeatTimeoutSecs: 15,
   configSyncDebounceMs: 250,
   defaultPollIntervalSecs: 15,
@@ -330,6 +338,8 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
   defaultTemplateId: '全局默认订阅模板',
   publicLinesEnabled: '是否公开线路列表',
   includeUsageHeaders: '是否注入订阅用量响应头',
+  deviceLimitEnabled: '是否全局启用同时在线设备数限制',
+  deviceOnlineWindowSecs: '设备在线活跃判定时间窗口（秒）',
   heartbeatTimeoutSecs: 'Agent 心跳离线判定超时（秒）',
   configSyncDebounceMs: '配置同步防抖延迟（毫秒）',
   defaultPollIntervalSecs: 'Agent 默认 HTTP 轮询周期（秒）',
@@ -436,6 +446,8 @@ export class SettingsService {
       defaultTemplateId: this.readNullableString(map, 'defaultTemplateId'),
       publicLinesEnabled: this.readBoolean(map, 'publicLinesEnabled'),
       includeUsageHeaders: this.readBoolean(map, 'includeUsageHeaders'),
+      deviceLimitEnabled: this.readBoolean(map, 'deviceLimitEnabled'),
+      deviceOnlineWindowSecs: this.readInteger(map, 'deviceOnlineWindowSecs', 15, 600),
       heartbeatTimeoutSecs: this.readInteger(map, 'heartbeatTimeoutSecs', 5, 3600),
       configSyncDebounceMs: this.readInteger(map, 'configSyncDebounceMs', 0, 10000),
       defaultPollIntervalSecs: this.readInteger(map, 'defaultPollIntervalSecs', 5, 300),
@@ -516,6 +528,8 @@ export class SettingsService {
       subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
       subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled,
       speedLimitUnitConversionEnabled: settings.speedLimitUnitConversionEnabled,
+      deviceLimitEnabled: settings.deviceLimitEnabled,
+      deviceOnlineWindowSecs: settings.deviceOnlineWindowSecs,
       speedLimitColorTiers: settings.speedLimitColorTiers,
       customCss: settings.customCss,
       customHeadHtml: settings.customHeadHtml,

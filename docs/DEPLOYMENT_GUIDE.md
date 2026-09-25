@@ -567,6 +567,12 @@ Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_
 
 管理员仍可从 `/admin/binaries` 维护各平台 Agent 发行包与内置资源；服务端会校验节点 OS/架构、协议兼容性和资产 SHA-256。升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
 
+### 8.4 多设备在线管理的内核要求
+
+Master 下发的 Sing-box 配置会将 `experimental.clash_api.external_controller` 绑定到 `127.0.0.1:10086`，Agent 仅访问 loopback 上的 `/connections` 与连接删除接口。**不要将 Clash API 监听地址改为公网或非 loopback 地址，也不要通过防火墙/端口映射暴露该管理 API。** Agent 会拒绝非 loopback 的 API 地址。
+
+仓库内构建的 Sing-box 会启用 `with_clash_api`，并由 `scripts/build-binaries.sh` 对上游 `experimental/clashapi/connections.go` 应用 `apps/agent/patches/sing-box-clashapi-inbound-user.patch`，让连接元数据包含 `inboundUser`；源码构建需要 Bash、Go 与 `patch` 工具。自行提供的 Sing-box 内核也必须启用 Clash API 并返回等价的用户元数据，否则 Agent 无法按用户识别设备或执行设备限制。Agent 每 2 秒采样一次，瞬时短连接可能未被观察到；Master 默认按最近 60 秒报告判定在线，管理员可在系统设置将窗口调整为 15~600 秒。
+
 ## 9. 实时节点镜像站部署
 
 镜像站依赖节点通过 WS/WSS 长连接宣告 `mirror_proxy` 能力。生产环境必须由 Nginx 或同类入口终止 HTTPS，并将 `/mirror/`、`/api/` 和 `/ws/agent` 正确转发到 Master；Master 的直接 HTTP 端口不应暴露到公网。生产配置要求镜像上游使用 HTTPS、Agent 使用 WSS，并保持反向代理的 Upgrade、Connection、超时和响应流配置正确。

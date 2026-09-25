@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -62,10 +64,12 @@ type fileReplacement struct {
 // Manager 内核进程管理器。supervisor goroutine 是唯一的进程操作者，
 // 其余调用方仅通过受 mu 保护的字段提交意图，避免并发操作同一子进程。
 type Manager struct {
-	confPath      string
-	binPath       string
-	log           *logrus.Entry
-	binaryVersion string
+	confPath          string
+	binPath           string
+	log               *logrus.Entry
+	binaryVersion     string
+	featureOnce       sync.Once
+	clashAPISupported bool
 
 	mu            sync.Mutex
 	upgradeMu     sync.Mutex // 串行化二进制升级，避免并行替换同一目标文件
@@ -170,6 +174,66 @@ func (m *Manager) Status() Status {
 		LastError:            m.lastError,
 		Version:              m.binaryVersion,
 	}
+}
+
+// SupportsClashAPI reports whether this Sing-box binary was built with the Clash API feature.
+func (m *Manager) SupportsClashAPI() bool {
+	m.featureOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, m.binPath, "version").CombinedOutput()
+		if err == nil {
+			m.clashAPISupported = strings.Contains(string(output), "with_clash_api")
+		}
+	})
+	return m.clashAPISupported
+}
+
+// ClashAPIAddress returns only an explicitly configured loopback controller address.
+// SINGBOX_CLASH_API_ADDR may override the address, but never the loopback-only safety policy.
+func (m *Manager) ClashAPIAddress() (string, error) {
+	address := strings.TrimSpace(os.Getenv("SINGBOX_CLASH_API_ADDR"))
+	if address == "" {
+		m.mu.Lock()
+		conf := append([]byte(nil), m.appliedConf...)
+		if len(conf) == 0 {
+			conf = append([]byte(nil), m.desiredConf...)
+		}
+		m.mu.Unlock()
+		var root struct {
+			Experimental struct {
+				ClashAPI *struct {
+					ExternalController string `json:"external_controller"`
+				} `json:"clash_api"`
+			} `json:"experimental"`
+		}
+		if len(conf) == 0 {
+			return "", nil
+		}
+		if err := json.Unmarshal(conf, &root); err != nil {
+			return "", fmt.Errorf("parse sing-box Clash API config: %w", err)
+		}
+		if root.Experimental.ClashAPI == nil {
+			return "", nil
+		}
+		address = strings.TrimSpace(root.Experimental.ClashAPI.ExternalController)
+	}
+	if address == "" {
+		return "", nil
+	}
+	if strings.Contains(address, "://") {
+		return "", fmt.Errorf("Clash API address must be a loopback host:port")
+	}
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", fmt.Errorf("invalid Clash API address: %w", err)
+	}
+	ip := net.ParseIP(host)
+	port, portErr := strconv.Atoi(portText)
+	if ip == nil || !ip.IsLoopback() || portErr != nil || port < 1 || port > 65535 {
+		return "", fmt.Errorf("Clash API address must use a loopback IP and valid port")
+	}
+	return "http://" + net.JoinHostPort(ip.String(), strconv.Itoa(port)), nil
 }
 
 // StatsAddress 返回当前配置里的 V2Ray API 地址；未配置时使用本地默认地址。

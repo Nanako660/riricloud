@@ -418,8 +418,19 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     return this.get(subscription.id);
   }
 
+  async getUserDevices(userId: string) {
+    if (!this.agentGateway) throw new BadRequestException('设备管理服务不可用');
+    return this.agentGateway.getUserDeviceManagement(userId);
+  }
+
+  async kickUserDevices(userId: string, ip?: string) {
+    if (!this.agentGateway) throw new BadRequestException('设备管理服务不可用');
+    return this.agentGateway.kickUserDevices(userId, ip);
+  }
+
   async getForUser(userId: string) {
     const delegate = this.requireSubscriptionDelegate();
+    const deviceManagement = this.agentGateway ? await this.agentGateway.getUserDeviceManagement(userId) : null;
     const rawSubscription = await delegate.findUnique({
       where: { userId },
       include: {
@@ -432,7 +443,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
         subscription: null,
         lines: [],
         nodes: [],
-        planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? []
+        planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? [],
+        deviceManagement
       };
     }
     const subscription = applyPlanSnapshot(rawSubscription) as unknown as SubscriptionRecord;
@@ -443,7 +455,8 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
       subscription: this.toView(current),
       lines: await this.getLinesForSubscription(current),
       nodes: await this.getLinesForSubscription(current),
-      planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? []
+      planClaims: await this.planPurchases?.listClaimsForUser(userId) ?? [],
+      deviceManagement
     };
   }
 

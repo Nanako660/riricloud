@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Trash2, WalletCards } from 'lucide-react';
+import { Activity, Pencil, Plus, RefreshCw, Search, ShieldOff, ShieldCheck, Smartphone, Trash2, WalletCards } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
@@ -26,10 +26,11 @@ import { IconButton } from '@/components/ui/icon-button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAdminPlans } from '../plans/use-plans';
 import { useAdminLines } from '../lines/use-lines';
-import { useAdminUsers, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
+import { useAdminUsers, useAdminUserDevices, useUserMutations, type AdminUser, type AdminUserSubscription } from './use-users';
 import { UserFormDialog } from './components/user-form-dialog';
 import { UserTrafficDialog } from './components/user-traffic-dialog';
 import { BalanceFormDialog } from './components/balance-form-dialog';
+import { DeviceManagementDialog } from '@/components/shared/device-management-dialog';
 import { formatBytes, formatCurrency, formatDate } from '@/lib/utils';
 
 function StatusBadge({ isActive }: { isActive: boolean }) {
@@ -73,6 +74,7 @@ export default function AdminUsersPage() {
   const [subscriptionFilter, setSubscriptionFilter] = React.useState<'ALL' | AdminUserSubscription['status'] | 'NONE'>('ALL');
   const [planFilter, setPlanFilter] = React.useState('ALL');
   const [trafficUser, setTrafficUser] = React.useState<AdminUser | null>(null);
+  const [devicesUser, setDevicesUser] = React.useState<AdminUser | null>(null);
   const [adjusting, setAdjusting] = React.useState<AdminUser | null>(null);
 
   React.useEffect(() => {
@@ -91,6 +93,7 @@ export default function AdminUsersPage() {
   const { data: plans } = useAdminPlans();
   const { data: lineData } = useAdminLines();
   const { deleteUser, bulkActive, resetSubscriptionToken } = useUserMutations();
+  const deviceManagement = useAdminUserDevices(devicesUser?.id, Boolean(devicesUser));
   const users = data?.data ?? [];
 
   const columns = React.useMemo<ColumnDef<AdminUser>[]>(
@@ -161,6 +164,37 @@ export default function AdminUsersPage() {
               <p className="text-muted-foreground text-xs tabular-nums">
                 {formatBytes(used)} / {formatBytes(limit)}（{percent}%）
               </p>
+            </div>
+          );
+        }
+      },
+      {
+        id: 'onlineDevices',
+        header: t('admin:users.onlineDevices'),
+        cell: ({ row }) => {
+          const user = row.original;
+          const count = user.onlineDeviceCount ?? 0;
+          const limit = user.effectiveDeviceLimit;
+          const isOverLimit = limit !== null && limit !== undefined && count > limit;
+          const sourceKey = user.deviceLimitSource === 'USER'
+            ? 'common:deviceManagement.sourceUser'
+            : user.deviceLimitSource === 'PLAN'
+              ? 'common:deviceManagement.sourcePlan'
+              : user.deviceLimitSource === 'GLOBAL_OFF'
+                ? 'common:deviceManagement.sourceGlobalOff'
+                : 'common:deviceManagement.sourceUnlimited';
+          return (
+            <div className="flex min-w-36 flex-col items-start gap-1">
+              <Button type="button" size="sm" variant={isOverLimit ? 'destructive' : 'outline'} className="h-7 gap-1.5 px-2" onClick={() => setDevicesUser(user)}>
+                <Smartphone className="size-3.5" />
+                <span className="tabular-nums">{count} / {limit ?? t('common:deviceManagement.unlimited')}</span>
+              </Button>
+              {(user.deviceLimitSource !== 'UNLIMITED' || isOverLimit) && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {user.deviceLimitSource !== 'UNLIMITED' && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{t(sourceKey)}</Badge>}
+                  {isOverLimit && <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">{t('common:deviceManagement.overLimit')}</Badge>}
+                </div>
+              )}
             </div>
           );
         }
@@ -372,6 +406,19 @@ export default function AdminUsersPage() {
 
       <UserFormDialog open={formOpen} onOpenChange={setFormOpen} user={editing} selfId={selfId ?? ''} plans={plans ?? []} lineOptions={lineData?.data ?? []} />
       <UserTrafficDialog user={trafficUser} open={!!trafficUser} onOpenChange={(open) => !open && setTrafficUser(null)} />
+      <DeviceManagementDialog
+        audience="admin"
+        open={!!devicesUser}
+        onOpenChange={(open) => !open && setDevicesUser(null)}
+        title={t('common:deviceManagement.title') + (devicesUser ? ` · ${devicesUser.email}` : '')}
+        data={deviceManagement.data}
+        isLoading={deviceManagement.isLoading}
+        isError={deviceManagement.isError}
+        onKickDevice={(ip) => deviceManagement.kickDevice.mutate(ip)}
+        onKickAllDevices={() => deviceManagement.kickAllDevices.mutate()}
+        isKickingDevice={deviceManagement.kickDevice.isPending}
+        isKickingAll={deviceManagement.kickAllDevices.isPending}
+      />
       <BalanceFormDialog user={adjusting} open={!!adjusting} onOpenChange={(open) => !open && setAdjusting(null)} />
 
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>

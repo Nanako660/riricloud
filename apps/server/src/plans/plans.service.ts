@@ -163,6 +163,7 @@ export class PlansService {
         : toCents(dto.price ?? 0) === 0 ? 1 : null,
       allowRenewal: dto.allowRenewal ?? (toCents(dto.price ?? 0) !== 0),
       speedLimitMbps: dto.speedLimitMbps ?? 0,
+      deviceLimit: dto.deviceLimit ?? 0,
       appendSpeedBadge: dto.appendSpeedBadge ?? 'INHERIT'
     };
   }
@@ -189,6 +190,7 @@ export class PlansService {
       ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
       ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
       ...(dto.speedLimitMbps !== undefined ? { speedLimitMbps: dto.speedLimitMbps ?? 0 } : {}),
+      ...(dto.deviceLimit !== undefined ? { deviceLimit: dto.deviceLimit ?? 0 } : {}),
       ...(dto.appendSpeedBadge !== undefined ? { appendSpeedBadge: dto.appendSpeedBadge } : {}),
       ...(dto.purchaseLimitPerUser !== undefined
         ? { purchaseLimitPerUser: dto.purchaseLimitPerUser }

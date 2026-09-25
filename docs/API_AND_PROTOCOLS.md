@@ -40,8 +40,11 @@
 - `GET /user/wallet`：查询账户钱包摘要。⭐ 响应 `{ balance, totalIncome, totalExpense, transactionCount }`，金额单位均为分。
 - `GET /user/wallet/transactions?page&pageSize`：查询当前用户余额流水。⭐ 返回统一分页结构，流水包含 `amount`、`balanceBefore`、`balanceAfter`、`type`、`description`、`createdAt`。
 - `POST /user/wallet/redeem`：兑换卡密。⭐ 请求 `{ code }`；卡密核销、购买身份分类额度占用和余额入账/套餐订阅履约在同一 SQLite 事务内完成，并发兑换不得重复发奖或突破上限。卡密不区分大小写（服务端统一大写归一）；接口按用户限流（默认 5 次/分钟），超限返回 429。套餐卡遵守套餐购买限购；已有有效订阅时返回 409 且不核销，可稍后重试。软删除卡仍可兑换。
-- `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、`trafficResetMode`、节点匹配模式、`purchaseLimitPerUser`（`null` 不限购）与 `allowRenewal`。
-- `GET /user/subscription`：查询当前用户唯一订阅、可用线路与套餐购买额度。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [], planClaims: [] }`；有订阅时返回 `lines[]`、`planClaims[{ planId, used }]` 并保留 `nodes` 兼容镜像。订阅视图包含 `trafficResetMode`、`nextTrafficResetAt` 和 `extraLineIds`；线路为套餐匹配线路与用户额外授权线路的并集。
+- `GET /plans/public`：公开套餐市场列表。⭐ 返回公开套餐及其价格、流量、有效期、`trafficResetMode`、节点匹配模式、`purchaseLimitPerUser`（`null` 不限购）、`allowRenewal` 与 `deviceLimit`（`0` 不限）。
+- `GET /user/subscription`：查询当前用户唯一订阅、可用线路、套餐购买额度与在线设备策略。⭐ 无订阅时返回 `{ subscription: null, lines: [], nodes: [], planClaims: [], deviceManagement }`；有订阅时返回 `lines[]`、`planClaims[{ planId, used }]` 并保留 `nodes` 兼容镜像。订阅视图包含 `trafficResetMode`、`nextTrafficResetAt` 和 `extraLineIds`；线路为套餐匹配线路与用户额外授权线路的并集。`deviceManagement` 在设备管理服务不可用时为 `null`。
+- `GET /user/subscription/devices`：查询当前用户设备策略及在线设备明细。⭐ 返回 `{ onlineDeviceCount, configuredDeviceLimit, effectiveDeviceLimit, deviceLimitSource, configuredDeviceLimitSource, deviceLimitEnabled, devices }`；每台设备按客户端 IP 聚合，含连接数、首次/最近上报时间及节点/线路明细。
+- `DELETE /user/subscription/devices?ip=<IP>`：踢下线当前用户指定 IP；省略 `ip` 时踢下线所有当前在线设备。
+- `POST /user/subscription/devices/kick-all`：踢下线当前用户全部在线设备。踢设备返回 `{ taskId, requested, notifiedNodes, kickedIps }`，只向当前报告了该用户设备的在线节点发送任务；设备管理服务未注入时返回 400。
 - `POST /user/subscription`：订购公开套餐。⭐ 请求 `{ planId }`；已有有效订阅返回 409；达到该套餐每用户限购次数时返回 409；成功后写入购买台账并按套餐价格扣款、写入 `PLAN_BUY` 流水（0 元套餐不产生钱包流水），余额不足返回 400。
 - `POST /user/subscription/renew`：续费当前套餐。⭐ 无请求体；`allowRenewal=false` 时返回 409；续费不消耗限购次数，按当前套餐价格扣款，顺延 `durationDays`、重置当期已用流量并写入 `PLAN_RENEW` 流水。
 - `POST /user/subscription/upgrade`：即时升配。⭐ 请求 `{ planId }`；目标等于当前套餐、价格更低或达到目标套餐限购次数时返回 409；通过校验后消耗一次限购名额、写购买台账、全价扣款、切换套餐、重置已用流量并按新套餐重算周期，写入 `PLAN_UPGRADE` 流水。
@@ -65,9 +68,12 @@
 ### 1.3 管理员模块 (`/admin`)
 
 #### 用户管理
-- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`。
-- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null) }`；密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
-- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置) }`；管理端设置新密码时同样需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）。
+- `GET /admin/users?page&pageSize&search&role&isActive&subscriptionStatus&planId`：分页查询。⭐ `search` 为 6 位 UID 精确匹配，或昵称/邮箱模糊匹配；支持角色、账号状态、订阅状态（支持 `ACTIVE`、`CANCELED`、`EXPIRED`、`REVOKED` 及 `NONE` 筛选无订阅）与套餐筛选（支持指定套餐 UUID 及 `NONE` 筛选无套餐用户）；响应为统一分页结构，列表项返回 `uid` 与 `nickname`，不含 `passwordHash`/`uuid`/`subscriptionToken`，并聚合返回 `subscription{ id, status, trafficLimitBytes, trafficUsedBytes, startedAt, expireAt, trafficResetMode, nextTrafficResetAt, extraLineIds, plan{id,name} }`；同时含 `onlineDeviceCount`、`configuredDeviceLimit`、`effectiveDeviceLimit`、`deviceLimitSource` 与 `configuredDeviceLimitSource`。
+- `POST /admin/users`：创建用户。⭐ 请求 `{ email, password(8~64), role?, planId?(UUID|null), trafficLimitBytes?, expireAt?(ISO|null), deviceLimit?(0..1000|null) }`；`deviceLimit: null` 跟随订阅套餐，`0` 显式不限，正数为用户覆盖；密码需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）；指定 `planId` 时在同一事务内创建唯一订阅，套餐配额与期限由所选套餐决定（可由服务端可选参数覆盖）；明确传 `planId: null` 或留空创建无套餐无订阅用户（配额为 0）；省略 `planId` 时自动绑定“体验套餐”（无该名称时取首个公开套餐）；邮箱冲突 409。
+- `PATCH /admin/users/:id`：部分更新。⭐ 请求任意子集 `{ role?, trafficLimitBytes?(>0), expireAt?(ISO|null，null=永久), isActive?, password?(8~64，管理端重置), deviceLimit?(0..1000|null) }`；`deviceLimit: null` 跟随订阅套餐，`0` 显式不限，正数为用户覆盖；管理端设置新密码时同样需满足系统设置的密码复杂度策略（`passwordMinLength` 与 `passwordRequire*` 开关）。
+- `GET /admin/users/:id/devices`：管理员查询目标用户设备策略与在线设备明细，响应结构同用户侧设备查询。⭐
+- `DELETE /admin/users/:id/devices?ip=<IP>`：管理员踢下线指定 IP；省略 `ip` 时踢下线全部当前在线设备。
+- `POST /admin/users/:id/devices/kick-all`：管理员踢下线目标用户全部在线设备。踢设备响应 `{ taskId, requested, notifiedNodes, kickedIps }`，仅投递给当前有该用户在线设备报告的节点。
 - `POST /admin/users/:id/reset-subscription-token`：管理员重置用户订阅 Token。⭐ 同步更新订阅实例与兼容的用户镜像字段，旧链接立即失效；目标用户未绑定有效订阅时返回 400。
 - `POST /admin/users/:id/adjust-balance`：管理员人工调账。⭐ 请求 `{ amount, description? }`，`amount` 为带符号分值；禁止调账后余额为负，并写入 `ADMIN_ADJUST` 流水。
 - `DELETE /admin/users/:id`：删除用户（级联删除流量记录与余额流水）。⭐
@@ -135,9 +141,9 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `DELETE /admin/certificates/:id`：删除未被线路引用的证书；仍有关联线路时返回 `409`。⭐
 
 #### 系统设置
-- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA、统一时区 `systemTimezone`、速率色彩阶梯 `speedLimitColorTiers` 与单位换算 `speedLimitUnitConversionEnabled`、存储日志策略、首页配置 `landingEnabled` / `landingHero*` / `landingShow*` / `landingCustom*Json` 等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。存储日志策略包括 `trafficHourlyRetentionDays`（默认 90）、`nodeRateRetentionDays`（默认 30）、`logsRetentionDays`（默认 7）、`logsMaxCount`（默认 100000）、`logsMinIngestLevel`（默认 `INFO`）、`agentLogMaxSizeMb`（默认 50）和 `agentLogMaxFiles`（默认 5）。
+- `GET /admin/settings`：读取全量设置。⭐ 响应包含 `docs/DATA_MODELS.md` §SystemSetting 列出的全部强类型字段（含 SMTP、邮箱验证、CAPTCHA、统一时区 `systemTimezone`、速率色彩阶梯 `speedLimitColorTiers` 与单位换算 `speedLimitUnitConversionEnabled`、存储日志策略、首页配置 `landingEnabled` / `landingHero*` / `landingShow*` / `landingCustom*Json`、多设备限制 `deviceLimitEnabled`（默认 `true`）与在线活跃窗口 `deviceOnlineWindowSecs`（默认 60 秒）等）；`smtpPass` 与 `turnstileSecretKey` 有值时均返回 `********`。存储日志策略包括 `trafficHourlyRetentionDays`（默认 90）、`nodeRateRetentionDays`（默认 30）、`logsRetentionDays`（默认 7）、`logsMaxCount`（默认 100000）、`logsMinIngestLevel`（默认 `INFO`）、`agentLogMaxSizeMb`（默认 50）和 `agentLogMaxFiles`（默认 5）。
 - `GET /system/public-info`：公开系统设置端点（无需鉴权）。⭐ 返回前端公共消费字段（站点品牌、Logo、公告、客服、注册开关、密码复杂度策略、公共订阅与基准地址、短链接开关、时区、首页配置 `landingEnabled` / `landingHeroBadge` / `landingHeroTitle` / `landingHeroSubtitle` / `landingShowFeatures` / `landingShowPlans` / `landingShowFaq` / `landingCustomFeaturesJson` / `landingCustomFaqJson` 等）。
-- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、速率阶梯色阶对象、探针对象与 IANA 时区合法性；敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
+- `PUT /admin/settings`：部分更新。⭐ 请求任意子集，服务端校验范围、URL、邮箱、UUID、数组、速率阶梯色阶对象、探针对象、IANA 时区合法性以及 `deviceOnlineWindowSecs`（15~600 秒）；`deviceLimitEnabled` 控制自动上限执行，关闭时仍允许手动踢设备。敏感字段提交 `********` 表示保留当前密钥，响应返回更新后全量脱敏设置。
 - `POST /admin/settings/reset`：恢复默认设置。⭐ 请求 `{ keys?: string[] }`；省略 `keys` 时删除全部设置覆盖值，传入指定键时仅重置对应设置。
 - `POST /admin/settings/smtp/test`：管理员测试 SMTP。⭐ 请求 `{ email }`；服务端先验证 SMTP 连接，再向目标邮箱发送测试邮件，成功响应 `{ success: true, messageId?, durationMs? }`，失败返回 400。
 
@@ -166,8 +172,8 @@ Agent 心跳写入 `TrafficLog` 时，Master 会优先关联该节点排序最�
 - `GET /admin/plans/:id`：查询套餐详情。⭐
 - `GET /admin/plans/:id/nodes`：兼容路径，按套餐规则计算当前可用线路。⭐
 - `GET /admin/plans/:id/lines`：按套餐规则计算当前可用公开线路。控制平面与数据平面解耦：订阅与套餐线路下发以线路自身的启用状态（status=ACTIVE）及中继目标状态为基准，不与节点 Agent 的心跳在线状态强绑定；线路实际可用性交由客户端本地测速（url-test/fallback）自适应决策。⭐
-- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, trafficResetMode?: "NONE"|"CALENDAR_MONTH"|"SUBSCRIPTION_CYCLE", lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder?, purchaseLimitPerUser?, allowRenewal? }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。`price=0` 且未显式配置时，默认每人限购 1 次且不可续费；付费套餐默认不限购且允许续费。
-- `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存，支持 `trafficResetMode`、`purchaseLimitPerUser` 与 `allowRenewal`。⭐ 改价为 0 且未显式覆盖时自动采用免费安全默认，改价为正数时恢复不限购且允许续费。
+- `POST /admin/plans`：创建套餐。⭐ 请求 `{ name, description?, price?, durationDays, trafficLimitBytes, trafficResetMode?: "NONE"|"CALENDAR_MONTH"|"SUBSCRIPTION_CYCLE", lineMatchMode?, lineTags?, lineIds?, templateId?, isPublic?, sortOrder?, purchaseLimitPerUser?, allowRenewal?, deviceLimit?(0..1000，0=不限) }`；API 的 `price` 使用元且最多两位小数，服务端按分存储。`price=0` 且未显式配置时，默认每人限购 1 次且不可续费；付费套餐默认不限购且允许续费。
+- `PATCH /admin/plans/:id`：部分更新套餐，`price` 使用元输入并转换为分保存，支持 `trafficResetMode`、`purchaseLimitPerUser`、`allowRenewal` 与 `deviceLimit`（0~1000，0=不限）。⭐ 改价为 0 且未显式覆盖时自动采用免费安全默认，改价为正数时恢复不限购且允许续费。
 - `DELETE /admin/plans/:id`：删除未被订阅或购买台账使用的套餐；已有订阅或购买记录时应改为 `isPublic=false` 下架。⭐
 
 #### 订阅模板管理
@@ -287,6 +293,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
   "type": "config_sync",
   "data": {
     "version": 1,
+    "userDeviceLimits": { "user@example.com": 2, "user-uuid-1": 2 },
     "singboxLogCaptureLevel": "WARN",
     "agentLogRotation": { "maxSizeMb": 50, "maxFiles": 5 },
     "portSpeedLimits": { "443": 100, "8443": 50 },
@@ -426,7 +433,10 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
     "kernelRunning": true,
     "appliedConfigVersion": 3,
     "lastError": "",
-    "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation"],
+    "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation", "device_tracking"],
+    "onlineDevices": [
+      { "userUuid": "user-uuid-1", "ip": "203.0.113.10", "lineId": "line-uuid", "connections": 2, "lastSeenAt": 1780000000 }
+    ],
     "trafficSnapshots": [
       { "userUuid": "user-uuid-1", "uploadTotal": "52428800", "downloadTotal": "104857600" },
       { "userUuid": "user-uuid-2", "uploadTotal": "1024000", "downloadTotal": "2048000" }
@@ -442,6 +452,13 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > **内核与版本字段（v0.3.0，可选，向后兼容）**：`kernelRunning`（内核进程存活）、`appliedConfigVersion`（当前生效配置版本，对应 `config_sync.version`）、`lastError`（最近一次失败原因：check 失败/启动失败/异常退出采样 stderr 尾部 8KB；空串或省略表示无错误）、`agentVersion`、`osArch`、`kernelVersion`（内核未拉起或探测中可省略或上报空串，Master 网关自适应放行并保留最新有效值）。Master 落 `Node.kernelRunning` / `Node.configError` / `Node.agentVersion` / `Node.osArch` / `Node.kernelVersion`；旧版 Agent 不携带这些字段，对应列保持原值。
 >
 > **离线状态收敛机制**：当节点连接断开或因心跳超时被后台巡检标记为 `OFFLINE` 时，Master 自动将瞬态遥测字段清空（`kernelRunning = null`, `cpuUsage = null`, `memoryUsage = null`, `bandwidthRate = 0`, `uploadRate = 0`, `downloadRate = 0`），前端与管理 API 统一对离线节点的内核状态呈现为未确定状态破折号（`—`），杜绝失联节点历史内核存活状态遗留误导。
+
+#### 在线设备上报与踢下线（可选，向后兼容）
+Agent 可在 `heartbeat` 中附带 `onlineDevices[]`，单条包含 `{ userUuid, ip, lineId?, connections, lastSeenAt }`；仅声明 `device_tracking` 能力的节点参与设备追踪。Agent 每 2 秒查询本机 Sing-box loopback Clash API `/connections`，根据连接元数据汇总用户/IP/线路并执行节点本地限制；Master 按用户与客户端 IP 跨节点去重，在进程内存保留最近报告，超过 `deviceOnlineWindowSecs`（15~600 秒，默认 60 秒）即视为过期，不持久化在线报告。上限超出时保留较早在线设备并断开新设备连接，短连接可能在采样间隔内结束而未被观察到。
+
+Master 在 `config_sync.data.userDeviceLimits` 下发有效的正数限制，使用邮箱和 UUID 两种凭证键；缺失键表示不限。配置优先级为用户覆盖（`null` 跟随套餐，`0` 显式不限）与订阅套餐（已保存套餐快照优先于当前套餐），全局开关关闭时不自动执行，但手动踢设备仍可用。
+
+管理员或用户发起踢设备时，WS 下发 `kick_devices`（`{ taskId, items: [{ userUuid, ip?, blockDurationSecs? }] }`），Agent 回传 `kick_devices_result`（`{ taskId, success, message, kickedConnections }`）。HTTP 轮询兼容使用响应任务 `kick_devices_task` 与请求回执数组 `kickDevicesResults`；每个数组项沿用上述设备/回执字段。踢设备只投递到当前报告含目标用户设备的在线节点，空 `ip` 表示该用户全部设备；默认阻断 60 秒。
 
 #### 4. 配置应用回执 (`config_apply_result`) —— Agent -> Master (v0.3.0)
 Agent 处理每条 `config_sync` 后回执结果，Master 落 `Node.configError`（成功清空、失败记原因，截断 8KB）：
@@ -507,7 +524,7 @@ Agent 在运行期通过有界环形缓冲区采集自身运行日志与托管�
 }
 ```
 
-Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result`、`log_report` 六类上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
+Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、`config_apply_result`、`upgrade_result`、`probe_result`、`restart_agent_result`、`kick_devices_result` 与 `log_report` 上行消息，数值必须为有限/安全非负数，数组和文本字段有数量与长度上限；无效消息只记录脱敏告警，不进入业务服务。
 
 ## 2.4 二进制资源中心 API（v0.5.0，v0.8.8 扩展）
 
@@ -587,8 +604,12 @@ Content-Type: application/json
   "agentVersion": "0.3.0",
   "osArch": "linux/amd64",
   "kernelVersion": "1.11.0",
-  "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation"],
+  "capabilities": ["mirror_proxy", "singbox_log_capture", "agent_log_rotation", "device_tracking"],
+  "onlineDevices": [
+    { "userUuid": "user-uuid-1", "ip": "203.0.113.10", "lineId": "line-uuid", "connections": 2, "lastSeenAt": 1780000000 }
+  ],
   "trafficSnapshots": [],
+  "kickDevicesResults": [],
   "configApplyResults": [
     { "version": 3, "success": true, "message": "ok" }
   ],
@@ -598,7 +619,7 @@ Content-Type: application/json
 }
 ```
 
-`configApplyResults`、`upgradeResults`、`probeResults`、`restartAgentResults` 是可选回执数组，每次最多各 8 项；请求仍会先按心跳规则更新节点遥测与流量，再处理回执。节点遥测与流量账务分开落库，但流量日志和两处配额更新保持在同一短事务内。
+`onlineDevices` 与 `kickDevicesResults` 均为可选数组，分别最多 1024 项和 8 项；`configApplyResults`、`upgradeResults`、`probeResults`、`restartAgentResults` 每类最多 8 项。请求仍会先按心跳规则更新节点遥测与流量，再处理回执。节点遥测与流量账务分开落库，但流量日志和两处配额更新保持在同一短事务内。
 
 ### 2.3.2 Master -> Agent 响应体
 
@@ -609,6 +630,7 @@ Content-Type: application/json
   "version": 4,
   "singboxLogCaptureLevel": "WARN",
   "singboxConfig": { "log": { "level": "warn" }, "inbounds": [], "outbounds": [{ "type": "direct", "tag": "direct" }] },
+  "userDeviceLimits": { "user@example.com": 2, "user-uuid-1": 2 },
   "tasks": [
     { "type": "probe_task", "data": { "taskId": "task-uuid", "probes": [{ "type": "dns", "target": "example.com" }] } }
   ],

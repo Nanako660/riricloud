@@ -172,6 +172,14 @@ export class CreatePlanDto {
   @IsOptional()
   allowRenewal?: boolean;
 
+  @ApiPropertyOptional({ example: 3, description: '同时在线设备上限，0 或留空表示不限制' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  @IsOptional()
+  deviceLimit?: number | null;
+
   @ApiPropertyOptional({ example: 50, description: '套餐带宽速率上限，单位为 Mbps，0 或留空表示不限速' })
   @Type(() => Number)
   @IsInt()

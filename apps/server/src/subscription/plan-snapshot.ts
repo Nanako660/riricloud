@@ -21,6 +21,7 @@ export type RedeemedPlanSnapshot = {
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
   speedLimitMbps: number | null;
+  deviceLimit?: number | null;
   appendSpeedBadge: string;
   template: Record<string, unknown> | null;
 };
@@ -47,6 +48,7 @@ export function captureRedeemedPlanSnapshot(plan: Prisma.PlanGetPayload<{ includ
     purchaseLimitPerUser: plan.purchaseLimitPerUser,
     allowRenewal: plan.allowRenewal,
     speedLimitMbps: plan.speedLimitMbps,
+    deviceLimit: plan.deviceLimit,
     appendSpeedBadge: plan.appendSpeedBadge,
     template: plan.template ? { ...plan.template } : null
   };

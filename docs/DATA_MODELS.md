@@ -83,6 +83,7 @@ model User {
   trafficLimitBytes BigInt       @default(107374182400) // 流量配额 (默认 100GB)
   trafficUsedBytes  BigInt       @default(0)            // 已用流量 (字节)
   expireAt          DateTime?                           // 账号过期时间 (为空表示永久)
+  deviceLimit        Int?         // null 跟随套餐，0 显式不限，正数覆盖为用户上限
   
   // 代理与订阅凭证
   subscriptionToken String       @unique @default(uuid()) // 订阅 URL 唯一样条
@@ -401,6 +402,7 @@ model Plan {
   sortOrder         Int      @default(0)
   purchaseLimitPerUser Int?  // null 表示不限购；>=1 时限制每购买身份累计次数
   allowRenewal      Boolean  @default(true)
+  deviceLimit        Int      @default(0) // 同时在线设备上限，0 不限制
   speedLimitMbps    Int?     // 套餐带宽速率上限（Mbps，0 或 null 为不限速）
   appendSpeedBadge  String   @default("INHERIT") // 节点追加速率角标策略：INHERIT | ENABLE | DISABLE
   createdAt         DateTime @default(now())
@@ -719,6 +721,8 @@ model HelpArticle {
 | `defaultTemplateId` | UUID 或空字符串 | `""` | 套餐未指定模板时优先使用的模板；系统设置中以只读卡片展示，引导前往模板页维护 |
 | `publicLinesEnabled` | `"true"` / `"false"` | `"true"` | 全局公开线路开关 |
 | `includeUsageHeaders` | `"true"` / `"false"` | `"true"` | 是否返回 `Subscription-Userinfo` |
+| `deviceLimitEnabled` | `"true"` / `"false"` | `"true"` | 是否启用自动多设备上限执行；关闭时保留配置值供展示，但不自动执行上限，手动踢设备仍可用 |
+| `deviceOnlineWindowSecs` | 十进制整数（15~600） | `"60"` | Master 认定 Agent 设备上报仍新鲜的秒数；超窗报告不计入在线设备或跨节点限制 |
 | `heartbeatTimeoutSecs` | 十进制整数（5~3600） | `"15"` | Agent 离线判定基础超时 |
 | `configSyncDebounceMs` | 十进制整数（0~10000） | `"250"` | 全量配置推送防抖延迟 |
 | `defaultPollIntervalSecs` | 十进制整数（5~300） | `"15"` | 新节点与 HTTP 轮询的默认周期 |
@@ -884,6 +888,12 @@ model HelpArticle {
 模板服务校验覆写语法并以事务同步唯一默认模板：设置模板 `isDefault=true` 会更新 `SystemSetting.defaultTemplateId`，系统设置切换该 ID 会同步模板表，其余模板取消默认；取消当前默认时清空系统设置并回退到其他 `isDefault=true` 模板。
 
 `apps/server/prisma/default-template.js` 内嵌「默认通用全能分流模板」，包含地区节点自动优选、AI/流媒体/Telegram 分流、广告拦截、国内直连、DNS/Fake-IP 与客户端覆写配置。所有部署方式的生产 bootstrap 都会确保该模板存在；如果管理员已修改模板，启动时保留修改，不覆盖内容。模板记录通过 `isBuiltin=true` 标记，只能编辑不能删除；执行完整 `prisma db seed` 时才会按内嵌定义同步模板内容。
+
+### 3.6 `User.deviceLimit` 与 `Plan.deviceLimit`（多设备管理）
+
+`User.deviceLimit` 为可空用户覆盖：`null` 跟随有效订阅套餐、正数指定用户上限、`0` 显式不限；`Plan.deviceLimit` 默认为 `0`（不限）。当用户跟随套餐时，兑换权益快照 `Subscription.planSnapshotJson.deviceLimit` 优先于当前 `Plan.deviceLimit`，因此已快照的套餐权益不随套餐后续编辑改变。
+
+`resolveEffectiveDeviceLimit()` 先解析用户覆盖，再解析套餐（快照优先），最后应用 `deviceLimitEnabled` 全局执行开关。响应同时提供 `configuredDeviceLimit`、`effectiveDeviceLimit`、`configuredDeviceLimitSource` 与 `deviceLimitSource`；全局关闭只令有效上限为空，不擦除配置。在线设备报告由 Master 进程内存按最近 `deviceOnlineWindowSecs` 秒暂存，不写入 Prisma，也不构成历史审计数据。
 
 ## 4. 二进制资源中心模型（v0.5.0）
 

@@ -7,6 +7,7 @@ import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AdjustBalanceDto } from './dto/adjust-balance.dto';
 import { UsersService } from './users.service';
+import { DeviceIpQueryDto } from '../agent-gateway/dto/device-ip.query.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -23,6 +24,21 @@ export class UsersAdminController {
   @Post()
   create(@Body() dto: CreateUserDto) {
     return this.usersService.createUser(dto);
+  }
+
+  @Get(':id/devices')
+  getDevices(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.getUserDevices(id);
+  }
+
+  @Delete(':id/devices')
+  kickDevices(@Param('id', ParseUUIDPipe) id: string, @Query() query: DeviceIpQueryDto) {
+    return this.usersService.kickUserDevices(id, query.ip);
+  }
+
+  @Post(':id/devices/kick-all')
+  kickAllDevices(@Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.kickUserDevices(id);
   }
 
   @Post(':id/reset-subscription-token')

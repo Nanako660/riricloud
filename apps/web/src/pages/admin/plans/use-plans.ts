@@ -49,6 +49,8 @@ export interface Plan {
   sortOrder: number;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  /** 0 means unlimited; omitted legacy values also behave as unlimited. */
+  deviceLimit?: number | null;
   speedLimitMbps?: number | null;
   appendSpeedBadge?: 'INHERIT' | 'ENABLE' | 'DISABLE' | null;
 }
@@ -72,6 +74,7 @@ export interface PlanPayload {
   sortOrder: number;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  deviceLimit?: number;
   speedLimitMbps?: number | null;
   appendSpeedBadge?: 'INHERIT' | 'ENABLE' | 'DISABLE' | null;
 }

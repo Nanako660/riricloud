@@ -47,7 +47,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
   const [removeSubscriptionConfirmOpen, setRemoveSubscriptionConfirmOpen] = useState(false);
   const isEdit = !!user;
   const isSelf = user?.id === selfId;
-  const accountForm = useForm<EditAccountForm>({ resolver: zodResolver(editAccountSchema), defaultValues: { role: 'USER', isActive: true, emailVerified: false, password: '' } });
+  const accountForm = useForm<EditAccountForm>({ resolver: zodResolver(editAccountSchema), defaultValues: { role: 'USER', isActive: true, emailVerified: false, password: '', deviceLimitMode: 'FOLLOW_PLAN', deviceLimitCount: undefined } });
   const createForm = useForm<CreateUserForm>({ resolver: zodResolver(createUserSchema), defaultValues: emptyCreateValues });
   const subscriptionForm = useForm<SubscriptionForm>({ resolver: zodResolver(subscriptionSchema), defaultValues: { planId: '', status: 'ACTIVE', quotaGB: 0, usedGB: 0, expireAt: '', addDays: undefined, extraLineIds: [] } });
 
@@ -59,7 +59,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
         createForm.reset(emptyCreateValues);
         return;
       }
-      accountForm.reset({ role: user.role, isActive: user.isActive, emailVerified: !!user.emailVerifiedAt, password: '' });
+      accountForm.reset({ role: user.role, isActive: user.isActive, emailVerified: !!user.emailVerifiedAt, password: '', deviceLimitMode: user.deviceLimit == null ? 'FOLLOW_PLAN' : user.deviceLimit === 0 ? 'UNLIMITED' : 'CUSTOM', deviceLimitCount: user.deviceLimit && user.deviceLimit > 0 ? user.deviceLimit : undefined });
       const subscription = user.subscription;
       subscriptionForm.reset({
         planId: subscription?.plan?.id ?? '',
@@ -75,7 +75,7 @@ export function UserFormDialog({ open, onOpenChange, user, selfId, plans, lineOp
 
   const submitAccount = (values: EditAccountForm) => {
     if (!user) return;
-    updateUser.mutate({ id: user.id, role: values.role, isActive: values.isActive, emailVerified: values.emailVerified, ...(values.password ? { password: values.password } : {}) }, { onSuccess: () => onOpenChange(false) });
+    updateUser.mutate({ id: user.id, role: values.role, isActive: values.isActive, emailVerified: values.emailVerified, deviceLimit: values.deviceLimitMode === 'FOLLOW_PLAN' ? null : values.deviceLimitMode === 'UNLIMITED' ? 0 : values.deviceLimitCount, ...(values.password ? { password: values.password } : {}) }, { onSuccess: () => onOpenChange(false) });
   };
 
   const submitCreate = (values: CreateUserForm) => {
