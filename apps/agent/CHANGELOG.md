@@ -15,8 +15,18 @@
 ### Added
 
 ### Changed
+- **定制 Sing-box 编译标签与版本注入**：构建内嵌 Sing-box 内核时统一注入 `-X github.com/sagernet/sing-box/constant.Version` 与 `with_riri_device_tracking` 标签，全平台（`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`）均从补丁源码交叉编译并内嵌 `singbox.tar.gz`。
 
 ### Fixed
+- **修复 Docker 与 Release 构建未内嵌定制内核**：修正 `Dockerfile` / `Dockerfile.agent` 内嵌归档路径为 `internal/embedded/assets/singbox.tar.gz`，并移除 `release.sh --agent` 的 `--agent-only` 参数，确保容器与各平台发行包均完整内嵌定制 Sing-box 内核。
+- **修复启动时内嵌内核未覆盖存量旧内核**：`startKernelBootstrap` 在未显式指定外部 `SINGBOX_BINARY_PATH` 时优先执行 `kernel.EnsureWithStatus` SHA-256 校验与自愈释放，不再被磁盘已有旧二进制短路跳过；若释放覆盖了正在运行的旧内核则自动重启子进程。
+- **修复内核版本与设备追踪能力缓存锁死**：`singbox.Manager` 改为按二进制文件大小与修改时间指纹动态刷新版本与 `SupportsClashAPI()` 结果，并排除含 `with_dhcp` / `with_tailscale` 的上游未打补丁官方构建，防止误报 `device_tracking` 能力。
+- **修复设备追踪器 (`devices.Tracker`) 槽位抢占、长连接误踢与回环 IP 误判**：
+  - 阻断期内的设备不再占用 `allowedDevicesLocked` 名额，避免重连风暴把合法新设备挤出名额；
+  - 踢出或阻断设备时立即清理 `firstSeen`、`lastActive` 与 `reports` 缓存，避免下一轮心跳继续上报已下线设备；
+  - 改用 `lastActive`（5 分钟无连接过期）维护 `firstSeen` 生命周期，防止连续在线超过 24 小时的长连接设备丢失先到先得优先级；
+  - 忽略 `127.0.0.1` / `::1` 等回环与未指定地址，防止 NAT 反向隧道本地转发连接被误识别为客户端设备 IP；
+  - 请求 Clash API `/connections` 与断开连接接口时支持携带 `experimental.clash_api.secret` Bearer 令牌。
 
 
 ## [0.8.0] - 2026-09-26

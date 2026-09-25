@@ -68,7 +68,7 @@ type Manager struct {
 	binPath           string
 	log               *logrus.Entry
 	binaryVersion     string
-	featureOnce       sync.Once
+	binFingerprint    string
 	clashAPISupported bool
 
 	mu            sync.Mutex
@@ -93,13 +93,13 @@ type Manager struct {
 
 func NewManager(rootCtx context.Context, confPath, binPath string, log *logrus.Entry) *Manager {
 	m := &Manager{
-		confPath:      confPath,
-		binPath:       binPath,
-		log:           log,
-		binaryVersion: detectBinaryVersion(binPath),
-		kick:          make(chan struct{}, 1),
-		done:          make(chan struct{}),
+		confPath: confPath,
+		binPath:  binPath,
+		log:      log,
+		kick:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
 	}
+	m.ensureBinaryMetadata()
 	go m.supervisor(rootCtx)
 	return m
 }
@@ -163,30 +163,21 @@ func (m *Manager) Running() bool {
 
 // Status 返回内核运行状态快照（心跳上报用）。
 func (m *Manager) Status() Status {
+	version, _ := m.ensureBinaryMetadata()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.binaryVersion == "" {
-		m.binaryVersion = detectBinaryVersion(m.binPath)
-	}
 	return Status{
 		Running:              m.child != nil,
 		AppliedConfigVersion: m.appliedVer,
 		LastError:            m.lastError,
-		Version:              m.binaryVersion,
+		Version:              version,
 	}
 }
 
-// SupportsClashAPI reports whether this Sing-box binary was built with the Clash API feature.
+// SupportsClashAPI reports whether this Sing-box binary supports RiriCloud's patched Clash API device tracking.
 func (m *Manager) SupportsClashAPI() bool {
-	m.featureOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		output, err := exec.CommandContext(ctx, m.binPath, "version").CombinedOutput()
-		if err == nil {
-			m.clashAPISupported = strings.Contains(string(output), "with_clash_api")
-		}
-	})
-	return m.clashAPISupported
+	_, supported := m.ensureBinaryMetadata()
+	return supported
 }
 
 // ClashAPIAddress returns only an explicitly configured loopback controller address.
@@ -236,6 +227,33 @@ func (m *Manager) ClashAPIAddress() (string, error) {
 	return "http://" + net.JoinHostPort(ip.String(), strconv.Itoa(port)), nil
 }
 
+// ClashAPISecret returns the configured Clash API bearer secret if present.
+func (m *Manager) ClashAPISecret() string {
+	if secret := strings.TrimSpace(os.Getenv("SINGBOX_CLASH_API_SECRET")); secret != "" {
+		return secret
+	}
+	m.mu.Lock()
+	conf := append([]byte(nil), m.appliedConf...)
+	if len(conf) == 0 {
+		conf = append([]byte(nil), m.desiredConf...)
+	}
+	m.mu.Unlock()
+	if len(conf) == 0 {
+		return ""
+	}
+	var root struct {
+		Experimental struct {
+			ClashAPI *struct {
+				Secret string `json:"secret"`
+			} `json:"clash_api"`
+		} `json:"experimental"`
+	}
+	if err := json.Unmarshal(conf, &root); err != nil || root.Experimental.ClashAPI == nil {
+		return ""
+	}
+	return strings.TrimSpace(root.Experimental.ClashAPI.Secret)
+}
+
 // StatsAddress 返回当前配置里的 V2Ray API 地址；未配置时使用本地默认地址。
 func (m *Manager) StatsAddress() string {
 	m.mu.Lock()
@@ -267,14 +285,82 @@ var singboxLevelRuntimePrefix = regexp.MustCompile(`(?i)^((?:DEBUG|TRACE|INFO|WA
 var singboxLeadingTimestamp = regexp.MustCompile(`^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.+\-Z]+|[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?)\s+`)
 var singboxAccessPattern = regexp.MustCompile(`(?i)(accepted|inbound.*connection|outbound.*connection|connection.*closed|dial(?:ing)?|destination=|request.*(?:tcp|udp|http|https))`)
 
-func detectBinaryVersion(binaryPath string) string {
+func fileFingerprint(binaryPath string) string {
+	info, err := os.Stat(binaryPath)
+	if err != nil {
+		if resolved, lookErr := exec.LookPath(binaryPath); lookErr == nil {
+			info, err = os.Stat(resolved)
+		}
+	}
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+}
+
+func isDeviceTrackingSupportedOutput(output string) bool {
+	if strings.Contains(output, "with_riri_device_tracking") {
+		return true
+	}
+	if !strings.Contains(output, "with_clash_api") {
+		return false
+	}
+	// 排除 GitHub 官方 SagerNet 原版构建（含 with_dhcp/with_tailscale 但未打 inboundUser 补丁）
+	if strings.Contains(output, "with_dhcp") || strings.Contains(output, "with_tailscale") {
+		return false
+	}
+	return true
+}
+
+func probeBinaryMetadata(binaryPath string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, binaryPath, "version").CombinedOutput()
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return binaryVersionPattern.FindString(string(output))
+	text := string(output)
+	lines := strings.Split(text, "\n")
+	version := ""
+	if len(lines) > 0 {
+		version = binaryVersionPattern.FindString(lines[0])
+	}
+	if version == "" {
+		version = binaryVersionPattern.FindString(text)
+	}
+	return version, isDeviceTrackingSupportedOutput(text)
+}
+
+func detectBinaryVersion(binaryPath string) string {
+	version, _ := probeBinaryMetadata(binaryPath)
+	return version
+}
+
+func (m *Manager) ensureBinaryMetadata() (string, bool) {
+	fp := fileFingerprint(m.binPath)
+	m.mu.Lock()
+	if fp != "" && fp == m.binFingerprint {
+		v, supported := m.binaryVersion, m.clashAPISupported
+		m.mu.Unlock()
+		return v, supported
+	}
+	if fp == "" {
+		m.binFingerprint = ""
+		m.clashAPISupported = false
+		v := m.binaryVersion
+		m.mu.Unlock()
+		return v, false
+	}
+	m.mu.Unlock()
+
+	v, supported := probeBinaryMetadata(m.binPath)
+
+	m.mu.Lock()
+	m.binFingerprint = fp
+	m.binaryVersion = v
+	m.clashAPISupported = supported
+	m.mu.Unlock()
+	return v, supported
 }
 
 // lastGood 返回最近一次预检通过且已落盘生效的配置（nil 表示尚无）。
@@ -415,14 +501,13 @@ func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile, t
 	}
 	m.mu.Lock()
 	m.appliedConf = nil
+	m.binFingerprint = ""
 	shouldRun := m.wantRun
 	m.upgrading = false
 	m.mu.Unlock()
 	m.kickSupervisor()
 	if !shouldRun {
-		m.mu.Lock()
-		m.binaryVersion = detectBinaryVersion(m.binPath)
-		m.mu.Unlock()
+		m.ensureBinaryMetadata()
 		for _, item := range replacements {
 			if err := upgrade.CommitBackup(item.backup); err != nil {
 				m.log.WithError(err).Warn("remove old sing-box backup failed")
@@ -440,7 +525,9 @@ func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile, t
 		}
 		m.mu.Lock()
 		m.appliedConf = nil
+		m.binFingerprint = ""
 		m.mu.Unlock()
+		m.ensureBinaryMetadata()
 		return fmt.Errorf("new sing-box failed to start: %w", err)
 	}
 	for _, item := range replacements {
@@ -448,9 +535,7 @@ func (m *Manager) UpgradeKernelFiles(ctx context.Context, files []UpgradeFile, t
 			m.log.WithError(err).Warn("remove old sing-box backup failed")
 		}
 	}
-	m.mu.Lock()
-	m.binaryVersion = detectBinaryVersion(m.binPath)
-	m.mu.Unlock()
+	m.ensureBinaryMetadata()
 	return nil
 }
 

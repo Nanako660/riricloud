@@ -21,7 +21,7 @@ const (
 	requestTimeout     = 1500 * time.Millisecond
 	maxConnectionsBody = 4 << 20
 	maxReports         = 1024
-	staleFirstSeen     = 24 * time.Hour
+	staleFirstSeen     = 5 * time.Minute
 	defaultBlockFor    = 60 * time.Second
 )
 
@@ -77,11 +77,12 @@ type Tracker struct {
 	client *http.Client
 	log    *logrus.Entry
 
-	mu        sync.RWMutex
-	limits    map[string]int
-	reports   []ReportItem
-	firstSeen map[string]time.Time
-	blocked   map[string]time.Time
+	mu         sync.RWMutex
+	limits     map[string]int
+	reports    []ReportItem
+	firstSeen  map[string]time.Time
+	lastActive map[string]time.Time
+	blocked    map[string]time.Time
 
 	lastErrorLog time.Time
 }
@@ -95,10 +96,11 @@ func NewTracker(api API, log *logrus.Entry) *Tracker {
 				Proxy: nil, // Never route a privileged local-control request through a proxy.
 			},
 		},
-		log:       log,
-		limits:    make(map[string]int),
-		firstSeen: make(map[string]time.Time),
-		blocked:   make(map[string]time.Time),
+		log:        log,
+		limits:     make(map[string]int),
+		firstSeen:  make(map[string]time.Time),
+		lastActive: make(map[string]time.Time),
+		blocked:    make(map[string]time.Time),
 	}
 }
 
@@ -175,6 +177,14 @@ func (t *Tracker) pollOnce(ctx context.Context) error {
 	return t.applySnapshot(ctx, baseURL, connections, now)
 }
 
+func (t *Tracker) attachAuthHeader(req *http.Request) {
+	if provider, ok := t.api.(interface{ ClashAPISecret() string }); ok {
+		if secret := strings.TrimSpace(provider.ClashAPISecret()); secret != "" {
+			req.Header.Set("Authorization", "Bearer "+secret)
+		}
+	}
+}
+
 func (t *Tracker) fetchConnections(ctx context.Context, baseURL string) ([]connection, error) {
 	endpoint, err := apiEndpoint(baseURL, "/connections")
 	if err != nil {
@@ -184,6 +194,7 @@ func (t *Tracker) fetchConnections(ctx context.Context, baseURL string) ([]conne
 	if err != nil {
 		return nil, fmt.Errorf("create Clash API request: %w", err)
 	}
+	t.attachAuthHeader(req)
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request Clash API: %w", err)
@@ -197,6 +208,14 @@ func (t *Tracker) fetchConnections(ctx context.Context, baseURL string) ([]conne
 		return nil, fmt.Errorf("decode Clash API connections: %w", err)
 	}
 	return snapshot.Connections, nil
+}
+
+func (t *Tracker) blockedUntilLocked(user, ip string) time.Time {
+	blockedUntil := t.blocked[deviceKey(user, ip)]
+	if allBlocked := t.blocked[deviceKey(user, "*")]; allBlocked.After(blockedUntil) {
+		blockedUntil = allBlocked
+	}
+	return blockedUntil
 }
 
 func (t *Tracker) applySnapshot(ctx context.Context, baseURL string, raw []connection, now time.Time) error {
@@ -215,26 +234,31 @@ func (t *Tracker) applySnapshot(ctx context.Context, baseURL string, raw []conne
 
 	t.mu.Lock()
 	t.pruneStateLocked(now)
+	unblockedActive := make([]activeConnection, 0, len(active))
 	for _, item := range active {
+		if t.blockedUntilLocked(item.user, item.ip).After(now) {
+			continue
+		}
 		key := deviceKey(item.user, item.ip)
 		if _, exists := t.firstSeen[key]; !exists {
 			t.firstSeen[key] = now
 		}
+		t.lastActive[key] = now
+		unblockedActive = append(unblockedActive, item)
 	}
 
-	allowed := t.allowedDevicesLocked(active)
+	allowed := t.allowedDevicesLocked(unblockedActive)
 	grouped := make(map[string]*ReportItem)
 	toClose := make([]string, 0)
 	for _, item := range active {
 		key := deviceKey(item.user, item.ip)
-		blockedUntil := t.blocked[key]
-		if allBlocked := t.blocked[deviceKey(item.user, "*")]; allBlocked.After(blockedUntil) {
-			blockedUntil = allBlocked
-		}
+		blockedUntil := t.blockedUntilLocked(item.user, item.ip)
 		_, overLimit := allowed[item.user][item.ip]
 		if overLimit && !blockedUntil.After(now) {
 			blockedUntil = now.Add(defaultBlockFor)
 			t.blocked[key] = blockedUntil
+			delete(t.firstSeen, key)
+			delete(t.lastActive, key)
 		}
 		if blockedUntil.After(now) {
 			toClose = append(toClose, item.id)
@@ -322,6 +346,7 @@ func (t *Tracker) closeConnection(ctx context.Context, baseURL, id string) error
 	if err != nil {
 		return fmt.Errorf("create disconnect request: %w", err)
 	}
+	t.attachAuthHeader(req)
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("disconnect connection: %w", err)
@@ -331,6 +356,16 @@ func (t *Tracker) closeConnection(ctx context.Context, baseURL, id string) error
 		return fmt.Errorf("disconnect connection returned %s", resp.Status)
 	}
 	return nil
+}
+
+func matchesKickTarget(user, ip string, items []KickItem) bool {
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item.UserUUID), strings.TrimSpace(user)) &&
+			(strings.TrimSpace(item.IP) == "" || normalizeIPEqual(item.IP, ip)) {
+			return true
+		}
+	}
+	return false
 }
 
 // Kick blocks matching devices for a bounded interval, then closes all matching current connections.
@@ -380,8 +415,29 @@ func (t *Tracker) Kick(ctx context.Context, items []KickItem) (int, error) {
 		keyIP := item.IP
 		if keyIP == "" {
 			keyIP = "*"
+			prefix := item.UserUUID + "\x00"
+			for key := range t.firstSeen {
+				if strings.HasPrefix(key, prefix) || strings.HasPrefix(strings.ToLower(key), strings.ToLower(prefix)) {
+					delete(t.firstSeen, key)
+					delete(t.lastActive, key)
+				}
+			}
+		} else {
+			key := deviceKey(item.UserUUID, keyIP)
+			delete(t.firstSeen, key)
+			delete(t.lastActive, key)
 		}
 		t.blocked[deviceKey(item.UserUUID, keyIP)] = now.Add(time.Duration(item.BlockDurationSecs) * time.Second)
+	}
+	if len(t.reports) > 0 {
+		filtered := make([]ReportItem, 0, len(t.reports))
+		for _, report := range t.reports {
+			if matchesKickTarget(report.UserUUID, report.IP, items) {
+				continue
+			}
+			filtered = append(filtered, report)
+		}
+		t.reports = filtered
 	}
 	t.mu.Unlock()
 
@@ -400,14 +456,7 @@ func (t *Tracker) Kick(ctx context.Context, items []KickItem) (int, error) {
 		if !validIP {
 			continue
 		}
-		matched := false
-		for _, item := range items {
-			if strings.TrimSpace(item.UserUUID) == user && (strings.TrimSpace(item.IP) == "" || normalizeIPEqual(item.IP, ip)) {
-				matched = true
-				break
-			}
-		}
-		if !matched || connection.ID == "" {
+		if !matchesKickTarget(user, ip, items) || connection.ID == "" {
 			continue
 		}
 		if err := t.closeConnection(ctx, baseURL, connection.ID); err != nil {
@@ -446,7 +495,7 @@ func normalizeIP(raw string) (string, bool) {
 		value = value[:zone]
 	}
 	ip := net.ParseIP(value)
-	if ip == nil {
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
 		return "", false
 	}
 	return ip.String(), true
@@ -476,8 +525,13 @@ func deviceKey(user, ip string) string { return user + "\x00" + ip }
 
 func (t *Tracker) pruneStateLocked(now time.Time) {
 	for key, seen := range t.firstSeen {
-		if now.Sub(seen) > staleFirstSeen {
+		lastSeen := t.lastActive[key]
+		if lastSeen.IsZero() {
+			lastSeen = seen
+		}
+		if now.Sub(lastSeen) > staleFirstSeen {
 			delete(t.firstSeen, key)
+			delete(t.lastActive, key)
 		}
 	}
 	for key, until := range t.blocked {

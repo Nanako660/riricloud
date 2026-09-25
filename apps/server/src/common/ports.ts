@@ -2,9 +2,14 @@ import { randomInt } from 'node:crypto';
 
 export const DEFAULT_INBOUND_LISTEN = '0.0.0.0';
 export const DEFAULT_STATS_API_LISTEN = '127.0.0.1:10085';
+export const DEFAULT_CLASH_API_LISTEN = '127.0.0.1:10086';
 
 export function getStatsApiListen(): string {
   return process.env.STATS_API_LISTEN?.trim() || DEFAULT_STATS_API_LISTEN;
+}
+
+export function getClashApiListen(): string {
+  return process.env.CLASH_API_LISTEN?.trim() || DEFAULT_CLASH_API_LISTEN;
 }
 
 // 选用 20000~65535：保持五位数，并将随机上限扩展到合法端口最大值。

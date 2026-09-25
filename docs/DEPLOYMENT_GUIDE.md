@@ -548,8 +548,8 @@ RiriCloud 采用**以线路（Line）为中心（Line-Centric Pipeline）**的�
 ```text
 artifacts/binaries/
 ├── agent/linux-amd64/riri-agent
-├── singbox/1.14.0-r1/linux-amd64/sing-box
-├── singbox/1.14.0-r1/linux-amd64/libcronet.so
+├── singbox/1.14.0-r2/linux-amd64/sing-box
+├── singbox/1.14.0-r2/linux-amd64/libcronet.so
 └── manifest.json
 ```
 
@@ -563,15 +563,15 @@ Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_
 
 ### 8.3 运行时资源管理与内核内嵌
 
-自编译 Sing-box 内核（以及 Linux 下的 `libcronet.so`）现已深度封装内嵌于各平台 `riri-agent` 二进制中。节点 VPS 执行安装命令下载 Agent 后，启动时直接在本地自愈解压内核并拉起，不再需要向外网或 Master 请求二次下载，实现 100% 离线自闭环。节点升级流程统一收敛为「升级 Agent」单一动作，升级 Agent 落地启动后自动自愈更新内置内核。
+自编译 Sing-box 内核（以及 Linux 下的 `libcronet.so`）现已深度封装内嵌于各平台 `riri-agent` 二进制中。节点 VPS 执行安装命令下载 Agent 后，启动时直接在本地按 SHA-256 自愈校验并解压覆盖旧内核，不再需要向外网或 Master 请求二次下载，实现 100% 离线自闭环。节点升级流程统一收敛为「升级 Agent」单一动作，升级 Agent 落地启动后自动自愈更新内置内核。
 
 管理员仍可从 `/admin/binaries` 维护各平台 Agent 发行包与内置资源；服务端会校验节点 OS/架构、协议兼容性和资产 SHA-256。升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
 
 ### 8.4 多设备在线管理的内核要求
 
-Master 下发的 Sing-box 配置会将 `experimental.clash_api.external_controller` 绑定到 `127.0.0.1:10086`，Agent 仅访问 loopback 上的 `/connections` 与连接删除接口。**不要将 Clash API 监听地址改为公网或非 loopback 地址，也不要通过防火墙/端口映射暴露该管理 API。** Agent 会拒绝非 loopback 的 API 地址。
+Master 下发的 Sing-box 配置默认将 `experimental.clash_api.external_controller` 绑定到 `127.0.0.1:10086`（可通过主控环境变量 `CLASH_API_LISTEN` 或节点级 `configOverride.experimental.clash_api.external_controller` 调整为其他本机回环端口，并支持配置 `experimental.clash_api.secret`），Agent 仅访问 loopback 上的 `/connections` 与连接删除接口。**不要将 Clash API 监听地址改为公网或非 loopback 地址，也不要通过防火墙/端口映射暴露该管理 API。** Agent 会拒绝非 loopback 的 API 地址。
 
-仓库内构建的 Sing-box 会启用 `with_clash_api`，并由 `scripts/build-binaries.sh` 对上游 `experimental/clashapi/connections.go` 应用 `apps/agent/patches/sing-box-clashapi-inbound-user.patch`，让连接元数据包含 `inboundUser`；源码构建需要 Bash、Go 与 `patch` 工具。自行提供的 Sing-box 内核也必须启用 Clash API 并返回等价的用户元数据，否则 Agent 无法按用户识别设备或执行设备限制。Agent 每 2 秒采样一次，瞬时短连接可能未被观察到；Master 默认按最近 60 秒报告判定在线，管理员可在系统设置将窗口调整为 15~600 秒。
+仓库内构建的 Sing-box 会启用 `with_clash_api` 与 `with_riri_device_tracking` 编译标签，注入 `-X github.com/sagernet/sing-box/constant.Version` 版本号，并由 `scripts/build-binaries.sh`、`Dockerfile` 与 `Dockerfile.agent` 对上游 `experimental/clashapi/connections.go` 应用 `apps/agent/patches/sing-box-clashapi-inbound-user.patch`，让连接元数据包含 `inboundUser`；源码构建需要 Bash、Go 与 `patch` 工具。自行提供的 Sing-box 内核也必须启用上述标签并返回等价的用户元数据，否则 Agent 不会宣告 `device_tracking` 能力。Agent 与 Master 会自动忽略 `127.0.0.1`、`::1` 等回环来源地址（避免反向隧道落地节点的本地转发流量被误计为客户端设备）。Agent 每 2 秒采样一次，瞬时短连接可能未被观察到；Master 默认按最近 60 秒报告判定在线，管理员可在系统设置将窗口调整为 15~600 秒。
 
 ## 9. 实时节点镜像站部署
 

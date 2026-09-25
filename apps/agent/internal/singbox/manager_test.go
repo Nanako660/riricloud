@@ -616,3 +616,52 @@ func TestClashAPIAddressRejectsRemoteEnvironmentOverride(t *testing.T) {
 		t.Fatalf("expected remote environment override to be rejected, got %q, %v", address, err)
 	}
 }
+
+func TestIsDeviceTrackingSupportedOutput(t *testing.T) {
+	if !isDeviceTrackingSupportedOutput("Tags: with_v2ray_api,with_clash_api,with_riri_device_tracking") {
+		t.Fatal("expected RiriCloud device tracking tag to be supported")
+	}
+	if !isDeviceTrackingSupportedOutput("Tags: with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api") {
+		t.Fatal("expected custom RiriCloud v2ray_api + clash_api build to be supported")
+	}
+	if isDeviceTrackingSupportedOutput("Tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale") {
+		t.Fatal("expected unpatched upstream SagerNet release binary to be rejected")
+	}
+	if isDeviceTrackingSupportedOutput("Tags: with_v2ray_api,with_utls") {
+		t.Fatal("expected binary without clash_api to be rejected")
+	}
+}
+
+func TestSupportsClashAPIRefreshesWhenBinaryAppears(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "sing-box")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m := NewManager(ctx, filepath.Join(dir, "config.json"), binPath, silentLog())
+	t.Cleanup(func() {
+		cancel()
+		m.Shutdown(3 * time.Second)
+	})
+
+	// Binary does not exist initially -> false and empty version.
+	if m.SupportsClashAPI() {
+		t.Fatal("expected SupportsClashAPI() = false when binary is missing")
+	}
+	if got := m.Status().Version; got != "" {
+		t.Fatalf("expected empty version when binary is missing, got %q", got)
+	}
+
+	// Copy stubBin into place -> Status().Version should automatically update on next check.
+	raw, err := os.ReadFile(stubBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binPath, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Status().Version; got != "1.14.0" {
+		t.Fatalf("expected version 1.14.0 after binary appears on disk, got %q", got)
+	}
+}

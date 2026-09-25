@@ -152,7 +152,7 @@ restore_placeholder() {
 trap restore_placeholder EXIT
 
 SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-1.14.0}}"
-SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
+SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-2}}"
 CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-v150.0.7871.63-2}}"
 [[ "$SINGBOX_REVISION" =~ ^[0-9]+$ ]] || die "Sing-box revision 必须是正整数"
 [ "$SINGBOX_REVISION" -ge 1 ] || die "Sing-box revision 必须大于 0"
@@ -160,77 +160,87 @@ RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
 
 # ---------- 1. 构建 / 准备 Sing-box 定制内核 ----------
 if [ "$BUILD_SINGBOX" = "1" ]; then
-  echo "==> 准备 Sing-box 定制内核（Linux 双架构）"
+  echo "==> 准备 Sing-box 定制内核（版本：${RESOURCE_VERSION}）"
   DOWNLOAD_DIR="$RIRI_ROOT/.cache/sing-box-v2ray-api/$SINGBOX_VERSION/r${SINGBOX_REVISION}/${CRONET_VERSION}"
+  mkdir -p "$DOWNLOAD_DIR"
 
-  for arch in amd64 arm64; do
-    # 检查是否在当前请求的目标列表中
-    match=0
-    for target in "${TARGETS[@]}"; do
-      if [ "$target" = "linux/$arch" ] || [ "$target" = "linux-$arch" ]; then
-        match=1
-        break
-      fi
-    done
-    [ "$match" = "1" ] || continue
+  # 1.1 确保源码存在并已打入 Clash API inboundUser 补丁
+  if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
+    echo "获取 Sing-box v$SINGBOX_VERSION 源码..."
+    TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
+    curl --fail --silent --show-error --location \
+      "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
+      --output "$TMP_ARCHIVE"
+    tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
+  fi
 
-    CACHE_DIR="$DOWNLOAD_DIR/linux-${arch}"
+  SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
+  CLASH_API_PATCH="$RIRI_ROOT/apps/agent/patches/sing-box-clashapi-inbound-user.patch"
+  CLASH_API_SOURCE="$SINGBOX_SOURCE_DIR/experimental/clashapi/connections.go"
+  if ! grep -q '"inboundUser"' "$CLASH_API_SOURCE"; then
+    command -v patch >/dev/null 2>&1 || die "缺少 patch 工具：无法应用 Sing-box 设备追踪补丁"
+    (cd "$SINGBOX_SOURCE_DIR" && patch -p1 < "$CLASH_API_PATCH")
+  fi
+
+  for raw_target in "${TARGETS[@]}"; do
+    target="$raw_target"
+    if [[ "$target" == *"-"* ]] && [[ "$target" != *"/"* ]]; then
+      target="${target/-//}"
+    fi
+    target_os="${target%%/*}"
+    target_arch="${target#*/}"
+    case "$target_arch" in
+      x86_64) target_arch="amd64" ;;
+      aarch64) target_arch="arm64" ;;
+    esac
+
+    SB_BIN="sing-box"
+    [ "$target_os" = "windows" ] && SB_BIN="sing-box.exe"
+
+    CACHE_DIR="$DOWNLOAD_DIR/${target_os}-${target_arch}"
     mkdir -p "$CACHE_DIR"
 
-    # 1.1 确保源码存在
-    if [ ! -d "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}" ]; then
-      echo "获取 Sing-box v$SINGBOX_VERSION 源码..."
-      TMP_ARCHIVE="$DOWNLOAD_DIR/sing-box.tar.gz"
-      curl --fail --silent --show-error --location \
-        "https://github.com/SagerNet/sing-box/archive/refs/tags/v${SINGBOX_VERSION}.tar.gz" \
-        --output "$TMP_ARCHIVE"
-      tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
+    # 1.2 Linux 双架构额外获取 libcronet.so
+    if [ "$target_os" = "linux" ] && { [ "$target_arch" = "amd64" ] || [ "$target_arch" = "arm64" ]; }; then
+      if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
+        echo "获取 NaiveProxy purego 运行库 ($target_os/$target_arch)..."
+        curl --fail --silent --show-error --location \
+          "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${target_arch}.so" \
+          --output "$CACHE_DIR/libcronet.so"
+        chmod 0755 "$CACHE_DIR/libcronet.so"
+      fi
     fi
 
-    # 1.2 为设备管理暴露连接用户元数据，且仅由本地设备追踪器消费。
-    SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
-    CLASH_API_PATCH="$RIRI_ROOT/apps/agent/patches/sing-box-clashapi-inbound-user.patch"
-    CLASH_API_SOURCE="$SINGBOX_SOURCE_DIR/experimental/clashapi/connections.go"
-    if ! grep -q '"inboundUser"' "$CLASH_API_SOURCE"; then
-      command -v patch >/dev/null 2>&1 || die "缺少 patch 工具：无法应用 Sing-box 设备追踪补丁"
-      (cd "$SINGBOX_SOURCE_DIR" && patch -p1 < "$CLASH_API_PATCH")
-    fi
-
-    # 1.3 确保 libcronet.so 存在
-    if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
-      echo "获取 NaiveProxy purego 运行库 ($arch)..."
-      curl --fail --silent --show-error --location \
-        "https://github.com/SagerNet/cronet-go/releases/download/${CRONET_VERSION}/libcronet-linux-${arch}.so" \
-        --output "$CACHE_DIR/libcronet.so"
-      chmod 0755 "$CACHE_DIR/libcronet.so"
-    fi
-
-    # 1.4 确保含 Clash API 用户元数据的定制二进制存在
-    if [ ! -f "$CACHE_DIR/sing-box" ] || [ ! -f "$CACHE_DIR/.riri-device-tracking-v1" ]; then
-      echo "编译定制 Sing-box linux/$arch..."
+    # 1.3 确保含 Clash API 用户元数据与版本注入的定制二进制存在
+    if [ ! -f "$CACHE_DIR/$SB_BIN" ] || [ ! -f "$CACHE_DIR/.riri-device-tracking-v2" ]; then
+      echo "编译定制 Sing-box ${target_os}/${target_arch}..."
       (
-        cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
-        CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath \
-          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api \
-          -ldflags "-s -w" \
-          -o "$CACHE_DIR/sing-box" ./cmd/sing-box
+        cd "$SINGBOX_SOURCE_DIR"
+        CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" "$GO_BIN" build -trimpath \
+          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api,with_riri_device_tracking \
+          -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}" \
+          -o "$CACHE_DIR/$SB_BIN" ./cmd/sing-box
       )
-      touch "$CACHE_DIR/.riri-device-tracking-v1"
+      touch "$CACHE_DIR/.riri-device-tracking-v2"
     fi
 
-    # 1.5 复制到输出目录
-    DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/linux-${arch}"
+    # 1.4 复制到输出目录
+    DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/${target_os}-${target_arch}"
     mkdir -p "$DEST_DIR"
-    cp "$CACHE_DIR/sing-box" "$DEST_DIR/sing-box"
-    cp "$CACHE_DIR/libcronet.so" "$DEST_DIR/libcronet.so"
-    chmod +x "$DEST_DIR/sing-box"
+    cp "$CACHE_DIR/$SB_BIN" "$DEST_DIR/$SB_BIN"
+    chmod +x "$DEST_DIR/$SB_BIN"
+    if [ -f "$CACHE_DIR/libcronet.so" ]; then
+      cp "$CACHE_DIR/libcronet.so" "$DEST_DIR/libcronet.so"
+    fi
     # 旧目录继续保留，兼容旧版 bundle、开发脚本和外部安装器。
-    LEGACY_DIR="$OUTPUT_DIR/singbox/linux-${arch}"
+    LEGACY_DIR="$OUTPUT_DIR/singbox/${target_os}-${target_arch}"
     mkdir -p "$LEGACY_DIR"
-    cp "$CACHE_DIR/sing-box" "$LEGACY_DIR/sing-box"
-    cp "$CACHE_DIR/libcronet.so" "$LEGACY_DIR/libcronet.so"
-    chmod +x "$LEGACY_DIR/sing-box"
-    echo "Sing-box linux/$arch 已就绪：$DEST_DIR/sing-box"
+    cp "$CACHE_DIR/$SB_BIN" "$LEGACY_DIR/$SB_BIN"
+    chmod +x "$LEGACY_DIR/$SB_BIN"
+    if [ -f "$CACHE_DIR/libcronet.so" ]; then
+      cp "$CACHE_DIR/libcronet.so" "$LEGACY_DIR/libcronet.so"
+    fi
+    echo "Sing-box ${target_os}/${target_arch} 已就绪：$DEST_DIR/$SB_BIN"
   done
 fi
 
@@ -238,7 +248,6 @@ pack_embedded_kernel() {
   local target_os="$1"
   local target_arch="$2"
   local src_dir="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/${target_os}-${target_arch}"
-  [ -d "$src_dir" ] || src_dir="$OUTPUT_DIR/singbox/${target_os}-${target_arch}"
 
   if [ -f "$src_dir/sing-box" ] || [ -f "$src_dir/sing-box.exe" ]; then
     echo "    -> 内嵌 Sing-box 定制内核至 Agent ($target_os-$target_arch)..."
@@ -291,7 +300,7 @@ fi
 
 # ---------- 生成资源 manifest ----------
 SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-}}"
-SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-1}}"
+SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-2}}"
 CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-}}"
 MANIFEST_PATH="$OUTPUT_DIR/manifest.json"
 "$NODE_BIN" -e '

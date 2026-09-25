@@ -15,8 +15,23 @@
 ### Added
 
 ### Changed
+- **定制 Sing-box 内核资源修订号递增 (`1.14.0-r2`)**：同步递增 `Dockerfile`、`Dockerfile.agent`、`scripts/build-binaries.sh`、`scripts/bundle-master.sh`、`scripts/docker-build.sh` 与 `scripts/release.sh` 的 `SINGBOX_REVISION=2`，使主控资源中心与已升级节点自动淘汰旧的未打补丁或缺失版本号标签的 `1.14.0-r1` 资产。
 
 ### Fixed
+- **Docker 与多平台发布流水线内嵌定制 Sing-box 内核修复**：
+  - 修复 `Dockerfile` 与 `Dockerfile.agent` 内嵌归档文件名拼写不一致（`singbox-bundle.tar.gz` → `singbox.tar.gz`）导致容器内 `//go:embed` 静默回退为空占位符、内嵌内核失效的问题；
+  - 修复 `scripts/release.sh --agent` 误传 `--agent-only` 导致 GitHub Release 发布的 5 大平台 Agent 发行包完全缺失内嵌定制 Sing-box 内核的问题；
+  - 修复 `scripts/build-binaries.sh` 在多平台交叉编译时仅对 `linux/*` 从源码编译定制 Sing-box、对 `windows/amd64` 与 `darwin/*` 直接拉取官方未打补丁二进制的问题，现统一对全平台交叉编译应用 `inboundUser` 补丁并内嵌打包；
+  - 在源码编译 Sing-box 时统一注入 `-ldflags "-X github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}"` 与 `with_riri_device_tracking` 定制编译标签，修复源码自编译二进制输出 `sing-box version unknown` 导致节点内核版本识别为空的问题，并精准区分 RiriCloud 定制补丁内核与上游官方 SagerNet 发行版。
+- **Agent 内嵌内核启动自愈与二进制元数据动态重探测**：
+  - 修复 Agent 启动 `startKernelBootstrap` 因前置 `os.Stat` 短路跳过 `embedded.HasEmbeddedKernel()`，导致磁盘存量旧版或官方未打补丁 `sing-box` 二进制无法被新 Agent 内嵌的定制内核自愈覆盖的问题；当内嵌内核发生覆盖更新且 Sing-box 已在运行时，自动触发平滑重启切换至新内核；
+  - 将 `singbox.Manager` 的 `versionOnce` / `clashAPIOnce` 单次锁死缓存改造为基于二进制文件指纹（`size:mtime`）的动态重探测机制，确保内核解压自愈或远程升级替换后立即刷新 `kernelVersion` 与 `device_tracking` 能力宣告。
+- **在线设备追踪器 (`devices.Tracker`) 与主控设备管理全链路修复**：
+  - 修复被踢出或超限阻断设备在 `blockedUntil` 期间重连时仍计入 `allowedDevicesLocked` 先到先得名额，导致合法新设备被连带误踢的槽位抢占漏洞；
+  - 修复活跃连接持续超过 24 小时后 `firstSeen` 被误清理，导致老设备在后续采样周期中失去先到先得优先级被新设备反客为主踢出的问题（改为基于 `lastActive` 超过 5 分钟无活跃连接才回收 `firstSeen`）；
+  - 修复手动下线或自动超限踢出设备后，Agent 本地 `reports` 快照与 Master `onlineDeviceReports` 内存缓存未同步剔除，导致前端面板在踢出后仍残留显示已下线设备以及二次点击下线返回 404 的问题；
+  - 在 Agent 与 Master 双端过滤 `127.0.0.1`、`::1`、`0.0.0.0`、`::` 等回环与未指定地址，防止反向多路复用隧道（Yamux Reverse Tunnel）落地 NAT 节点的本地 `127.0.0.1` 回环连接被误判为真实客户端 IP 并触发全员连坐断流；
+  - 支持通过 `CLASH_API_LISTEN` 环境变量或节点 `configOverride` 自定义 `experimental.clash_api.external_controller` 监听地址，并在 Agent 请求 Clash API `/connections` 时自动携带可选 `secret` Bearer 鉴权头。
 
 
 ## [0.9.0] - 2026-09-26
