@@ -15,6 +15,13 @@
 ### Added
 
 ### Changed
+
+### Fixed
+
+
+## [0.8.1] - 2026-09-26
+
+### Changed
 - **定制 Sing-box 编译标签与版本注入**：构建内嵌 Sing-box 内核时统一注入 `-X github.com/sagernet/sing-box/constant.Version` 与 `with_riri_device_tracking` 标签，全平台（`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`）均从补丁源码交叉编译并内嵌 `singbox.tar.gz`。
 
 ### Fixed
@@ -27,6 +34,7 @@
   - 改用 `lastActive`（5 分钟无连接过期）维护 `firstSeen` 生命周期，防止连续在线超过 24 小时的长连接设备丢失先到先得优先级；
   - 忽略 `127.0.0.1` / `::1` 等回环与未指定地址，防止 NAT 反向隧道本地转发连接被误识别为客户端设备 IP；
   - 请求 Clash API `/connections` 与断开连接接口时支持携带 `experimental.clash_api.secret` Bearer 令牌。
+
 
 
 ## [0.8.0] - 2026-09-26
