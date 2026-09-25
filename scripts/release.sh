@@ -169,6 +169,11 @@ if [ "$DRY_RUN" = "0" ]; then
   if "$GH_BIN" release view "$TAG" >/dev/null 2>&1; then
     die "Release $TAG 已存在；如需重建请先执行 $GH_BIN release delete $TAG --yes"
   fi
+  if [ "$RELEASE_TARGET" = "master" ]; then
+    if ! "$GH_BIN" release view "agent-v${AGENT_VERSION}" >/dev/null 2>&1; then
+      echo "  -> [警告] 远端尚未找到配套的 Agent Release (agent-v${AGENT_VERSION})，若本次包含 Agent 变更请确保已先执行 pnpm release:agent" >&2
+    fi
+  fi
 fi
 
 NEW_TAG=0
@@ -333,12 +338,14 @@ fi
 if [ "$RELEASE_TARGET" = "master" ]; then
   "$GH_BIN" release create "$TAG" \
     --title "$TAG" \
+    --latest \
     --notes-file "$PACKAGE_DIR/release-notes.md" \
     "$PACKAGE_DIR/riri-master_${VERSION}_linux_amd64.tar.gz" \
     "$PACKAGE_DIR/checksums.txt"
 else
   "$GH_BIN" release create "$TAG" \
     --title "$TAG" \
+    --latest=false \
     --notes-file "$PACKAGE_DIR/release-notes.md" \
     "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" \
     "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_arm64.tar.gz" \

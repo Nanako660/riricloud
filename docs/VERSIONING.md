@@ -150,16 +150,16 @@ flowchart TD
 
 ### 6.3 正式发布 (Release)
 
-Master 与 Agent 的 Release 发布流程与产物附件完全解耦独立：
+Master 与 Agent 的 Release 发布流程与产物附件完全解耦独立；**当同一次迭代同时包含 Master 与 Agent 变更时，必须先合并并发布 Agent (`agent-vA.B.C`)，再合并并发布 Master (`vX.Y.Z`)**，确保主控发版 Commit 中的 `apps/agent/VERSION` 与远端 `agent-vA.B.C` GitHub Release 已就绪：
 
 - **Master 发布**：`pnpm release:master`（底层调用 `bash scripts/release.sh --master [vX.Y.Z]`）
   - 产物输出至 `artifacts/packages/master/`；
   - 装配主控生产发行包（包含 Web 前端、生产依赖、对应宿主架构内置 Agent/Sing-box 与启动脚本）；
-  - GitHub Release (`vX.Y.Z`) 仅上传 `riri-master_${VERSION}_linux_amd64.tar.gz` 与主控校验和文件。
+  - GitHub Release (`vX.Y.Z`) 显式携带 `--latest` 标记，仅上传 `riri-master_${VERSION}_linux_amd64.tar.gz` 与主控校验和文件。
 - **Agent 发布**：`pnpm release:agent`（底层调用 `bash scripts/release.sh --agent [agent-vA.B.C]`）
   - 产物输出至 `artifacts/packages/agent/`；
   - 交叉编译 5 大架构（linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64）程序并打包归档；
-  - GitHub Release (`agent-vA.B.C`) 仅上传这 5 个平台的 Agent 压缩包与 Agent 校验和文件。
+  - GitHub Release (`agent-vA.B.C`) 显式携带 `--latest=false` 标记（防止抢占主控 `Latest` 指针），仅上传这 5 个平台的 Agent 压缩包与 Agent 校验和文件。
 
 ## 8. 应用版本与可分发二进制资源版本
 
@@ -171,4 +171,4 @@ RiriCloud 使用两种互不替代的版本生命周期：
 | Agent 程序版本 | `apps/agent/VERSION` | 边缘守护程序与 TUI 控制台版本 | 通过 `pnpm bump:agent` 独立变更 |
 | 二进制资源版本 | `BinaryRelease.upstreamVersion + revision` | Sing-box/Agent 可分发文件的逻辑资源版本 | 真实二进制、构建标签或兼容约束变化时创建新资源 |
 
-构建脚本约定：`--version` 用于指定构建版本，主控 Docker 镜像打标使用 Master 版本；Agent Docker 镜像使用 Agent 版本；资源 manifest 明确记录各自独立的版本信息。
+构建脚本与 GHCR 镜像约定：`--version` 用于指定构建版本；推送 `vX.Y.Z` Tag 时 GHCR 仅构建发布 `riricloud-master`（打标 `vX.Y.Z`、`X.Y.Z`、`latest`），推送 `agent-vA.B.C` Tag 时 GHCR 仅构建发布 `riricloud-agent`（打标 `agent-vA.B.C`、`vA.B.C`、`A.B.C`、`latest`），资源 manifest 明确记录各自独立的版本信息。

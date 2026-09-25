@@ -161,7 +161,7 @@ docker compose --env-file .env.image -f docker-compose.image.yml pull
 docker compose --env-file .env.image -f docker-compose.image.yml up -d
 ```
 
-> 注：`<owner>` 替换为 GitHub 仓库所属用户或组织名（全小写）。主控镜像会跟随发版自动打上 `vX.Y.Z`、`X.Y.Z` 与 `latest` 标签；`main` 分支构建输出 `edge` 快照标签。
+> 注：`<owner>` 替换为 GitHub 仓库所属用户或组织名（全小写）。GHCR 镜像采用严格双轨独立发布：推送 `vX.Y.Z` 时主控镜像（`riricloud-master`）自动打上 `vX.Y.Z`、`X.Y.Z` 与 `latest` 标签；推送 `agent-vA.B.C` 时边缘节点镜像（`riricloud-agent`）自动打上 `agent-vA.B.C`、`vA.B.C`、`A.B.C` 与 `latest` 标签；`main` 分支推送构建输出双端 `edge` 快照标签。
 
 停止并清理容器：
 

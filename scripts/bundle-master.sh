@@ -151,6 +151,10 @@ rm -rf "$MASTER_DIR"
 mkdir -p "$MASTER_DIR"
 
 # 1. 部署生产依赖与编译产物
+if [ ! -f "$WORKTREE_DIR/apps/server/dist/main.js" ] && [ ! -f "$WORKTREE_DIR/apps/server/dist/src/main.js" ]; then
+  echo "  -> 编译主控服务端产物..."
+  (cd "$WORKTREE_DIR" && pnpm --filter @riricloud/server build)
+fi
 echo "  -> 部署主控服务端生产依赖..."
 (
   cd "$WORKTREE_DIR"
@@ -160,7 +164,11 @@ echo "  -> 部署主控服务端生产依赖..."
     pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
   fi
 )
-rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules"
+if [ ! -d "$MASTER_DIR/dist" ]; then
+  mkdir -p "$MASTER_DIR/dist"
+  cp -r "$WORKTREE_DIR/apps/server/dist/." "$MASTER_DIR/dist/"
+fi
+rm -rf "$MASTER_DIR/node_modules/.pnpm/node_modules" "$WORKTREE_DIR/apps/server/artifacts"
 
 # 2. 规范化符号链接为相对路径
 echo "  -> 改写符号链接为包内相对路径..."
@@ -196,7 +204,9 @@ walk(root);
 console.log(`    已将 ${normalized} 个发行包内部绝对符号链接改写为相对链接`);
 NODE
 
-rm -rf "$MASTER_DIR/src" "$MASTER_DIR/tsconfig.json" "$MASTER_DIR/tsconfig.build.json" "$MASTER_DIR/nest-cli.json"
+rm -rf "$MASTER_DIR/src" "$MASTER_DIR/tsconfig.json" "$MASTER_DIR/tsconfig.build.json" "$MASTER_DIR/nest-cli.json" \
+       "$MASTER_DIR/.env" "$MASTER_DIR"/*.db "$MASTER_DIR"/*.db-* "$MASTER_DIR/data" "$MASTER_DIR/.cache" \
+       "$MASTER_DIR/artifacts" "$MASTER_DIR/test_deploy" "$MASTER_DIR/coverage"
 
 # 3. 复制启动入口与配置模板
 echo "  -> 复制启动脚本与配置模板..."

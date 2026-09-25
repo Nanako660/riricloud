@@ -9,8 +9,12 @@ on:
       - 'agent-v*'
   workflow_dispatch:
     inputs:
+      target:
+        description: '构建目标 (all / master / agent)'
+        required: false
+        default: 'all'
       tag:
-        description: '自定义镜像标签 (留空则按版本自动推导，例如 0.8.20 / edge)'
+        description: '自定义镜像标签 (留空则按真实版本自动推导，例如 edge)'
         required: false
         default: ''
 
@@ -59,27 +63,47 @@ jobs:
           REF="${{ github.ref }}"
           EVENT_NAME="${{ github.event_name }}"
           CUSTOM_TAG="${{ inputs.tag }}"
+          TARGET_INPUT="${{ inputs.target }}"
+          [ -n "$TARGET_INPUT" ] || TARGET_INPUT="all"
 
-          BUILD_MASTER="true"
-          BUILD_AGENT="true"
+          BUILD_MASTER="false"
+          BUILD_AGENT="false"
+          MASTER_TAGS=""
+          AGENT_TAGS=""
 
           if [[ "$REF" =~ ^refs/tags/v[0-9] ]]; then
-            # 正式发布 Master (如 v0.8.20)
+            # 正式发布 Master (如 v0.9.0)：严格双轨解耦，仅构建 Master 镜像
             TAG_NAME="${REF#refs/tags/}"
             RAW_VER="${TAG_NAME#v}"
+            BUILD_MASTER="true"
             MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-master:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-master:latest"
-            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-agent:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
           elif [[ "$REF" =~ ^refs/tags/agent-v[0-9] ]]; then
-            # 独立发布 Agent (如 agent-v0.8.20)
+            # 独立发布 Agent (如 agent-v0.8.0)：严格双轨解耦，仅构建 Agent 镜像
             TAG_NAME="${REF#refs/tags/}"
             RAW_VER="${TAG_NAME#agent-v}"
-            BUILD_MASTER="false"
-            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-agent:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$CUSTOM_TAG" ]; then
-            MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:${CUSTOM_TAG}"
-            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${CUSTOM_TAG}"
+            BUILD_AGENT="true"
+            AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${TAG_NAME},ghcr.io/${OWNER_LC}/riricloud-agent:v${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:${RAW_VER},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$TARGET_INPUT" = "all" ] || [ "$TARGET_INPUT" = "master" ]; then
+              BUILD_MASTER="true"
+              if [ -n "$CUSTOM_TAG" ]; then
+                MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:${CUSTOM_TAG}"
+              else
+                MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:v${VERSION},ghcr.io/${OWNER_LC}/riricloud-master:${VERSION},ghcr.io/${OWNER_LC}/riricloud-master:latest"
+              fi
+            fi
+            if [ "$TARGET_INPUT" = "all" ] || [ "$TARGET_INPUT" = "agent" ]; then
+              BUILD_AGENT="true"
+              if [ -n "$CUSTOM_TAG" ]; then
+                AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:${CUSTOM_TAG}"
+              else
+                AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:agent-v${AGENT_VERSION},ghcr.io/${OWNER_LC}/riricloud-agent:v${AGENT_VERSION},ghcr.io/${OWNER_LC}/riricloud-agent:${AGENT_VERSION},ghcr.io/${OWNER_LC}/riricloud-agent:latest"
+              fi
+            fi
           else
-            # main 分支推送或无自定义 Tag 的 workflow_dispatch
+            # main 分支推送构建 edge 快照
+            BUILD_MASTER="true"
+            BUILD_AGENT="true"
             MASTER_TAGS="ghcr.io/${OWNER_LC}/riricloud-master:edge"
             AGENT_TAGS="ghcr.io/${OWNER_LC}/riricloud-agent:edge"
           fi
