@@ -660,7 +660,9 @@ func (c *Client) heartbeatLoop(ctx context.Context, conn *websocket.Conn) error 
 				OnlineDevices:    make([]devices.ReportItem, 0),
 			}
 			if c.deviceTracker != nil {
-				payload.OnlineDevices = c.deviceTracker.ReportItems()
+				if items := c.deviceTracker.ReportItems(); items != nil {
+					payload.OnlineDevices = items
+				}
 			}
 			for _, record := range trafficSnapshots {
 				payload.TrafficSnapshots = append(payload.TrafficSnapshots, heartbeatTraffic{
@@ -747,6 +749,9 @@ func (c *Client) sendUpgradeResult(conn *websocket.Conn, task upgradeTask, succe
 }
 
 func (c *Client) sendProbeResult(conn *websocket.Conn, taskID string, results []probe.Result, success bool) {
+	if results == nil {
+		results = make([]probe.Result, 0)
+	}
 	data, err := json.Marshal(probeResultData{TaskID: taskID, Success: success, Results: results})
 	if err != nil {
 		c.log.WithError(err).Warn("marshal probe_result failed")

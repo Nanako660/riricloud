@@ -239,3 +239,28 @@ func TestKickBlocksAndClosesMatchingConnections(t *testing.T) {
 		t.Fatalf("expected device block to remain active, got %v", blockedUntil)
 	}
 }
+
+func TestTrackerReportItemsAlwaysReturnsNonNilSlice(t *testing.T) {
+	tracker := NewTracker(fakeAPI(""), nil)
+	initial := tracker.ReportItems()
+	if initial == nil {
+		t.Fatalf("expected initial ReportItems() to be non-nil slice")
+	}
+	raw, err := json.Marshal(struct {
+		OnlineDevices []ReportItem `json:"onlineDevices"`
+	}{OnlineDevices: initial})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if string(raw) != `{"onlineDevices":[]}` {
+		t.Fatalf("expected empty JSON array, got %s", string(raw))
+	}
+
+	if err := tracker.applySnapshot(context.Background(), "http://127.0.0.1:10086", nil, time.Now()); err != nil {
+		t.Fatalf("applySnapshot failed: %v", err)
+	}
+	afterEmpty := tracker.ReportItems()
+	if afterEmpty == nil {
+		t.Fatalf("expected ReportItems() after empty snapshot to be non-nil slice")
+	}
+}
