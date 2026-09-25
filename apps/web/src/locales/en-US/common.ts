@@ -167,6 +167,7 @@ const common = {
     title: 'Language',
     zhCN: '简体中文',
     enUS: 'English',
+    jaJP: '日本語',
     switcherTitle: 'Switch Language'
   },
   theme: {

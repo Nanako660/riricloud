@@ -151,6 +151,7 @@ export default function AdminDocsPage() {
               <SelectItem value="ALL">{t('admin:docs.allLocales')}</SelectItem>
               <SelectItem value="zh-CN">简体中文</SelectItem>
               <SelectItem value="en-US">English</SelectItem>
+              <SelectItem value="ja-JP">日本語</SelectItem>
             </SelectContent>
           </Select>
         </div>

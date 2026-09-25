@@ -109,7 +109,7 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 | 代码注释 | 中文，解释"为什么"而非复述代码 |
 | commit 描述、PR 描述、CHANGELOG 条目 | 中文（type 用英文，见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) §3） |
 | 文档库 | 中文 |
-| 用户可见的 UI 文案 | 中文为内容基准；必须通过 `zh-CN` / `en-US` i18next 字典展示，包含 placeholder、Zod 校验错误、ARIA、Toast 和确认弹窗；禁止硬编码及 Zod 默认错误，Zod 表单关闭浏览器原生校验（`noValidate`）；文案描述用户可观察的业务行为，不暴露后端实现术语（如将“软删除”表述为“删除”），并说明影响用户决策的恢复能力 |
+| 用户可见的 UI 文案 | 中文为内容基准；必须通过 `zh-CN` / `en-US` / `ja-JP` i18next 字典展示，包含 placeholder、Zod 校验错误、ARIA、Toast 和确认弹窗；禁止硬编码及 Zod 默认错误，Zod 表单关闭浏览器原生校验（`noValidate`）；文案描述用户可观察的业务行为，不暴露后端实现术语（如将“软删除”表述为“删除”），并说明影响用户决策的恢复能力 |
 
 命名风格沿用各语言生态惯例：TS 用 `camelCase` / `PascalCase`，Prisma model 用 `PascalCase` + 字段 `camelCase`，Go 用 `camelCase` / `PascalCase`（导出）。
 

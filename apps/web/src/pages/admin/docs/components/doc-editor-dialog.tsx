@@ -328,6 +328,7 @@ export function DocEditorDialog({
                       <SelectContent>
                         <SelectItem value="zh-CN">简体中文 (zh-CN)</SelectItem>
                         <SelectItem value="en-US">English (en-US)</SelectItem>
+                        <SelectItem value="ja-JP">日本語 (ja-JP)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

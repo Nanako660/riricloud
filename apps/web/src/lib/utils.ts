@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import i18n from '@/i18n/config';
+import i18n, { normalizeLocale } from '@/i18n/config';
 
 // 统一 className 合并工具（shadcn/ui 规范）
 export function cn(...inputs: ClassValue[]) {
@@ -26,12 +26,12 @@ export function formatRate(bytesPerSecond: number | null | undefined, decimals =
 }
 
 export function formatCurrency(cents: number | null | undefined): string {
-  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+  const locale = normalizeLocale(i18n.language);
   return new Intl.NumberFormat(locale, { style: 'currency', currency: 'CNY' }).format((cents ?? 0) / 100);
 }
 
 export function formatYuan(yuan: number | null | undefined): string {
-  const locale = i18n.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+  const locale = normalizeLocale(i18n.language);
   return new Intl.NumberFormat(locale, { style: 'currency', currency: 'CNY' }).format(yuan ?? 0);
 }
 
