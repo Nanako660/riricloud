@@ -98,6 +98,7 @@ func NewTracker(api API, log *logrus.Entry) *Tracker {
 		},
 		log:        log,
 		limits:     make(map[string]int),
+		reports:    make([]ReportItem, 0),
 		firstSeen:  make(map[string]time.Time),
 		lastActive: make(map[string]time.Time),
 		blocked:    make(map[string]time.Time),
@@ -122,7 +123,9 @@ func (t *Tracker) SetLimits(limits map[string]int) {
 func (t *Tracker) ReportItems() []ReportItem {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return append([]ReportItem(nil), t.reports...)
+	items := make([]ReportItem, len(t.reports))
+	copy(items, t.reports)
+	return items
 }
 
 // Run polls the loopback Clash API until ctx is cancelled. Poll failures leave the last successful

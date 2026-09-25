@@ -262,7 +262,9 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		TrafficSnapshots: make([]pollTrafficRecord, 0, len(trafficSnapshots)),
 	}
 	if c.deviceTracker != nil {
-		payload.OnlineDevices = c.deviceTracker.ReportItems()
+		if items := c.deviceTracker.ReportItems(); items != nil {
+			payload.OnlineDevices = items
+		}
 	}
 	if c.singboxMgr.SupportsClashAPI() {
 		payload.Capabilities = append(payload.Capabilities, "device_tracking")
@@ -522,6 +524,9 @@ func (c *Client) runProbe(parent context.Context, raw json.RawMessage) {
 		requests = append(requests, probe.Request{Type: probe.Type(item.Type), Target: item.Target, Port: item.Port, TimeoutMs: item.TimeoutMs})
 	}
 	results := probe.Run(ctx, requests)
+	if results == nil {
+		results = make([]probe.Result, 0)
+	}
 	success := len(results) > 0
 	for _, result := range results {
 		if !result.Success {

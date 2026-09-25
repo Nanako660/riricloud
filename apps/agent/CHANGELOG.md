@@ -17,6 +17,7 @@
 ### Changed
 
 ### Fixed
+- **修复空闲节点心跳 `onlineDevices` 序列化为 `null` 被主控网关拒收**：`devices.Tracker.ReportItems()` 改为始终返回非 `nil` 切片（无活跃连接时序列化为 `[]` 而非 `null`），并在 WS 心跳、HTTP 轮询与探针回执中增加非 `nil` 切片保底，防止空闲节点心跳被主控网关判定为非法载荷丢弃。
 
 
 ## [0.8.1] - 2026-09-26

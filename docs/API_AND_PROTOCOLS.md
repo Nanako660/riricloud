@@ -454,7 +454,7 @@ Agent 收到后原子落盘（临时文件 + rename），并与最近一次配�
 > **离线状态收敛机制**：当节点连接断开或因心跳超时被后台巡检标记为 `OFFLINE` 时，Master 自动将瞬态遥测字段清空（`kernelRunning = null`, `cpuUsage = null`, `memoryUsage = null`, `bandwidthRate = 0`, `uploadRate = 0`, `downloadRate = 0`），前端与管理 API 统一对离线节点的内核状态呈现为未确定状态破折号（`—`），杜绝失联节点历史内核存活状态遗留误导。
 
 #### 在线设备上报与踢下线（可选，向后兼容）
-Agent 可在 `heartbeat` 中附带 `onlineDevices[]`，单条包含 `{ userUuid, ip, lineId?, connections, lastSeenAt }`；仅声明 `device_tracking` 能力的节点参与设备追踪（内核二进制变更或自愈释放后动态重探测该能力）。Agent 每 2 秒查询本机 Sing-box loopback Clash API `/connections`（支持可选 `secret` Bearer 鉴权与 `configOverride` / `CLASH_API_LISTEN` 自定义回环端口），根据连接元数据汇总用户/IP/线路并执行节点本地限制；Agent 与 Master 均自动忽略 `127.0.0.1`、`::1`、`0.0.0.0`、`::` 等回环与未指定地址，避免反向隧道落地节点的本机转发流量被误判为客户端设备。Master 按用户与客户端 IP 跨节点去重，在进程内存保留最近报告，超过 `deviceOnlineWindowSecs`（15~600 秒，默认 60 秒）即视为过期，不持久化在线报告。上限超出时保留较早在线设备（阻断期内的设备不占用名额，活跃设备持续续期首次发现时间）并断开新设备连接，短连接可能在采样间隔内结束而未被观察到。
+Agent 可在 `heartbeat` 中附带 `onlineDevices[]`（无活跃连接时序列化为空数组 `[]`，不发送 `null`），单条包含 `{ userUuid, ip, lineId?, connections, lastSeenAt }`；仅声明 `device_tracking` 能力的节点参与设备追踪（内核二进制变更或自愈释放后动态重探测该能力）。Agent 每 2 秒查询本机 Sing-box loopback Clash API `/connections`（支持可选 `secret` Bearer 鉴权与 `configOverride` / `CLASH_API_LISTEN` 自定义回环端口），根据连接元数据汇总用户/IP/线路并执行节点本地限制；Agent 与 Master 均自动忽略 `127.0.0.1`、`::1`、`0.0.0.0`、`::` 等回环与未指定地址，避免反向隧道落地节点的本机转发流量被误判为客户端设备。Master 按用户与客户端 IP 跨节点去重，在进程内存保留最近报告，超过 `deviceOnlineWindowSecs`（15~600 秒，默认 60 秒）即视为过期，不持久化在线报告。上限超出时保留较早在线设备（阻断期内的设备不占用名额，活跃设备持续续期首次发现时间）并断开新设备连接，短连接可能在采样间隔内结束而未被观察到。
 
 Master 在 `config_sync.data.userDeviceLimits` 下发有效的正数限制，使用邮箱和 UUID 两种凭证键；缺失键表示不限。配置优先级为用户覆盖（`null` 跟随套餐，`0` 显式不限）与订阅套餐（已保存套餐快照优先于当前套餐），全局开关关闭时不自动执行，但手动踢设备仍可用。
 
