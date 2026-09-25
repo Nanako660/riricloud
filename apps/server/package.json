@@ -2,6 +2,10 @@
   "name": "@riricloud/server",
   "private": true,
   "description": "RiriCloud 主控后端（NestJS + Prisma + SQLite）",
+  "files": [
+    "dist",
+    "prisma"
+  ],
   "scripts": {
     "build": "nest build",
     "start": "nest start",

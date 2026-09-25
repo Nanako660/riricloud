@@ -31,6 +31,7 @@
 
 ### Fixed
 - **首页特性卡片图标下拉与默认重置 i18n 优化**：将管理端首页特性卡片编辑弹窗中的图标候选列表接入多语言体系，消除硬编码中文标签；在英文与日文界面下分别展示地道的中英文及日文说明；特性卡片与常见问答的默认数据读取与“恢复默认”逻辑联动当前语言环境。
+- **Docker 镜像定制内核补丁对齐与 GHCR 双轨发布解耦**：在 `Dockerfile` 与 `Dockerfile.agent` 中补齐 Sing-box `inboundUser` 补丁及 `with_clash_api` 编译标签并内嵌定制内核；将 `.github/workflows/docker-publish.yml` 改造为 `v*`（Master）与 `agent-v*`（Agent）严格双轨独立构建打标，消除 Agent 镜像被 Master 版本号污染问题；加固 `scripts/release.sh`（显式隔离 `--latest` / `--latest=false` 指针）与 `apps/server/package.json` `files` 白名单。
 
 
 

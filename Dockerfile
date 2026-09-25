@@ -1,22 +1,5 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS agent-build
-
-ARG TARGETARCH=amd64
-ARG RIRICLOUD_VERSION=dev
-WORKDIR /src
-
-COPY apps/agent/go.mod apps/agent/go.sum ./
-RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
-    go mod download
-COPY apps/agent/ ./
-RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
-    --mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
-    agent_ver="$(cat VERSION 2>/dev/null || echo ${RIRICLOUD_VERSION:-dev})" && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
-    -ldflags "-s -w -X main.Version=${agent_ver}" \
-    -o /out/riri-agent .
-
 FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS singbox-build
 
 ARG TARGETARCH=amd64
@@ -30,7 +13,7 @@ WORKDIR /src
 
 RUN --mount=type=cache,id=riricloud-singbox-downloads,target=/tmp/singbox-cache,sharing=locked \
     apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates curl tar \
+	&& apt-get install -y --no-install-recommends ca-certificates curl tar patch \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& case "${TARGETARCH}" in amd64|arm64) ;; *) echo "unsupported Docker architecture: ${TARGETARCH}" >&2; exit 1 ;; esac \
 	&& singbox_archive="/tmp/singbox-cache/sing-box-${SINGBOX_VERSION}.tar.gz" \
@@ -50,12 +33,35 @@ RUN --mount=type=cache,id=riricloud-singbox-downloads,target=/tmp/singbox-cache,
 	&& chmod 0755 /libcronet.so
 
 WORKDIR /src/sing-box-${SINGBOX_VERSION}
+COPY apps/agent/patches/sing-box-clashapi-inbound-user.patch /tmp/sing-box-clashapi-inbound-user.patch
+RUN patch -p1 < /tmp/sing-box-clashapi-inbound-user.patch && rm -f /tmp/sing-box-clashapi-inbound-user.patch
 RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 	--mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
 	CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
-	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api \
 	-ldflags "-s -w" \
 	-o /sing-box ./cmd/sing-box
+
+FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS agent-build
+
+ARG TARGETARCH=amd64
+ARG RIRICLOUD_VERSION=dev
+WORKDIR /src
+
+COPY apps/agent/go.mod apps/agent/go.sum ./
+RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
+    go mod download
+COPY apps/agent/ ./
+COPY --from=singbox-build /sing-box /tmp/embed-singbox/sing-box
+COPY --from=singbox-build /libcronet.so /tmp/embed-singbox/libcronet.so
+RUN tar -czf internal/embedded/assets/singbox-bundle.tar.gz -C /tmp/embed-singbox sing-box libcronet.so \
+    && rm -rf /tmp/embed-singbox
+RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
+    agent_ver="$(cat VERSION 2>/dev/null || echo ${RIRICLOUD_VERSION:-dev})" && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -gcflags "main=-N -l" -trimpath \
+    -ldflags "-s -w -X main.Version=${agent_ver}" \
+    -o /out/riri-agent .
 
 FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS mihomo-fetch
 
