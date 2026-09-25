@@ -154,13 +154,16 @@ export function MarketPlanCard({
         : t('user:market.buyButton');
   const buttonLabel = (!isCurrent && !isLowerPriced && !isPurchaseExhausted && cardConfig.buttonText) ? cardConfig.buttonText : defaultActionText;
 
-  // Features
-  const features = plan.features && plan.features.length > 0 ? plan.features : [
-    t('user:market.trafficFeature', { traffic: formatBytes(plan.trafficLimitBytes) }),
-    plan.speedLimitMbps ? `[zap] ${t('user:market.speedFeature', { speed: plan.speedLimitMbps })}` : `[zap] ${t('user:market.unlimitedSpeedFeature')}`,
-    t('user:market.resetFeature', { reset: resetText }),
-    t('user:market.allFormatsFeature'),
-    t('user:market.allNodesFeature')
+  // Always surface the configured device cap, including when a plan has custom feature copy.
+  const features = [
+    ...(plan.features && plan.features.length > 0 ? plan.features : [
+      t('user:market.trafficFeature', { traffic: formatBytes(plan.trafficLimitBytes) }),
+      plan.speedLimitMbps ? `[zap] ${t('user:market.speedFeature', { speed: plan.speedLimitMbps })}` : `[zap] ${t('user:market.unlimitedSpeedFeature')}`,
+      t('user:market.resetFeature', { reset: resetText }),
+      t('user:market.allFormatsFeature'),
+      t('user:market.allNodesFeature')
+    ]),
+    t('user:market.deviceLimitFeature', { limit: plan.deviceLimit && plan.deviceLimit > 0 ? String(plan.deviceLimit) : t('user:market.unlimitedDevices') })
   ];
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {

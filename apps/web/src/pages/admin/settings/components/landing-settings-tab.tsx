@@ -26,7 +26,16 @@ import {
 } from 'lucide-react';
 import type { SettingsForm } from '../index';
 import type { LandingFeatureItem, LandingFaqItem } from '@/pages/landing/types';
-import { DEFAULT_FEATURES_ZH, DEFAULT_FAQS_ZH, getEffectiveFeatures, getEffectiveFaqs } from '@/pages/landing/default-content';
+import {
+  DEFAULT_FEATURES_ZH,
+  DEFAULT_FEATURES_EN,
+  DEFAULT_FEATURES_JA,
+  DEFAULT_FAQS_ZH,
+  DEFAULT_FAQS_EN,
+  DEFAULT_FAQS_JA,
+  getEffectiveFeatures,
+  getEffectiveFaqs
+} from '@/pages/landing/default-content';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,38 +47,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
-const AVAILABLE_ICONS: Array<{ value: string; label: string; icon: LucideIcon }> = [
-  { value: 'Zap', label: 'Zap (极速/闪电)', icon: Zap },
-  { value: 'Lock', label: 'Lock (安全/加密)', icon: Lock },
-  { value: 'Globe', label: 'Globe (全球/网络)', icon: Globe },
-  { value: 'Laptop', label: 'Laptop (客户端/设备)', icon: Laptop },
-  { value: 'BarChart3', label: 'BarChart (流量/指标)', icon: BarChart3 },
-  { value: 'ShieldCheck', label: 'ShieldCheck (隐私/防护)', icon: ShieldCheck },
-  { value: 'Server', label: 'Server (服务器/节点)', icon: Server },
-  { value: 'Cpu', label: 'Cpu (核心/计算)', icon: Cpu },
-  { value: 'Radio', label: 'Radio (信号/广播)', icon: Radio },
-  { value: 'Layers', label: 'Layers (多层/分流)', icon: Layers },
-  { value: 'Sparkles', label: 'Sparkles (特性/亮点)', icon: Sparkles }
-];
+const AVAILABLE_ICONS = [
+  { value: 'Zap', icon: Zap, key: 'zap' },
+  { value: 'Lock', icon: Lock, key: 'lock' },
+  { value: 'Globe', icon: Globe, key: 'globe' },
+  { value: 'Laptop', icon: Laptop, key: 'laptop' },
+  { value: 'BarChart3', icon: BarChart3, key: 'barchart' },
+  { value: 'ShieldCheck', icon: ShieldCheck, key: 'shieldcheck' },
+  { value: 'Server', icon: Server, key: 'server' },
+  { value: 'Cpu', icon: Cpu, key: 'cpu' },
+  { value: 'Radio', icon: Radio, key: 'radio' },
+  { value: 'Layers', icon: Layers, key: 'layers' },
+  { value: 'Sparkles', icon: Sparkles, key: 'sparkles' }
+] as const;
 
 const ICON_MAP: Record<string, LucideIcon> = Object.fromEntries(
   AVAILABLE_ICONS.map((item) => [item.value, item.icon])
 );
 
 export function LandingSettingsTab() {
-  const { t } = useTranslation(['admin', 'landing', 'common']);
+  const { t, i18n } = useTranslation(['admin', 'landing', 'common']);
   const { control, watch, setValue } = useFormContext<SettingsForm>();
 
   const rawFeaturesJson = watch('landingCustomFeaturesJson');
   const rawFaqJson = watch('landingCustomFaqJson');
 
   const currentFeatures = useMemo(() => {
-    return getEffectiveFeatures(rawFeaturesJson, 'zh-CN');
-  }, [rawFeaturesJson]);
+    return getEffectiveFeatures(rawFeaturesJson, i18n.language);
+  }, [rawFeaturesJson, i18n.language]);
 
   const currentFaqs = useMemo(() => {
-    return getEffectiveFaqs(rawFaqJson, 'zh-CN');
-  }, [rawFaqJson]);
+    return getEffectiveFaqs(rawFaqJson, i18n.language);
+  }, [rawFaqJson, i18n.language]);
 
   // Feature Dialog State
   const [featureDialogOpen, setFeatureDialogOpen] = useState(false);
@@ -141,7 +150,12 @@ export function LandingSettingsTab() {
   };
 
   const resetFeaturesToDefault = () => {
-    setValue('landingCustomFeaturesJson', JSON.stringify(DEFAULT_FEATURES_ZH), { shouldDirty: true, shouldValidate: true });
+    const defaults = i18n.language.startsWith('ja')
+      ? DEFAULT_FEATURES_JA
+      : i18n.language.startsWith('en')
+        ? DEFAULT_FEATURES_EN
+        : DEFAULT_FEATURES_ZH;
+    setValue('landingCustomFeaturesJson', JSON.stringify(defaults), { shouldDirty: true, shouldValidate: true });
   };
 
   // FAQ Handlers
@@ -198,7 +212,12 @@ export function LandingSettingsTab() {
   };
 
   const resetFaqsToDefault = () => {
-    setValue('landingCustomFaqJson', JSON.stringify(DEFAULT_FAQS_ZH), { shouldDirty: true, shouldValidate: true });
+    const defaults = i18n.language.startsWith('ja')
+      ? DEFAULT_FAQS_JA
+      : i18n.language.startsWith('en')
+        ? DEFAULT_FAQS_EN
+        : DEFAULT_FAQS_ZH;
+    setValue('landingCustomFaqJson', JSON.stringify(defaults), { shouldDirty: true, shouldValidate: true });
   };
 
   return (
@@ -586,7 +605,7 @@ export function LandingSettingsTab() {
                       <SelectItem key={opt.value} value={opt.value}>
                         <div className="flex items-center gap-2">
                           <IconComp className="size-4 text-primary" />
-                          <span>{opt.label}</span>
+                          <span>{t(`admin:settings.icons.${opt.key}` as const)}</span>
                         </div>
                       </SelectItem>
                     );
@@ -601,7 +620,7 @@ export function LandingSettingsTab() {
                 id="feature-title"
                 value={featureTitle}
                 onChange={(e) => setFeatureTitle(e.target.value)}
-                placeholder="例如：极速高清体验"
+                placeholder={t('admin:settings.placeholderFeatureTitle', { defaultValue: '例如：极速高清体验' })}
                 maxLength={60}
               />
             </div>
@@ -612,7 +631,7 @@ export function LandingSettingsTab() {
                 id="feature-desc"
                 value={featureDesc}
                 onChange={(e) => setFeatureDesc(e.target.value)}
-                placeholder="简要介绍该项服务体验或亮点..."
+                placeholder={t('admin:settings.placeholderFeatureDesc', { defaultValue: '简要介绍该项服务体验或亮点...' })}
                 rows={3}
                 maxLength={200}
               />
@@ -652,7 +671,7 @@ export function LandingSettingsTab() {
                 id="faq-question"
                 value={faqQuestion}
                 onChange={(e) => setFaqQuestion(e.target.value)}
-                placeholder="例如：我是新手小白，该如何开始使用？"
+                placeholder={t('admin:settings.placeholderFaqQuestion', { defaultValue: '例如：我是新手小白，该如何开始使用？' })}
                 maxLength={100}
               />
             </div>
@@ -663,7 +682,7 @@ export function LandingSettingsTab() {
                 id="faq-answer"
                 value={faqAnswer}
                 onChange={(e) => setFaqAnswer(e.target.value)}
-                placeholder="详细解答说明..."
+                placeholder={t('admin:settings.placeholderFaqAnswer', { defaultValue: '详细解答说明...' })}
                 rows={5}
                 maxLength={1000}
               />

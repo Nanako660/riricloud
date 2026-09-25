@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelemetryPrismaService } from '../prisma/telemetry-prisma.service';
@@ -40,6 +41,8 @@ import { applyPlanSnapshot } from '../subscription/plan-snapshot';
 import { hashAgentToken } from '../common/agent-token';
 import { decryptSecret } from '../common/secret-crypto';
 import { normalizeBinaryVersion } from '../common/binary-version';
+import { resolveEffectiveDeviceLimit } from '../common/device-limit';
+import type { AgentOnlineDeviceReportItem, KickDevicesTaskData } from './agent-message';
 
 const PRIVATE_CIDR_BLOCKS = [
   '10.0.0.0/8',
@@ -66,8 +69,10 @@ export type MirrorStreamHandlers = {
 type MirrorSession = { nodeId: string; handlers: MirrorStreamHandlers };
 
 type SubscriptionUserSnapshot = {
+  id?: string;
   uuid: string;
   email: string;
+  deviceLimit?: number | null;
   role?: string;
   emailVerifiedAt?: Date | null;
   password: string | null;
@@ -87,6 +92,7 @@ type SubscriptionSnapshot = {
     lineMatchMode: string;
     lineTagsJson: string;
     lineIdsJson: string;
+    deviceLimit?: number | null;
   } | null;
 };
 
@@ -146,11 +152,12 @@ type TrafficProxyKeyDelegate = {
   update: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
+type OnlineDeviceReport = { userId: string; userUuid: string; ip: string; nodeId: string; lineId: string | null; connections: number; lastSeenAt: number; firstSeenAt: number };
 type PendingTask = AgentTaskMessage & { deliveredAt: number };
 
 type TaskResult = {
   taskId: string;
-  type: 'upgrade' | 'probe' | 'restart';
+  type: 'upgrade' | 'probe' | 'restart' | 'kick_devices';
   success: boolean;
   message: string;
   completedAt: string;
@@ -281,6 +288,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   private readonly logger = new Logger(AgentService.name);
   private readonly sockets = new Map<string, AgentSocket>();
   private readonly pendingTasks = new Map<string, PendingTask[]>();
+  private readonly onlineDeviceReports = new Map<string, Map<string, OnlineDeviceReport>>();
+  private readonly deviceEnforcementAt = new Map<string, number>();
+  private deviceOnlineWindowSecs = 60;
+  private nextDeviceEnforcementCleanupAt = 0;
   private readonly taskResults = new Map<string, TaskResult>();
   private readonly configCache = new Map<string, ConfigSyncData>();
   private readonly mirrorSessions = new Map<string, MirrorSession>();
@@ -311,8 +322,11 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         if (
           patch.enforceEmailVerification !== undefined ||
           patch.agentLogMaxSizeMb !== undefined ||
-          patch.agentLogMaxFiles !== undefined
+          patch.agentLogMaxFiles !== undefined ||
+          patch.deviceLimitEnabled !== undefined ||
+          patch.deviceOnlineWindowSecs !== undefined
         ) {
+          if (patch.deviceOnlineWindowSecs !== undefined) this.deviceOnlineWindowSecs = patch.deviceOnlineWindowSecs ?? 60;
           void this.pushConfigToAll();
         }
       });
@@ -362,14 +376,239 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     return { success: true, message: '鉴权成功', nodeId, protocolVersion: AGENT_PROTOCOL_VERSION };
   }
 
+  private activeOnlineDeviceReports(userId?: string): OnlineDeviceReport[] {
+    const cutoff = Math.floor(Date.now() / 1000) - this.deviceOnlineWindowSecs;
+    const active: OnlineDeviceReport[] = [];
+    for (const [nodeId, reports] of this.onlineDeviceReports) {
+      for (const [key, report] of reports) {
+        if (report.lastSeenAt < cutoff) {
+          reports.delete(key);
+          continue;
+        }
+        if (!userId || report.userId === userId) active.push(report);
+      }
+      if (!reports.size) this.onlineDeviceReports.delete(nodeId);
+    }
+    return active;
+  }
+
+  private async updateOnlineDeviceReports(nodeId: string, items: AgentOnlineDeviceReportItem[]): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    const settings = await this.settingsService?.getSettings();
+    const windowSecs = Math.max(15, Math.min(600, settings?.deviceOnlineWindowSecs ?? 60));
+    this.deviceOnlineWindowSecs = windowSecs;
+    const cleaned = items
+      .filter((item) => isIP(item.ip) !== 0 && item.lastSeenAt >= now - windowSecs && item.lastSeenAt <= now + 30)
+      .map((item) => { const parsed = parseTrafficCredential(item.userUuid); return { ...item, userUuid: parsed.rawCredential.trim(), lineId: item.lineId ?? parsed.lineId ?? undefined }; })
+      .filter((item) => item.userUuid.length > 0 && item.userUuid.length <= 256 && !item.userUuid.startsWith(PROXY_KEY_USERNAME_PREFIX));
+    const identities = [...new Set(cleaned.map((item) => item.userUuid))];
+    const reportsByNode = this.onlineDeviceReports.get(nodeId) ?? new Map<string, OnlineDeviceReport>();
+    if (!identities.length) {
+      reportsByNode.clear();
+      this.onlineDeviceReports.delete(nodeId);
+      return;
+    }
+    const userDelegate = this.prisma.user as unknown as {
+      findMany: (args: Record<string, unknown>) => Promise<Array<{
+        id: string; uuid: string; email: string; deviceLimit: number | null; isActive: boolean;
+        subscription?: { planSnapshotJson?: string | null; plan?: { deviceLimit?: number | null } | null } | null;
+      }>>;
+    };
+    const users = await userDelegate.findMany({
+      where: { OR: [{ email: { in: identities } }, { uuid: { in: identities } }] },
+      select: { id: true, uuid: true, email: true, deviceLimit: true, isActive: true, subscription: { select: { planSnapshotJson: true, plan: { select: { deviceLimit: true } } } } }
+    });
+    const byIdentity = new Map<string, typeof users[number]>();
+    for (const user of users) {
+      byIdentity.set(user.email.toLowerCase(), user);
+      byIdentity.set(user.uuid, user);
+    }
+    const next = new Map<string, OnlineDeviceReport>();
+    for (const item of cleaned) {
+      const user = byIdentity.get(item.userUuid.toLowerCase()) ?? byIdentity.get(item.userUuid);
+      if (!user) continue;
+      const parsed = parseTrafficCredential(item.userUuid);
+      const lineId = item.lineId ?? parsed.lineId;
+      const key = user.id + '|' + item.ip + '|' + (lineId ?? '');
+      const previous = reportsByNode.get(key);
+      const previousSameDevice = [...reportsByNode.values()].filter((report) => report.userId === user.id && report.ip === item.ip);
+      const firstSeenAt = previous?.firstSeenAt ?? (previousSameDevice.length ? Math.min(...previousSameDevice.map((report) => report.firstSeenAt)) : now);
+      next.set(key, {
+        userId: user.id,
+        userUuid: user.uuid,
+        ip: item.ip,
+        nodeId,
+        lineId: lineId ?? null,
+        connections: Math.max(0, Math.min(item.connections, 1000000)),
+        lastSeenAt: item.lastSeenAt,
+        firstSeenAt
+      });
+    }
+    this.onlineDeviceReports.set(nodeId, next);
+    if (settings?.deviceLimitEnabled === false) return;
+    this.cleanupDeviceEnforcementCache(now * 1000);
+
+    const policyByUser = new Map<string, { email: string; limit: number | null; active: boolean }>();
+    for (const user of users) {
+      let snapshotLimit: number | null | undefined;
+      try {
+        const snapshot = user.subscription?.planSnapshotJson ? JSON.parse(user.subscription.planSnapshotJson) as Record<string, unknown> : null;
+        if (typeof snapshot?.deviceLimit === 'number' || snapshot?.deviceLimit === null) snapshotLimit = snapshot.deviceLimit as number | null;
+      } catch { /* Invalid legacy snapshots fall back to the current plan. */ }
+      const policy = resolveEffectiveDeviceLimit({
+        globalEnabled: true,
+        userDeviceLimit: user.deviceLimit,
+        planDeviceLimit: snapshotLimit !== undefined ? snapshotLimit : user.subscription?.plan?.deviceLimit
+      });
+      policyByUser.set(user.id, { email: user.email, limit: policy.effectiveDeviceLimit, active: user.isActive });
+    }
+    const reportsByUser = new Map<string, OnlineDeviceReport[]>();
+    for (const report of this.activeOnlineDeviceReports()) {
+      const group = reportsByUser.get(report.userId) ?? [];
+      group.push(report);
+      reportsByUser.set(report.userId, group);
+    }
+    for (const [userId, reports] of reportsByUser) {
+      const policy = policyByUser.get(userId);
+      if (!policy?.active || !policy.limit || policy.limit < 1) continue;
+      const byIp = new Map<string, number>();
+      for (const report of reports) byIp.set(report.ip, Math.min(byIp.get(report.ip) ?? Number.POSITIVE_INFINITY, report.firstSeenAt));
+      const orderedIps = [...byIp.entries()].sort((a, b) => a[1] - b[1]).map(([ip]) => ip);
+      for (const ip of orderedIps.slice(policy.limit)) {
+        const cooldownKey = userId + '|' + ip;
+        const lastEnforcement = this.deviceEnforcementAt.get(cooldownKey) ?? 0;
+        if (Date.now() - lastEnforcement < 30000) continue;
+        this.deviceEnforcementAt.set(cooldownKey, Date.now());
+        const nodeIds = [...new Set(reports.filter((report) => report.ip === ip).map((report) => report.nodeId))];
+        await Promise.all(nodeIds.map((targetNodeId) => this.dispatchDeviceKick(targetNodeId, {
+          taskId: randomUUID(),
+          items: [{ userUuid: policy.email, ip, blockDurationSecs: 60 }]
+        })));
+      }
+    }
+  }
+
+  private cleanupDeviceEnforcementCache(now: number): void {
+    if (now < this.nextDeviceEnforcementCleanupAt) return;
+    const cutoff = now - 60 * 60 * 1000;
+    for (const [key, enforcedAt] of this.deviceEnforcementAt) {
+      if (enforcedAt < cutoff) this.deviceEnforcementAt.delete(key);
+    }
+    this.nextDeviceEnforcementCleanupAt = now + 5 * 60 * 1000;
+  }
+
+  async getBatchUserOnlineDeviceCounts(userIds: string[]): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    const reports = this.activeOnlineDeviceReports();
+    for (const userId of userIds) {
+      counts.set(userId, new Set(reports.filter((report) => report.userId === userId).map((report) => report.ip)).size);
+    }
+    return counts;
+  }
+
+  async getUserDeviceManagement(userId: string) {
+    const userDelegate = this.prisma.user as unknown as {
+      findUnique: (args: Record<string, unknown>) => Promise<{
+        id: string; email: string; uuid: string; deviceLimit: number | null;
+        subscription?: { planSnapshotJson?: string | null; plan?: { deviceLimit?: number | null } | null } | null;
+      } | null>;
+    };
+    const user = await userDelegate.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, uuid: true, deviceLimit: true, subscription: { select: { planSnapshotJson: true, plan: { select: { deviceLimit: true } } } } }
+    });
+    if (!user) throw new NotFoundException('用户不存在');
+    let snapshotLimit: number | null | undefined;
+    try {
+      const snapshot = user.subscription?.planSnapshotJson ? JSON.parse(user.subscription.planSnapshotJson) as Record<string, unknown> : null;
+      if (typeof snapshot?.deviceLimit === 'number' || snapshot?.deviceLimit === null) snapshotLimit = snapshot.deviceLimit as number | null;
+    } catch { /* Invalid legacy snapshots fall back to the current plan. */ }
+    const settings = await this.settingsService?.getSettings();
+    const limit = resolveEffectiveDeviceLimit({
+      globalEnabled: settings?.deviceLimitEnabled !== false,
+      userDeviceLimit: user.deviceLimit,
+      planDeviceLimit: snapshotLimit !== undefined ? snapshotLimit : user.subscription?.plan?.deviceLimit
+    });
+    const reports = this.activeOnlineDeviceReports(userId);
+    const nodeIds = [...new Set(reports.map((report) => report.nodeId))];
+    const lineIds = [...new Set(reports.map((report) => report.lineId).filter((id): id is string => !!id))];
+    const [nodes, lines] = await Promise.all([
+      nodeIds.length ? this.prisma.node.findMany({ where: { id: { in: nodeIds } }, select: { id: true, name: true } }) : [],
+      lineIds.length ? (this.prisma as unknown as { line?: { findMany: (args: Record<string, unknown>) => Promise<Array<{ id: string; name: string }>> } }).line?.findMany({ where: { id: { in: lineIds } }, select: { id: true, name: true } }) ?? Promise.resolve([]) : []
+    ]);
+    const nodeNames = new Map(nodes.map((node) => [node.id, node.name]));
+    const lineNames = new Map(lines.map((line) => [line.id, line.name]));
+    const byIp = new Map<string, { ip: string; connections: number; firstSeenAt: number; lastSeenAt: number; nodes: Array<{ nodeId: string; nodeName: string; lineId: string | null; lineName: string | null; connections: number }> }>();
+    for (const report of reports) {
+      const device = byIp.get(report.ip) ?? { ip: report.ip, connections: 0, firstSeenAt: report.firstSeenAt, lastSeenAt: report.lastSeenAt, nodes: [] };
+      device.connections += report.connections;
+      device.firstSeenAt = Math.min(device.firstSeenAt, report.firstSeenAt);
+      device.lastSeenAt = Math.max(device.lastSeenAt, report.lastSeenAt);
+      device.nodes.push({ nodeId: report.nodeId, nodeName: nodeNames.get(report.nodeId) ?? report.nodeId, lineId: report.lineId, lineName: report.lineId ? lineNames.get(report.lineId) ?? null : null, connections: report.connections });
+      byIp.set(report.ip, device);
+    }
+    const devices = [...byIp.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    return {
+      onlineDeviceCount: devices.length,
+      configuredDeviceLimit: limit.configuredDeviceLimit,
+      effectiveDeviceLimit: limit.effectiveDeviceLimit,
+      deviceLimitSource: limit.deviceLimitSource,
+      configuredDeviceLimitSource: limit.configuredDeviceLimitSource,
+      deviceLimitEnabled: settings?.deviceLimitEnabled !== false,
+      devices
+    };
+  }
+
+  async kickUserDevices(userId: string, ip?: string) {
+    if (ip && isIP(ip) === 0) throw new ConflictException('客户端 IP 格式无效');
+    const userDelegate = this.prisma.user as unknown as { findUnique: (args: Record<string, unknown>) => Promise<{ email: string } | null> };
+    const user = await userDelegate.findUnique({ where: { id: userId }, select: { email: true } });
+    if (!user) throw new NotFoundException('用户不存在');
+    const matching = this.activeOnlineDeviceReports(userId).filter((report) => !ip || report.ip === ip);
+    const nodeIds = [...new Set(matching.map((report) => report.nodeId))];
+    const taskId = randomUUID();
+    const results = await Promise.all(nodeIds.map((nodeId) => this.dispatchDeviceKick(nodeId, {
+      taskId,
+      items: [{ userUuid: user.email, ...(ip ? { ip } : {}), blockDurationSecs: 60 }]
+    })));
+    return { taskId, requested: results.some(Boolean), notifiedNodes: results.filter(Boolean).length, kickedIps: [...new Set(matching.map((report) => report.ip))] };
+  }
+
+  private async dispatchDeviceKick(nodeId: string, data: KickDevicesTaskData): Promise<boolean> {
+    const socket = this.sockets.get(nodeId);
+    if (socket) {
+      try {
+        socket.send(JSON.stringify({ type: 'kick_devices', data }));
+        return true;
+      } catch (error) {
+        this.logger.warn('send device management task failed: node=' + nodeId + ' error=' + error);
+        return false;
+      }
+    }
+    const node = await this.prisma.node.findUnique({ where: { id: nodeId }, select: { status: true, communicationMode: true } });
+    if (node?.status !== 'ONLINE' || node.communicationMode !== 'HTTP') return false;
+    const tasks = this.pendingTasks.get(nodeId) ?? [];
+    tasks.push({ type: 'kick_devices_task', data, deliveredAt: 0 });
+    this.pendingTasks.set(nodeId, tasks);
+    return true;
+  }
+
   // 心跳处理：遥测更新 + 流量同事务入库扣减（S6 红线）；内核状态可选字段落列
   async handleHeartbeat(nodeId: string, data: HeartbeatData, mode: AgentTransportMode = 'WS'): Promise<void> {
+    if (data.onlineDevices !== undefined) await this.updateOnlineDeviceReports(nodeId, data.onlineDevices);
+    let deviceTrackingChanged = false;
+    if (data.capabilities !== undefined) {
+      const existing = await this.prisma.node.findUnique({ where: { id: nodeId }, select: { capabilitiesJson: true } });
+      const wasEnabled = this.parseCapabilities(existing?.capabilitiesJson).includes('device_tracking');
+      const isEnabled = data.capabilities.includes('device_tracking');
+      deviceTrackingChanged = wasEnabled !== isEnabled;
+    }
     const splitRates = this.getSplitRates(data);
     if (splitRates) {
       // 心跳合并只影响落库状态，速率采样本身必须保留，避免聚合桶少算样本。
       this.accumulateRateMetric(nodeId, new Date(), splitRates.uploadRate, splitRates.downloadRate);
     }
-    return new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const pending = this.pendingHeartbeats.get(nodeId);
       if (pending) {
         pending.data = data;
@@ -380,6 +619,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       this.pendingHeartbeats.set(nodeId, { data, mode, waiters: [{ resolve, reject }], retryCount: 0 });
       void this.drainHeartbeats(nodeId);
     });
+    if (deviceTrackingChanged) {
+      this.configCache.delete(nodeId);
+      void this.pushConfig(nodeId);
+    }
   }
 
   private async drainHeartbeats(nodeId: string): Promise<void> {
@@ -1203,6 +1446,9 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     for (const result of data.restartAgentResults ?? []) {
       await this.handleRestartResult(auth.nodeId, result);
     }
+    for (const result of data.kickDevicesResults ?? []) {
+      this.handleKickDevicesResult(auth.nodeId, result);
+    }
 
     const desired = await this.getDesiredConfigSync(auth.nodeId);
     const settings = await this.settingsService?.getSettings();
@@ -1221,6 +1467,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       agentLogRotation: desired.agentLogRotation,
       tasks: await this.takePendingTasks(auth.nodeId),
       nextPollSecs,
+      userDeviceLimits: desired.userDeviceLimits ?? {},
       ...(desired.portSpeedLimits ? { portSpeedLimits: desired.portSpeedLimits } : {})
     };
   }
@@ -1323,6 +1570,16 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     this.logger.log(
       `agent probe completed: node=${nodeId} task=${data.taskId} success=${data.success} results=${data.results.length}`
     );
+  }
+
+  handleKickDevicesResult(nodeId: string, data: { taskId: string; success: boolean; message: string; kickedConnections: number }): void {
+    this.acknowledgeTask(nodeId, data.taskId, {
+      taskId: data.taskId,
+      type: 'kick_devices',
+      success: data.success,
+      message: data.message,
+      completedAt: new Date().toISOString()
+    });
   }
 
   async handleRestartResult(nodeId: string, data: RestartAgentResultData): Promise<void> {
@@ -1516,6 +1773,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     let entitledSubscriptions: SubscriptionSnapshot[] = [];
     const settings = await this.settingsService?.getSettings();
     const enforceEmailVerification = settings?.enforceEmailVerification ?? false;
+    const userDeviceLimits: Record<string, number> = {};
     const agentLogRotation: AgentLogRotationConfig = {
       maxSizeMb: settings?.agentLogMaxSizeMb ?? 50,
       maxFiles: settings?.agentLogMaxFiles ?? 5
@@ -1527,8 +1785,10 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         include: {
           user: {
             select: {
+              id: true,
               uuid: true,
               email: true,
+              deviceLimit: true,
               role: true,
               emailVerifiedAt: true,
               password: true,
@@ -1536,7 +1796,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
               extraLineGrants: { select: { lineId: true } }
             }
           },
-          plan: { select: { lineMatchMode: true, lineTagsJson: true, lineIdsJson: true } }
+          plan: { select: { lineMatchMode: true, lineTagsJson: true, lineIdsJson: true, deviceLimit: true } }
         }
       });
       entitledSubscriptions = entitledSubscriptions.map((subscription) => applyPlanSnapshot(subscription) as typeof subscription);
@@ -1552,7 +1812,7 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           isActive: true,
           ...(enforceEmailVerification ? { OR: [{ emailVerifiedAt: { not: null } }, { role: 'ADMIN' }] } : {})
         },
-        select: { uuid: true, email: true, role: true, emailVerifiedAt: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
+        select: { id: true, uuid: true, email: true, deviceLimit: true, role: true, emailVerifiedAt: true, password: true, isActive: true, expireAt: true, trafficLimitBytes: true, trafficUsedBytes: true }
       });
       entitledSubscriptions = entitledUsers
         .filter(isUserEntitled)
@@ -1562,8 +1822,22 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
           trafficLimitBytes: u.trafficLimitBytes,
           trafficUsedBytes: u.trafficUsedBytes,
           expireAt: u.expireAt,
-          user: { uuid: u.uuid, email: u.email, role: u.role, emailVerifiedAt: u.emailVerifiedAt, password: u.password, isActive: u.isActive }
+          user: { id: u.id, uuid: u.uuid, email: u.email, deviceLimit: u.deviceLimit, role: u.role, emailVerifiedAt: u.emailVerifiedAt, password: u.password, isActive: u.isActive }
         }));
+    }
+
+    if (settings?.deviceLimitEnabled !== false) {
+      for (const subscription of entitledSubscriptions) {
+        const limit = resolveEffectiveDeviceLimit({
+          globalEnabled: true,
+          userDeviceLimit: subscription.user.deviceLimit,
+          planDeviceLimit: subscription.plan?.deviceLimit
+        }).effectiveDeviceLimit;
+        if (limit && limit > 0) {
+          userDeviceLimits[subscription.user.email] = limit;
+          userDeviceLimits[subscription.user.uuid] = limit;
+        }
+      }
     }
 
     type ConfigLine = {
@@ -1933,6 +2207,18 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     if (node.configOverride) {
       singboxConfig = deepMerge(singboxConfig, JSON.parse(node.configOverride) as Record<string, unknown>);
     }
+    if (this.parseCapabilities(node.capabilitiesJson).includes('device_tracking')) {
+      const experimental = (singboxConfig.experimental && typeof singboxConfig.experimental === 'object' && !Array.isArray(singboxConfig.experimental))
+        ? singboxConfig.experimental as Record<string, unknown>
+        : {};
+      const clashApi = (experimental.clash_api && typeof experimental.clash_api === 'object' && !Array.isArray(experimental.clash_api))
+        ? experimental.clash_api as Record<string, unknown>
+        : {};
+      singboxConfig.experimental = {
+        ...experimental,
+        clash_api: { ...clashApi, external_controller: '127.0.0.1:10086' }
+      };
+    }
     const logMode = this.resolveSingboxLogMode(node.singboxLogMode, node.singboxLogModeUntil);
     if (logMode !== 'NORMAL') {
       const logConfig = (singboxConfig.log && typeof singboxConfig.log === 'object' && !Array.isArray(singboxConfig.log))
@@ -1946,7 +2232,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       singboxLogCaptureLevel: this.captureLevelForMode(logMode),
       agentLogRotation,
       tunnelConfigs,
-      ...(Object.keys(portSpeedLimits).length > 0 ? { portSpeedLimits } : {})
+      ...(Object.keys(portSpeedLimits).length > 0 ? { portSpeedLimits } : {}),
+      userDeviceLimits
     };
   }
 
@@ -2352,7 +2639,8 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     result.push(...selected.map((task): AgentTaskMessage => {
       if (task.type === 'upgrade_task') return { type: 'upgrade_task', data: task.data };
       if (task.type === 'probe_task') return { type: 'probe_task', data: task.data };
-      return { type: 'restart_agent_task', data: task.data };
+      if (task.type === 'restart_agent_task') return { type: 'restart_agent_task', data: task.data };
+      return { type: 'kick_devices_task', data: task.data };
     }));
     const delegate = this.deploymentTasks();
     if (!delegate || result.length >= 8) return result.slice(0, 8);

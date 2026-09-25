@@ -1,6 +1,7 @@
 const common = {
   nav: {
     home: 'Back to Home',
+    mainNav: 'Main Navigation',
     console: 'Console',
     mySubscription: 'My Subscription',
     directProxy: 'Direct Proxy',
@@ -167,6 +168,7 @@ const common = {
     title: 'Language',
     zhCN: '简体中文',
     enUS: 'English',
+    jaJP: '日本語',
     switcherTitle: 'Switch Language'
   },
   theme: {

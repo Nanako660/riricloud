@@ -149,8 +149,9 @@ export default function AdminDocsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">{t('admin:docs.allLocales')}</SelectItem>
-              <SelectItem value="zh-CN">简体中文</SelectItem>
-              <SelectItem value="en-US">English</SelectItem>
+              <SelectItem value="zh-CN">{t('common:languages.zhCN')}</SelectItem>
+              <SelectItem value="en-US">{t('common:languages.enUS')}</SelectItem>
+              <SelectItem value="ja-JP">{t('common:languages.jaJP')}</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -417,6 +417,7 @@ const admin = {
     roleAdmin: '超级管理员',
     roleUser: '普通用户',
     plan: '当前套餐',
+    onlineDevices: '在线设备',
     balance: '账户余额',
     trafficUsed: '已用流量',
     trafficTotal: '总配额',
@@ -484,6 +485,9 @@ const admin = {
     colPlan: '套餐信息',
     colPriceDuration: '售价与周期',
     colTrafficLimit: '流量与速率',
+    colDeviceLimit: '设备上限',
+    deviceLimitValue: '{{count}} 台设备',
+    unlimitedDevices: '不限设备数',
     colLinesTemplate: '节点与模板',
     colStatus: '状态',
     colActions: '操作',
@@ -1182,6 +1186,10 @@ const admin = {
     smtpTab: 'SMTP 邮件',
     captchaTab: '人机验证',
     subscriptionTab: '订阅与节点',
+    fieldDeviceLimitEnabled: '启用多设备限制',
+    descDeviceLimitEnabled: '启用后按用户或套餐配置限制同时在线设备数；关闭时仅统计，不自动拦截。',
+    fieldDeviceOnlineWindowSecs: '设备在线判定窗口（秒）',
+    descDeviceOnlineWindowSecs: 'Agent 最近上报的活跃连接在此时间内计为在线设备，范围 15–600 秒。默认 60 秒。',
     authTab: '安全与注册',
     agentTab: 'Agent 运维',
     customCodeTab: '自定义代码',
@@ -1215,6 +1223,19 @@ const admin = {
     dialogAddFeature: '添加特性卡片',
     dialogFeatureDesc: '配置展示在首页的特性图标、标题与简短说明。',
     labelFeatureIcon: '卡片图标',
+    icons: {
+      zap: 'Zap (极速/闪电)',
+      lock: 'Lock (安全/加密)',
+      globe: 'Globe (全球/网络)',
+      laptop: 'Laptop (客户端/设备)',
+      barchart: 'BarChart (流量/指标)',
+      shieldcheck: 'ShieldCheck (隐私/防护)',
+      server: 'Server (服务器/节点)',
+      cpu: 'Cpu (核心/计算)',
+      radio: 'Radio (信号/广播)',
+      layers: 'Layers (多层/分流)',
+      sparkles: 'Sparkles (特性/亮点)'
+    },
     labelFeatureTitle: '特性标题',
     labelFeatureDesc: '特性描述说明',
     landingFaqTitle: '首页常见问答 FAQ 管理',
@@ -1515,6 +1536,10 @@ const admin = {
     labelSmtpTestEmail: '收件邮箱',
     btnSendTestEmail: '发送测试邮件',
     sendingTestEmail: '发送中…',
+    placeholderFeatureTitle: '例如：极速高清体验',
+    placeholderFeatureDesc: '简要介绍该项服务体验或亮点...',
+    placeholderFaqQuestion: '例如：我是新手小白，该如何开始使用？',
+    placeholderFaqAnswer: '详细解答说明...',
     selectPlaceholder: '请选择'
   },
   userTraffic: {
@@ -1540,12 +1565,24 @@ const admin = {
     lineDistribution: '线路消耗分布',
     lineUsageList: '用户线路使用清单'
   },
+  userDevices: {
+    kickSuccess: '设备连接已断开',
+    kickAllSuccess: '已请求断开全部在线设备',
+    kickFailed: '设备断开失败'
+  },
   userForm: {
     manageTitle: '管理用户 · {{email}}',
     createTitle: '创建用户',
     manageDesc: '账号安全与订阅管理统一维护',
     createDesc: '创建用户可选择初始套餐或暂不绑定，套餐配额与时长由所选套餐决定。',
     tabAccount: '账号安全',
+    deviceLimit: '同时在线设备数限制',
+    deviceLimitDescription: '选择跟随套餐、单独不限制，或为此用户设置独立设备上限。',
+    deviceLimitFollowPlan: '跟随套餐默认',
+    deviceLimitUnlimited: '单独设为不限制',
+    deviceLimitCustom: '单独指定限制台数',
+    deviceLimitCount: '最大在线设备数',
+    deviceLimitRequired: '请输入 1–1000 之间的设备数量',
     tabSubscription: '订阅管理',
     emailLabel: '邮箱',
     emailPlaceholder: 'user@example.com',
@@ -1702,6 +1739,8 @@ const admin = {
     price: '现价售价（元）',
     durationDays: '有效期（天）',
     trafficLimit: '流量配额（GiB）',
+    deviceLimit: '同时在线设备上限（0 表示不限）',
+    deviceLimitHint: '超出上限时新设备连接将被自动断开；范围 0–1000。',
     trafficResetMode: '流量重置策略',
     sortOrder: '排序权重',
     sortOrderHint: '数值越小在市场中排序越靠前',
@@ -2496,6 +2535,14 @@ const admin = {
       confirm: '确认恢复预设',
       resetting: '正在重置…',
       success: '已成功恢复官方预设新手教程'
+    },
+    validation: {
+      slugMin: 'Slug 至少 2 个字符',
+      slugMax: 'Slug 最多 64 个字符',
+      slugRegex: 'Slug 仅限小写字母、数字和连字符',
+      titleMin: '标题至少 2 个字符',
+      titleMax: '标题最多 128 个字符',
+      contentRequired: '正文内容不能为空'
     }
   }
 } as const;

@@ -17,7 +17,7 @@ describe('UsersService', () => {
     plan: { findUnique: jest.fn(), findFirst: jest.fn() },
     subscription: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() }
   };
-  const agentGateway = { pushConfigToAll: jest.fn() };
+  const agentGateway = { pushConfigToAll: jest.fn(), getBatchUserOnlineDeviceCounts: jest.fn() };
   const settingsService = { getSettings: jest.fn() };
   const walletService = { adjustBalance: jest.fn() };
   const verificationService = { verifyCode: jest.fn() };
@@ -35,6 +35,8 @@ describe('UsersService', () => {
     }).compile();
     service = moduleRef.get(UsersService);
   });
+
+  beforeEach(() => { agentGateway.getBatchUserOnlineDeviceCounts.mockResolvedValue(new Map()); });
 
   afterEach(() => jest.resetAllMocks());
 
@@ -219,6 +221,19 @@ describe('UsersService', () => {
   });
 
   describe('updateUser', () => {
+
+    it('管理员可保存用户独立设备上限', async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...seededUser, role: 'USER' });
+      prisma.user.update.mockResolvedValue({ ...seededUser, deviceLimit: 4 });
+
+      const result = await service.updateUser('u1', { deviceLimit: 4 }, 'admin-1');
+
+      expect(result.deviceLimit).toBe(4);
+      expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'u1' },
+        data: { deviceLimit: 4 }
+      }));
+    });
     it('管理员不能修改自己的角色（防锁死）', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...seededUser, role: 'ADMIN' });
       await expect(

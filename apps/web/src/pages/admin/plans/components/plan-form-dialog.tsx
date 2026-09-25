@@ -82,6 +82,7 @@ const buildPlanSchema = () =>
     z.number().int().min(1).nullable()
   ),
   allowRenewal: z.boolean(),
+  deviceLimit: z.coerce.number().int().min(0).max(1000),
   speedLimitMbps: z.preprocess(
     (val) => (val === '' || val === null || val === undefined || val === 0 ? null : Number(val)),
     z.number().int().min(1).max(100000).nullable().optional()
@@ -151,6 +152,7 @@ export function PlanFormDialog({
       sortOrder: 0,
       purchaseLimitPerUser: 1,
       allowRenewal: false,
+      deviceLimit: 0,
       speedLimitMbps: null,
       appendSpeedBadge: 'INHERIT',
       cardStyle: 'fusion',
@@ -225,6 +227,7 @@ export function PlanFormDialog({
               sortOrder: plan.sortOrder,
               purchaseLimitPerUser: plan.purchaseLimitPerUser,
               allowRenewal: plan.allowRenewal,
+              deviceLimit: plan.deviceLimit ?? 0,
               speedLimitMbps: plan.speedLimitMbps ?? null,
               appendSpeedBadge: (plan.appendSpeedBadge as 'INHERIT' | 'ENABLE' | 'DISABLE') ?? 'INHERIT',
               cardStyle: plan.cardConfig?.cardStyle ?? 'fusion',
@@ -274,6 +277,7 @@ export function PlanFormDialog({
       sortOrder: values.sortOrder,
       purchaseLimitPerUser: values.purchaseLimitPerUser,
       allowRenewal: values.allowRenewal,
+      deviceLimit: values.deviceLimit,
       speedLimitMbps: values.speedLimitMbps ?? null,
       appendSpeedBadge: values.appendSpeedBadge ?? 'INHERIT',
       cardConfig: {
@@ -314,6 +318,7 @@ export function PlanFormDialog({
     price: Number(watchedValues.price) || 0,
     durationDays: Number(watchedValues.durationDays) || 30,
     trafficLimitBytes: Math.round((Number(watchedValues.trafficLimitGB) || 100) * GB),
+    deviceLimit: Number(watchedValues.deviceLimit) || 0,
     trafficResetMode: watchedValues.trafficResetMode || 'NONE',
     lineMatchMode: watchedValues.lineMatchMode || 'ALL',
     badgeText: watchedValues.badgeText || null,
@@ -413,6 +418,12 @@ export function PlanFormDialog({
                 <div className="space-y-2">
                   <Label htmlFor="plan-traffic">{t('admin:planForm.trafficLimit')}</Label>
                   <Input id="plan-traffic" type="number" min="1" step="0.1" {...form.register('trafficLimitGB')} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="plan-device-limit">{t('admin:planForm.deviceLimit')}</Label>
+                  <Input id="plan-device-limit" type="number" min="0" max="1000" {...form.register('deviceLimit')} />
+                  <p className="text-[11px] text-muted-foreground">{t('admin:planForm.deviceLimitHint')}</p>
                 </div>
 
                 <div className="space-y-2">

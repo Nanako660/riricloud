@@ -10,7 +10,7 @@ import {
   INTERNAL_SPEEDTEST_UUID
 } from '../common/constants';
 import { AgentGatewayService } from './agent-gateway.service';
-import type { HeartbeatData } from './agent-message';
+import type { AgentOnlineDeviceReportItem, HeartbeatData } from './agent-message';
 
 describe('AgentGatewayService', () => {
   let service: AgentGatewayService;
@@ -44,11 +44,12 @@ describe('AgentGatewayService', () => {
   const deploymentCreate = jest.fn();
   const deploymentUpdate = jest.fn();
   const proxyKeyFindMany = jest.fn();
+  const userFindUnique = jest.fn();
   const prisma = {
     $transaction: jest.fn(async (callback: (value: typeof tx) => Promise<void>) => callback(tx)),
     node: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-    user: { findMany: jest.fn() },
-    line: { findFirst: jest.fn() },
+    user: { findMany: jest.fn(), findUnique: userFindUnique },
+    line: { findFirst: jest.fn(), findMany: jest.fn() },
     proxyKey: { findMany: proxyKeyFindMany },
     nodeRateMetric: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     binaryDeploymentTask: {
@@ -82,6 +83,8 @@ describe('AgentGatewayService', () => {
       return { id: token === 'token-node-1' ? 'node-1' : 'poll-node', status: 'ONLINE', communicationMode: 'HTTP', pollIntervalSecs: 15 };
     });
     prisma.user.findMany.mockResolvedValue([]);
+    userFindUnique.mockResolvedValue(null);
+    prisma.line.findMany.mockResolvedValue([]);
     txUserFindMany.mockResolvedValue([]);
     txSubscriptionFindMany.mockResolvedValue([]);
     txSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
@@ -100,6 +103,10 @@ describe('AgentGatewayService', () => {
     (service as unknown as { nextRateMetricCleanupAt: number }).nextRateMetricCleanupAt = 0;
     (service as unknown as { trafficHourlyBuckets: Map<string, unknown> }).trafficHourlyBuckets?.clear();
     (service as unknown as { rateMetricBuckets: Map<string, unknown> }).rateMetricBuckets?.clear();
+    (service as unknown as { onlineDeviceReports: Map<string, Map<string, unknown>> }).onlineDeviceReports?.clear();
+    (service as unknown as { deviceEnforcementAt: Map<string, number> }).deviceEnforcementAt?.clear();
+    (service as unknown as { sockets: Map<string, unknown> }).sockets?.clear();
+    (service as unknown as { pendingTasks: Map<string, unknown[]> }).pendingTasks?.clear();
   });
 
   const user = { uuid: 'uuid-1', email: 'user@example.com', password: 'secret', isActive: true, expireAt: null, trafficLimitBytes: BigInt(1000), trafficUsedBytes: BigInt(0) };
@@ -1432,6 +1439,80 @@ describe('AgentGatewayService', () => {
       expect(systemLogEnqueue).toHaveBeenCalledWith(expect.objectContaining({ module: 'NodeDiagnostics', metadata: { reason: 'expired' } }));
     } finally {
       pushSpy.mockRestore();
+    }
+  });
+
+  it('跨节点按用户与客户端 IP 去重聚合，并支持手动踢出所有相关节点', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const userRecord = {
+      id: 'u1', uuid: 'uuid-1', email: 'user@example.com', deviceLimit: null, isActive: true,
+      subscription: { planSnapshotJson: JSON.stringify({ deviceLimit: 2 }), plan: { deviceLimit: 4 } }
+    };
+    prisma.user.findMany.mockResolvedValue([userRecord]);
+    userFindUnique.mockResolvedValue({ ...userRecord, subscription: userRecord.subscription });
+    prisma.node.findMany.mockResolvedValue([{ id: 'node-a', name: '节点 A' }, { id: 'node-b', name: '节点 B' }]);
+    prisma.line.findMany.mockResolvedValue([{ id: 'line-a', name: '线路 A' }, { id: 'line-b', name: '线路 B' }]);
+    const sendA = jest.fn();
+    const sendB = jest.fn();
+    const sockets = (service as unknown as { sockets: Map<string, { send: (payload: string) => void }> }).sockets;
+    sockets.set('node-a', { send: sendA });
+    sockets.set('node-b', { send: sendB });
+    const ingest = (service as unknown as { updateOnlineDeviceReports: (nodeId: string, items: AgentOnlineDeviceReportItem[]) => Promise<void> }).updateOnlineDeviceReports.bind(service);
+
+    await ingest('node-a', [{ userUuid: 'user@example.com', ip: '203.0.113.5', lineId: 'line-a', connections: 2, lastSeenAt: now }]);
+    await ingest('node-b', [{ userUuid: 'uuid-1', ip: '203.0.113.5', lineId: 'line-b', connections: 3, lastSeenAt: now }]);
+
+    const result = await service.getUserDeviceManagement('u1');
+    expect(result).toMatchObject({
+      onlineDeviceCount: 1,
+      configuredDeviceLimit: 2,
+      effectiveDeviceLimit: 2,
+      deviceLimitSource: 'PLAN',
+      devices: [{ ip: '203.0.113.5', connections: 5, nodes: expect.arrayContaining([
+        expect.objectContaining({ nodeId: 'node-a', lineName: '线路 A', connections: 2 }),
+        expect.objectContaining({ nodeId: 'node-b', lineName: '线路 B', connections: 3 })
+      ]) }]
+    });
+
+    await expect(service.kickUserDevices('u1', '203.0.113.5')).resolves.toMatchObject({
+      requested: true, notifiedNodes: 2, kickedIps: ['203.0.113.5']
+    });
+    expect(JSON.parse(sendA.mock.calls[0][0])).toMatchObject({ type: 'kick_devices', data: { items: [{ userUuid: 'user@example.com', ip: '203.0.113.5' }] } });
+    expect(JSON.parse(sendB.mock.calls[0][0])).toMatchObject({ type: 'kick_devices', data: { items: [{ userUuid: 'user@example.com', ip: '203.0.113.5' }] } });
+  });
+
+  it('跨节点超限时仅自动踢出较新的超限 IP', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-25T00:00:00.000Z'));
+    try {
+      const userRecord = {
+        id: 'u1', uuid: 'uuid-1', email: 'user@example.com', deviceLimit: null, isActive: true,
+        subscription: { planSnapshotJson: null, plan: { deviceLimit: 1 } }
+      };
+      prisma.user.findMany.mockResolvedValue([userRecord]);
+      const sendA = jest.fn();
+      const sendB = jest.fn();
+      const sockets = (service as unknown as { sockets: Map<string, { send: (payload: string) => void }> }).sockets;
+      sockets.set('node-a', { send: sendA });
+      sockets.set('node-b', { send: sendB });
+      const ingest = (service as unknown as { updateOnlineDeviceReports: (nodeId: string, items: AgentOnlineDeviceReportItem[]) => Promise<void> }).updateOnlineDeviceReports.bind(service);
+
+      const firstSeen = Math.floor(Date.now() / 1000);
+      await ingest('node-a', [{ userUuid: 'user@example.com', ip: '203.0.113.10', lineId: 'line-a', connections: 1, lastSeenAt: firstSeen }]);
+      jest.advanceTimersByTime(2000);
+      const secondSeen = Math.floor(Date.now() / 1000);
+      await ingest('node-b', [
+        { userUuid: 'user@example.com', ip: '203.0.113.10', lineId: 'line-b', connections: 1, lastSeenAt: secondSeen },
+        { userUuid: 'user@example.com', ip: '203.0.113.11', lineId: 'line-b', connections: 1, lastSeenAt: secondSeen }
+      ]);
+
+      expect(sendA).not.toHaveBeenCalled();
+      expect(sendB).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(sendB.mock.calls[0][0])).toMatchObject({
+        type: 'kick_devices',
+        data: { items: [{ userUuid: 'user@example.com', ip: '203.0.113.11', blockDurationSecs: 60 }] }
+      });
+    } finally {
+      jest.useRealTimers();
     }
   });
 

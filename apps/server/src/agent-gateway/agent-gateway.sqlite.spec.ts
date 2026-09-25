@@ -104,6 +104,7 @@ describe('AgentService SQLite traffic accounting', () => {
         "trafficLimitBytes" BIGINT NOT NULL DEFAULT 0,
         "trafficUsedBytes" BIGINT NOT NULL DEFAULT 0,
         "expireAt" DATETIME,
+        "deviceLimit" INTEGER,
         "subscriptionToken" TEXT NOT NULL,
         "uuid" TEXT NOT NULL,
         "password" TEXT,
@@ -131,7 +132,8 @@ describe('AgentService SQLite traffic accounting', () => {
       `CREATE TABLE "Plan" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "durationDays" INTEGER NOT NULL,
-        "trafficResetMode" TEXT NOT NULL DEFAULT 'NONE'
+        "trafficResetMode" TEXT NOT NULL DEFAULT 'NONE',
+        "deviceLimit" INTEGER NOT NULL DEFAULT 0
       )`,
       `CREATE TABLE "Subscription" (
         "id" TEXT NOT NULL PRIMARY KEY,

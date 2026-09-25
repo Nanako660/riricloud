@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { DeviceIpQueryDto } from '../agent-gateway/dto/device-ip.query.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SubscribePlanDto } from './dto/subscribe-plan.dto';
 import { UpgradeSubscriptionDto } from './dto/upgrade-subscription.dto';
@@ -14,6 +15,21 @@ export class UserSubscriptionController {
   @Get()
   get(@CurrentUser() user: { id: string }) {
     return this.subscriptionService.getForUser(user.id);
+  }
+
+  @Get('devices')
+  getDevices(@CurrentUser() user: { id: string }) {
+    return this.subscriptionService.getUserDevices(user.id);
+  }
+
+  @Delete('devices')
+  kickDevices(@CurrentUser() user: { id: string }, @Query() query: DeviceIpQueryDto) {
+    return this.subscriptionService.kickUserDevices(user.id, query.ip);
+  }
+
+  @Post('devices/kick-all')
+  kickAllDevices(@CurrentUser() user: { id: string }) {
+    return this.subscriptionService.kickUserDevices(user.id);
   }
 
   @Post()

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme } from 'next-themes';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
@@ -43,24 +44,28 @@ import {
 } from 'lucide-react';
 import type { AdminHelpArticle, AdminHelpArticlePayload } from '../use-admin-docs';
 
-const articleSchema = z.object({
-  slug: z
-    .string()
-    .min(2, 'Slug 至少 2 个字符')
-    .max(64, 'Slug 最多 64 个字符')
-    .regex(/^[a-z0-9-]+$/, 'Slug 仅限小写字母、数字和连字符'),
-  title: z.string().min(2, '标题至少 2 个字符').max(128, '标题最多 128 个字符'),
-  platform: z.string().default('ALL'),
-  clientName: z.string().max(64).optional(),
-  icon: z.string().max(64).optional(),
-  summary: z.string().max(255).optional(),
-  content: z.string().min(1, '正文内容不能为空'),
-  sortOrder: z.coerce.number().int().default(0),
-  isPublished: z.boolean().default(true),
-  locale: z.string().default('zh-CN')
-});
+const createArticleSchema = (t: TFunction<['admin', 'common']>) =>
+  z.object({
+    slug: z
+      .string()
+      .min(2, t('admin:docs.validation.slugMin'))
+      .max(64, t('admin:docs.validation.slugMax'))
+      .regex(/^[a-z0-9-]+$/, t('admin:docs.validation.slugRegex')),
+    title: z
+      .string()
+      .min(2, t('admin:docs.validation.titleMin'))
+      .max(128, t('admin:docs.validation.titleMax')),
+    platform: z.string().default('ALL'),
+    clientName: z.string().max(64).optional(),
+    icon: z.string().max(64).optional(),
+    summary: z.string().max(255).optional(),
+    content: z.string().min(1, t('admin:docs.validation.contentRequired')),
+    sortOrder: z.coerce.number().int().default(0),
+    isPublished: z.boolean().default(true),
+    locale: z.string().default('zh-CN')
+  });
 
-type ArticleFormValues = z.infer<typeof articleSchema>;
+type ArticleFormValues = z.infer<ReturnType<typeof createArticleSchema>>;
 
 interface DocEditorDialogProps {
   open: boolean;
@@ -91,6 +96,8 @@ export function DocEditorDialog({
   const isDark = resolvedTheme === 'dark';
 
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('split');
+
+  const articleSchema = useMemo(() => createArticleSchema(t), [t]);
 
   const form = useForm<ArticleFormValues>({
     resolver: zodResolver(articleSchema),
@@ -326,8 +333,9 @@ export function DocEditorDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="zh-CN">简体中文 (zh-CN)</SelectItem>
-                        <SelectItem value="en-US">English (en-US)</SelectItem>
+                        <SelectItem value="zh-CN">{t('common:languages.zhCN')} (zh-CN)</SelectItem>
+                        <SelectItem value="en-US">{t('common:languages.enUS')} (en-US)</SelectItem>
+                        <SelectItem value="ja-JP">{t('common:languages.jaJP')} (ja-JP)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

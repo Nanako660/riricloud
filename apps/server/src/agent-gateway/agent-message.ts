@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 // Master ↔ Agent WS 消息帧（契约见 docs/API_AND_PROTOCOLS.md §WS 协议）
 export type AgentMessageType =
   | 'auth_result'
@@ -10,6 +12,7 @@ export type AgentMessageType =
   | 'probe_result'
   | 'restart_agent_task'
   | 'restart_agent_result'
+  | 'kick_devices_result'
   | 'log_report'
   | 'mirror_request'
   | 'mirror_cancel'
@@ -39,6 +42,14 @@ export interface HeartbeatTrafficSnapshot {
   downloadTotal: string;
 }
 
+export interface AgentOnlineDeviceReportItem {
+  userUuid: string;
+  ip: string;
+  lineId?: string;
+  connections: number;
+  lastSeenAt: number;
+}
+
 export interface HeartbeatData {
   protocolVersion: number;
   cpuUsage: number;
@@ -56,6 +67,7 @@ export interface HeartbeatData {
   osArch?: string; // Agent 运行平台与架构
   kernelVersion?: string; // sing-box 内核版本
   capabilities?: string[]; // Agent 能力列表
+  onlineDevices?: AgentOnlineDeviceReportItem[];
 }
 
 export interface MirrorRequestData {
@@ -126,6 +138,7 @@ export interface ConfigSyncData {
   agentLogRotation?: AgentLogRotationConfig;
   tunnelConfigs?: TunnelConfigPayload[];
   portSpeedLimits?: Record<number, number>;
+  userDeviceLimits?: Record<string, number>;
 }
 
 export type UpgradeTarget = 'singbox' | 'agent';
@@ -192,16 +205,29 @@ export interface RestartAgentTaskData {
   taskId: string;
 }
 
+export interface KickDevicesTaskData {
+  taskId: string;
+  items: Array<{ userUuid: string; ip?: string; blockDurationSecs?: number }>;
+}
+
 export interface RestartAgentResultData {
   taskId: string;
   success: boolean;
   message: string;
 }
 
+export interface KickDevicesResultData {
+  taskId: string;
+  success: boolean;
+  message: string;
+  kickedConnections: number;
+}
+
 export type AgentTaskMessage =
   | { type: 'upgrade_task'; data: UpgradeTaskData }
   | { type: 'probe_task'; data: ProbeTaskData }
-  | { type: 'restart_agent_task'; data: RestartAgentTaskData };
+  | { type: 'restart_agent_task'; data: RestartAgentTaskData }
+  | { type: 'kick_devices_task'; data: KickDevicesTaskData };
 
 export interface AgentPollResponse {
   protocolVersion: number;
@@ -212,6 +238,7 @@ export interface AgentPollResponse {
   agentLogRotation?: AgentLogRotationConfig;
   tunnelConfigs?: TunnelConfigPayload[];
   portSpeedLimits?: Record<number, number>;
+  userDeviceLimits?: Record<string, number>;
   tasks: AgentTaskMessage[];
   nextPollSecs: number;
 }
@@ -234,6 +261,7 @@ export type AgentInboundMessage =
   | AgentMessage<UpgradeResultData> & { type: 'upgrade_result' }
   | AgentMessage<ProbeResultData> & { type: 'probe_result' }
   | AgentMessage<RestartAgentResultData> & { type: 'restart_agent_result' }
+  | AgentMessage<KickDevicesResultData> & { type: 'kick_devices_result' }
   | AgentMessage<LogReportData> & { type: 'log_report' }
   | AgentMessage<MirrorResponseHeadersData> & { type: 'mirror_response_headers' }
   | AgentMessage<MirrorResponseEndData> & { type: 'mirror_response_end' }
@@ -296,6 +324,7 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
   if (value.osArch !== undefined && value.osArch !== '' && !isNonEmptyString(value.osArch, 128)) return false;
   if (value.kernelVersion !== undefined && value.kernelVersion !== '' && !isNonEmptyString(value.kernelVersion, 128)) return false;
   if (value.capabilities !== undefined && (!Array.isArray(value.capabilities) || value.capabilities.length > 32 || !value.capabilities.every((item) => isNonEmptyString(item, 64)))) return false;
+  if (value.onlineDevices !== undefined && (!Array.isArray(value.onlineDevices) || value.onlineDevices.length > 1024 || !value.onlineDevices.every(isOnlineDeviceReportItem))) return false;
   return value.trafficSnapshots.every((record) => {
     if (!isJsonObject(record)) return false;
     return (
@@ -304,6 +333,13 @@ function isHeartbeatData(value: unknown): value is HeartbeatData {
       isUint64String(record.downloadTotal)
     );
   });
+}
+
+function isOnlineDeviceReportItem(value: unknown): value is AgentOnlineDeviceReportItem {
+  if (!isJsonObject(value) || !isNonEmptyString(value.userUuid, 256) || !isNonEmptyString(value.ip, 64)) return false;
+  if (value.lineId !== undefined && !isNonEmptyString(value.lineId, 128)) return false;
+  return isSafeNonNegativeInteger(value.connections) && value.connections <= 1_000_000 &&
+    isSafeNonNegativeInteger(value.lastSeenAt) && value.lastSeenAt <= Math.floor(Date.now() / 1000) + 300 && isIP(value.ip) !== 0;
 }
 
 function isConfigApplyResultData(value: unknown): value is ConfigApplyResultData {
@@ -345,6 +381,10 @@ function isProbeResultData(value: unknown): value is ProbeResultData {
       (result.message === undefined || (typeof result.message === 'string' && result.message.length <= 8192))
     );
   });
+}
+
+function isKickDevicesResultData(value: unknown): value is KickDevicesResultData {
+  return isJsonObject(value) && isNonEmptyString(value.taskId, 128) && typeof value.success === 'boolean' && typeof value.message === 'string' && value.message.length <= 1024 && isSafeNonNegativeInteger(value.kickedConnections);
 }
 
 function isRestartAgentResultData(value: unknown): value is RestartAgentResultData {
@@ -434,6 +474,10 @@ export function parseAgentInboundMessage(raw: string): AgentInboundMessage | nul
         : null;
     case 'restart_agent_result':
       return isRestartAgentResultData(parsed.data)
+        ? { type: parsed.type, data: parsed.data }
+        : null;
+    case 'kick_devices_result':
+      return isKickDevicesResultData(parsed.data)
         ? { type: parsed.type, data: parsed.data }
         : null;
     case 'log_report':

@@ -16,6 +16,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/Nanako660/riricloud/apps/agent/internal/devices"
 	"github.com/Nanako660/riricloud/apps/agent/internal/logging"
 	"github.com/Nanako660/riricloud/apps/agent/internal/probe"
 	"github.com/Nanako660/riricloud/apps/agent/internal/protocol"
@@ -99,25 +100,27 @@ type pollTrafficRecord struct {
 }
 
 type pollPayload struct {
-	ProtocolVersion     int                 `json:"protocolVersion"`
-	CPUUsage            float64             `json:"cpuUsage"`
-	MemoryUsage         float64             `json:"memoryUsage"`
-	BandwidthRate       float64             `json:"bandwidthRate"`
-	UploadRate          float64             `json:"uploadRate"`
-	DownloadRate        float64             `json:"downloadRate"`
-	KernelRunning       bool                `json:"kernelRunning"`
-	AppliedVersion      int64               `json:"appliedConfigVersion"`
-	LastError           string              `json:"lastError,omitempty"`
-	AgentVersion        string              `json:"agentVersion,omitempty"`
-	OSArch              string              `json:"osArch,omitempty"`
-	KernelVersion       string              `json:"kernelVersion,omitempty"`
-	Capabilities        []string            `json:"capabilities,omitempty"`
-	TrafficSnapshots    []pollTrafficRecord `json:"trafficSnapshots"`
-	ConfigApplyResults  []json.RawMessage   `json:"configApplyResults,omitempty"`
-	UpgradeResults      []json.RawMessage   `json:"upgradeResults,omitempty"`
-	ProbeResults        []json.RawMessage   `json:"probeResults,omitempty"`
-	RestartAgentResults []json.RawMessage   `json:"restartAgentResults,omitempty"`
-	Logs                []logging.LogItem   `json:"logs,omitempty"`
+	ProtocolVersion     int                  `json:"protocolVersion"`
+	CPUUsage            float64              `json:"cpuUsage"`
+	MemoryUsage         float64              `json:"memoryUsage"`
+	BandwidthRate       float64              `json:"bandwidthRate"`
+	UploadRate          float64              `json:"uploadRate"`
+	DownloadRate        float64              `json:"downloadRate"`
+	KernelRunning       bool                 `json:"kernelRunning"`
+	AppliedVersion      int64                `json:"appliedConfigVersion"`
+	LastError           string               `json:"lastError,omitempty"`
+	AgentVersion        string               `json:"agentVersion,omitempty"`
+	OSArch              string               `json:"osArch,omitempty"`
+	KernelVersion       string               `json:"kernelVersion,omitempty"`
+	Capabilities        []string             `json:"capabilities,omitempty"`
+	TrafficSnapshots    []pollTrafficRecord  `json:"trafficSnapshots"`
+	ConfigApplyResults  []json.RawMessage    `json:"configApplyResults,omitempty"`
+	UpgradeResults      []json.RawMessage    `json:"upgradeResults,omitempty"`
+	ProbeResults        []json.RawMessage    `json:"probeResults,omitempty"`
+	RestartAgentResults []json.RawMessage    `json:"restartAgentResults,omitempty"`
+	OnlineDevices       []devices.ReportItem `json:"onlineDevices"`
+	KickDevicesResults  []json.RawMessage    `json:"kickDevicesResults,omitempty"`
+	Logs                []logging.LogItem    `json:"logs,omitempty"`
 }
 
 type pollResponse struct {
@@ -129,6 +132,7 @@ type pollResponse struct {
 	AgentLogRotation       *logging.RotationConfig `json:"agentLogRotation,omitempty"`
 	TunnelConfigs          []tunnel.Config         `json:"tunnelConfigs,omitempty"`
 	PortSpeedLimits        map[int]int             `json:"portSpeedLimits,omitempty"`
+	UserDeviceLimits       map[string]int          `json:"userDeviceLimits"`
 	Tasks                  []taskMessage           `json:"tasks"`
 	NextPollSecs           int                     `json:"nextPollSecs"`
 }
@@ -164,6 +168,7 @@ type Client struct {
 	logRotator       *logging.RotatingWriter
 	shaper           *trafficshaper.Shaper
 	lastTrafficErrAt time.Time
+	deviceTracker    *devices.Tracker
 }
 
 func NewClient(masterURL, token string, interval time.Duration, singboxMgr *singbox.Manager, tunnelMgr *tunnel.Manager, version, osArch string, log *logrus.Entry, restarter *restart.Manager, logCollector *logging.Collector, logRotators ...*logging.RotatingWriter) *Client {
@@ -190,6 +195,9 @@ func NewClient(masterURL, token string, interval time.Duration, singboxMgr *sing
 		shaper:         trafficshaper.NewShaper(log),
 	}
 }
+
+// SetDeviceTracker enables active-device reporting and local kick execution.
+func (c *Client) SetDeviceTracker(tracker *devices.Tracker) { c.deviceTracker = tracker }
 
 // Run 先立即轮询一次，随后采用服务端建议周期；请求失败时短暂指数退避，成功后恢复协商周期。
 func (c *Client) Run(ctx context.Context) {
@@ -250,7 +258,14 @@ func (c *Client) pollOnce(ctx context.Context) error {
 		OSArch:           c.osArch,
 		KernelVersion:    kernel.Version,
 		Capabilities:     []string{"mirror_proxy", "singbox_log_capture", "agent_log_rotation"},
+		OnlineDevices:    make([]devices.ReportItem, 0),
 		TrafficSnapshots: make([]pollTrafficRecord, 0, len(trafficSnapshots)),
+	}
+	if c.deviceTracker != nil {
+		payload.OnlineDevices = c.deviceTracker.ReportItems()
+	}
+	if c.singboxMgr.SupportsClashAPI() {
+		payload.Capabilities = append(payload.Capabilities, "device_tracking")
 	}
 	for _, record := range trafficSnapshots {
 		payload.TrafficSnapshots = append(payload.TrafficSnapshots, pollTrafficRecord{
@@ -292,6 +307,9 @@ func (c *Client) pollOnce(ctx context.Context) error {
 	c.removePendingResults(sentResults)
 	if response.NextPollSecs >= 5 && response.NextPollSecs <= 300 {
 		c.interval = time.Duration(response.NextPollSecs) * time.Second
+	}
+	if c.deviceTracker != nil {
+		c.deviceTracker.SetLimits(response.UserDeviceLimits)
 	}
 	if c.logRotator != nil && response.AgentLogRotation != nil {
 		if err := c.logRotator.Update(response.AgentLogRotation.MaxSizeMb, response.AgentLogRotation.MaxFiles); err != nil {
@@ -344,6 +362,8 @@ func (c *Client) appendPendingResults(payload *pollPayload) []uint64 {
 			payload.ProbeResults = append(payload.ProbeResults, result.data)
 		case "restart":
 			payload.RestartAgentResults = append(payload.RestartAgentResults, result.data)
+		case "kick_devices":
+			payload.KickDevicesResults = append(payload.KickDevicesResults, result.data)
 		}
 	}
 	return ids
@@ -414,10 +434,44 @@ func (c *Client) startTask(parent context.Context, task taskMessage) {
 			c.runProbe(parent, task.Data)
 		case "restart_agent_task":
 			c.runRestart(task.Data)
+		case "kick_devices_task":
+			c.runKickDevices(parent, task.Data)
 		default:
 			c.log.WithField("type", task.Type).Warn("unsupported poll task")
 		}
 	}()
+}
+
+func (c *Client) runKickDevices(parent context.Context, raw json.RawMessage) {
+	var task struct {
+		TaskID string             `json:"taskId"`
+		Items  []devices.KickItem `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil || task.TaskID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	result := kickDevicesResult{TaskID: task.TaskID}
+	if c.deviceTracker == nil {
+		result.Message = "device tracking is unavailable"
+	} else {
+		count, err := c.deviceTracker.Kick(ctx, task.Items)
+		result.KickedConnections = count
+		result.Success = err == nil
+		result.Message = "ok"
+		if err != nil {
+			result.Message = err.Error()
+		}
+	}
+	c.addResult("kick_devices", result)
+}
+
+type kickDevicesResult struct {
+	TaskID            string `json:"taskId"`
+	Success           bool   `json:"success"`
+	Message           string `json:"message"`
+	KickedConnections int    `json:"kickedConnections"`
 }
 
 func (c *Client) runUpgrade(parent context.Context, raw json.RawMessage) {

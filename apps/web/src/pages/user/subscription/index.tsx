@@ -16,6 +16,7 @@ import {
   RotateCcw,
   ShieldAlert,
   ShoppingBag,
+  Smartphone,
   XCircle
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +25,7 @@ import { AnnouncementCard } from '@/components/shared/announcement-card';
 import { ClientGuideCard } from '@/components/shared/client-guide-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { CopyButton } from '@/components/shared/copy-button';
+import { DeviceManagementDialog } from '@/components/shared/device-management-dialog';
 import { LineCard } from '@/components/shared/line-card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -44,6 +46,7 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog';
 import {
+  type DeviceManagement,
   type UserLine,
   type UserSubscription,
   useUserSubscription,
@@ -141,6 +144,7 @@ export default function UserSubscriptionPage() {
             <ActiveSubscriptionContent
               subscription={data.subscription}
               lines={data.lines}
+              deviceManagement={data.deviceManagement}
             />
           ) : (
             <NoSubscriptionCard />
@@ -283,13 +287,16 @@ function NoSubscriptionCard() {
 
 function ActiveSubscriptionContent({
   subscription: sub,
-  lines
+  lines,
+  deviceManagement
 }: {
   subscription: UserSubscription;
   lines: UserLine[];
+  deviceManagement: DeviceManagement | null;
 }) {
   const { t } = useTranslation(['user', 'common']);
-  const { cancel, resetToken, renew } = useUserSubscriptionMutations();
+  const { cancel, resetToken, renew, kickDevice, kickAllDevices } = useUserSubscriptionMutations();
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const wallet = useWallet();
   const publicSettings = usePublicSettings();
   const remainingBytes = Math.max(0, sub.trafficLimitBytes - sub.trafficUsedBytes);
@@ -609,6 +616,43 @@ function ActiveSubscriptionContent({
           </div>
         </Card>
       </div>
+
+      {deviceManagement && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Smartphone className="h-4 w-4" />
+                {t('user:subscription.onlineDevices')}
+              </CardTitle>
+            </div>
+            <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1.5" onClick={() => setDevicesOpen(true)}>
+              {t('user:subscription.manageDevices')}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{t('common:deviceManagement.count')}: {deviceManagement.onlineDeviceCount}</Badge>
+              <Badge variant={deviceManagement.effectiveDeviceLimit !== null && deviceManagement.onlineDeviceCount > deviceManagement.effectiveDeviceLimit ? 'destructive' : 'secondary'}>
+                {t('common:deviceManagement.effectiveLimit')}: {deviceManagement.effectiveDeviceLimit ?? t('common:deviceManagement.unlimited')}
+              </Badge>
+            </div>
+          </CardContent>
+          <DeviceManagementDialog
+            audience="user"
+            open={devicesOpen}
+            onOpenChange={setDevicesOpen}
+            title={t('common:deviceManagement.title')}
+            data={deviceManagement}
+            isLoading={false}
+            isError={false}
+            onKickDevice={(ip) => kickDevice.mutate(ip)}
+            onKickAllDevices={() => kickAllDevices.mutate()}
+            isKickingDevice={kickDevice.isPending}
+            isKickingAll={kickAllDevices.isPending}
+          />
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row sm:items-center">

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEmail, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLES, Role } from '../../common/constants';
 import { MAX_EMAIL_LENGTH, normalizeEmail } from '../../common/auth-security';
@@ -42,6 +42,12 @@ export class CreateUserDto {
   @IsString()
   @IsOptional()
   expireAt?: string | null;
+
+  @ApiPropertyOptional({ example: 3, nullable: true, description: '同时在线设备数；缺省或 null 跟随套餐，0 不限制，正数为用户覆盖' })
+  @ValidateIf((o) => o.deviceLimit !== undefined && o.deviceLimit !== null)
+  @IsInt()
+  @Min(0)
+  deviceLimit?: number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true, description: '初始套餐；传 null 创建无套餐用户，缺省自动绑定体验套餐' })
   @IsUUID()

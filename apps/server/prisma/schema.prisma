@@ -21,6 +21,7 @@ model User {
   passwordHash      String
   role              String    @default("USER") // Role 枚举：ADMIN | USER
   balance           Int       @default(0) // 账户余额，单位为分
+  deviceLimit       Int? // null 跟随套餐，0 不限制，正数为用户覆盖
   trafficLimitBytes BigInt    @default(107374182400) // 100 GiB
   trafficUsedBytes  BigInt    @default(0)
   expireAt          DateTime?
@@ -247,6 +248,7 @@ model Plan {
   purchaseLimitPerUser Int? // null 表示不限购；>=1 时限制每购买身份累计次数
   allowRenewal         Boolean  @default(true)
   speedLimitMbps       Int?     @default(0) // 用户套餐带宽速率上限 (Mbps), 0 或 null 为不限制
+  deviceLimit          Int?     @default(0) // 同时在线设备上限，0 或 null 为不限制
   appendSpeedBadge     String   @default("INHERIT") // INHERIT | ENABLE | DISABLE (订阅节点追加速率角标)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

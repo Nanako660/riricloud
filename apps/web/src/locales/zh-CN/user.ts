@@ -27,6 +27,8 @@ const user = {
     goToMarket: '前往套餐市场',
     // active sub card
     trafficQuota: '流量配额',
+    onlineDevices: '在线设备',
+    manageDevices: '管理设备',
     cycleDays: '{{days}} 天周期',
     freePlan: '免费套餐',
     renewThisPlan: '续费此套餐',
@@ -132,6 +134,8 @@ const user = {
     speedFeature: '{{speed}} Mbps 峰值带宽速率',
     trafficFeature: '{{traffic}} 流量配额',
     resetFeature: '流量规则：{{reset}}',
+    deviceLimitFeature: '同时在线设备上限：{{limit}} 台',
+    unlimitedDevices: '不限',
     allFormatsFeature: '全格式订阅支持 (Clash Meta / Sing-box / 通用)',
     allNodesFeature: '智能授权接入所有高速节点',
     confirmBuyTitle: '确认订购套餐',

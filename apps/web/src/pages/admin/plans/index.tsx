@@ -146,6 +146,7 @@ export default function PlansPage() {
                   <TableHead className="w-[28%]">{t('admin:plans.colPlan')}</TableHead>
                   <TableHead>{t('admin:plans.colPriceDuration')}</TableHead>
                   <TableHead>{t('admin:plans.colTrafficLimit')}</TableHead>
+                  <TableHead>{t('admin:plans.colDeviceLimit')}</TableHead>
                   <TableHead>{t('admin:plans.colLinesTemplate')}</TableHead>
                   <TableHead>{t('admin:plans.status')}</TableHead>
                   <TableHead className="text-right">{t('common:table.actions')}</TableHead>
@@ -200,6 +201,9 @@ export default function PlansPage() {
                               : t('common:resetMode.NONE')}
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{plan.deviceLimit && plan.deviceLimit > 0 ? t('admin:plans.deviceLimitValue', { count: plan.deviceLimit }) : t('admin:plans.unlimitedDevices')}</Badge>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-1 text-xs">

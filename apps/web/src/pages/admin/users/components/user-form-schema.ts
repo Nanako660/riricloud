@@ -20,10 +20,15 @@ export function buildCreateUserSchema(minLength: number, policy: PasswordStrengt
 
 export function buildEditAccountSchema(minLength: number, policy: PasswordStrengthPolicy) {
   return z.object({
+    deviceLimitMode: z.enum(['FOLLOW_PLAN', 'UNLIMITED', 'CUSTOM']),
+    deviceLimitCount: optionalPositiveInt,
     role: z.enum(['USER', 'ADMIN']),
     isActive: z.boolean(),
     emailVerified: z.boolean(),
     password: passwordZodSchema(minLength, policy).optional().or(z.literal(''))
+  }).refine((values) => values.deviceLimitMode !== 'CUSTOM' || (values.deviceLimitCount !== undefined && values.deviceLimitCount <= 1000), {
+    message: i18n.t('admin:userForm.deviceLimitRequired'),
+    path: ['deviceLimitCount']
   });
 }
 

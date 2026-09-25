@@ -1,6 +1,7 @@
 const common = {
   nav: {
     home: '返回首页',
+    mainNav: '主导航',
     console: '控制台',
     mySubscription: '我的订阅',
     directProxy: '直连代理',
@@ -167,6 +168,7 @@ const common = {
     title: '界面语言',
     zhCN: '简体中文',
     enUS: 'English',
+    jaJP: '日本語',
     switcherTitle: '切换界面语言'
   },
   theme: {
@@ -211,6 +213,36 @@ const common = {
     send: '发送',
     visit: '访问',
     helpSupport: '帮助支持'
+  },
+  deviceManagement: {
+    title: '在线设备管理',
+    description: '在线状态按最近上报时间实时汇总；同一客户端 IP 跨节点合并为一台设备。',
+    count: '在线设备',
+    configuredLimit: '配置上限',
+    effectiveLimit: '设备上限',
+    source: '策略来源',
+    sourceUser: '用户单独配置',
+    sourcePlan: '套餐配置',
+    sourceUnlimited: '不限制',
+    sourceGlobalOff: '全局限制已关闭',
+    unlimited: '不限',
+    noDevices: '当前没有在线设备',
+    ip: '客户端 IP',
+    connections: '{{count}} 条连接',
+    node: '接入节点',
+    line: '线路',
+    noLine: '未识别线路',
+    lastSeen: '最后活跃：{{time}}',
+    kick: '强制下线',
+    kickAll: '全部踢下线',
+    kickAllTitle: '断开全部在线设备？',
+    kickAllDescription: '该操作会尝试断开此用户当前上报的所有在线客户端连接。',
+    userKick: '下线',
+    userKickAll: '全部下线',
+    userKickAllTitle: '下线全部在线设备？',
+    userKickAllDescription: '此操作会使当前在线的所有设备下线。',
+    kicking: '处理中…',
+    overLimit: '已超出上限'
   },
   userMenu: {
     menuLabel: '用户菜单',

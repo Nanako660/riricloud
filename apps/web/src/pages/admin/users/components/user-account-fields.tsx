@@ -113,6 +113,39 @@ export function EditAccountFields({ form, isSelf }: { form: UseFormReturn<EditAc
         )}
       />
 
+      <FormField
+        control={form.control}
+        name="deviceLimitMode"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('admin:userForm.deviceLimit')}</FormLabel>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value="FOLLOW_PLAN">{t('admin:userForm.deviceLimitFollowPlan')}</SelectItem>
+                <SelectItem value="UNLIMITED">{t('admin:userForm.deviceLimitUnlimited')}</SelectItem>
+                <SelectItem value="CUSTOM">{t('admin:userForm.deviceLimitCustom')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription>{t('admin:userForm.deviceLimitDescription')}</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      {form.watch('deviceLimitMode') === 'CUSTOM' && (
+        <FormField
+          control={form.control}
+          name="deviceLimitCount"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('admin:userForm.deviceLimitCount')}</FormLabel>
+              <FormControl><Input type="number" min={1} max={1000} {...field} value={field.value ?? ''} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+
       <div className="space-y-2.5">
         <FormField
           control={form.control}

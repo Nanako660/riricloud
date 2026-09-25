@@ -78,7 +78,7 @@ export function AppSidebar() {
   ];
 
   return (
-    <Sidebar variant="inset" aria-label="主导航">
+    <Sidebar variant="inset" aria-label={t('nav.mainNav')}>
       <SidebarHeader className="h-14 justify-center px-4">
         <Tooltip>
           <TooltipTrigger asChild>

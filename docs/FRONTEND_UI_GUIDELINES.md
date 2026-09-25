@@ -529,11 +529,11 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 ### 13.1 架构与工具链
 - **核心库**：`i18next` + `react-i18next` + `i18next-browser-languagedetector`。
 - **配置与类型系统**：`apps/web/src/i18n/config.ts` 扩展 `react-i18next` 的 `CustomTypeOptions`，引入强类型命名空间资源契约。在开发与构建（`tsc --noEmit`）期间对所有 `t('namespace:key')` 键路径与插值变量进行静态类型约束，杜绝拼写错误与缺失插值参数。
-- **语言持久化与探测**：优先读取 `localStorage`（键名：`riricloud-locale`），缺省回退至浏览器偏好探测，默认基准语言为 `zh-CN`，支持完整 `en-US` 对齐。
-- **语言切换控件**：顶栏微操作区提供 `LanguageSwitcher`（`@/components/layout/language-switcher.tsx`），与 `ThemeToggle` 并列展示，带 `Languages` 图标与纯净紧凑的下拉菜单，即时触发全站平滑重渲染。
+- **语言持久化与探测**：优先读取 `localStorage`（键名：`riricloud-locale`），缺省回退至浏览器偏好探测（通过 `normalizeLocale` 识别 `zh-*`、`ja-*` 与 `en-*`），默认基准语言为 `zh-CN`，支持完整 `en-US` 与 `ja-JP` 三语对齐。
+- **语言切换控件**：顶栏微操作区提供 `LanguageSwitcher`（`@/components/layout/language-switcher.tsx`），与 `ThemeToggle` 并列展示，带 `Globe` 图标与纯净紧凑的下拉菜单，即时触发全站平滑重渲染。
 
 ### 13.2 命名空间划分与规范
-全站字典按领域严格模块化拆分于 `apps/web/src/locales/{zh-CN,en-US}/`：
+全站字典按领域严格模块化拆分于 `apps/web/src/locales/{zh-CN,en-US,ja-JP}/`：
 1. **`common.ts`**：公共交互操作（保存、取消、删除、确认、复制等）、全局状态标签、通用表格/分页文本、时间范围筛选、模态框通用按键与快捷操作。
 2. **`auth.ts`**：登录页、注册页、找回密码页、人机验证（本地 SVG 算术与 Cloudflare Turnstile）、密码强度与复杂度提示。
 3. **`user.ts`**：用户门户全量页面（套餐市场、我的订阅、个人中心、代理池管理），涵盖配额进度、资产财务、兑换码、线路卡片与客户端使用指引。
@@ -542,10 +542,23 @@ v0.4.0 新增页面均位于已认证的 `AppLayout` 内，继续复用 `PageCon
 6. **`landing.ts`**：首页门户全量视图与文案，涵盖 Hero 导流、核心特性网格、公开套餐预览、常见问答（FAQ）以及客服与版权页脚。
 
 ### 13.3 文案设计原则 (Copywriting Philosophy)
-1. **地道专业，杜绝机翻**：英文翻译对齐 Cloudflare、Vercel、Tailwind UI 等国际顶级云平台行业惯例文案（如：“节点画像” -> "Node Profile"，“一键测速” -> "Speed Test"，“作废” -> "Revoke"）。
+1. **地道专业，杜绝机翻**：英日翻译对齐 Cloudflare、Vercel、Tailwind UI 等国际顶级云平台行业惯例文案（如：“节点画像” -> "Node Profile" / 「ノードプロファイル」，“一键测速” -> "Speed Test" / 「速度テスト」，“作废” -> "Revoke" / 「失効」）。
 2. **严禁硬编码文本**：全站用户可见文案（含表单占位提示 placeholder、错误校验提示、Toast 反馈、二次确认弹窗正文、Tooltip 说明与 ARIA 文案）必须统一收敛至多语言字典，严禁在 TSX 中直接裸写字符串。
-3. **表单校验必须本地化**：Zod 内置校验（如 `min`、`max`、`positive`、`multipleOf`、`regex`、`refine`）必须显式使用 `t(...)` 提供错误文案；不得将 Zod 默认英文错误直接展示给用户；由 Zod 负责提交校验的表单应设置 `noValidate`，避免浏览器原生提示绕过应用语言。新增或修改文案时必须同时维护 `zh-CN` 与 `en-US`，并检查当前语言下的校验错误及弹窗/Toast 描述。
+3. **表单校验必须本地化**：Zod 内置校验（如 `min`、`max`、`positive`、`multipleOf`、`regex`、`refine`）必须显式使用 `t(...)` 提供错误文案；不得将 Zod 默认英文错误直接展示给用户；由 Zod 负责提交校验的表单应设置 `noValidate`，避免浏览器原生提示绕过应用语言。
 4. **行为文案与实现一致**：变更删除、清理、恢复、作废等操作语义时，必须同步检查对应语言的按钮、确认标题/正文、成功/失败反馈；不得保留与实际副作用不符的“永久删除”或“可恢复”等说明。
 5. **带变量插值规范**：插值变量采用 `{{variable}}` 语法并在 TS 泛型或字典中显式声明类型；传递可选值（如实体名称）时必须提供安全空字符串兜底（如 `{ name: entity?.name ?? '' }`）。
+
+### 13.4 中文第一基准与机械治理工具链 (Chinese-First SSOT & Governance)
+1. **基准 SSOT 机制**：以 `zh-CN` 作为单源基准。日常特性开发过程中，UI 变更仅强制要求同步在 `apps/web/src/locales/zh-CN/` 维护对应键值，并使用 `t(...)` 渲染。
+2. **机械门禁检查 (`pnpm gate:i18n`)**：
+   - 运行 `scripts/i18n-governance.mjs check`，自动静态扫描前端所有 TSX 视图文件。
+   - 阻断项包括：JSX 标签间的直接中文文本、用户可见交互属性（`placeholder`、`title`、`label`、`aria-label` 等）的硬编码中文、`toast.*` 反馈中文，以及 Zod Schema 中的硬编码中文校验信息。
+   - 若因特殊技术原因或外部常量存在字面中文且无需国际化，可在对应代码行末添加 `// i18n-ignore` 注释豁免检查。
+3. **多语言解耦与运行时回退**：
+   - 非中文语言（`en-US`、`ja-JP` 等）词条补充与日常特性 PR 解耦，允许后续集中批量补充翻译。
+   - `i18n/config.ts` 设置 `fallbackLng: 'zh-CN'`，当非基准语言缺少某键位时平滑回退渲染中文，确保用户界面绝不暴露出原始命名空间和键路径。
+4. **覆盖率台账与进度审计 (`pnpm i18n:report`)**：
+   - 运行 `pnpm i18n:report` 可随时输出各语言相对于 `zh-CN` 基准的词条总数、已翻译数、覆盖率百分比以及待补齐键位清单（Audit Ledger），为国际化版本排期与翻译补充提供精确数据支撑。
+
 
 

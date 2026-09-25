@@ -5,6 +5,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsIP,
   IsInt,
   IsNumber,
   IsOptional,
@@ -60,6 +61,27 @@ export class PollTrafficSnapshotDto {
   @IsString()
   @IsUint64String()
   downloadTotal!: string;
+}
+
+export class PollOnlineDeviceDto {
+  @IsString()
+  userUuid!: string;
+
+  @IsIP()
+  ip!: string;
+
+  @IsOptional()
+  @IsString()
+  lineId?: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(1000000)
+  connections!: number;
+
+  @IsInt()
+  @Min(0)
+  lastSeenAt!: number;
 }
 
 export class PollConfigApplyResultDto {
@@ -137,6 +159,21 @@ export class PollProbeResultDto {
   results!: PollProbeResultItemDto[];
 }
 
+export class PollKickDevicesResultDto {
+  @IsString()
+  taskId!: string;
+
+  @IsBoolean()
+  success!: boolean;
+
+  @IsString()
+  message!: string;
+
+  @IsInt()
+  @Min(0)
+  kickedConnections!: number;
+}
+
 export class PollRestartAgentResultDto {
   @IsString()
   taskId!: string;
@@ -202,6 +239,13 @@ export class AgentPollDto {
   trafficSnapshots!: PollTrafficSnapshotDto[];
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1024)
+  @ValidateNested({ each: true })
+  @Type(() => PollOnlineDeviceDto)
+  onlineDevices?: PollOnlineDeviceDto[];
+
+  @IsOptional()
   @IsBoolean()
   kernelRunning?: boolean;
 
@@ -259,6 +303,13 @@ export class AgentPollDto {
   @ValidateNested({ each: true })
   @Type(() => PollRestartAgentResultDto)
   restartAgentResults?: PollRestartAgentResultDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ValidateNested({ each: true })
+  @Type(() => PollKickDevicesResultDto)
+  kickDevicesResults?: PollKickDevicesResultDto[];
 
   @IsOptional()
   @IsArray()

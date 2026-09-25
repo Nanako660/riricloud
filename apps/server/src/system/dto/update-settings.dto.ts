@@ -246,6 +246,19 @@ export class UpdateSettingsDto {
   @IsOptional()
   includeUsageHeaders?: boolean;
 
+  @ApiPropertyOptional({ example: true })
+  @IsBoolean()
+  @IsOptional()
+  deviceLimitEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 60, minimum: 15, maximum: 600 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  @Max(600)
+  @IsOptional()
+  deviceOnlineWindowSecs?: number;
+
   @ApiPropertyOptional({ example: 15, minimum: 5, maximum: 3600 })
   @Type(() => Number)
   @IsInt()

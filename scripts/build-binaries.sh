@@ -187,7 +187,16 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
       tar -xzf "$TMP_ARCHIVE" -C "$DOWNLOAD_DIR"
     fi
 
-    # 1.2 确保 libcronet.so 存在
+    # 1.2 为设备管理暴露连接用户元数据，且仅由本地设备追踪器消费。
+    SINGBOX_SOURCE_DIR="$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
+    CLASH_API_PATCH="$RIRI_ROOT/apps/agent/patches/sing-box-clashapi-inbound-user.patch"
+    CLASH_API_SOURCE="$SINGBOX_SOURCE_DIR/experimental/clashapi/connections.go"
+    if ! grep -q '"inboundUser"' "$CLASH_API_SOURCE"; then
+      command -v patch >/dev/null 2>&1 || die "缺少 patch 工具：无法应用 Sing-box 设备追踪补丁"
+      (cd "$SINGBOX_SOURCE_DIR" && patch -p1 < "$CLASH_API_PATCH")
+    fi
+
+    # 1.3 确保 libcronet.so 存在
     if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
       echo "获取 NaiveProxy purego 运行库 ($arch)..."
       curl --fail --silent --show-error --location \
@@ -196,19 +205,20 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
       chmod 0755 "$CACHE_DIR/libcronet.so"
     fi
 
-    # 1.3 确保定制二进制存在
-    if [ ! -f "$CACHE_DIR/sing-box" ]; then
+    # 1.4 确保含 Clash API 用户元数据的定制二进制存在
+    if [ ! -f "$CACHE_DIR/sing-box" ] || [ ! -f "$CACHE_DIR/.riri-device-tracking-v1" ]; then
       echo "编译定制 Sing-box linux/$arch..."
       (
         cd "$DOWNLOAD_DIR/sing-box-${SINGBOX_VERSION}"
         CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath \
-          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+          -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api \
           -ldflags "-s -w" \
           -o "$CACHE_DIR/sing-box" ./cmd/sing-box
       )
+      touch "$CACHE_DIR/.riri-device-tracking-v1"
     fi
 
-    # 1.4 复制到输出目录
+    # 1.5 复制到输出目录
     DEST_DIR="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/linux-${arch}"
     mkdir -p "$DEST_DIR"
     cp "$CACHE_DIR/sing-box" "$DEST_DIR/sing-box"

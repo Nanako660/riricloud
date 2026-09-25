@@ -296,7 +296,7 @@ find_singbox() {
 singbox_has_required_features() {
   local version_output="$1"
   local feature
-  for feature in with_v2ray_api with_utls with_quic with_naive_outbound; do
+  for feature in with_v2ray_api with_utls with_quic with_naive_outbound with_clash_api; do
     printf '%s\n' "$version_output" | grep -q "$feature" || return 1
   done
 }
@@ -351,8 +351,14 @@ build_singbox_for_dev() {
     "$tar_bin" -xzf "$archive_path" -C "$cache_dir"
   fi
 
-  if [ ! -f "$output_path" ]; then
-    say "构建开发联调所需的 Sing-box v$version（with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego）…"
+  if [ ! -f "$output_path" ] || [ ! -f "$output_dir/.riri-device-tracking-v1" ]; then
+    say "构建开发联调所需的 Sing-box v$version（with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api）…"
+    local patch_file="$ROOT/apps/agent/patches/sing-box-clashapi-inbound-user.patch"
+    local connections_source="$source_dir/experimental/clashapi/connections.go"
+    if ! grep -q '"inboundUser"' "$connections_source"; then
+      command -v patch >/dev/null 2>&1 || die "缺少 patch 工具：无法应用 Sing-box 设备追踪补丁"
+      (cd "$source_dir" && patch -p1 < "$patch_file")
+    fi
     go_output_path="$output_path"
     case "$GO_BIN" in
       *.exe)
@@ -362,9 +368,10 @@ build_singbox_for_dev() {
     (
       cd "$source_dir"
       CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" "$GO_BIN" build -trimpath \
-        -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego \
+        -tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api \
         -ldflags "-s -w" -o "$go_output_path" ./cmd/sing-box
     )
+    touch "$output_dir/.riri-device-tracking-v1"
   fi
 
   SINGBOX_BIN="$output_path"
@@ -380,7 +387,7 @@ else
 fi
 if ! singbox_has_required_features "$SINGBOX_VERSION_OUTPUT"; then
   if [ -n "${SINGBOX_BINARY_PATH:-}" ]; then
-    die "SINGBOX_BINARY_PATH 指定的 sing-box 未启用 with_v2ray_api/with_utls/with_quic/with_naive_outbound，请改用带这些构建标签的内核"
+    die "SINGBOX_BINARY_PATH 指定的 sing-box 未启用 with_v2ray_api/with_utls/with_quic/with_naive_outbound/with_clash_api，请改用带这些构建标签的内核"
   fi
   [ -n "$SINGBOX_BIN" ] && say "当前缓存的 Sing-box 缺少联调所需构建标签，准备构建兼容版本…"
   build_singbox_for_dev

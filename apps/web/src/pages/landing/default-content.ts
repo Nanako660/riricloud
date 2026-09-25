@@ -78,6 +78,45 @@ export const DEFAULT_FEATURES_EN: LandingFeatureItem[] = [
   }
 ];
 
+export const DEFAULT_FEATURES_JA: LandingFeatureItem[] = [
+  {
+    id: 'speed',
+    icon: 'Zap',
+    title: '超高速 4K ストリーミング体験',
+    description: '最適化されたバックボーン回線と広帯域ネットワークにより、4K/8K 動画も待機時間なしで快適に再生できます。'
+  },
+  {
+    id: 'cross-platform',
+    icon: 'Smartphone',
+    title: '全デバイス対応・ワンクリック接続',
+    description: 'Windows、macOS、iOS、Android など主要 OS に完全対応。複雑な設定は一切不要で、初心者でも数分で利用開始できます。'
+  },
+  {
+    id: 'smart-routing',
+    icon: 'Sparkles',
+    title: '設定不要のスマートルーティング',
+    description: '通信先を自動判別し、国内サービスは直通で高速に、海外サービスは最適ルートでシームレスに高速化します。'
+  },
+  {
+    id: 'multi-device',
+    icon: 'Laptop',
+    title: 'マルチデバイス同時接続',
+    description: '1つのアカウントでスマートフォン、PC、タブレットなど複数端末の同時利用に対応。いつでもどこでも安定した接続を維持します。'
+  },
+  {
+    id: 'transparent-quota',
+    icon: 'Activity',
+    title: '明確で透明なデータ使用量管理',
+    description: '使用済み通信量、残り容量、有効期限をダッシュボードで直感的に可視化。隠れた制限なく安心して管理できます。'
+  },
+  {
+    id: 'privacy',
+    icon: 'ShieldCheck',
+    title: '厳格なプライバシーとセキュリティ保護',
+    description: '全通信に高強度なエンドツーエンド暗号化を採用。閲覧履歴や通信ログは一切記録・保存せず、プライバシーを徹底保護します。'
+  }
+];
+
 export const DEFAULT_FAQS_ZH: LandingFaqItem[] = [
   {
     id: 'faq-1',
@@ -124,6 +163,29 @@ export const DEFAULT_FAQS_EN: LandingFaqItem[] = [
   }
 ];
 
+export const DEFAULT_FAQS_JA: LandingFaqItem[] = [
+  {
+    id: 'faq-1',
+    question: '初心者ですが、どのように使い始めればよいですか？',
+    answer: 'わずか3ステップで簡単に始められます：① ご利用目的に合ったプランを選択して購入；② ガイドに従って端末向けのクライアントアプリをダウンロード；③ ワンクリックで専用サブスクリプションをインポートして接続を開始します。'
+  },
+  {
+    id: 'faq-2',
+    question: 'スマートフォン、タブレット、パソコンで同時に利用できますか？',
+    answer: 'はい、可能です。1つのサブスクリプションでお手持ちの複数の端末に設定して同時にご利用いただけるため、自宅・オフィス・外出先を問わずシームレスに活用できます。'
+  },
+  {
+    id: 'faq-3',
+    question: '動画視聴やストリーミング再生で途切れたりしませんか？',
+    answer: '複数リージョンの高速エッジノードとスマートフェイルオーバー技術を採用しており、広帯域かつ低遅延で 4K 超高画質動画や日常のブラウジングを快適にお楽しみいただけます。'
+  },
+  {
+    id: 'faq-4',
+    question: '通信のプライバシーやセキュリティは安全ですか？',
+    answer: 'お客様のプライバシー保護を最優先に設計されています。すべての通信は国際標準の高強度暗号化で保護され、厳格なノーログポリシー（Zero-Log）のもと閲覧履歴や通信内容は一切保存されません。'
+  }
+];
+
 export function getEffectiveFeatures(customJson?: string, lang = 'zh-CN'): LandingFeatureItem[] {
   if (customJson && customJson.trim() && customJson !== '[]') {
     try {
@@ -138,7 +200,10 @@ export function getEffectiveFeatures(customJson?: string, lang = 'zh-CN'): Landi
       // 忽略解析错误并回退为默认
     }
   }
-  return lang.toLowerCase().startsWith('en') ? DEFAULT_FEATURES_EN : DEFAULT_FEATURES_ZH;
+  const normalized = lang.toLowerCase();
+  if (normalized.startsWith('ja')) return DEFAULT_FEATURES_JA;
+  if (normalized.startsWith('en')) return DEFAULT_FEATURES_EN;
+  return DEFAULT_FEATURES_ZH;
 }
 
 export function getEffectiveFaqs(customJson?: string, lang = 'zh-CN'): LandingFaqItem[] {
@@ -155,5 +220,8 @@ export function getEffectiveFaqs(customJson?: string, lang = 'zh-CN'): LandingFa
       // 忽略解析错误并回退为默认
     }
   }
-  return lang.toLowerCase().startsWith('en') ? DEFAULT_FAQS_EN : DEFAULT_FAQS_ZH;
+  const normalized = lang.toLowerCase();
+  if (normalized.startsWith('ja')) return DEFAULT_FAQS_JA;
+  if (normalized.startsWith('en')) return DEFAULT_FAQS_EN;
+  return DEFAULT_FAQS_ZH;
 }

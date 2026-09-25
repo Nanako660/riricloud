@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { SUPPORTED_LANGUAGES, STORAGE_LOCALE_KEY, type SupportedLanguage } from '@/i18n/config';
+import { SUPPORTED_LANGUAGES, STORAGE_LOCALE_KEY, normalizeLocale, type SupportedLanguage } from '@/i18n/config';
 
 interface LanguageSwitcherProps {
   showLabel?: boolean;
@@ -16,7 +16,7 @@ interface LanguageSwitcherProps {
 
 export function LanguageSwitcher({ showLabel = false, className }: LanguageSwitcherProps) {
   const { i18n, t } = useTranslation('common');
-  const currentLanguage = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US';
+  const currentLanguage = normalizeLocale(i18n.language);
 
   const handleSelectLanguage = (langCode: SupportedLanguage) => {
     i18n.changeLanguage(langCode);

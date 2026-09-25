@@ -108,8 +108,13 @@ Agent 面向最低配 VPS 运行，资源预算是验收指标而非建议：
 | 日志消息 | 英文（节点日志可能被任意语言环境的运维检索） |
 | 代码注释 | 中文，解释"为什么"而非复述代码 |
 | commit 描述、PR 描述、CHANGELOG 条目 | 中文（type 用英文，见 [GIT_WORKFLOW.md](./GIT_WORKFLOW.md) §3） |
-| 文档库 | 中文 |
-| 用户可见的 UI 文案 | 中文为内容基准；必须通过 `zh-CN` / `en-US` i18next 字典展示，包含 placeholder、Zod 校验错误、ARIA、Toast 和确认弹窗；禁止硬编码及 Zod 默认错误，Zod 表单关闭浏览器原生校验（`noValidate`）；文案描述用户可观察的业务行为，不暴露后端实现术语（如将“软删除”表述为“删除”），并说明影响用户决策的恢复能力 |
+| 用户可见的 UI 文案 | **以简体中文（zh-CN）为唯一 SSOT 基准**；新增/修改 UI 文本时强制要求且仅强制要求录入 `zh-CN` 字典并使用 `t(...)` 引用；TSX 视图中严禁未国际化的硬编码中文（JSX 裸文本、属性、Toast、Zod 校验），由 `pnpm gate:i18n` 机械阻断；非基准语言（`en-US`、`ja-JP` 等）与日常 UI 特性解耦，允许异步补齐，运行时由 `fallbackLng: 'zh-CN'` 自动平滑兜底；文案描述用户可观察的业务行为，不暴露后端实现术语，表单关闭原生校验（`noValidate`） |
+
+### 6.1 中文第一基准（Chinese-First SSOT）与 i18n 机械门禁
+1. **基准语言单源 (SSOT)**：所有功能迭代以 `apps/web/src/locales/zh-CN/` 为唯一真理源。日常 UI 特性 PR 必须且仅强制要求完善中文词条。
+2. **机械门禁阻断硬编码**：`pnpm gate:i18n`（`scripts/i18n-governance.mjs check`）自动对 `apps/web/src/` 下所有 TSX 视图源码进行静态分析。任何未走 `t(...)` 的裸中文文本、用户可见属性（`placeholder`、`title`、`label`、`aria-label` 等）、`toast.*` 字符串及 Zod 错误文本均会触发门禁阻断（技术例外可使用 `// i18n-ignore` 豁免）。
+3. **多语言交付解耦与运行时回退**：非中文语言（`en-US`、`ja-JP` 等）与常规 UI 特性交付解耦，不要求单个 PR 一次性齐套。当非基准语言字典缺失键位时，i18next 配置（`fallbackLng: 'zh-CN'`）自动降级回退至中文，保障界面永不展示裸露的键路径（如 `admin:nodes.title`）。
+4. **覆盖率台账与异步补全**：运行 `pnpm i18n:report` 可即时输出全语言字典对齐 `zh-CN` 的覆盖率看板及各命名空间待翻译词条清单，便于后续集中、批量化完成翻译。
 
 命名风格沿用各语言生态惯例：TS 用 `camelCase` / `PascalCase`，Prisma model 用 `PascalCase` + 字段 `camelCase`，Go 用 `camelCase` / `PascalCase`（导出）。
 

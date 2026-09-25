@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api, extractErrorMessage } from '@/lib/api';
+import type { DeviceManagement } from '@/pages/user/subscription/use-user-subscription';
 
 export interface AdminUser {
   id: string;
@@ -10,6 +11,12 @@ export interface AdminUser {
   email: string;
   emailVerifiedAt: string | null;
   role: 'ADMIN' | 'USER';
+  deviceLimit?: number | null;
+  onlineDeviceCount?: number;
+  configuredDeviceLimit?: number | null;
+  effectiveDeviceLimit?: number | null;
+  deviceLimitSource?: DeviceManagement['deviceLimitSource'];
+  configuredDeviceLimitSource?: DeviceManagement['configuredDeviceLimitSource'];
   balance: number;
   trafficLimitBytes: number;
   trafficUsedBytes: number;
@@ -64,6 +71,32 @@ export function useAdminUsers(params: ListUsersParams) {
   });
 }
 
+export function useAdminUserDevices(userId: string | undefined, enabled: boolean) {
+  const { t } = useTranslation(['admin']);
+  const queryClient = useQueryClient();
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'user-devices', userId] });
+    void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+  };
+  const query = useQuery({
+    queryKey: ['admin', 'user-devices', userId],
+    queryFn: async () => (await api.get<DeviceManagement>('/admin/users/' + userId + '/devices')).data,
+    enabled: enabled && Boolean(userId),
+    refetchInterval: 5000
+  });
+  const kickDevice = useMutation({
+    mutationFn: async (ip: string) => (await api.delete('/admin/users/' + userId + '/devices', { params: { ip } })).data,
+    onSuccess: () => { toast.success(t('admin:userDevices.kickSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:userDevices.kickFailed')))
+  });
+  const kickAllDevices = useMutation({
+    mutationFn: async () => (await api.post('/admin/users/' + userId + '/devices/kick-all')).data,
+    onSuccess: () => { toast.success(t('admin:userDevices.kickAllSuccess')); invalidate(); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, t('admin:userDevices.kickFailed')))
+  });
+  return { ...query, kickDevice, kickAllDevices };
+}
+
 export function useUserMutations() {
   const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
@@ -101,6 +134,7 @@ export function useUserMutations() {
       isActive?: boolean;
       password?: string;
       emailVerified?: boolean;
+      deviceLimit?: number | null;
     }) => (await api.patch(`/admin/users/${id}`, payload)).data,
     ...invalidateSub
   });

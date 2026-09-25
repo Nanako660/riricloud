@@ -20,8 +20,10 @@ export interface UserPlan {
   cardConfig?: PlanCardConfig;
   purchaseLimitPerUser: number | null;
   allowRenewal: boolean;
+  deviceLimit?: number | null;
   speedLimitMbps?: number | null;
 }
+export interface DeviceManagement { onlineDeviceCount: number; configuredDeviceLimit: number | null; effectiveDeviceLimit: number | null; deviceLimitSource: 'USER' | 'PLAN' | 'UNLIMITED' | 'GLOBAL_OFF'; configuredDeviceLimitSource: 'USER' | 'PLAN' | 'UNLIMITED'; deviceLimitEnabled: boolean; devices: Array<{ ip: string; connections: number; firstSeenAt: number; lastSeenAt: number; nodes: Array<{ nodeId: string; nodeName: string; lineId: string | null; lineName: string | null; connections: number }> }>; }
 export interface UserSubscription { id: string; status: 'ACTIVE' | 'CANCELED' | 'EXPIRED' | 'REVOKED'; trafficLimitBytes: number; trafficUsedBytes: number; startedAt: string; expireAt: string | null; subscriptionToken: string; trafficResetMode: TrafficResetMode; nextTrafficResetAt: string | null; extraLineIds: string[]; plan: UserPlan; }
 export interface UserLine {
   id: string;
@@ -45,7 +47,7 @@ export interface PlanClaim {
 export function useUserSubscription() {
   return useQuery({
     queryKey: ['user', 'subscription'],
-    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[]; planClaims: PlanClaim[] }>('/user/subscription')).data,
+    queryFn: async () => (await api.get<{ subscription: UserSubscription | null; lines: UserLine[]; planClaims: PlanClaim[]; deviceManagement: DeviceManagement | null }>('/user/subscription')).data,
     refetchInterval: 5000
   });
 }
@@ -81,5 +83,7 @@ export function useUserSubscriptionMutations() {
     onSuccess: () => { toast.success(i18n.t('user:subscription.regenerateSuccess')); invalidate(); },
     onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed')))
   });
-  return { subscribe, upgrade, renew, cancel, resetToken };
+  const kickDevice = useMutation({ mutationFn: async (ip: string) => (await api.delete('/user/subscription/devices', { params: { ip } })).data, onSuccess: invalidate, onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed'))) });
+  const kickAllDevices = useMutation({ mutationFn: async () => (await api.post('/user/subscription/devices/kick-all')).data, onSuccess: invalidate, onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('common:status.failed'))) });
+  return { subscribe, upgrade, renew, cancel, resetToken, kickDevice, kickAllDevices };
 }
