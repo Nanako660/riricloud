@@ -1479,6 +1479,61 @@ describe('AgentGatewayService', () => {
     });
     expect(JSON.parse(sendA.mock.calls[0][0])).toMatchObject({ type: 'kick_devices', data: { items: [{ userUuid: 'user@example.com', ip: '203.0.113.5' }] } });
     expect(JSON.parse(sendB.mock.calls[0][0])).toMatchObject({ type: 'kick_devices', data: { items: [{ userUuid: 'user@example.com', ip: '203.0.113.5' }] } });
+
+    // 手动踢出后服务端在线设备缓存应立即剔除，再次查询立即为 0
+    const afterKick = await service.getUserDeviceManagement('u1');
+    expect(afterKick.onlineDeviceCount).toBe(0);
+    expect(afterKick.devices).toEqual([]);
+  });
+
+  it('忽略回环与未指定地址上报，并拒绝踢出回环地址', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const userRecord = {
+      id: 'u1', uuid: 'uuid-1', email: 'user@example.com', deviceLimit: null, isActive: true,
+      subscription: { planSnapshotJson: null, plan: { deviceLimit: 2 } }
+    };
+    prisma.user.findMany.mockResolvedValue([userRecord]);
+    userFindUnique.mockResolvedValue({ ...userRecord, subscription: userRecord.subscription });
+    prisma.node.findMany.mockResolvedValue([{ id: 'node-a', name: '节点 A' }]);
+    prisma.line.findMany.mockResolvedValue([{ id: 'line-a', name: '线路 A' }]);
+    const ingest = (service as unknown as { updateOnlineDeviceReports: (nodeId: string, items: AgentOnlineDeviceReportItem[]) => Promise<void> }).updateOnlineDeviceReports.bind(service);
+
+    await ingest('node-a', [
+      { userUuid: 'user@example.com', ip: '127.0.0.1', lineId: 'line-a', connections: 5, lastSeenAt: now },
+      { userUuid: 'user@example.com', ip: '::1', lineId: 'line-a', connections: 2, lastSeenAt: now },
+      { userUuid: 'user@example.com', ip: '203.0.113.25', lineId: 'line-a', connections: 1, lastSeenAt: now }
+    ]);
+
+    const result = await service.getUserDeviceManagement('u1');
+    expect(result.onlineDeviceCount).toBe(1);
+    expect(result.devices.map((item) => item.ip)).toEqual(['203.0.113.25']);
+
+    await expect(service.kickUserDevices('u1', '127.0.0.1')).rejects.toThrow();
+  });
+
+  it('节点 configOverride 自定义 clash_api.external_controller 时保留覆盖地址', async () => {
+    prisma.node.findUnique.mockResolvedValue({
+      id: 'node-custom-clash',
+      serverHost: '198.51.100.10',
+      status: 'ONLINE',
+      configOverride: JSON.stringify({
+        experimental: {
+          clash_api: {
+            external_controller: '127.0.0.1:19090',
+            secret: 'local-token'
+          }
+        }
+      }),
+      singboxLogMode: 'NORMAL',
+      singboxLogModeUntil: null,
+      entryLines: [],
+      landingLines: []
+    });
+    const built = await service.buildConfigSync('node-custom-clash');
+    expect((built.singboxConfig.experimental as { clash_api?: Record<string, unknown> })?.clash_api).toEqual({
+      external_controller: '127.0.0.1:19090',
+      secret: 'local-token'
+    });
   });
 
   it('跨节点超限时仅自动踢出较新的超限 IP', async () => {

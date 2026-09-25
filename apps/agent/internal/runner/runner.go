@@ -129,17 +129,15 @@ func runForeground(ctx context.Context, options Options) error {
 // kernelRetryInterval 为内核自举失败后的固定重试间隔。
 const kernelRetryInterval = 5 * time.Minute
 
-// startKernelBootstrap 在内核二进制缺失时（典型为免安装运行）后台拉取；
-// 显式指定 SINGBOX_BINARY_PATH 或 source=none 视为用户自管内核，跳过下载。
+// startKernelBootstrap 优先将内嵌 Sing-box 内核自愈同步到磁盘（哈希不一致时自动覆盖旧内核），
+// 内核缺失且无可用内嵌资源时（典型为开发占位或免安装运行）后台拉取；
+// 显式指定 SINGBOX_BINARY_PATH 或 source=none 视为用户自管内核，跳过同步与下载。
 // 下载失败不阻断 Agent 存活，仅记录告警并按固定间隔重试。
 func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Options, log *logrus.Entry) {
 	if strings.EqualFold(strings.TrimSpace(options.SingboxSource), "none") {
 		return
 	}
 	if strings.TrimSpace(os.Getenv("SINGBOX_BINARY_PATH")) != "" {
-		return
-	}
-	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
 		return
 	}
 	source := strings.ToLower(strings.TrimSpace(options.SingboxSource))
@@ -157,6 +155,9 @@ func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Optio
 			return
 		}
 		log.WithError(err).Warn("extract embedded sing-box failed, falling back to background download")
+	}
+	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
+		return
 	}
 	go bootstrapKernelLoop(ctx, kernel.Options{
 		Source:        options.SingboxSource,

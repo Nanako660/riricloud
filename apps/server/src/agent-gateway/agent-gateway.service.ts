@@ -21,7 +21,7 @@ import {
 } from '../common/inbound';
 import { parseWhitelistIps } from '../proxy-pool/proxy-key.util';
 import { resolveLineTags } from '../common/line-tags';
-import { DEFAULT_INBOUND_LISTEN, getStatsApiListen } from '../common/ports';
+import { DEFAULT_INBOUND_LISTEN, getClashApiListen, getStatsApiListen } from '../common/ports';
 import {
   INTERNAL_RELAY_TRANSIT_EMAIL,
   INTERNAL_RELAY_TRANSIT_SECRET,
@@ -392,13 +392,33 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
     return active;
   }
 
+  private isTrackableClientIp(rawIp: string): boolean {
+    const ip = rawIp.trim().toLowerCase();
+    if (isIP(ip) === 0) return false;
+    if (ip === '::1' || ip === '::' || ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('::ffff:127.')) {
+      return false;
+    }
+    return true;
+  }
+
+  private evictOnlineDeviceReports(userId: string, ip?: string): void {
+    for (const [nodeId, reports] of this.onlineDeviceReports) {
+      for (const [key, report] of reports) {
+        if (report.userId === userId && (!ip || report.ip === ip)) {
+          reports.delete(key);
+        }
+      }
+      if (!reports.size) this.onlineDeviceReports.delete(nodeId);
+    }
+  }
+
   private async updateOnlineDeviceReports(nodeId: string, items: AgentOnlineDeviceReportItem[]): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const settings = await this.settingsService?.getSettings();
     const windowSecs = Math.max(15, Math.min(600, settings?.deviceOnlineWindowSecs ?? 60));
     this.deviceOnlineWindowSecs = windowSecs;
     const cleaned = items
-      .filter((item) => isIP(item.ip) !== 0 && item.lastSeenAt >= now - windowSecs && item.lastSeenAt <= now + 30)
+      .filter((item) => this.isTrackableClientIp(item.ip) && item.lastSeenAt >= now - windowSecs && item.lastSeenAt <= now + 30)
       .map((item) => { const parsed = parseTrafficCredential(item.userUuid); return { ...item, userUuid: parsed.rawCredential.trim(), lineId: item.lineId ?? parsed.lineId ?? undefined }; })
       .filter((item) => item.userUuid.length > 0 && item.userUuid.length <= 256 && !item.userUuid.startsWith(PROXY_KEY_USERNAME_PREFIX));
     const identities = [...new Set(cleaned.map((item) => item.userUuid))];
@@ -480,10 +500,13 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
         if (Date.now() - lastEnforcement < 30000) continue;
         this.deviceEnforcementAt.set(cooldownKey, Date.now());
         const nodeIds = [...new Set(reports.filter((report) => report.ip === ip).map((report) => report.nodeId))];
-        await Promise.all(nodeIds.map((targetNodeId) => this.dispatchDeviceKick(targetNodeId, {
+        const dispatched = await Promise.all(nodeIds.map((targetNodeId) => this.dispatchDeviceKick(targetNodeId, {
           taskId: randomUUID(),
           items: [{ userUuid: policy.email, ip, blockDurationSecs: 60 }]
         })));
+        if (dispatched.some(Boolean)) {
+          this.evictOnlineDeviceReports(userId, ip);
+        }
       }
     }
   }
@@ -560,18 +583,26 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
   }
 
   async kickUserDevices(userId: string, ip?: string) {
-    if (ip && isIP(ip) === 0) throw new ConflictException('客户端 IP 格式无效');
+    if (ip && !this.isTrackableClientIp(ip)) throw new ConflictException('客户端 IP 格式无效');
     const userDelegate = this.prisma.user as unknown as { findUnique: (args: Record<string, unknown>) => Promise<{ email: string } | null> };
     const user = await userDelegate.findUnique({ where: { id: userId }, select: { email: true } });
     if (!user) throw new NotFoundException('用户不存在');
     const matching = this.activeOnlineDeviceReports(userId).filter((report) => !ip || report.ip === ip);
+    const kickedIps = [...new Set(matching.map((report) => report.ip))];
     const nodeIds = [...new Set(matching.map((report) => report.nodeId))];
     const taskId = randomUUID();
     const results = await Promise.all(nodeIds.map((nodeId) => this.dispatchDeviceKick(nodeId, {
       taskId,
       items: [{ userUuid: user.email, ...(ip ? { ip } : {}), blockDurationSecs: 60 }]
     })));
-    return { taskId, requested: results.some(Boolean), notifiedNodes: results.filter(Boolean).length, kickedIps: [...new Set(matching.map((report) => report.ip))] };
+    const requested = results.some(Boolean);
+    if (requested) {
+      this.evictOnlineDeviceReports(userId, ip);
+      for (const kickedIp of kickedIps) {
+        this.deviceEnforcementAt.delete(userId + '|' + kickedIp);
+      }
+    }
+    return { taskId, requested, notifiedNodes: results.filter(Boolean).length, kickedIps };
   }
 
   private async dispatchDeviceKick(nodeId: string, data: KickDevicesTaskData): Promise<boolean> {
@@ -2214,9 +2245,12 @@ export class AgentService implements OnModuleDestroy, OnModuleInit {
       const clashApi = (experimental.clash_api && typeof experimental.clash_api === 'object' && !Array.isArray(experimental.clash_api))
         ? experimental.clash_api as Record<string, unknown>
         : {};
+      const customController = typeof clashApi.external_controller === 'string' && clashApi.external_controller.trim().length > 0
+        ? clashApi.external_controller.trim()
+        : getClashApiListen();
       singboxConfig.experimental = {
         ...experimental,
-        clash_api: { ...clashApi, external_controller: '127.0.0.1:10086' }
+        clash_api: { ...clashApi, external_controller: customController }
       };
     }
     const logMode = this.resolveSingboxLogMode(node.singboxLogMode, node.singboxLogModeUntil);

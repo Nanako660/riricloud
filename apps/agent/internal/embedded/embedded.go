@@ -60,6 +60,21 @@ func InspectArchive() (map[string]FileMeta, error) {
 	return manifestMap, manifestErr
 }
 
+// SetArchiveBytesForTest 仅供单元测试注入模拟内嵌归档，返回恢复函数。
+func SetArchiveBytesForTest(data []byte) func() {
+	origBytes := archiveBytes
+	archiveBytes = data
+	manifestOnce = sync.Once{}
+	manifestMap = nil
+	manifestErr = nil
+	return func() {
+		archiveBytes = origBytes
+		manifestOnce = sync.Once{}
+		manifestMap = nil
+		manifestErr = nil
+	}
+}
+
 // HasEmbeddedKernel 检查内嵌归档中是否包含当前平台适用的 sing-box 内核。
 func HasEmbeddedKernel() bool {
 	meta, err := InspectArchive()
@@ -83,12 +98,18 @@ func HasEmbeddedKernel() bool {
 // 若文件缺失、损坏或与内嵌哈希不一致，自动执行自愈覆盖释放。
 // 返回主可执行文件绝对路径与可能的伴生文件路径列表。
 func Ensure(destDir string) (string, []string, error) {
+	mainTarget, auxFiles, _, err := EnsureWithStatus(destDir)
+	return mainTarget, auxFiles, err
+}
+
+// EnsureWithStatus 与 Ensure 相同，但額外返回布尔值标识本次是否实际执行了文件释放更新。
+func EnsureWithStatus(destDir string) (string, []string, bool, error) {
 	destDir = strings.TrimSpace(destDir)
 	if destDir == "" {
-		return "", nil, errors.New("destination directory is required")
+		return "", nil, false, errors.New("destination directory is required")
 	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return "", nil, fmt.Errorf("create embedded destination dir: %w", err)
+		return "", nil, false, fmt.Errorf("create embedded destination dir: %w", err)
 	}
 
 	mainName := MainExecutableName()
@@ -96,16 +117,16 @@ func Ensure(destDir string) (string, []string, error) {
 
 	meta, err := InspectArchive()
 	if err != nil {
-		return "", nil, fmt.Errorf("inspect embedded archive: %w", err)
+		return "", nil, false, fmt.Errorf("inspect embedded archive: %w", err)
 	}
 
 	// 若内嵌归档中没有 sing-box（例如开发态占位模式）
 	if !HasEmbeddedKernel() {
 		// 如果本地目标文件已存在（可能本地放了用于调试的二进制），直接复用
 		if info, statErr := os.Stat(mainTarget); statErr == nil && !info.IsDir() && info.Size() > 0 {
-			return mainTarget, nil, nil
+			return mainTarget, nil, false, nil
 		}
-		return "", nil, ErrNoEmbeddedKernel
+		return "", nil, false, ErrNoEmbeddedKernel
 	}
 
 	// 检查落盘文件是否齐全且 SHA-256 与内嵌一致
@@ -128,13 +149,13 @@ func Ensure(destDir string) (string, []string, error) {
 	}
 
 	if allMatch {
-		return mainTarget, auxFiles, nil
+		return mainTarget, auxFiles, false, nil
 	}
 
 	// 存在不匹配，执行自愈释放
 	extracted, err := ExtractAll(destDir)
 	if err != nil {
-		return "", nil, fmt.Errorf("extract embedded sing-box: %w", err)
+		return "", nil, false, fmt.Errorf("extract embedded sing-box: %w", err)
 	}
 
 	finalAux := make([]string, 0)
@@ -143,7 +164,7 @@ func Ensure(destDir string) (string, []string, error) {
 			finalAux = append(finalAux, p)
 		}
 	}
-	return mainTarget, finalAux, nil
+	return mainTarget, finalAux, true, nil
 }
 
 // ExtractAll 将内嵌归档中的所有文件原子释放到 destDir。

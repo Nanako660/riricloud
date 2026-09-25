@@ -62,19 +62,11 @@ func Ensure(ctx context.Context, options Options) (bool, error) {
 		source = "auto"
 	}
 	if embedded.HasEmbeddedKernel() && source == "auto" && strings.TrimSpace(options.URL) == "" {
-		mainTarget := filepath.Join(destDir, embedded.MainExecutableName())
-		beforeStat, beforeErr := os.Stat(mainTarget)
-		_, _, err := embedded.Ensure(destDir)
+		_, _, updated, err := embedded.EnsureWithStatus(destDir)
 		if err != nil {
 			return false, fmt.Errorf("extract embedded kernel: %w", err)
 		}
-		if beforeErr != nil {
-			return true, nil
-		}
-		if afterStat, statErr := os.Stat(mainTarget); statErr == nil && (afterStat.ModTime() != beforeStat.ModTime() || afterStat.Size() != beforeStat.Size()) {
-			return true, nil
-		}
-		return false, nil
+		return updated, nil
 	}
 
 	// 3. 内嵌不可用（占位模式）：若目标文件已存在，直接复用

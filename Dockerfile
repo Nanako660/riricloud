@@ -38,8 +38,8 @@ RUN patch -p1 < /tmp/sing-box-clashapi-inbound-user.patch && rm -f /tmp/sing-box
 RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 	--mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
 	CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -trimpath \
-	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api \
-	-ldflags "-s -w" \
+	-tags with_v2ray_api,with_utls,with_quic,with_naive_outbound,with_purego,with_clash_api,with_riri_device_tracking \
+	-ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}" \
 	-o /sing-box ./cmd/sing-box
 
 FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS agent-build
@@ -54,7 +54,7 @@ RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
 COPY apps/agent/ ./
 COPY --from=singbox-build /sing-box /tmp/embed-singbox/sing-box
 COPY --from=singbox-build /libcronet.so /tmp/embed-singbox/libcronet.so
-RUN tar -czf internal/embedded/assets/singbox-bundle.tar.gz -C /tmp/embed-singbox sing-box libcronet.so \
+RUN tar -czf internal/embedded/assets/singbox.tar.gz -C /tmp/embed-singbox sing-box libcronet.so \
     && rm -rf /tmp/embed-singbox
 RUN --mount=type=cache,id=riricloud-go-mod,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,id=riricloud-go-build,target=/root/.cache/go-build,sharing=locked \
@@ -93,7 +93,7 @@ ENV COREPACK_HOME=/tmp/corepack
 ARG TARGETARCH=amd64
 ARG RIRICLOUD_VERSION=dev
 ARG SINGBOX_VERSION=1.14.0
-ARG SINGBOX_REVISION=1
+ARG SINGBOX_REVISION=2
 ARG CRONET_VERSION=v150.0.7871.63-2
 
 RUN apt-get update \
@@ -196,7 +196,7 @@ ARG RIRICLOUD_VCS_REF=unknown
 ARG RIRICLOUD_BUILD_DATE=unknown
 ARG RIRICLOUD_IMAGE_TAGS=latest
 ARG SINGBOX_VERSION=1.14.0
-ARG SINGBOX_REVISION=1
+ARG SINGBOX_REVISION=2
 ARG CRONET_VERSION=v150.0.7871.63-2
 ARG MIHOMO_VERSION=1.19.30
 LABEL org.opencontainers.image.title="RiriCloud Master" \

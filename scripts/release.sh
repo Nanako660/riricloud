@@ -138,7 +138,7 @@ else
 fi
 
 SINGBOX_VERSION="${SINGBOX_VERSION:-1.14.0}"
-SINGBOX_REVISION="${SINGBOX_REVISION:-1}"
+SINGBOX_REVISION="${SINGBOX_REVISION:-2}"
 CRONET_VERSION="${CRONET_VERSION:-v150.0.7871.63-2}"
 
 # ---------- 前置校验 ----------
@@ -268,8 +268,9 @@ if [ "$SKIP_BUILD" = "0" ]; then
       bash scripts/gate-agent.sh
     )
 
-    echo "[4/7] 编译多平台 Agent 程序"
-    bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --all --version "$AGENT_VERSION"
+    echo "[4/7] 编译多平台定制 Sing-box 内核与内嵌 Agent 程序"
+    bash "$RIRI_ROOT/scripts/build-binaries.sh" --all --version "$AGENT_VERSION" \
+      --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
 
     echo "[5/7] 打包 Agent 多平台归档包"
     tar -czf "$PACKAGE_DIR/riri-agent_${AGENT_VERSION}_linux_amd64.tar.gz" -C "$BINARIES_DIR/agent/linux-amd64" riri-agent
