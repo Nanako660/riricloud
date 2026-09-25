@@ -13,11 +13,17 @@
 ## [Unreleased]
 
 ### Added
-- **多设备在线追踪与限制执行**：新增 loopback Clash API 连接采集，按用户/IP/线路汇总并随 WS/HTTP poll 上报；接收 Master 用户上限与踢设备任务，在节点本地保留较早设备并断开超限连接。构建 Sing-box 源码时幂等应用 `inboundUser` 元数据 patch。
 
 ### Changed
 
 ### Fixed
+
+
+## [0.8.0] - 2026-09-26
+
+### Added
+- **多设备在线追踪与限制执行**：新增 loopback Clash API 连接采集，按用户/IP/线路汇总并随 WS/HTTP poll 上报；接收 Master 用户上限与踢设备任务，在节点本地保留较早设备并断开超限连接。构建 Sing-box 源码时幂等应用 `inboundUser` 元数据 patch。
+
 
 
 ## [0.7.8] - 2026-09-18
