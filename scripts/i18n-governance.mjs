@@ -170,6 +170,16 @@ function scanTsxForHardcodedChinese(filePath) {
         continue;
       }
     }
+
+    // 检查 5: 对象字面量中常见 UI 标签属性硬编码中文：label: "...", tooltip: "...", placeholder: "..."
+    const propMatch = line.match(/\b(label|tooltip|placeholder)\s*:\s*["'`]([^"'`]*[\u4e00-\u9fa5]+[^"'`]*)["'`]/);
+    if (propMatch) {
+      const text = propMatch[2].trim();
+      if (text) {
+        violations.push({ lineNum, type: `对象属性 ${propMatch[1]}`, text, raw: line.trim() });
+        continue;
+      }
+    }
   }
 
   return violations;
