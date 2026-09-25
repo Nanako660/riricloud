@@ -15,6 +15,13 @@
 ### Added
 
 ### Changed
+
+### Fixed
+
+
+## [0.9.1] - 2026-09-26
+
+### Changed
 - **定制 Sing-box 内核资源修订号递增 (`1.14.0-r2`)**：同步递增 `Dockerfile`、`Dockerfile.agent`、`scripts/build-binaries.sh`、`scripts/bundle-master.sh`、`scripts/docker-build.sh` 与 `scripts/release.sh` 的 `SINGBOX_REVISION=2`，使主控资源中心与已升级节点自动淘汰旧的未打补丁或缺失版本号标签的 `1.14.0-r1` 资产。
 
 ### Fixed
@@ -32,6 +39,7 @@
   - 修复手动下线或自动超限踢出设备后，Agent 本地 `reports` 快照与 Master `onlineDeviceReports` 内存缓存未同步剔除，导致前端面板在踢出后仍残留显示已下线设备以及二次点击下线返回 404 的问题；
   - 在 Agent 与 Master 双端过滤 `127.0.0.1`、`::1`、`0.0.0.0`、`::` 等回环与未指定地址，防止反向多路复用隧道（Yamux Reverse Tunnel）落地 NAT 节点的本地 `127.0.0.1` 回环连接被误判为真实客户端 IP 并触发全员连坐断流；
   - 支持通过 `CLASH_API_LISTEN` 环境变量或节点 `configOverride` 自定义 `experimental.clash_api.external_controller` 监听地址，并在 Agent 请求 Clash API `/connections` 时自动携带可选 `secret` Bearer 鉴权头。
+
 
 
 ## [0.9.0] - 2026-09-26
