@@ -17,9 +17,15 @@
 ### Changed
 
 ### Fixed
+
+
+## [0.8.4] - 2026-09-27
+
+### Fixed
 - **修复跨平台构建工具链污染导致内嵌错误格式 `sing-box`（触发 Linux `exec format error`）及运行时二进制头自愈校验**：
   - 在 `internal/embedded`、`internal/kernel` 与 `internal/runner` 中新增基于 `runtime.GOOS`/`runtime.GOARCH` 的可执行文件头（`ELF` `e_machine`、`Mach-O` `cputype`、`PE` `Machine`）校验；当内嵌 `singbox.tar.gz` 或本地磁盘残留的 `sing-box` 二进制格式与当前运行平台不匹配时，拒绝释放或直接跳过失效文件，自动回退至远程镜像拉取对应架构合法内核并完成原子替换自愈；
   - 构建脚本（`build-binaries.sh`、`build-agent.sh`、`gate-agent.sh`）在 Linux/WSL 环境下严格隔离宿主 Windows `.exe` 工具链，并在编译缓存命中、归档打包内嵌及产物输出阶段强制校验二进制魔数与目标架构。
+
 
 
 ## [0.8.3] - 2026-09-26
