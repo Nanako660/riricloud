@@ -34,12 +34,17 @@ usage() {
 EOF
 }
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 to_os_path() {
   local p="$1"
-  if command -v cygpath >/dev/null 2>&1; then
+  if is_windows_shell && command -v cygpath >/dev/null 2>&1; then
     cygpath -w "$p"
-  elif command -v wslpath >/dev/null 2>&1; then
-    wslpath -w "$p"
   else
     printf '%s\n' "$p"
   fi
@@ -47,7 +52,7 @@ to_os_path() {
 
 to_node_path() {
   local p="$1"
-  if [[ "${NODE_BIN:-node}" == *".exe" ]]; then
+  if is_windows_shell && [[ "${NODE_BIN:-node}" == *".exe" ]]; then
     to_os_path "$p"
   else
     printf '%s\n' "$p"
@@ -57,7 +62,7 @@ to_node_path() {
 to_pnpm_path() {
   local p="$1"
   local pnpm_cmd="${PNPM_BIN:-pnpm}"
-  if [[ "$pnpm_cmd" == *".cmd" || "$pnpm_cmd" == *".exe" ]]; then
+  if is_windows_shell && [[ "$pnpm_cmd" == *".cmd" || "$pnpm_cmd" == *".exe" ]]; then
     to_os_path "$p"
   else
     printf '%s\n' "$p"
@@ -127,10 +132,64 @@ done
 
 resolve_node() {
   NODE_BIN="${NODE_BIN:-node}"
-  if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
-    NODE_BIN="node.exe"
+  if is_windows_shell; then
+    if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
+      NODE_BIN="node.exe"
+    fi
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
+  else
+    case "$NODE_BIN" in
+      *.exe) die "Linux/WSL 环境严禁调用 Windows Node.js 工具链（$NODE_BIN），请在当前系统中安装原生 Node.js" ;;
+    esac
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少原生 Node.js 工具链（Linux/WSL 下严禁回退调用 Windows node.exe）"
+    if [ "$("$NODE_BIN" -p 'process.platform' 2>/dev/null || true)" = "win32" ]; then
+      die "检测到当前 node 指向 Windows 工具链（win32），Linux/WSL 下必须使用原生 Node.js"
+    fi
   fi
-  command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
+}
+
+verify_binary_header() {
+  local file_path="$1"
+  local expected_os="$2"
+  local expected_arch="$3"
+  local native_path
+  native_path="$(to_node_path "$file_path")"
+  "$NODE_BIN" -e '
+    const fs = require("fs");
+    const [file, os, arch] = process.argv.slice(1);
+    if (!fs.existsSync(file)) process.exit(2);
+    const fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(256);
+    const n = fs.readSync(fd, buf, 0, 256, 0);
+    fs.closeSync(fd);
+    const header = buf.subarray(0, n);
+    let actual = "unknown";
+    if (header.length >= 20 && header[0] === 0x7f && header[1] === 0x45 && header[2] === 0x4c && header[3] === 0x46) {
+      const le = header[5] === 1;
+      const machine = le ? header.readUInt16LE(18) : header.readUInt16BE(18);
+      const archMap = { 0x3e: "amd64", 0xb7: "arm64", 0x28: "arm", 0x03: "386" };
+      actual = `linux/${archMap[machine] || "0x" + machine.toString(16)}`;
+    } else if (header.length >= 8 && (header.readUInt32LE(0) === 0xfeedfacf || header.readUInt32BE(0) === 0xfeedfacf)) {
+      const le = header.readUInt32LE(0) === 0xfeedfacf;
+      const cpu = le ? header.readUInt32LE(4) : header.readUInt32BE(4);
+      const archMap = { 0x01000007: "amd64", 0x0100000c: "arm64" };
+      actual = `darwin/${archMap[cpu] || "0x" + cpu.toString(16)}`;
+    } else if (header.length >= 0x40 && header[0] === 0x4d && header[1] === 0x5a) {
+      const pe = header.readUInt32LE(0x3c);
+      if (pe >= 0 && pe + 6 <= header.length && header[pe] === 0x50 && header[pe + 1] === 0x45 && header[pe + 2] === 0 && header[pe + 3] === 0) {
+        const machine = header.readUInt16LE(pe + 4);
+        const archMap = { 0x8664: "amd64", 0xaa64: "arm64", 0x014c: "386" };
+        actual = `windows/${archMap[machine] || "0x" + machine.toString(16)}`;
+      } else {
+        actual = "windows/pe";
+      }
+    }
+    const expected = `${os}/${arch}`;
+    if (actual !== expected) {
+      console.error(`二进制文件头校验失败: ${file} 期望 ${expected}，实际检测到 ${actual}`);
+      process.exit(1);
+    }
+  ' "$native_path" "$expected_os" "$expected_arch"
 }
 
 resolve_node
@@ -141,6 +200,8 @@ if [ -z "$VERSION" ]; then
 fi
 
 TARGET_NORM="${TARGET//\//-}"
+TARGET_OS="${TARGET_NORM%-*}"
+TARGET_ARCH="${TARGET_NORM##*-}"
 TARGET_UNDERSCORE="${TARGET//-/_}"
 ARTIFACT_ROOT="${RIRICLOUD_ARTIFACT_DIR:-$RIRI_ROOT/artifacts}"
 MASTER_DIR="${OUTPUT_DIR:-$ARTIFACT_ROOT/master/$TARGET_NORM}"
@@ -158,11 +219,7 @@ fi
 echo "  -> 部署主控服务端生产依赖..."
 (
   cd "$WORKTREE_DIR"
-  if command -v cmd.exe >/dev/null 2>&1 && [ -n "${WSL_DISTRO_NAME:-}" ]; then
-    cmd.exe /c pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_os_path "$MASTER_DIR")"
-  else
-    pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
-  fi
+  pnpm --filter @riricloud/server deploy --prod --ignore-scripts "$(to_pnpm_path "$MASTER_DIR")"
 )
 if [ ! -d "$MASTER_DIR/dist" ]; then
   mkdir -p "$MASTER_DIR/dist"
@@ -224,8 +281,8 @@ fi
 mkdir -p "$MASTER_DIR/web-dist"
 cp -r "$WORKTREE_DIR/apps/web/dist/." "$MASTER_DIR/web-dist/"
 
-# 5. 精确注入对应架构的内置 Agent 与 Sing-box 二进制
-echo "  -> 注入匹配架构 ($TARGET_NORM) 的内置 Agent 与 Sing-box..."
+# 5. 精确注入对应架构的内置 Sing-box 与内嵌内核的 Agent 二进制
+echo "  -> 注入匹配架构 ($TARGET_NORM) 的内置 Sing-box 与 Agent..."
 mkdir -p "$MASTER_DIR/binaries"
 
 AGENT_VERSION=""
@@ -235,29 +292,43 @@ else
   AGENT_VERSION="$VERSION"
 fi
 
+SINGBOX_RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
+SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
+CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"
 AGENT_SRC="$ARTIFACT_ROOT/binaries/agent/$TARGET_NORM/riri-agent"
-if [ ! -f "$AGENT_SRC" ]; then
-  echo "    未找到 $AGENT_SRC，尝试实时构建 Agent..."
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --agent-only --target "$TARGET" --version "$AGENT_VERSION"
+
+NEED_REBUILD_BINARIES=0
+if [ ! -f "$SINGBOX_SRC" ] || [ ! -f "$CRONET_SRC" ] || [ ! -f "$AGENT_SRC" ]; then
+  NEED_REBUILD_BINARIES=1
+elif ! verify_binary_header "$SINGBOX_SRC" "$TARGET_OS" "$TARGET_ARCH" 2>/dev/null \
+  || ! verify_binary_header "$CRONET_SRC" "$TARGET_OS" "$TARGET_ARCH" 2>/dev/null \
+  || ! verify_binary_header "$AGENT_SRC" "$TARGET_OS" "$TARGET_ARCH" 2>/dev/null; then
+  echo "    检测到现有内置二进制架构不匹配，触发全量重新构建..."
+  rm -f "$SINGBOX_SRC" "$AGENT_SRC" || true
+  NEED_REBUILD_BINARIES=1
 fi
+
+if [ "$NEED_REBUILD_BINARIES" = "1" ]; then
+  echo "    准备/构建匹配架构 ($TARGET_NORM) 的定制 Sing-box 与内嵌 Agent..."
+  bash "$RIRI_ROOT/scripts/build-binaries.sh" --target "$TARGET" --version "$AGENT_VERSION" \
+    --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
+fi
+
+[ -f "$SINGBOX_SRC" ] || SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/sing-box"
+[ -f "$CRONET_SRC" ] || CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/libcronet.so"
+[ -f "$SINGBOX_SRC" ] || die "缺少匹配架构的 Sing-box 二进制：$SINGBOX_SRC"
+[ -f "$CRONET_SRC" ] || die "缺少匹配架构的 libcronet.so：$CRONET_SRC"
 [ -f "$AGENT_SRC" ] || die "缺少匹配架构的 Agent 二进制：$AGENT_SRC"
+
+verify_binary_header "$SINGBOX_SRC" "$TARGET_OS" "$TARGET_ARCH" || die "Sing-box 二进制架构校验未通过：$SINGBOX_SRC"
+verify_binary_header "$CRONET_SRC" "$TARGET_OS" "$TARGET_ARCH" || die "libcronet.so 架构校验未通过：$CRONET_SRC"
+verify_binary_header "$AGENT_SRC" "$TARGET_OS" "$TARGET_ARCH" || die "Agent 二进制架构校验未通过：$AGENT_SRC"
+
 mkdir -p "$MASTER_DIR/binaries/agent/$TARGET_NORM"
 cp "$AGENT_SRC" "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 chmod +x "$MASTER_DIR/binaries/agent/$TARGET_NORM/riri-agent"
 printf '%s\n' "$AGENT_VERSION" > "$MASTER_DIR/binaries/AGENT_VERSION"
 
-SINGBOX_RESOURCE_VERSION="${SINGBOX_VERSION}-r${SINGBOX_REVISION}"
-SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
-CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"
-if [ ! -f "$SINGBOX_SRC" ] || [ ! -f "$CRONET_SRC" ]; then
-  echo "    未找到 Sing-box/libcronet，尝试实时构建/获取..."
-  bash "$RIRI_ROOT/scripts/build-binaries.sh" --singbox-only --target "$TARGET" --version "$VERSION" \
-    --singbox-version "$SINGBOX_VERSION" --singbox-revision "$SINGBOX_REVISION" --cronet-version "$CRONET_VERSION"
-fi
-[ -f "$SINGBOX_SRC" ] || SINGBOX_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/sing-box"
-[ -f "$CRONET_SRC" ] || CRONET_SRC="$ARTIFACT_ROOT/binaries/singbox/$TARGET_NORM/libcronet.so"
-[ -f "$SINGBOX_SRC" ] || die "缺少匹配架构的 Sing-box 二进制：$SINGBOX_SRC"
-[ -f "$CRONET_SRC" ] || die "缺少匹配架构的 libcronet.so：$CRONET_SRC"
 mkdir -p "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM"
 cp "$SINGBOX_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/sing-box"
 cp "$CRONET_SRC" "$MASTER_DIR/binaries/singbox/$SINGBOX_RESOURCE_VERSION/$TARGET_NORM/libcronet.so"

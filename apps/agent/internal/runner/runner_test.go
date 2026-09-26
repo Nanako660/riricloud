@@ -100,7 +100,7 @@ func TestStartKernelBootstrapOverwritesStaleOnDiskKernelFromEmbedded(t *testing.
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
-	newKernelPayload := []byte("patched-embedded-singbox-v2")
+	newKernelPayload := embedded.BuildMockExecutableForCurrentPlatform("patched-embedded-singbox-v2")
 	hdr := &tar.Header{
 		Name:     "sing-box",
 		Mode:     0o755,

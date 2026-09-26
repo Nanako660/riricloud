@@ -18,12 +18,17 @@ fi
 
 die() { echo "发布失败：$*" >&2; exit 1; }
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 to_os_path() {
   local p="$1"
-  if command -v cygpath >/dev/null 2>&1; then
+  if is_windows_shell && command -v cygpath >/dev/null 2>&1; then
     cygpath -w "$p"
-  elif command -v wslpath >/dev/null 2>&1; then
-    wslpath -w "$p"
   else
     printf '%s\n' "$p"
   fi
@@ -31,7 +36,7 @@ to_os_path() {
 
 to_node_path() {
   local p="$1"
-  if [[ "${NODE_BIN:-node}" == *".exe" ]]; then
+  if is_windows_shell && [[ "${NODE_BIN:-node}" == *".exe" ]]; then
     to_os_path "$p"
   else
     printf '%s\n' "$p"
@@ -51,7 +56,7 @@ TAG_PARAM=""
 RELEASE_TARGET="master"
 
 NO_WORKTREE=0
-if [ -n "${WINDIR:-}" ] || [ -n "${MSYSTEM:-}" ] || command -v cygpath >/dev/null 2>&1 || command -v wslpath >/dev/null 2>&1; then
+if [ -n "${WINDIR:-}" ] || [ -n "${MSYSTEM:-}" ] || is_windows_shell || [ -n "${WSL_DISTRO_NAME:-}" ]; then
   NO_WORKTREE=1
 fi
 
@@ -114,16 +119,28 @@ fi
 
 resolve_node() {
   NODE_BIN="${NODE_BIN:-node}"
-  if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
-    NODE_BIN="node.exe"
+  if is_windows_shell; then
+    if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
+      NODE_BIN="node.exe"
+    fi
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
+  else
+    case "$NODE_BIN" in
+      *.exe) die "Linux/WSL 环境严禁调用 Windows Node.js 工具链（$NODE_BIN），请在当前系统中安装原生 Node.js" ;;
+    esac
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少原生 Node.js 工具链（Linux/WSL 下严禁回退调用 Windows node.exe）"
+    if [ "$("$NODE_BIN" -p 'process.platform' 2>/dev/null || true)" = "win32" ]; then
+      die "检测到当前 node 指向 Windows 工具链（win32），Linux/WSL 下必须使用原生 Node.js"
+    fi
   fi
-  command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
 }
 
 resolve_gh() {
   GH_BIN="${GH_BIN:-gh}"
-  if ! command -v "$GH_BIN" >/dev/null 2>&1 && command -v gh.exe >/dev/null 2>&1; then
-    GH_BIN="gh.exe"
+  if is_windows_shell; then
+    if ! command -v "$GH_BIN" >/dev/null 2>&1 && command -v gh.exe >/dev/null 2>&1; then
+      GH_BIN="gh.exe"
+    fi
   fi
 }
 

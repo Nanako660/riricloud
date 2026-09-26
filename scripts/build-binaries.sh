@@ -101,41 +101,112 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 resolve_go() {
-  if ! command -v go >/dev/null 2>&1 && ! command -v go.exe >/dev/null 2>&1 && [ -d "$RIRI_ROOT/.tools/go/bin" ]; then
-    export PATH="$RIRI_ROOT/.tools/go/bin:$PATH"
-  fi
   GO_BIN="${GO_BIN:-go}"
-  if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then
-    GO_BIN="go.exe"
+  if is_windows_shell; then
+    if ! command -v "$GO_BIN" >/dev/null 2>&1 && ! command -v go.exe >/dev/null 2>&1 && [ -d "$RIRI_ROOT/.tools/go/bin" ]; then
+      export PATH="$RIRI_ROOT/.tools/go/bin:$PATH"
+    fi
+    if ! command -v "$GO_BIN" >/dev/null 2>&1 && command -v go.exe >/dev/null 2>&1; then
+      GO_BIN="go.exe"
+    fi
+    command -v "$GO_BIN" >/dev/null 2>&1 || die "缺少 Go 工具链（go 或 go.exe）"
+  else
+    case "$GO_BIN" in
+      *.exe) die "Linux/WSL 环境严禁调用 Windows Go 工具链（$GO_BIN），请在当前系统中安装原生 Go" ;;
+    esac
+    command -v "$GO_BIN" >/dev/null 2>&1 || die "缺少原生 Go 工具链（Linux/WSL 下严禁回退调用 Windows go.exe）"
+    if [ "$("$GO_BIN" env GOHOSTOS 2>/dev/null || true)" = "windows" ]; then
+      die "检测到当前 go 指向 Windows 工具链（GOHOSTOS=windows），Linux/WSL 下必须使用原生 Go"
+    fi
   fi
-  command -v "$GO_BIN" >/dev/null 2>&1 || die "缺少 Go 工具链（go 或 go.exe）"
 }
 
 resolve_node() {
   NODE_BIN="${NODE_BIN:-node}"
-  if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
-    NODE_BIN="node.exe"
+  if is_windows_shell; then
+    if ! command -v "$NODE_BIN" >/dev/null 2>&1 && command -v node.exe >/dev/null 2>&1; then
+      NODE_BIN="node.exe"
+    fi
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
+  else
+    case "$NODE_BIN" in
+      *.exe) die "Linux/WSL 环境严禁调用 Windows Node.js 工具链（$NODE_BIN），请在当前系统中安装原生 Node.js" ;;
+    esac
+    command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少原生 Node.js 工具链（Linux/WSL 下严禁回退调用 Windows node.exe）"
+    if [ "$("$NODE_BIN" -p 'process.platform' 2>/dev/null || true)" = "win32" ]; then
+      die "检测到当前 node 指向 Windows 工具链（win32），Linux/WSL 下必须使用原生 Node.js"
+    fi
   fi
-  command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少 Node.js 工具链（node 或 node.exe）"
 }
 
 to_go_path() {
   local p="$1"
-  case "${GO_BIN:-go}" in
-    *.exe)
-      if command -v wslpath >/dev/null 2>&1; then
-        wslpath -w "$p"
-      elif command -v cygpath >/dev/null 2>&1; then
-        cygpath -w "$p"
-      else
-        printf '%s\n' "$p"
-      fi
-      ;;
-    *)
-      printf '%s\n' "$p"
-      ;;
-  esac
+  if is_windows_shell && [[ "${GO_BIN:-go}" == *.exe ]] && command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+to_node_path() {
+  local p="$1"
+  if is_windows_shell && [[ "${NODE_BIN:-node}" == *.exe ]] && command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$p"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+verify_binary_header() {
+  local file_path="$1"
+  local expected_os="$2"
+  local expected_arch="$3"
+  local native_path
+  native_path="$(to_node_path "$file_path")"
+  "$NODE_BIN" -e '
+    const fs = require("fs");
+    const [file, os, arch] = process.argv.slice(1);
+    if (!fs.existsSync(file)) process.exit(2);
+    const fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(256);
+    const n = fs.readSync(fd, buf, 0, 256, 0);
+    fs.closeSync(fd);
+    const header = buf.subarray(0, n);
+    let actual = "unknown";
+    if (header.length >= 20 && header[0] === 0x7f && header[1] === 0x45 && header[2] === 0x4c && header[3] === 0x46) {
+      const le = header[5] === 1;
+      const machine = le ? header.readUInt16LE(18) : header.readUInt16BE(18);
+      const archMap = { 0x3e: "amd64", 0xb7: "arm64", 0x28: "arm", 0x03: "386" };
+      actual = `linux/${archMap[machine] || "0x" + machine.toString(16)}`;
+    } else if (header.length >= 8 && (header.readUInt32LE(0) === 0xfeedfacf || header.readUInt32BE(0) === 0xfeedfacf)) {
+      const le = header.readUInt32LE(0) === 0xfeedfacf;
+      const cpu = le ? header.readUInt32LE(4) : header.readUInt32BE(4);
+      const archMap = { 0x01000007: "amd64", 0x0100000c: "arm64" };
+      actual = `darwin/${archMap[cpu] || "0x" + cpu.toString(16)}`;
+    } else if (header.length >= 0x40 && header[0] === 0x4d && header[1] === 0x5a) {
+      const pe = header.readUInt32LE(0x3c);
+      if (pe >= 0 && pe + 6 <= header.length && header[pe] === 0x50 && header[pe + 1] === 0x45 && header[pe + 2] === 0 && header[pe + 3] === 0) {
+        const machine = header.readUInt16LE(pe + 4);
+        const archMap = { 0x8664: "amd64", 0xaa64: "arm64", 0x014c: "386" };
+        actual = `windows/${archMap[machine] || "0x" + machine.toString(16)}`;
+      } else {
+        actual = "windows/pe";
+      }
+    }
+    const expected = `${os}/${arch}`;
+    if (actual !== expected) {
+      console.error(`二进制文件头校验失败: ${file} 期望 ${expected}，实际检测到 ${actual}`);
+      process.exit(1);
+    }
+  ' "$native_path" "$expected_os" "$expected_arch"
 }
 
 resolve_go
@@ -220,6 +291,10 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
 
     # 1.2 Linux 双架构额外获取 libcronet.so
     if [ "$target_os" = "linux" ] && { [ "$target_arch" = "amd64" ] || [ "$target_arch" = "arm64" ]; }; then
+      if [ -f "$CACHE_DIR/libcronet.so" ] && ! verify_binary_header "$CACHE_DIR/libcronet.so" "$target_os" "$target_arch" 2>/dev/null; then
+        echo "检测到缓存的 libcronet.so 架构不匹配 ($target_os/$target_arch)，清理并重新获取..."
+        rm -f "$CACHE_DIR/libcronet.so"
+      fi
       if [ ! -f "$CACHE_DIR/libcronet.so" ]; then
         echo "获取 NaiveProxy purego 运行库 ($target_os/$target_arch)..."
         curl --fail --silent --show-error --location \
@@ -227,9 +302,16 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
           --output "$CACHE_DIR/libcronet.so"
         chmod 0755 "$CACHE_DIR/libcronet.so"
       fi
+      verify_binary_header "$CACHE_DIR/libcronet.so" "$target_os" "$target_arch" \
+        || die "libcronet.so 二进制格式与目标架构 ($target_os/$target_arch) 不匹配"
     fi
 
-    # 1.3 确保含 Clash API 用户元数据与版本注入的定制二进制存在
+    # 1.3 确保含 Clash API 用户元数据与版本注入的定制二进制存在且架构匹配
+    if [ -f "$CACHE_DIR/$SB_BIN" ] && ! verify_binary_header "$CACHE_DIR/$SB_BIN" "$target_os" "$target_arch" 2>/dev/null; then
+      echo "检测到缓存的 Sing-box 二进制格式与目标架构 ($target_os/$target_arch) 不匹配，清理失效缓存并强制重编..."
+      rm -f "$CACHE_DIR/$SB_BIN" "$CACHE_DIR/.riri-device-tracking-v2"
+    fi
+
     if [ ! -f "$CACHE_DIR/$SB_BIN" ] || [ ! -f "$CACHE_DIR/.riri-device-tracking-v2" ]; then
       echo "编译定制 Sing-box ${target_os}/${target_arch}..."
       (
@@ -240,6 +322,10 @@ if [ "$BUILD_SINGBOX" = "1" ]; then
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${SINGBOX_VERSION}" \
           -o "$go_sb_out" ./cmd/sing-box
       )
+      if ! verify_binary_header "$CACHE_DIR/$SB_BIN" "$target_os" "$target_arch"; then
+        rm -f "$CACHE_DIR/$SB_BIN" "$CACHE_DIR/.riri-device-tracking-v2" || true
+        die "编译出的 Sing-box 二进制格式与目标架构 ($target_os/$target_arch) 不匹配"
+      fi
       touch "$CACHE_DIR/.riri-device-tracking-v2"
     fi
 
@@ -267,14 +353,20 @@ pack_embedded_kernel() {
   local target_os="$1"
   local target_arch="$2"
   local src_dir="$OUTPUT_DIR/singbox/$RESOURCE_VERSION/${target_os}-${target_arch}"
+  local sb_bin="sing-box"
+  [ "$target_os" = "windows" ] && sb_bin="sing-box.exe"
 
-  if [ -f "$src_dir/sing-box" ] || [ -f "$src_dir/sing-box.exe" ]; then
+  if [ -f "$src_dir/$sb_bin" ]; then
+    verify_binary_header "$src_dir/$sb_bin" "$target_os" "$target_arch" \
+      || die "拒绝内嵌格式不匹配的 Sing-box 二进制 ($src_dir/$sb_bin)"
+    if [ -f "$src_dir/libcronet.so" ]; then
+      verify_binary_header "$src_dir/libcronet.so" "$target_os" "$target_arch" \
+        || die "拒绝内嵌格式不匹配的 libcronet.so ($src_dir/libcronet.so)"
+    fi
     echo "    -> 内嵌 Sing-box 定制内核至 Agent ($target_os-$target_arch)..."
     (
       cd "$src_dir"
-      local files=()
-      [ -f "sing-box" ] && files+=("sing-box")
-      [ -f "sing-box.exe" ] && files+=("sing-box.exe")
+      local files=("$sb_bin")
       [ -f "libcronet.so" ] && files+=("libcronet.so")
       tar -czf "$EMBEDDED_ASSET" "${files[@]}"
     )
@@ -357,6 +449,6 @@ MANIFEST_PATH="$OUTPUT_DIR/manifest.json"
     });
   }
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
-' "$OUTPUT_DIR" "$VERSION"
+' "$(to_node_path "$OUTPUT_DIR")" "$VERSION"
 
 echo "==> 二进制产物准备完成：$OUTPUT_DIR"

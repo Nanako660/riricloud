@@ -301,30 +301,46 @@ singbox_has_required_features() {
   done
 }
 
+is_windows_shell() {
+  case "$(uname -s 2>/dev/null || true)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 resolve_go() {
   GO_BIN="${GO_BIN:-go}"
-  if ! command -v "$GO_BIN" >/dev/null 2>&1; then
-    if command -v go.exe >/dev/null 2>&1; then
-      GO_BIN="go.exe"
-    elif [ -x "$ROOT/.tools/go/bin/go.exe" ]; then
-      GO_BIN="$ROOT/.tools/go/bin/go.exe"
-    else
-      die "缺少 Go 工具链：无法构建带 V2Ray API 的 Sing-box，请安装 Go 或准备 .tools/go/"
+  if is_windows_shell; then
+    if ! command -v "$GO_BIN" >/dev/null 2>&1; then
+      if command -v go.exe >/dev/null 2>&1; then
+        GO_BIN="go.exe"
+      elif [ -x "$ROOT/.tools/go/bin/go.exe" ]; then
+        GO_BIN="$ROOT/.tools/go/bin/go.exe"
+      else
+        die "缺少 Go 工具链：无法构建带 V2Ray API 的 Sing-box，请安装 Go 或准备 .tools/go/"
+      fi
+    fi
+  else
+    case "$GO_BIN" in
+      *.exe) die "Linux/WSL 环境严禁调用 Windows Go 工具链（$GO_BIN），请安装原生 Go" ;;
+    esac
+    command -v "$GO_BIN" >/dev/null 2>&1 || die "缺少原生 Go 工具链：Linux/WSL 下严禁回退调用 Windows go.exe"
+    if [ "$("$GO_BIN" env GOHOSTOS 2>/dev/null || true)" = "windows" ]; then
+      die "检测到当前 go 指向 Windows 工具链（GOHOSTOS=windows），Linux/WSL 下必须使用原生 Go"
     fi
   fi
 }
 
 build_singbox_for_dev() {
   resolve_go
-  command -v curl >/dev/null 2>&1 || command -v curl.exe >/dev/null 2>&1 \
-    || die "缺少 curl：无法获取 Sing-box 源码"
-  command -v tar >/dev/null 2>&1 || command -v tar.exe >/dev/null 2>&1 \
-    || die "缺少 tar：无法解压 Sing-box 源码"
-
   local curl_bin="curl"
   local tar_bin="tar"
-  command -v "$curl_bin" >/dev/null 2>&1 || curl_bin="curl.exe"
-  command -v "$tar_bin" >/dev/null 2>&1 || tar_bin="tar.exe"
+  if is_windows_shell; then
+    command -v "$curl_bin" >/dev/null 2>&1 || curl_bin="curl.exe"
+    command -v "$tar_bin" >/dev/null 2>&1 || tar_bin="tar.exe"
+  fi
+  command -v "$curl_bin" >/dev/null 2>&1 || die "缺少 curl：无法获取 Sing-box 源码"
+  command -v "$tar_bin" >/dev/null 2>&1 || die "缺少 tar：无法解压 Sing-box 源码"
   local version="${SINGBOX_VERSION:-1.14.0}"
   local cache_dir="$ROOT/.cache/sing-box-v2ray-api/$version"
   local source_dir="$cache_dir/sing-box-$version"

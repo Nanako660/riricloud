@@ -35,9 +35,9 @@ func TestPlaceholderArchive(t *testing.T) {
 		t.Fatalf("expected ErrNoEmbeddedKernel, got %v", err)
 	}
 
-	// 如果本地手动创建了 sing-box，Ensure 应能发现并直接复用
+	// 如果本地手动创建了合法格式的 sing-box，Ensure 应能发现并直接复用
 	mainPath := filepath.Join(tmpDir, MainExecutableName())
-	if err := os.WriteFile(mainPath, []byte("mock binary"), 0o755); err != nil {
+	if err := os.WriteFile(mainPath, BuildMockExecutableForCurrentPlatform("mock binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	foundPath, aux, err := Ensure(tmpDir)
@@ -49,6 +49,18 @@ func TestPlaceholderArchive(t *testing.T) {
 	}
 	if len(aux) != 0 {
 		t.Fatalf("expected 0 aux files, got %d", len(aux))
+	}
+
+	// 如果本地文件是异构平台二进制（例如 Linux 下的 Windows PE），占位模式下不应复用
+	otherOS := "windows"
+	if runtime.GOOS == "windows" {
+		otherOS = "linux"
+	}
+	if err := os.WriteFile(mainPath, BuildMockExecutableForPlatform(otherOS, "amd64", "wrong-os"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Ensure(tmpDir); err != ErrNoEmbeddedKernel {
+		t.Fatalf("expected ErrNoEmbeddedKernel when local binary has wrong OS header, got %v", err)
 	}
 	_ = manifest
 }
@@ -83,8 +95,9 @@ func createTestTarGz(files map[string][]byte) ([]byte, error) {
 }
 
 func TestParseArchiveManifest(t *testing.T) {
+	fakeBin := BuildMockExecutableForCurrentPlatform("fake-sing-box-bin")
 	data, err := createTestTarGz(map[string][]byte{
-		"sing-box":     []byte("fake-sing-box-bin"),
+		"sing-box":     fakeBin,
 		"libcronet.so": []byte("fake-libcronet-data"),
 		".placeholder": []byte(""),
 	})
@@ -105,10 +118,10 @@ func TestParseArchiveManifest(t *testing.T) {
 	if !ok {
 		t.Fatal("expected sing-box in manifest")
 	}
-	if singboxMeta.Size != int64(len("fake-sing-box-bin")) {
-		t.Errorf("size mismatch: got %d, expected %d", singboxMeta.Size, len("fake-sing-box-bin"))
+	if singboxMeta.Size != int64(len(fakeBin)) {
+		t.Errorf("size mismatch: got %d, expected %d", singboxMeta.Size, len(fakeBin))
 	}
-	expectedHash := sha256.Sum256([]byte("fake-sing-box-bin"))
+	expectedHash := sha256.Sum256(fakeBin)
 	if singboxMeta.SHA256 != hex.EncodeToString(expectedHash[:]) {
 		t.Errorf("hash mismatch: got %s, expected %s", singboxMeta.SHA256, hex.EncodeToString(expectedHash[:]))
 	}
@@ -119,6 +132,57 @@ func TestParseArchiveManifest(t *testing.T) {
 	}
 	if cronetMeta.Size != int64(len("fake-libcronet-data")) {
 		t.Errorf("size mismatch: got %d, expected %d", cronetMeta.Size, len("fake-libcronet-data"))
+	}
+}
+
+func TestValidateExecutableHeaderCrossPlatform(t *testing.T) {
+	platforms := []struct {
+		goos   string
+		goarch string
+	}{
+		{"linux", "amd64"},
+		{"linux", "arm64"},
+		{"darwin", "amd64"},
+		{"darwin", "arm64"},
+		{"windows", "amd64"},
+	}
+
+	for _, target := range platforms {
+		bin := BuildMockExecutableForPlatform(target.goos, target.goarch, "payload")
+		if err := ValidateExecutableHeader(bin, target.goos, target.goarch); err != nil {
+			t.Fatalf("expected valid header for %s/%s, got error: %v", target.goos, target.goarch, err)
+		}
+		for _, other := range platforms {
+			if other.goos == target.goos && other.goarch == target.goarch {
+				continue
+			}
+			if err := ValidateExecutableHeader(bin, other.goos, other.goarch); err == nil {
+				t.Fatalf("expected %s/%s binary to be rejected when validating for %s/%s", target.goos, target.goarch, other.goos, other.goarch)
+			}
+		}
+	}
+}
+
+func TestEmbeddedRejectsMismatchedPlatformArchive(t *testing.T) {
+	otherOS := "windows"
+	if runtime.GOOS == "windows" {
+		otherOS = "linux"
+	}
+	wrongBin := BuildMockExecutableForPlatform(otherOS, "amd64", "wrong-platform-singbox")
+	archive, err := createTestTarGz(map[string][]byte{
+		"sing-box": wrongBin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := SetArchiveBytesForTest(archive)
+	defer restore()
+
+	if HasEmbeddedKernel() {
+		t.Fatalf("expected HasEmbeddedKernel() = false when embedded binary is %s/amd64 on %s/%s", otherOS, runtime.GOOS, runtime.GOARCH)
+	}
+	if _, _, err := Ensure(t.TempDir()); err != ErrNoEmbeddedKernel {
+		t.Fatalf("expected ErrNoEmbeddedKernel for mismatched embedded binary, got %v", err)
 	}
 }
 

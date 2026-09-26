@@ -37,12 +37,13 @@ case "$COMMAND" in
     ;;
 esac
 
-if command -v node >/dev/null 2>&1; then
-  NODE_BIN="node"
-elif command -v node.exe >/dev/null 2>&1; then
-  NODE_BIN="node.exe"
-else
-  die "node is required"
+NODE_BIN="${NODE_BIN:-node}"
+case "$NODE_BIN" in
+  *.exe) die "Linux/WSL 环境严禁调用 Windows Node.js 工具链（$NODE_BIN），请在当前 Linux/WSL 系统中安装原生 Node.js" ;;
+esac
+command -v "$NODE_BIN" >/dev/null 2>&1 || die "缺少原生 node（Linux/WSL 下严禁回退调用 Windows node.exe）"
+if [ "$("$NODE_BIN" -p 'process.platform' 2>/dev/null || true)" = "win32" ]; then
+  die "检测到当前 node 指向 Windows 工具链（win32），Linux/WSL 下必须使用原生 Node.js"
 fi
 
 VERSION="$($NODE_BIN -p "require('./package.json').version")"
@@ -205,8 +206,8 @@ export_images() {
   master_digest="$(sha256sum "$master_archive" | awk '{print $1}')"
   agent_digest="$(sha256sum "$agent_archive" | awk '{print $1}')"
   local manifest_node_path="$manifest_file"
-  if [ "$NODE_BIN" = "node.exe" ] && command -v wslpath >/dev/null 2>&1; then
-    manifest_node_path="$(wslpath -w "$manifest_file")"
+  if [[ "$HOST_UNAME" =~ ^(MINGW|MSYS|CYGWIN) ]] && command -v cygpath >/dev/null 2>&1; then
+    manifest_node_path="$(cygpath -w "$manifest_file")"
   fi
 
   "$NODE_BIN" -e '
