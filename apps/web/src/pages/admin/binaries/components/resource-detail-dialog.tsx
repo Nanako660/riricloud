@@ -19,7 +19,6 @@ import {
   compatibilityEntries,
   deploymentBadgeVariant,
   operationLabel,
-  reclaimableAssetBytes,
   sourceLabel,
   totalAssetBytes
 } from '../binary-labels';
@@ -46,7 +45,7 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
         <DialogHeader>
           <DialogTitle>{t('admin:binaries.detailTitle')}</DialogTitle>
           <DialogDescription>
-            {data ? `${data.kind === 'SINGBOX' ? 'Sing-box' : 'Agent'} · ${data.version}` : t('admin:binaries.detailLoading')}
+            {data ? `${t('admin:binaries.kindAgent')} · ${data.version}` : t('admin:binaries.detailLoading')}
           </DialogDescription>
         </DialogHeader>
         {isPending ? (
@@ -56,14 +55,14 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
           </div>
         ) : data ? (
           <div className="min-w-0 space-y-5">
-            <div className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
               <div>
                 <p className="text-muted-foreground">{t('admin:binaries.labelSource')}</p>
                 <p className="font-medium">{sourceLabel(data.source)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">{t('admin:binaries.labelStatus')}</p>
-                <Badge variant={data.status === 'ACTIVE' ? 'default' : data.status === 'RETIRED' ? 'destructive' : 'secondary'}>
+                <Badge variant={data.status === 'ACTIVE' ? 'default' : 'secondary'}>
                   {BINARY_STATUS_LABELS[data.status]}
                 </Badge>
               </div>
@@ -78,10 +77,6 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
               <div>
                 <p className="text-muted-foreground">{t('admin:binaries.labelRegisteredSize')}</p>
                 <p className="font-medium tabular-nums">{totalAssetBytes(data.assets)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">{t('admin:binaries.labelReclaimableSize')}</p>
-                <p className="font-medium tabular-nums">{reclaimableAssetBytes(data.assets)}</p>
               </div>
             </div>
 
@@ -116,7 +111,6 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     <span className="flex min-w-0 flex-wrap items-center gap-1.5 break-words font-medium">
                       {asset.target}
-                      <Badge variant="outline" className="text-[10px]">{asset.storageRoot === 'RUNTIME' ? t('admin:binaries.storageRuntime') : t('admin:binaries.storageStatic')}</Badge>
                       {asset.available === false ? (
                         <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
                           <AlertTriangle className="mr-1 size-3" />{t('admin:binaries.assetUnavailable')}
@@ -125,7 +119,6 @@ export function ResourceDetailDialog({ id, open, onOpenChange }: { id: string; o
                     </span>
                     <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{bytes(asset.size)}</span>
                   </div>
-                  {/* 资产 sha256 恒等于主文件摘要，文件明细已逐项列出哈希，仅在无明细时兜底展示避免重复 */}
                   {(asset.files ?? []).length ? (
                     <div className="mt-2 min-w-0 space-y-1 text-xs text-muted-foreground">
                       {(asset.files ?? []).map((file) => (

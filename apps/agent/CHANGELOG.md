@@ -13,6 +13,7 @@
 ## [Unreleased]
 
 ### Added
+- **内嵌二进制版本识别标记 (`BuildMarker`)**：新增 `RIRICLOUD_AGENT_VERSION:<ver>` 编译期标记注入，支持主控资源中心直接从跨平台裸二进制或归档包中提取真实 Agent 版本号。
 
 ### Changed
 

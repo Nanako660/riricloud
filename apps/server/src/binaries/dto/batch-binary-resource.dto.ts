@@ -5,7 +5,7 @@ export const BINARY_BATCH_ACTIONS = ['activate', 'disable', 'retire', 'delete'] 
 export type BinaryBatchAction = (typeof BINARY_BATCH_ACTIONS)[number];
 
 export class BatchBinaryResourceDto {
-  @ApiProperty({ enum: BINARY_BATCH_ACTIONS, description: '批量动作；delete 仅对无分发历史的非内置资源生效' })
+  @ApiProperty({ enum: BINARY_BATCH_ACTIONS, description: '批量动作：activate / disable / retire / delete' })
   @IsIn(BINARY_BATCH_ACTIONS)
   action!: BinaryBatchAction;
 

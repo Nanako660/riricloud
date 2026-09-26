@@ -13,10 +13,21 @@
 ## [Unreleased]
 
 ### Added
+- **远程导入弹窗（GitHub Release 预设列表 + 自定义 URL 导入）**：新增 `GET /api/v1/admin/binary-resources/github-releases` 与 `POST /api/v1/admin/binary-resources/github-import` 接口，并将管理端「从 GitHub Release 获取」与「URL 导入」合并为单一「远程导入」双标签页弹窗（默认展示 GitHub Release 列表，自动匹配 5 大平台 Agent 资产并支持一键全量或单架构同步入库）；项目 GitHub 仓库地址 `githubRepoUrl` 统一在系统设置「Agent 运维」Tab 中配置，并在构建与打包阶段默认内嵌当前项目公开仓库地址（`package.json` `repository.url`）。
+- **GitHub 下载源一键测速、默认源切换与假活镜像自动熔断回退**：新增 `POST /api/v1/admin/binary-resources/github-mirrors/test` 接口与系统设置「Agent 运维」Tab 测速面板，对配置的加速镜像与 GitHub 官方源（`https://github.com`）执行真实 Release 资产字节流采样测速（识别仅返回 HTTP 200 响应头但实际卡死 0 B/s 的假活镜像），支持一键将任意镜像或官方源直连设为默认下载源并立即持久化生效；服务端对流空闲超时的镜像自动实施 5 分钟熔断并回退至下一候选镜像及官方源。
+- **二进制上传与导入全自动元数据识别引擎 (`binary-inspector`)**：Agent 编译时注入 `RIRICLOUD_AGENT_VERSION:<ver>` 标记；上传或 URL 导入支持直接传入裸二进制或 `.tar.gz`/`.tgz`/`.zip` 归档包，服务端自动流式解压、解析 ELF/Mach-O/PE 魔数头识别目标 OS/架构、提取内嵌或文件名版本号并计算 SHA-256，前端支持多文件批量上传且无需手填版本、平台或哈希。
 
 ### Changed
+- **统一二进制资源删除生命周期（无内置/非内置限制）**：移除 `BUILTIN` 与非内置资源的删除限制及活跃/历史任务删除阻断，所有资源均可直接删除；`BinaryDeploymentTask` 外键改为 `onDelete: SetNull` 保留历史分发记录；删除默认资源时自动转移默认标记至最新 `ACTIVE` 资源，并通过 `data/binaries/.seeded-releases.json` 标记已初始化版本防止删除后重启复活。
+- **资源管理聚焦 Agent 二进制、交互精简与审计日志并入系统日志**：统一侧边栏与页面标题为「资源管理」；移除已废弃的独立 `SINGBOX` 内核资源类型；移除顶栏冗余的体积统计卡片与系统日志快捷按钮，资源详情仅保留「总体积」；状态列改为行内交互式 `Switch` 开关（仅保留启用 `ACTIVE` 与停用 `DISABLED` 状态，移除操作列重复的启停及归档按钮）；移除独立的 `BinaryAuditLog` 表、`/admin/binary-resources/audit-logs` 接口与操作审计弹窗，所有资源操作统一通过 `SystemLogsService` 并入系统日志（`source='SERVER'`、`module='BinaryResource'`）。
 
 ### Fixed
+- **修复 GitHub Release 远程拉取假活镜像卡死、半成品幽灵入库与版本号错位问题**：
+  - 为 `fetchSafeRemoteBuffer` 增加流式读取空闲超时（`idleTimeoutMs`，镜像默认 6s）与 `Content-Length` 截断校验，解决部分公共 GitHub 镜像返回 HTTP 200 头后挂起不发数据导致下载一直超时的问题；修复 `githubMirrorUrls` 设为空数组时仍回退预设镜像的问题；
+  - 将 `importFromGithubRelease` 与 `importRemote` 改造为全有或全无（All-or-Nothing）强原子入库并透传客户端断开 `AbortSignal`：先在内存中完成全部目标平台资产的下载、解压与二进制头校验，任一平台失败或请求中断时整体放弃，杜绝后台残留继续写入半成品记录导致「报错但显示已获取」；
+  - `listGithubReleases` 改为优先从 Release 内的 Agent 资产文件名（如 `riri-agent-v0.8.2-linux-amd64.tar.gz`）提取真实 Agent 版本号并按版本去重（优先保留 `agent-v*` 独立发布条目），同时校验本地磁盘物理文件真实存在后才标记 `imported = true`，并在弹窗打开、刷新、关闭及导入完成（`onSettled`）时双向同步资源管理主表缓存。
+- **修复资源远程导入/上传 15 秒前端超时中断与异常日志 `url` 覆写问题**：为资源管理页的 GitHub Release 列表查询（30s）、URL 导入与本地上传（300s）及 GitHub Release 多架构拉取（600s）显式配置长耗时 Axios `timeout`；后端 `fetchSafeRemoteBuffer` 解耦连接超时（15s）与流式响应体下载超时（120s），并将重定向上限提升至 5 跳；修复前端 `frontendLogger` 将接口路径 `metadata.url` 覆写为 `window.location.href` 以及客户端超时误报为服务端 500 错误的问题。
+
 
 
 ## [0.9.1] - 2026-09-26

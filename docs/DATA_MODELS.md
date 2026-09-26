@@ -895,21 +895,20 @@ model HelpArticle {
 
 `resolveEffectiveDeviceLimit()` 先解析用户覆盖，再解析套餐（快照优先），最后应用 `deviceLimitEnabled` 全局执行开关。响应同时提供 `configuredDeviceLimit`、`effectiveDeviceLimit`、`configuredDeviceLimitSource` 与 `deviceLimitSource`；全局关闭只令有效上限为空，不擦除配置。在线设备报告由 Master 进程内存按最近 `deviceOnlineWindowSecs` 秒暂存，不写入 Prisma，也不构成历史审计数据。
 
-## 4. 二进制资源中心模型（v0.5.0）
+## 4. 二进制资源中心模型（v0.5.0，v0.9.x 精简重构）
 
-二进制资源与 RiriCloud 应用版本分开建模。`BinaryRelease` 表示一个逻辑资源版本，`BinaryAsset` 表示某个 OS/架构平台的可分发资产，`BinaryAssetFile` 表示资产内的文件；Sing-box 的主文件与 `libcronet.so` 作为同一个平台资产的 `main` / `auxiliary` 文件保存。
+二进制资源中心专注管理跨平台 `riri-agent` 运行时二进制（定制 Sing-box 内核已内嵌封装于 Agent 二进制中，不再作为独立资源维护）。`BinaryRelease` 表示一个逻辑 Agent 资源版本，`BinaryAsset` 表示某个 OS/架构平台（`agent-linux-amd64`、`agent-linux-arm64`、`agent-macos-amd64`、`agent-macos-arm64`、`agent-windows-amd64`）的可分发资产，`BinaryAssetFile` 表示资产内的文件明细。
 
 | 模型 | 关键字段与约束 |
 | :--- | :--- |
-| `BinaryRelease` | `kind=AGENT\|SINGBOX`、`upstreamVersion`、`revision` 唯一确定资源版本；`source=BUILTIN\|UPLOAD\|REMOTE`；`status=DRAFT\|ACTIVE\|DISABLED\|RETIRED`；可保存 `builtFromAppVersion`、`compatibilityJson`、备注和按类型唯一的默认标记。 |
-| `BinaryAsset` | 记录 `target`、OS、架构、主文件名、`storageRoot`、本地 `storagePath`、SHA-256、大小和可用状态；资源被引用后禁止物理删除。 |
-| `BinaryAssetFile` | 记录资产内每个文件的名称、角色、存储路径、SHA-256、大小与 Unix mode。辅助依赖与主文件共享资产生命周期。 |
-| `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。Master 重启后从此表恢复待处理任务。`assetId`/`releaseId` 可空（自定义 URL 升级无关联资源，升级成功不回写节点资产指针）。 |
-| `BinaryAuditLog` | 记录资源导入、启停用、默认资源变更和分发操作的操作者、资源/资产/任务/节点关联及元数据。 |
+| `BinaryRelease` | `kind=AGENT`、`upstreamVersion`、`revision` 唯一确定资源版本；`source=LOCAL\|UPLOAD\|REMOTE\|GITHUB`（兼容旧 `BUILTIN`）；`status=DRAFT\|ACTIVE\|DISABLED\|RETIRED`；可保存 `builtFromAppVersion`、`compatibilityJson`、备注和全局唯一的默认标记。不区分内置与非内置权限，**所有资源均可直接物理删除**。 |
+| `BinaryAsset` | 记录 `target`、OS、架构、主文件名、`storageRoot`、本地 `storagePath`、SHA-256、大小和可用状态；关联 `BinaryRelease` 级联删除（`onDelete: Cascade`）。 |
+| `BinaryAssetFile` | 记录资产内每个文件的名称、角色、存储路径、SHA-256、大小与 Unix mode。关联 `BinaryAsset` 级联删除（`onDelete: Cascade`）。 |
+| `BinaryDeploymentTask` | 记录节点、目标/旧资产、资源类型、`UPGRADE\|ROLLBACK` 操作、`QUEUED\|DISPATCHED\|COMPLETED\|FAILED` 状态、尝试次数、请求人、错误原因与时间线。`assetId`/`previousAssetId`/`releaseId` 均配置 `onDelete: SetNull`，资源或资产删除后历史部署任务仍保留完整审计轨迹。 |
 
-文件内容只保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 并认领内置文件；没有 manifest 时继续扫描旧路径，保证升级前已存在的内置资源可继续下载。主 manifest 解析成功时，启动流程会把不在当前 manifest 中的 `BUILTIN` 资源自动归档、将磁盘文件缺失或 SHA-256 不符的资产标记为不可用（`available=false`，文件恢复后自愈）、无可用资产的启用资源自动停用，并把每类资源的默认标记收敛为唯一一条。资源停用、归档或被节点引用时只改变元数据状态，不删除文件。
+文件内容保存在本地 `data/binaries/resources/<releaseId>/<target>/`，SQLite 不保存 BLOB。启动时读取 `manifest.json` 或旧目录认领初始资源，并将已初始化的版本键记录在 `data/binaries/.seeded-releases.json` 中；若管理员删除了某初始版本，Master 重启时识别该标记不会再次自动恢复。删除默认资源时，系统自动将 `isDefault=true` 转移至剩余最新的 `ACTIVE` 资源。
 
-资源分发前由服务端校验 ACTIVE 状态、目标平台、资产 SHA-256 及 `compatibilityJson` 中的 Agent 协议/版本约束；节点升级完成后通过部署任务保留历史，回滚复用旧资产完整文件包。
+资源中心的全部管理动作（上传、远程导入、GitHub Release 同步、编辑、启停、归档、恢复、切换默认、删除）不再使用独立审计表，统一并入 `SystemLog`（`source='SERVER'`、`module='BinaryResource'`）。
 
 ## 5. 系统日志与全链路观测模型（SystemLog，v0.6.11）
 

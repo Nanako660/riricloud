@@ -1,65 +1,167 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { execFile as execFileCallback } from 'node:child_process';
-import { access, chmod, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
-import { promisify } from 'node:util';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { createReadStream, readFileSync } from 'node:fs';
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
-import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
-import { formatBinaryVersion } from '../common/binary-version';
-import { BinariesService, normalizeOsArch } from './binaries.service';
-import { BINARY_TARGET_VALUES } from './binary-targets';
+import { BinariesService, normalizeOsArch, type BinaryTarget } from './binaries.service';
 import {
   BINARY_KINDS,
-  type BinaryResourceImportDto,
-  type BinaryResourceUploadDto,
-  type ManagedBinaryKind
+  BINARY_STATUSES,
+  BinaryResourceGithubImportDto,
+  BinaryResourceImportDto,
+  BinaryResourceUploadDto,
+  ManagedBinaryKind,
+  ManagedBinaryStatus,
+  TestGithubMirrorsDto
 } from './dto/binary-resource.dto';
-import type { QueryBinaryResourceDto, QueryBinaryDeploymentDto, QueryBinaryAuditLogDto } from './dto/query-binary-resource.dto';
+import { BINARY_TARGETS, BINARY_TARGET_VALUES } from './binary-targets';
+import type { BatchBinaryResourceDto, BinaryBatchAction } from './dto/batch-binary-resource.dto';
+import type { QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
 import type { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
-import type { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
+import { DEFAULT_GITHUB_MIRRORS, DEFAULT_GITHUB_REPO_URL, SettingsService } from '../system/settings.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
+import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
+import { formatBinaryVersion, normalizeBinaryVersion } from '../common/binary-version';
+import { fetchSafeRemoteBuffer, probeSafeRemoteStream } from '../common/safe-remote-fetch';
+import {
+  detectTargetFromText,
+  detectVersionFromText,
+  inspectBinaryPayload
+} from './binary-inspector';
 
-const execFile = promisify(execFileCallback);
+function parseBinaryResourceVersion(raw: string): { upstreamVersion: string; revision?: number } {
+  const cleaned = raw.trim().replace(/^v/i, '');
+  const match = cleaned.match(/^(.*?)-r(\d+)$/i);
+  if (match) {
+    return { upstreamVersion: match[1].trim(), revision: Number(match[2]) };
+  }
+  return { upstreamVersion: cleaned };
+}
+
+function compareVersions(left: string, right: string): number {
+  const a = normalizeBinaryVersion(left).replace(/^v/i, '').split(/[.-]/);
+  const b = normalizeBinaryVersion(right).replace(/^v/i, '').split(/[.-]/);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const na = Number(a[i] ?? 0);
+    const nb = Number(b[i] ?? 0);
+    if (Number.isFinite(na) && Number.isFinite(nb)) {
+      if (na !== nb) return na > nb ? 1 : -1;
+    } else {
+      const sa = String(a[i] ?? '');
+      const sb = String(b[i] ?? '');
+      if (sa !== sb) return sa.localeCompare(sb);
+    }
+  }
+  return 0;
+}
+
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
+const GITHUB_API_MAX_BYTES = 5 * 1024 * 1024;
 
-// 兼容性约束的可写字段白名单：协议版本要求为数字，其余为字符串。
-const COMPATIBILITY_NUMBER_KEYS = ['minAgentProtocolVersion', 'maxAgentProtocolVersion'] as const;
-const COMPATIBILITY_STRING_KEYS = ['minAgentVersion', 'maxAgentVersion', 'cronetVersion'] as const;
-
-type ResourceFileInput = {
+type ManifestFileEntry = {
   name: string;
-  role?: string;
+  role?: 'main' | 'auxiliary';
   path: string;
   sha256?: string;
   size?: number;
 };
 
-type ManifestResource = {
-  kind: ManagedBinaryKind;
+type ManifestAssetEntry = {
+  target: string;
+  os: string;
+  arch: string;
+  files: ManifestFileEntry[];
+};
+
+type ManifestResourceEntry = {
+  kind: ManagedBinaryKind | string;
   upstreamVersion: string;
   revision?: number;
   source?: string;
-  status?: string;
+  status?: ManagedBinaryStatus;
   builtFromAppVersion?: string;
-  compatibilityJson?: string | Record<string, unknown>;
+  compatibility?: Record<string, unknown>;
   cronetVersion?: string;
   notes?: string;
   isDefault?: boolean;
-  assets?: Array<{
-    target: string;
-    os?: string;
-    arch?: string;
-    files: ResourceFileInput[];
-  }>;
+  assets: ManifestAssetEntry[];
 };
 
-type BinaryManifest = {
+type ManifestDocument = {
   schemaVersion?: number;
-  resources?: ManifestResource[];
+  applicationVersion?: string;
+  resources?: ManifestResourceEntry[];
 };
+
+type NodeCompatibilityContext = {
+  agentVersion?: string | null;
+  agentProtocolVersion?: number | null;
+};
+
+type GithubApiReleaseAsset = {
+  name?: string;
+  size?: number;
+  browser_download_url?: string;
+};
+
+type GithubApiRelease = {
+  id?: number;
+  tag_name?: string;
+  name?: string;
+  body?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+  published_at?: string;
+  created_at?: string;
+  html_url?: string;
+  assets?: GithubApiReleaseAsset[];
+};
+
+export interface GithubReleaseAssetItem {
+  target: BinaryTarget;
+  os: string;
+  arch: string;
+  name: string;
+  size: number;
+  downloadUrl: string;
+  imported: boolean;
+}
+
+export interface GithubReleaseItem {
+  tagName: string;
+  version: string;
+  name: string;
+  publishedAt: string | null;
+  prerelease: boolean;
+  htmlUrl: string;
+  notes: string | null;
+  existingReleaseId: string | null;
+  existingStatus: string | null;
+  assets: GithubReleaseAssetItem[];
+}
+
+export interface GithubMirrorTestItem {
+  url: string;
+  label: string;
+  isOfficial: boolean;
+  available: boolean;
+  latencyMs: number | null;
+  bytesRead: number;
+  speedBps: number | null;
+  error?: string;
+}
+
+export interface GithubMirrorTestResponse {
+  targetAssetUrl: string;
+  recommendedUrl: string;
+  recommendedIsOfficial: boolean;
+  items: GithubMirrorTestItem[];
+}
+
+const UNHEALTHY_MIRROR_TTL_MS = 5 * 60_000;
 
 @Injectable()
 export class BinaryResourcesService implements OnModuleInit {
@@ -68,10 +170,14 @@ export class BinaryResourcesService implements OnModuleInit {
   private readonly runtimeDir: string;
   private readonly resourceDir: string;
   private readonly staticDir: string;
+  private readonly seededMarkerPath: string;
+  private readonly unhealthyMirrors = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly binaries: BinariesService
+    @Optional() private readonly binaries?: BinariesService,
+    @Optional() private readonly settingsService?: SettingsService,
+    @Optional() private readonly systemLogs?: SystemLogsService
   ) {
     this.dataDir = process.env.RIRICLOUD_DATA_DIR
       ? resolve(process.env.RIRICLOUD_DATA_DIR)
@@ -79,95 +185,111 @@ export class BinaryResourcesService implements OnModuleInit {
     this.runtimeDir = resolve(this.dataDir, 'binaries');
     this.resourceDir = resolve(this.runtimeDir, 'resources');
     this.staticDir = resolve(process.env.RIRICLOUD_BINARY_DIR ?? join(process.cwd(), 'binaries'));
+    this.seededMarkerPath = join(this.runtimeDir, '.seeded-releases.json');
   }
 
-  async onModuleInit(): Promise<void> {
-    await mkdir(this.resourceDir, { recursive: true });
-    const manifest = await this.syncManifests();
-    await this.binaries.refresh();
-    await this.syncLegacyAssets();
-    await this.retireSupersededBuiltins(manifest);
-    await this.verifyAssetsAvailability();
+  async onModuleInit() {
+    this.settingsService?.onSettingsChange?.((patch) => {
+      if (patch.githubMirrorUrls !== undefined || patch.githubRepoUrl !== undefined) {
+        this.unhealthyMirrors.clear();
+      }
+    });
+    await this.cleanupLegacySingboxResources();
+    const seededKeys = await this.readSeededKeys();
+    const manifestResult = await this.syncManifests(seededKeys);
+    await this.syncLegacyAssets(seededKeys);
+    await this.writeSeededKeys(seededKeys);
+    await this.retireSupersededBuiltins(manifestResult);
     await this.normalizeDefaults();
-    await this.binaries.refresh();
-    this.logger.log('二进制资源中心已初始化');
+    await this.verifyAssetsAvailability();
+    await this.binaries?.refresh();
   }
 
   async list(query: QueryBinaryResourceDto = {}) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = {
-      ...(query.kind ? { kind: query.kind } : {}),
+    const search = query.search?.trim();
+    const where: Prisma.BinaryReleaseWhereInput = {
+      kind: 'AGENT',
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search
-        ? { OR: [{ upstreamVersion: { contains: query.search } }, { notes: { contains: query.search } }] }
+      ...(search
+        ? {
+            OR: [
+              { upstreamVersion: { contains: search } },
+              { notes: { contains: search } }
+            ]
+          }
         : {}),
       ...(query.platform ? { assets: { some: { target: { endsWith: `-${query.platform}` } } } } : {})
     };
-    const [rows, total, matching] = await Promise.all([
+    const [total, rows, matchingAssets] = await Promise.all([
+      this.prisma.binaryRelease.count({ where }),
       this.prisma.binaryRelease.findMany({
         where,
         include: {
-          assets: { orderBy: { target: 'asc' } },
+          assets: { include: { files: true }, orderBy: { target: 'asc' } },
           _count: { select: { deploymentTasks: true } }
         },
-        orderBy: [{ kind: 'asc' }, { createdAt: 'desc' }],
+        orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize
       }),
-      this.prisma.binaryRelease.count({ where }),
-      // 空间统计需覆盖全部匹配行而非当前页；STATIC 为发行包共享文件，
-      // 删除资源不会释放磁盘，只有 RUNTIME 独占文件计入可释放。
       this.prisma.binaryRelease.findMany({
         where,
         select: { assets: { select: { size: true, storageRoot: true } } }
       })
     ]);
-    const summary = matching.reduce(
+    const summary = matchingAssets.reduce(
       (acc, release) => {
-        for (const asset of release.assets ?? []) {
-          acc.totalBytes += asset.size;
-          if (asset.storageRoot === 'RUNTIME') acc.reclaimableBytes += asset.size;
+        for (const asset of release.assets) {
+          const size = asset.size || 0;
+          acc.totalBytes += size;
+          acc.reclaimableBytes += size;
         }
         return acc;
       },
       { totalBytes: 0, reclaimableBytes: 0 }
     );
     return {
-      data: rows.map((release) => this.serializeRelease(release)),
+      data: rows.map((row) => this.serializeRelease(row)),
       total,
       page,
       pageSize,
-      supportedTargets: BINARY_TARGET_VALUES,
+      supportedTargets: [...BINARY_TARGET_VALUES],
       summary
     };
   }
 
   async detail(id: string) {
-    const release = await this.prisma.binaryRelease.findUnique({
+    const row = await this.prisma.binaryRelease.findUnique({
       where: { id },
       include: {
         assets: { include: { files: true }, orderBy: { target: 'asc' } },
         deploymentTasks: {
-          include: { node: { select: { id: true, name: true } } },
           orderBy: { requestedAt: 'desc' },
-          take: 50
-        }
+          take: 20,
+          include: { node: { select: { id: true, name: true } } }
+        },
+        _count: { select: { deploymentTasks: true } }
       }
     });
-    if (!release) throw new NotFoundException('二进制资源不存在');
-    return this.serializeRelease(release);
+    if (!row) throw new NotFoundException('二进制资源不存在');
+    return this.serializeRelease(row);
   }
 
   async deployments(id: string, query: QueryBinaryDeploymentDto = {}) {
+    return this.listDeployments(id, query);
+  }
+
+  async listDeployments(id: string, query: QueryBinaryDeploymentDto = {}) {
     await this.requireRelease(id);
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const where = {
+    const where: Prisma.BinaryDeploymentTaskWhereInput = {
       releaseId: id,
       ...(query.status ? { status: query.status } : {})
     };
-    const [rows, total] = await Promise.all([
+    const [data, total] = await Promise.all([
       this.prisma.binaryDeploymentTask.findMany({
         where,
         include: { node: { select: { id: true, name: true } } },
@@ -177,351 +299,1012 @@ export class BinaryResourcesService implements OnModuleInit {
       }),
       this.prisma.binaryDeploymentTask.count({ where })
     ]);
-    return { data: rows, total, page, pageSize };
-  }
-
-  async importRemote(dto: BinaryResourceImportDto, operatorId?: string) {
-    const body = await fetchSafeRemoteBuffer(dto.url, { maxBytes: MAX_BINARY_SIZE });
-    return this.saveResource(dto, body, operatorId, 'REMOTE');
-  }
-
-  async upload(dto: BinaryResourceUploadDto, body: Buffer, operatorId?: string) {
-    return this.saveResource(dto, body, operatorId, 'UPLOAD');
+    return { data, total, page, pageSize };
   }
 
   async activate(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    if (release.status === 'RETIRED') throw new ConflictException('已归档资源不能启用');
-    const result = await this.prisma.binaryRelease.update({ where: { id }, data: { status: 'ACTIVE' } });
-    await this.audit('RESOURCE_ACTIVATED', { releaseId: id, operatorId });
-    await this.binaries.refresh();
-    return result;
+    const updated = await this.prisma.binaryRelease.update({
+      where: { id },
+      data: { status: 'ACTIVE' }
+    });
+    this.recordSystemLog(
+      'RESOURCE_ACTIVATED',
+      `启用二进制资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, kind: release.kind, version: formatBinaryVersion(release.kind, release.upstreamVersion, release.revision) },
+      operatorId
+    );
+    await this.binaries?.refresh();
+    return this.detail(updated.id);
   }
 
   async disable(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    const { updated, defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.binaryRelease.update({
+    const nextDefaultId = await this.prisma.$transaction(async (tx) => {
+      await tx.binaryRelease.update({
         where: { id },
         data: { status: 'DISABLED', isDefault: false }
       });
-      const transferredTo = await this.transferDefault(tx, release);
-      return { updated: result, defaultTransferredTo: transferredTo };
+      if (!release.isDefault) return null;
+      const candidate = await tx.binaryRelease.findFirst({
+        where: { kind: release.kind, status: 'ACTIVE', id: { not: id } },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+      });
+      if (!candidate) return null;
+      await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+      return candidate.id;
     });
-    await this.audit('RESOURCE_DISABLED', {
-      releaseId: id,
-      operatorId,
-      metadataJson: JSON.stringify({ defaultTransferredTo: defaultTransferredTo ?? null })
-    });
-    await this.binaries.refresh();
-    return updated;
+    this.recordSystemLog(
+      'RESOURCE_DISABLED',
+      `停用二进制资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, kind: release.kind, nextDefaultId },
+      operatorId
+    );
+    await this.binaries?.refresh();
+    return this.detail(id);
   }
 
   async retire(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    const { updated, defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.binaryRelease.update({
+    const nextDefaultId = await this.prisma.$transaction(async (tx) => {
+      await tx.binaryRelease.update({
         where: { id },
         data: { status: 'RETIRED', isDefault: false }
       });
-      const transferredTo = await this.transferDefault(tx, release);
-      return { updated: result, defaultTransferredTo: transferredTo };
+      if (!release.isDefault) return null;
+      const candidate = await tx.binaryRelease.findFirst({
+        where: { kind: release.kind, status: 'ACTIVE', id: { not: id } },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+      });
+      if (!candidate) return null;
+      await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+      return candidate.id;
     });
-    await this.audit('RESOURCE_RETIRED', {
-      releaseId: id,
-      operatorId,
-      metadataJson: JSON.stringify({ previousStatus: release.status, defaultTransferredTo: defaultTransferredTo ?? null })
-    });
-    await this.binaries.refresh();
-    return updated;
+    this.recordSystemLog(
+      'RESOURCE_RETIRED',
+      `归档二进制资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, kind: release.kind, nextDefaultId },
+      operatorId
+    );
+    await this.binaries?.refresh();
+    return this.detail(id);
   }
 
   async restore(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    if (release.status !== 'RETIRED') throw new ConflictException('只有已归档资源可以恢复');
-    const result = await this.prisma.binaryRelease.update({ where: { id }, data: { status: 'DISABLED' } });
-    await this.audit('RESOURCE_RESTORED', { releaseId: id, operatorId });
-    await this.binaries.refresh();
-    return result;
+    if (release.status !== 'RETIRED') {
+      throw new ConflictException('仅已归档资源可执行恢复');
+    }
+    await this.prisma.binaryRelease.update({
+      where: { id },
+      data: { status: 'DISABLED' }
+    });
+    this.recordSystemLog(
+      'RESOURCE_RESTORED',
+      `从归档恢复二进制资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, kind: release.kind },
+      operatorId
+    );
+    await this.binaries?.refresh();
+    return this.detail(id);
   }
 
   async update(id: string, dto: UpdateBinaryResourceDto, operatorId?: string) {
-    await this.requireRelease(id);
-    const data: { notes?: string | null; compatibilityJson?: string } = {};
-    if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
-    if (dto.compatibility !== undefined) data.compatibilityJson = JSON.stringify(this.normalizeCompatibility(dto.compatibility));
-    if (!Object.keys(data).length) throw new BadRequestException('没有需要更新的字段');
-    const result = await this.prisma.binaryRelease.update({ where: { id }, data });
-    await this.audit('RESOURCE_UPDATED', {
-      releaseId: id,
-      operatorId,
-      metadataJson: JSON.stringify({ fields: Object.keys(data) })
-    });
-    await this.binaries.refresh();
-    return result;
+    const release = await this.requireRelease(id);
+    const data: Prisma.BinaryReleaseUpdateInput = {};
+    if (dto.notes !== undefined) {
+      data.notes = dto.notes.trim() || null;
+    }
+    if (dto.compatibility !== undefined) {
+      data.compatibilityJson = JSON.stringify(this.normalizeCompatibility(dto.compatibility));
+    }
+    await this.prisma.binaryRelease.update({ where: { id }, data });
+    this.recordSystemLog(
+      'RESOURCE_UPDATED',
+      `更新二进制资源信息 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, updatedFields: Object.keys(data) },
+      operatorId
+    );
+    return this.detail(id);
   }
 
   async remove(id: string, operatorId?: string) {
     const release = await this.prisma.binaryRelease.findUnique({
       where: { id },
-      include: { assets: true, _count: { select: { deploymentTasks: true } } }
+      include: {
+        assets: { select: { id: true, storageRoot: true, storagePath: true, size: true } },
+        _count: { select: { deploymentTasks: true } }
+      }
     });
     if (!release) throw new NotFoundException('二进制资源不存在');
-    // 内置资源的生命周期终点是归档；已归档且无分发历史的内置资源允许物理删除。
-    if (release.source === 'BUILTIN' && release.status !== 'RETIRED') {
-      throw new ConflictException('内置资源不可直接删除，请先归档');
-    }
-    if (release.status === 'ACTIVE') throw new ConflictException('启用中的资源不可删除，请先停用');
-    if (release._count.deploymentTasks > 0) {
-      throw new ConflictException('资源已有分发历史，为保证审计可追溯请使用归档');
-    }
-    await this.prisma.$transaction(async (tx) => {
+
+    const freedBytes = release.assets.reduce((sum, asset) => sum + (asset.size || 0), 0);
+    const versionText = formatBinaryVersion(release.kind, release.upstreamVersion, release.revision);
+
+    const nextDefaultId = await this.prisma.$transaction(async (tx) => {
+      const assetIds = release.assets.map((a) => a.id).filter(Boolean);
+      const taskDelegate = (tx as unknown as {
+        binaryDeploymentTask?: { updateMany?: (args: Record<string, unknown>) => Promise<unknown> };
+      }).binaryDeploymentTask;
+      if (taskDelegate?.updateMany) {
+        await taskDelegate.updateMany({
+          where: { OR: [{ releaseId: id }, ...(assetIds.length ? [{ assetId: { in: assetIds } }, { previousAssetId: { in: assetIds } }] : [])] },
+          data: { releaseId: null, assetId: null, previousAssetId: null }
+        });
+      }
+
+      const nodeDelegate = (tx as unknown as {
+        node?: { updateMany?: (args: Record<string, unknown>) => Promise<unknown> };
+      }).node;
+      if (nodeDelegate?.updateMany && assetIds.length) {
+        await nodeDelegate.updateMany({
+          where: { currentAgentAssetId: { in: assetIds } },
+          data: { currentAgentAssetId: null }
+        });
+      }
+
       await tx.binaryAssetFile.deleteMany({ where: { asset: { releaseId: id } } });
       await tx.binaryAsset.deleteMany({ where: { releaseId: id } });
       await tx.binaryRelease.delete({ where: { id } });
-    });
-    // 上传/远程导入的文件固定位于 RUNTIME 下 resources/<releaseId>/，该目录为资源独占，
-    // 含任一 RUNTIME 资产即可整目录清理；STATIC 资产与内置/旧目录认领文件共享静态目录，
-    // 只删 DB 行不动磁盘。
-    if (release.assets.some((asset) => asset.storageRoot === 'RUNTIME')) {
-      await rm(join(this.runtimeDir, 'resources', release.id), { recursive: true, force: true }).catch((error) => {
-        this.logger.warn(`清理资源文件失败 release=${release.id}: ${error instanceof Error ? error.message : error}`);
+
+      if (!release.isDefault) return null;
+      const candidate = await tx.binaryRelease.findFirst({
+        where: { kind: release.kind, status: 'ACTIVE', id: { not: id } },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
       });
-    }
-    await this.audit('RESOURCE_DELETED', {
-      operatorId,
-      metadataJson: JSON.stringify({
-        kind: release.kind,
-        version: this.versionOf(release),
-        targets: release.assets.map((asset) => asset.target),
-        freedBytes: release.assets.reduce((sum, asset) => (asset.storageRoot === 'RUNTIME' ? sum + asset.size : sum), 0)
-      })
+      if (!candidate) return null;
+      await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+      return candidate.id;
     });
-    await this.binaries.refresh();
+
+    await rm(join(this.resourceDir, id), { recursive: true, force: true });
+
+    // 将已删除的版本键写入种子标记，防止主控重启时从静态目录重复导入已删资源
+    const seededKeys = await this.readSeededKeys();
+    seededKeys.add(`${release.kind}:${release.upstreamVersion}:${release.revision}`);
+    await this.writeSeededKeys(seededKeys);
+
+    this.recordSystemLog(
+      'RESOURCE_DELETED',
+      `删除二进制资源 ${versionText}（释放 ${(freedBytes / 1024 / 1024).toFixed(2)} MB）`,
+      {
+        releaseId: id,
+        kind: release.kind,
+        upstreamVersion: release.upstreamVersion,
+        revision: release.revision,
+        freedBytes,
+        nextDefaultId
+      },
+      operatorId
+    );
+    await this.binaries?.refresh();
     return { id, deleted: true };
   }
 
   async batch(dto: BatchBinaryResourceDto, operatorId?: string) {
+    const uniqueIds = Array.from(new Set(dto.ids.map((id) => id.trim()).filter(Boolean)));
     const results: Array<{ id: string; ok: boolean; error?: string }> = [];
-    for (const id of dto.ids) {
+    for (const id of uniqueIds) {
       try {
-        if (dto.action === 'delete') await this.remove(id, operatorId);
-        else if (dto.action === 'activate') await this.activate(id, operatorId);
-        else if (dto.action === 'disable') await this.disable(id, operatorId);
-        else await this.retire(id, operatorId);
+        await this.runBatchItem(dto.action, id, operatorId);
         results.push({ id, ok: true });
-      } catch (error) {
-        results.push({ id, ok: false, error: error instanceof Error ? error.message : '操作失败' });
+      } catch (err) {
+        results.push({ id, ok: false, error: err instanceof Error ? err.message : '操作失败' });
       }
     }
     const succeeded = results.filter((item) => item.ok).length;
-    return { action: dto.action, succeeded, failed: results.length - succeeded, results };
+    return { action: dto.action, total: uniqueIds.length, succeeded, failed: uniqueIds.length - succeeded, results };
   }
 
-  async auditLogs(query: QueryBinaryAuditLogDto = {}) {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-    const where = {
-      ...(query.releaseId ? { releaseId: query.releaseId } : {}),
-      ...(query.action ? { action: query.action } : {})
-    };
-    const [rows, total] = await Promise.all([
-      this.prisma.binaryAuditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize
-      }),
-      this.prisma.binaryAuditLog.count({ where })
-    ]);
-    const operatorIds = [...new Set(rows.map((row) => row.operatorId).filter((id): id is string => Boolean(id)))];
-    const users = operatorIds.length
-      ? await this.prisma.user.findMany({ where: { id: { in: operatorIds } }, select: { id: true, nickname: true, email: true } })
-      : [];
-    const operators = new Map(users.map((user) => [user.id, user]));
-    return {
-      data: rows.map((row) => ({ ...row, operator: row.operatorId ? operators.get(row.operatorId) ?? null : null })),
-      total,
-      page,
-      pageSize
-    };
+  private async runBatchItem(action: BinaryBatchAction, id: string, operatorId?: string) {
+    if (action === 'activate') return this.activate(id, operatorId);
+    if (action === 'disable') return this.disable(id, operatorId);
+    if (action === 'retire') return this.retire(id, operatorId);
+    return this.remove(id, operatorId);
   }
 
   async setDefault(id: string, operatorId?: string) {
     const release = await this.requireRelease(id);
-    if (release.status !== 'ACTIVE') throw new ConflictException('只有 ACTIVE 资源可以设为默认');
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.binaryRelease.updateMany({ where: { kind: release.kind }, data: { isDefault: false } });
-      return tx.binaryRelease.update({ where: { id }, data: { isDefault: true } });
+    await this.prisma.$transaction([
+      this.prisma.binaryRelease.updateMany({
+        where: { kind: release.kind, isDefault: true },
+        data: { isDefault: false }
+      }),
+      this.prisma.binaryRelease.update({
+        where: { id },
+        data: { status: 'ACTIVE', isDefault: true }
+      })
+    ]);
+    this.recordSystemLog(
+      'RESOURCE_DEFAULT_CHANGED',
+      `设置默认二进制资源为 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+      { releaseId: id, kind: release.kind },
+      operatorId
+    );
+    await this.binaries?.refresh();
+    return this.detail(id);
+  }
+
+  async importRemote(dto: BinaryResourceImportDto, operatorId?: string, abortSignal?: AbortSignal) {
+    const body = await this.fetchRemoteWithMirrorFallback(dto.url, MAX_BINARY_SIZE, abortSignal);
+    if (abortSignal?.aborted) {
+      throw new BadRequestException('请求已取消，未写入二进制资源');
+    }
+    const inspected = inspectBinaryPayload({
+      buffer: body,
+      hintFilename: dto.filename,
+      hintUrl: dto.url,
+      explicitTarget: dto.target,
+      explicitVersion: dto.upstreamVersion
     });
-    await this.audit('RESOURCE_DEFAULT_CHANGED', { releaseId: id, operatorId });
-    await this.binaries.refresh();
-    return result;
-  }
 
-  // 停用/归档清除默认标记后，把默认转移到同类型最新的 ACTIVE 资源，避免出现无默认版本可用。
-  private async transferDefault(tx: Prisma.TransactionClient, release: { id: string; kind: string; isDefault: boolean }): Promise<string | null> {
-    if (!release.isDefault) return null;
-    const candidate = await tx.binaryRelease.findFirst({
-      where: { kind: release.kind, status: 'ACTIVE', id: { not: release.id } },
-      orderBy: { updatedAt: 'desc' }
+    if (dto.sha256 && inspected.sha256.toLowerCase() !== dto.sha256.toLowerCase()) {
+      throw new BadRequestException(`二进制文件 SHA-256 校验不匹配（实际: ${inspected.sha256}）`);
+    }
+
+    const upstreamVersion = inspected.upstreamVersion || this.readMasterVersion();
+    if (!upstreamVersion || upstreamVersion === '0.0.0') {
+      throw new BadRequestException('无法从下载链接或二进制文件中自动识别版本号，请手动指定版本号');
+    }
+
+    return this.storeSingleBinary({
+      kind: 'AGENT',
+      upstreamVersion,
+      revision: dto.revision ?? 1,
+      target: inspected.target,
+      filename: inspected.filename,
+      sha256: inspected.sha256,
+      builtFromAppVersion: dto.builtFromAppVersion ?? upstreamVersion,
+      compatibilityJson: dto.compatibilityJson,
+      notes: dto.notes,
+      source: 'REMOTE',
+      body: inspected.binary,
+      operatorId
     });
-    if (!candidate) return null;
-    await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
-    return candidate.id;
   }
 
-  private normalizeCompatibility(input: Record<string, unknown>): Record<string, unknown> {
-    for (const [key, value] of Object.entries(input)) {
-      if ((COMPATIBILITY_NUMBER_KEYS as readonly string[]).includes(key)) {
-        if (typeof value !== 'number' || !Number.isFinite(value)) throw new BadRequestException(`兼容性字段 ${key} 必须为数字`);
-        continue;
-      }
-      if ((COMPATIBILITY_STRING_KEYS as readonly string[]).includes(key)) {
-        if (typeof value !== 'string') throw new BadRequestException(`兼容性字段 ${key} 必须为字符串`);
-        continue;
-      }
-      throw new BadRequestException(`不支持的兼容性字段: ${key}`);
-    }
-    return input;
-  }
-
-  private parseCompatibilityInput(raw: string): Record<string, unknown> {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new BadRequestException('compatibilityJson 必须是合法 JSON');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new BadRequestException('compatibilityJson 必须是 JSON 对象');
-    }
-    return this.normalizeCompatibility(parsed as Record<string, unknown>);
-  }
-
-  async getDownloadAsset(id: string) {
-    const asset = await this.prisma.binaryAsset.findUnique({ where: { id }, include: { release: true, files: true } });
-    if (!asset || !asset.available) throw new NotFoundException('平台二进制资产不存在');
-    const file = asset.files.find((item) => item.role === 'main') ?? asset.files[0];
-    const path = this.resolveStoredPath(file?.storageRoot ?? asset.storageRoot, file?.storagePath ?? asset.storagePath);
-    await this.assertFile(path);
-    return { asset, file, path };
-  }
-
-  async getDownloadFile(id: string) {
-    const file = await this.prisma.binaryAssetFile.findUnique({ include: { asset: { include: { release: true } } }, where: { id } });
-    if (!file || !file.asset.available) throw new NotFoundException('二进制文件不存在');
-    const path = this.resolveStoredPath(file.storageRoot, file.storagePath);
-    await this.assertFile(path);
-    return { asset: file.asset, file, path };
-  }
-
-  async resolveForNode(
-    kind: 'agent' | 'singbox',
-    osArch: string | null | undefined,
-    _token: string,
-    requestBaseUrl?: string,
-    releaseId?: string,
-    node?: { agentProtocolVersion?: number | null; agentVersion?: string | null }
+  async upload(
+    dto: BinaryResourceUploadDto,
+    file: Buffer | { buffer?: Buffer; originalname?: string } | undefined,
+    operatorId?: string
   ) {
-    const normalized = normalizeOsArch(osArch) ?? 'linux-amd64';
-    const target = `${kind}-${normalized}`;
-    const releaseKind = kind.toUpperCase() as ManagedBinaryKind;
-    const releases = await this.prisma.binaryRelease.findMany({
-      where: { kind: releaseKind, status: 'ACTIVE', ...(releaseId ? { id: releaseId } : {}) },
-      include: { assets: { include: { files: true } } },
-      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    const buffer = Buffer.isBuffer(file) ? file : file?.buffer;
+    const originalname = Buffer.isBuffer(file) ? undefined : file?.originalname;
+    if (!buffer?.length) throw new BadRequestException('缺少上传文件');
+    if (buffer.length > MAX_BINARY_SIZE) throw new BadRequestException('二进制文件超过 100MB 限制');
+
+    const inspected = inspectBinaryPayload({
+      buffer,
+      hintFilename: dto.filename || originalname,
+      explicitTarget: dto.target,
+      explicitVersion: dto.upstreamVersion
     });
-    const release = releases.find((candidate) => candidate.assets.some((asset) => asset.target === target && asset.available));
-    if (!release) throw new Error(`主控未找到 ${kind} 的 ${normalized} ACTIVE 资源`);
-    const asset = release.assets.find((candidate) => candidate.target === target && candidate.available);
-    if (!asset) throw new Error(`主控未找到 ${kind} 的 ${normalized} 资源资产`);
-    const compatibility = this.parseCompatibility(release.compatibilityJson);
-    this.assertCompatible(compatibility, node);
-    const base = resolvePublicBaseUrl({ configuredBaseUrl: undefined, requestBaseUrl });
-    const files = (asset.files.length ? asset.files : [{ id: asset.id, name: asset.filename, role: 'main', sha256: asset.sha256, size: asset.size, assetFallback: true }]).map((file) => ({
-      id: file.id,
-      name: file.name,
-      role: file.role,
-      sha256: file.sha256,
-      size: file.size,
-      url: appendPublicPath(
-        base,
-        `${'assetFallback' in file && file.assetFallback ? 'api/v1/downloads/binary-assets' : 'api/v1/downloads/binary-files'}/${file.id}`
+
+    if (dto.sha256 && inspected.sha256.toLowerCase() !== dto.sha256.toLowerCase()) {
+      throw new BadRequestException(`二进制文件 SHA-256 校验不匹配（实际: ${inspected.sha256}）`);
+    }
+
+    const upstreamVersion = inspected.upstreamVersion || this.readMasterVersion();
+    if (!upstreamVersion || upstreamVersion === '0.0.0') {
+      throw new BadRequestException('无法从上传文件自动识别版本号，请在文件名中包含版本号或手动填写');
+    }
+
+    return this.storeSingleBinary({
+      kind: 'AGENT',
+      upstreamVersion,
+      revision: dto.revision ?? 1,
+      target: inspected.target,
+      filename: inspected.filename,
+      sha256: inspected.sha256,
+      builtFromAppVersion: dto.builtFromAppVersion ?? upstreamVersion,
+      compatibilityJson: dto.compatibilityJson,
+      notes: dto.notes,
+      source: 'UPLOAD',
+      body: inspected.binary,
+      operatorId
+    });
+  }
+
+  /**
+   * 测速并评估 GitHub 镜像源与官方直连源的真实数据流可用性及延迟
+   */
+  async testGithubMirrors(dto: TestGithubMirrorsDto = {}): Promise<GithubMirrorTestResponse> {
+    const settings = await this.settingsService?.getSettings();
+    const githubRepoUrl = dto.repoUrl?.trim() || settings?.githubRepoUrl?.trim() || DEFAULT_GITHUB_REPO_URL;
+    const { owner, repo } = this.parseGithubRepo(githubRepoUrl);
+
+    let targetAssetUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/main.zip`;
+    try {
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases?per_page=5`;
+      const releases = await this.fetchGithubJson<GithubApiRelease[]>(apiUrl);
+      for (const rel of Array.isArray(releases) ? releases : []) {
+        if (rel.draft) continue;
+        const asset = (rel.assets ?? []).find(
+          (a) =>
+            a.browser_download_url &&
+            a.name &&
+            !a.name.startsWith('riri-master') &&
+            !a.name.endsWith('.sha256') &&
+            !a.name.endsWith('.sig') &&
+            a.name !== 'checksums.txt'
+        );
+        if (asset?.browser_download_url) {
+          targetAssetUrl = asset.browser_download_url.trim();
+          break;
+        }
+      }
+    } catch {
+      // GitHub API 不可达时降级使用仓库归档地址进行流式探测
+    }
+
+    const rawInputMirrors =
+      dto.mirrorUrls !== undefined
+        ? dto.mirrorUrls
+        : (settings?.githubMirrorUrls ?? [...DEFAULT_GITHUB_MIRRORS]);
+    const cleanedInput = rawInputMirrors.map((m) => m.trim()).filter(Boolean);
+    const mirrorCandidates = Array.from(
+      new Set(
+        (cleanedInput.length > 0 ? cleanedInput : [...DEFAULT_GITHUB_MIRRORS])
+          .map((m) => this.normalizeMirrorPrefix(m))
+          .filter(Boolean)
       )
-    }));
-    const main = files.find((file) => file.role === 'main') ?? files[0];
+    ).slice(0, 8);
+
+    const entries: Array<{ url: string; label: string; isOfficial: boolean; testUrl: string }> = [
+      ...mirrorCandidates.map((mirrorUrl) => ({
+        url: `${mirrorUrl}/`,
+        label: mirrorUrl,
+        isOfficial: false,
+        testUrl: `${mirrorUrl}/${targetAssetUrl}`
+      })),
+      {
+        url: 'https://github.com',
+        label: 'GitHub 官方源 (直连)',
+        isOfficial: true,
+        testUrl: targetAssetUrl
+      }
+    ];
+
+    const items: GithubMirrorTestItem[] = await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const probe = await probeSafeRemoteStream(entry.testUrl, {
+            sampleBytes: 64 * 1024,
+            timeoutMs: 7_000,
+            connectTimeoutMs: 5_000,
+            idleTimeoutMs: 5_000
+          });
+          if (!entry.isOfficial) {
+            this.unhealthyMirrors.delete(this.normalizeMirrorPrefix(entry.url));
+          }
+          return {
+            url: entry.url,
+            label: entry.label,
+            isOfficial: entry.isOfficial,
+            available: true,
+            latencyMs: probe.latencyMs,
+            bytesRead: probe.bytesRead,
+            speedBps: probe.speedBps
+          };
+        } catch (error) {
+          if (!entry.isOfficial) {
+            this.markMirrorUnhealthy(entry.url);
+          }
+          return {
+            url: entry.url,
+            label: entry.label,
+            isOfficial: entry.isOfficial,
+            available: false,
+            latencyMs: null,
+            bytesRead: 0,
+            speedBps: null,
+            error: error instanceof Error ? error.message : '测速失败'
+          };
+        }
+      })
+    );
+
+    const availableItems = items
+      .filter((item) => item.available && item.latencyMs !== null)
+      .sort((a, b) => (a.latencyMs ?? Number.MAX_SAFE_INTEGER) - (b.latencyMs ?? Number.MAX_SAFE_INTEGER));
+    const best = availableItems[0];
+
     return {
-      resourceId: release.id,
-      assetId: asset.id,
-      kind: releaseKind,
-      target,
-      version: this.versionOf(release),
-      sha256: asset.sha256,
-      url: appendPublicPath(base, `api/v1/downloads/binary-assets/${asset.id}`),
-      files,
-      mainFileId: main?.id ?? asset.id
+      targetAssetUrl,
+      recommendedUrl: best?.url ?? 'https://github.com',
+      recommendedIsOfficial: best ? best.isOfficial : true,
+      items
     };
   }
 
-  private async saveResource(
-    dto: BinaryResourceImportDto | BinaryResourceUploadDto,
-    body: Buffer,
-    operatorId: string | undefined,
-    source: 'UPLOAD' | 'REMOTE'
-  ) {
-    if (body.length > MAX_BINARY_SIZE) throw new Error('binary file exceeds size limit');
-    const actual = createHash('sha256').update(body).digest('hex');
-    if (actual.toLowerCase() !== dto.sha256.toLowerCase()) throw new Error(`binary checksum mismatch: got ${actual}`);
-    const targetParts = dto.target.split('-');
-    const kind = dto.kind;
-    if (`${kind.toLowerCase()}-${targetParts.slice(1).join('-')}` !== dto.target) throw new Error('binary target does not match kind');
-    const normalizedCompatibility = dto.compatibilityJson?.trim()
-      ? JSON.stringify(this.parseCompatibilityInput(dto.compatibilityJson))
-      : undefined;
-    const release = await this.prisma.binaryRelease.upsert({
-      where: { kind_upstreamVersion_revision: { kind, upstreamVersion: dto.upstreamVersion.trim(), revision: dto.revision ?? 1 } },
-      update: {
-        builtFromAppVersion: dto.builtFromAppVersion?.trim() || undefined,
-        compatibilityJson: normalizedCompatibility,
-        notes: dto.notes?.trim() || undefined
-      },
-      create: {
-        kind,
-        upstreamVersion: dto.upstreamVersion.trim(),
-        revision: dto.revision ?? 1,
-        source,
-        status: 'DRAFT',
-        builtFromAppVersion: dto.builtFromAppVersion?.trim() || null,
-        compatibilityJson: normalizedCompatibility ?? '{}',
-        notes: dto.notes?.trim() || null
+  /**
+   * 从系统设置配置的 githubRepoUrl 获取预设的 GitHub Release 列表及各平台资产真实导入状态
+   */
+  async listGithubReleases(): Promise<{
+    repoUrl: string;
+    githubRepoUrl: string;
+    owner: string;
+    repo: string;
+    githubMirrorUrls: string[];
+    releases: GithubReleaseItem[];
+  }> {
+    const settings = await this.settingsService?.getSettings();
+    const githubRepoUrl = settings?.githubRepoUrl?.trim() || DEFAULT_GITHUB_REPO_URL;
+    const githubMirrorUrls = settings ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
+    const { owner, repo } = this.parseGithubRepo(githubRepoUrl);
+
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases?per_page=20`;
+    const rawReleases = await this.fetchGithubJson<GithubApiRelease[]>(apiUrl);
+
+    const localReleases = await this.prisma.binaryRelease.findMany({
+      where: { kind: 'AGENT' },
+      include: {
+        assets: {
+          include: { files: true }
+        }
       }
     });
-    const existing = await this.prisma.binaryAsset.findUnique({ where: { releaseId_target: { releaseId: release.id, target: dto.target } } });
-    if (existing && release.status !== 'DRAFT') throw new ConflictException('ACTIVE 或历史资源不能覆盖平台资产，请提高 revision');
-    const filename = this.sanitizeFilename(dto.filename || this.defaultFilename(dto.target));
-    const finalRelativePath = join('resources', release.id, dto.target, filename);
-    const finalPath = join(this.runtimeDir, finalRelativePath);
-    await this.writeAtomically(finalPath, body);
-    const asset = existing
-      ? await this.prisma.binaryAsset.update({
-          where: { id: existing.id },
-          data: { filename, storageRoot: 'RUNTIME', storagePath: finalRelativePath, sha256: actual, size: body.length, available: true }
-        })
-      : await this.prisma.binaryAsset.create({
-          data: {
-            releaseId: release.id,
-            target: dto.target,
-            os: targetParts[1],
-            arch: targetParts[2],
-            filename,
-            storageRoot: 'RUNTIME',
-            storagePath: finalRelativePath,
-            sha256: actual,
-            size: body.length,
-            available: true
+
+    const verifiedLocalByVersion = new Map<
+      string,
+      { id: string; status: string; targets: Set<string> }
+    >();
+    for (const rel of localReleases) {
+      const verifiedTargets = new Set<string>();
+      for (const asset of rel.assets ?? []) {
+        if (!asset.available) continue;
+        const files = Array.isArray((asset as { files?: unknown }).files)
+          ? (asset as { files: Array<{ storageRoot: string; storagePath: string; sha256: string }> }).files
+          : [];
+        const hasStorageMeta =
+          typeof asset.storageRoot === 'string' &&
+          typeof asset.storagePath === 'string' &&
+          typeof asset.sha256 === 'string';
+        const ok = hasStorageMeta
+          ? await this.verifyAssetFiles({
+              storageRoot: asset.storageRoot,
+              storagePath: asset.storagePath,
+              sha256: asset.sha256,
+              files
+            })
+          : true;
+        if (ok) {
+          verifiedTargets.add(asset.target);
+        } else if (asset.id) {
+          try {
+            await this.prisma.binaryAsset?.update?.({
+              where: { id: asset.id },
+              data: { available: false }
+            });
+          } catch {
+            // 忽略只读或模拟环境下的状态回写异常
+          }
+        }
+      }
+      if (verifiedTargets.size > 0) {
+        verifiedLocalByVersion.set(normalizeBinaryVersion(rel.upstreamVersion), {
+          id: rel.id,
+          status: rel.status,
+          targets: verifiedTargets
+        });
+      }
+    }
+
+    const releases: GithubReleaseItem[] = [];
+    const seenVersionIndex = new Map<string, number>();
+
+    for (const item of Array.isArray(rawReleases) ? rawReleases : []) {
+      if (item.draft) continue;
+      const tagName = (item.tag_name ?? '').trim();
+      if (!tagName) continue;
+
+      const matchedAssets: GithubReleaseAssetItem[] = [];
+      const seenTargets = new Set<BinaryTarget>();
+
+      for (const rawAsset of item.assets ?? []) {
+        const assetName = (rawAsset.name ?? '').trim();
+        const downloadUrl = (rawAsset.browser_download_url ?? '').trim();
+        if (!assetName || !downloadUrl) continue;
+        if (assetName === 'checksums.txt' || assetName.endsWith('.sha256') || assetName.endsWith('.sig')) continue;
+        // 仅选取 Agent 资产（或带平台标识的归档/二进制），忽略 riri-master 主控包
+        if (assetName.startsWith('riri-master')) continue;
+
+        const target = detectTargetFromText(assetName);
+        if (!target || seenTargets.has(target)) continue;
+        seenTargets.add(target);
+
+        const [, os, arch] = target.split('-');
+        matchedAssets.push({
+          target,
+          os,
+          arch,
+          name: assetName,
+          size: Number(rawAsset.size ?? 0),
+          downloadUrl,
+          imported: false
+        });
+      }
+
+      if (matchedAssets.length === 0) continue;
+
+      // 优先从 Agent 资产文件名中提取真实 Agent 版本号，避免旧版主控 Release Tag（如 v0.7.0 附带 riri-agent_0.6.14）误标版本
+      const rawVersion =
+        detectVersionFromText(matchedAssets[0]?.name) ??
+        detectVersionFromText(tagName) ??
+        tagName.replace(/^(?:agent-)?v/i, '');
+      const version = normalizeBinaryVersion(rawVersion);
+
+      const localMatch = verifiedLocalByVersion.get(version);
+      for (const asset of matchedAssets) {
+        asset.imported = Boolean(localMatch?.targets.has(asset.target));
+      }
+      matchedAssets.sort((a, b) => a.target.localeCompare(b.target));
+
+      const candidateRelease: GithubReleaseItem = {
+        tagName,
+        version,
+        name: item.name?.trim() || tagName,
+        publishedAt: item.published_at ?? item.created_at ?? null,
+        prerelease: Boolean(item.prerelease),
+        htmlUrl: item.html_url ?? `${githubRepoUrl.replace(/\/+$/, '')}/releases/tag/${encodeURIComponent(tagName)}`,
+        notes: item.body?.trim() ? item.body.trim().slice(0, 1000) : null,
+        existingReleaseId: localMatch?.id ?? null,
+        existingStatus: localMatch?.status ?? null,
+        assets: matchedAssets
+      };
+
+      const existingIdx = seenVersionIndex.get(version);
+      if (existingIdx !== undefined) {
+        const existingItem = releases[existingIdx];
+        if (!/^agent-v/i.test(existingItem.tagName) && /^agent-v/i.test(tagName)) {
+          releases[existingIdx] = candidateRelease;
+        }
+        continue;
+      }
+
+      seenVersionIndex.set(version, releases.length);
+      releases.push(candidateRelease);
+    }
+
+    return {
+      repoUrl: githubRepoUrl,
+      githubRepoUrl,
+      owner,
+      repo,
+      githubMirrorUrls,
+      releases
+    };
+  }
+
+  /**
+   * 从项目 GitHub Release 一键拉取指定版本（全平台或所选平台）的二进制资源
+   * 严格原子化：先下载并校验所选全部平台资产，任一失败或客户端取消连接时整体不入库
+   */
+  async importFromGithubRelease(
+    dto: BinaryResourceGithubImportDto,
+    operatorId?: string,
+    abortSignal?: AbortSignal
+  ) {
+    if (abortSignal?.aborted) {
+      throw new BadRequestException('请求已取消');
+    }
+    const { releases } = await this.listGithubReleases();
+    const targetRelease = releases.find(
+      (item) => item.tagName === dto.tagName || normalizeBinaryVersion(item.version) === normalizeBinaryVersion(dto.tagName)
+    );
+    if (!targetRelease) {
+      throw new NotFoundException(`未在项目 GitHub Release 中找到版本 ${dto.tagName}`);
+    }
+
+    const wantedTargets = dto.targets?.length
+      ? new Set(dto.targets)
+      : new Set(targetRelease.assets.map((a) => a.target));
+    const assetsToFetch = targetRelease.assets.filter((a) => wantedTargets.has(a.target));
+    if (assetsToFetch.length === 0) {
+      throw new BadRequestException('该 Release 中没有匹配的平台资产可供拉取');
+    }
+
+    const batchAbort = new AbortController();
+    const onExternalAbort = () => {
+      batchAbort.abort(
+        abortSignal?.reason instanceof Error ? abortSignal.reason : new Error('客户端已取消请求')
+      );
+    };
+    abortSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+    type PreparedAsset = {
+      target: BinaryTarget;
+      filename: string;
+      sha256: string;
+      binary: Buffer;
+    };
+    const preparedByIndex: Array<PreparedAsset | undefined> = new Array(assetsToFetch.length);
+
+    const downloadAndInspectOne = async (index: number) => {
+      const asset = assetsToFetch[index];
+      const buffer = await this.fetchRemoteWithMirrorFallback(
+        asset.downloadUrl,
+        MAX_BINARY_SIZE,
+        batchAbort.signal
+      );
+      if (batchAbort.signal.aborted) {
+        throw new Error('请求已取消');
+      }
+      const inspected = inspectBinaryPayload({
+        buffer,
+        hintFilename: asset.name,
+        hintUrl: asset.downloadUrl,
+        explicitTarget: asset.target,
+        explicitVersion: targetRelease.version
+      });
+      preparedByIndex[index] = {
+        target: inspected.target,
+        filename: inspected.filename,
+        sha256: inspected.sha256,
+        binary: inspected.binary
+      };
+    };
+
+    try {
+      // 先拉取首个资产以完成镜像可用性探测与快速熔断，避免多个并发请求同时阻塞在失效镜像上
+      await downloadAndInspectOne(0);
+
+      if (assetsToFetch.length > 1) {
+        let nextIndex = 1;
+        const concurrency = Math.min(3, assetsToFetch.length - 1);
+        const workers = Array.from({ length: concurrency }, async () => {
+          while (nextIndex < assetsToFetch.length) {
+            const current = nextIndex++;
+            await downloadAndInspectOne(current);
           }
         });
+        await Promise.all(workers);
+      }
+    } catch (err) {
+      batchAbort.abort(err);
+      const message = err instanceof Error ? err.message : '拉取失败';
+      throw new BadRequestException(message.startsWith('远程文件下载失败') ? message : `远程拉取失败: ${message}`);
+    } finally {
+      abortSignal?.removeEventListener('abort', onExternalAbort);
+    }
+
+    if (abortSignal?.aborted || batchAbort.signal.aborted) {
+      throw new BadRequestException('客户端连接已断开，已取消本次资源入库');
+    }
+
+    let lastReleaseDetail: Awaited<ReturnType<typeof this.detail>> | null = null;
+    const importedTargets: string[] = [];
+    const results: Array<{ target: string; ok: boolean; error?: string }> = [];
+
+    for (const prepared of preparedByIndex) {
+      if (!prepared) continue;
+      lastReleaseDetail = await this.storeSingleBinary({
+        kind: 'AGENT',
+        upstreamVersion: targetRelease.version,
+        revision: 1,
+        target: prepared.target,
+        filename: prepared.filename,
+        sha256: prepared.sha256,
+        builtFromAppVersion: targetRelease.version,
+        notes: dto.notes ?? (targetRelease.notes ? `GitHub Release ${targetRelease.tagName}` : undefined),
+        source: 'GITHUB',
+        body: prepared.binary,
+        operatorId,
+        silentAudit: true
+      });
+      importedTargets.push(prepared.target);
+      results.push({ target: prepared.target, ok: true });
+    }
+
+    this.recordSystemLog(
+      'RESOURCE_GITHUB_IMPORTED',
+      `从 GitHub Release (${targetRelease.tagName}) 拉取二进制资源 v${targetRelease.version}（${importedTargets.length} 个平台）`,
+      {
+        tagName: targetRelease.tagName,
+        version: targetRelease.version,
+        targets: importedTargets,
+        releaseId: lastReleaseDetail?.id ?? null
+      },
+      operatorId
+    );
+
+    return {
+      tagName: targetRelease.tagName,
+      version: targetRelease.version,
+      succeeded: importedTargets.length,
+      failed: 0,
+      results,
+      release: lastReleaseDetail,
+      importedTargets
+    };
+  }
+
+  async resolveForNode(
+    kindInput: 'agent' | 'singbox',
+    osArch: string | null | undefined,
+    token: string,
+    requestBaseUrl?: string,
+    resourceId?: string,
+    nodeContext: NodeCompatibilityContext = {}
+  ) {
+    const kind: ManagedBinaryKind = kindInput === 'agent' ? 'AGENT' : ('SINGBOX' as ManagedBinaryKind);
+    const platform = normalizeOsArch(osArch) ?? 'linux-amd64';
+    const target = `${kindInput}-${platform}` as BinaryTarget;
+    const asset = await this.findNodeAsset(kind, target, resourceId, nodeContext);
+    if (!asset) {
+      if (resourceId) throw new NotFoundException('所选二进制资源不存在、未启用或不支持该节点架构');
+      const fallback = await this.binaries?.resolveForNode(kindInput, osArch, token, requestBaseUrl);
+      if (!fallback) throw new NotFoundException(`主控未找到 ${target} 的可用二进制`);
+      return { ...fallback, files: [] };
+    }
+    const baseUrl = await this.resolveDownloadBaseUrl(requestBaseUrl);
+    const mainFile = asset.files.find((item) => item.role === 'main') ?? asset.files[0];
+    const files = asset.files.map((file) => ({
+      id: file.id,
+      name: file.name,
+      role: (file.role === 'auxiliary' ? 'auxiliary' : 'main') as 'main' | 'auxiliary',
+      sha256: file.sha256,
+      size: file.size,
+      url: appendPublicPath(baseUrl, `api/v1/downloads/binary-files/${file.id}`)
+    }));
+    return {
+      resourceId: asset.release.id,
+      assetId: asset.id,
+      version: formatBinaryVersion(asset.release.kind, asset.release.upstreamVersion, asset.release.revision),
+      sha256: mainFile?.sha256 ?? asset.sha256,
+      url: mainFile
+        ? appendPublicPath(baseUrl, `api/v1/downloads/binary-files/${mainFile.id}`)
+        : appendPublicPath(baseUrl, `api/v1/downloads/binaries/${target}`),
+      files
+    };
+  }
+
+  async getDownloadAsset(assetId: string) {
+    const asset = await this.prisma.binaryAsset.findUnique({
+      where: { id: assetId },
+      include: { release: true, files: { orderBy: { role: 'desc' } } }
+    });
+    if (!asset || !asset.available || asset.release.status !== 'ACTIVE') {
+      throw new NotFoundException('二进制资产不存在或未启用');
+    }
+    const file = asset.files.find((item) => item.role === 'main') ?? asset.files[0];
+    const path = this.resolveStoragePath(file?.storageRoot ?? asset.storageRoot, file?.storagePath ?? asset.storagePath);
+    const inspected = await this.inspectFile(path);
+    const expectedSha = (file?.sha256 ?? asset.sha256).toLowerCase();
+    if (!inspected || inspected.sha256.toLowerCase() !== expectedSha) {
+      throw new NotFoundException('二进制资产文件缺失或校验失败');
+    }
+    return { asset, file, path };
+  }
+
+  async getDownloadFile(fileId: string) {
+    const file = await this.prisma.binaryAssetFile.findUnique({
+      where: { id: fileId },
+      include: { asset: { include: { release: true } } }
+    });
+    if (!file || !file.asset.available || file.asset.release.status !== 'ACTIVE') {
+      throw new NotFoundException('二进制资源文件不存在或未启用');
+    }
+    const path = this.resolveStoragePath(file.storageRoot, file.storagePath);
+    const inspected = await this.inspectFile(path);
+    if (!inspected || inspected.sha256.toLowerCase() !== file.sha256.toLowerCase()) {
+      throw new NotFoundException('二进制资源文件校验失败');
+    }
+    return { file: { ...file, size: inspected.size }, path };
+  }
+
+  async getDownloadableFile(fileId: string) {
+    const file = await this.prisma.binaryAssetFile.findUnique({
+      where: { id: fileId },
+      include: { asset: { include: { release: true } } }
+    });
+    if (!file || !file.asset.available || file.asset.release.status !== 'ACTIVE') {
+      throw new NotFoundException('二进制资源文件不存在或未启用');
+    }
+    const path = this.resolveStoragePath(file.storageRoot, file.storagePath);
+    const inspected = await this.inspectFile(path);
+    if (!inspected || inspected.sha256.toLowerCase() !== file.sha256.toLowerCase()) {
+      throw new NotFoundException('二进制资源文件校验失败');
+    }
+    return {
+      id: file.id,
+      filename: file.name,
+      path,
+      size: inspected.size,
+      sha256: inspected.sha256
+    };
+  }
+
+  private async findNodeAsset(
+    kind: string,
+    target: string,
+    resourceId?: string,
+    nodeContext: NodeCompatibilityContext = {}
+  ) {
+    const releases = await this.prisma.binaryRelease.findMany({
+      where: resourceId
+        ? {
+            kind,
+            status: 'ACTIVE',
+            OR: [{ id: resourceId }, ...this.buildVersionSelector(kind, resourceId)]
+          }
+        : { kind, status: 'ACTIVE' },
+      include: {
+        assets: {
+          where: { target, available: true },
+          include: { files: { orderBy: { role: 'desc' } } }
+        }
+      },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    });
+    let incompatibilityReason: string | null = null;
+    for (const release of releases) {
+      const asset = release.assets[0];
+      if (!asset) continue;
+      const compatibilityError = this.checkCompatibility(release.compatibilityJson, nodeContext);
+      if (compatibilityError) {
+        incompatibilityReason = compatibilityError;
+        if (resourceId) throw new ConflictException(compatibilityError);
+        continue;
+      }
+      const verified = await this.verifyAssetFiles(asset);
+      if (verified) return { ...asset, release };
+    }
+    if (incompatibilityReason) throw new ConflictException(incompatibilityReason);
+    return undefined;
+  }
+
+  private buildVersionSelector(kind: string, value: string): Prisma.BinaryReleaseWhereInput[] {
+    const parsed = parseBinaryResourceVersion(value);
+    const normalized = normalizeBinaryVersion(value);
+    return [
+      { kind, upstreamVersion: parsed.upstreamVersion, ...(parsed.revision ? { revision: parsed.revision } : {}) },
+      { kind, upstreamVersion: normalized }
+    ];
+  }
+
+  private checkCompatibility(compatibilityJson: string, context: NodeCompatibilityContext): string | null {
+    let compatibility: Record<string, unknown>;
+    try {
+      compatibility = JSON.parse(compatibilityJson || '{}') as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    const minProtocol = typeof compatibility.minAgentProtocolVersion === 'number'
+      ? compatibility.minAgentProtocolVersion
+      : undefined;
+    if (minProtocol !== undefined && (context.agentProtocolVersion ?? 1) < minProtocol) {
+      return `资源要求 Agent 协议版本至少为 v${minProtocol}，请先升级节点 Agent`;
+    }
+    const maxProtocol = typeof compatibility.maxAgentProtocolVersion === 'number'
+      ? compatibility.maxAgentProtocolVersion
+      : undefined;
+    if (maxProtocol !== undefined && context.agentProtocolVersion && context.agentProtocolVersion > maxProtocol) {
+      return `资源仅兼容 Agent 协议版本不超过 v${maxProtocol}`;
+    }
+    const minAgentVersion = typeof compatibility.minAgentVersion === 'string'
+      ? compatibility.minAgentVersion
+      : undefined;
+    if (minAgentVersion && context.agentVersion && compareVersions(context.agentVersion, minAgentVersion) < 0) {
+      return `资源要求 Agent 版本至少为 v${normalizeBinaryVersion(minAgentVersion)}，请先升级节点 Agent`;
+    }
+    const maxAgentVersion = typeof compatibility.maxAgentVersion === 'string'
+      ? compatibility.maxAgentVersion
+      : undefined;
+    if (maxAgentVersion && context.agentVersion && compareVersions(context.agentVersion, maxAgentVersion) > 0) {
+      return `资源仅兼容 Agent 版本不超过 v${normalizeBinaryVersion(maxAgentVersion)}`;
+    }
+    return null;
+  }
+
+  private async verifyAssetFiles(asset: {
+    storageRoot: string;
+    storagePath: string;
+    sha256: string;
+    files: Array<{ storageRoot: string; storagePath: string; sha256: string }>;
+  }): Promise<boolean> {
+    if (!asset.files.length) {
+      const path = this.resolveStoragePath(asset.storageRoot, asset.storagePath);
+      const file = await this.inspectFile(path);
+      return Boolean(file && file.sha256.toLowerCase() === asset.sha256.toLowerCase());
+    }
+    for (const item of asset.files) {
+      const path = this.resolveStoragePath(item.storageRoot, item.storagePath);
+      const file = await this.inspectFile(path);
+      if (!file || file.sha256.toLowerCase() !== item.sha256.toLowerCase()) return false;
+    }
+    return true;
+  }
+
+  private async storeSingleBinary(input: {
+    kind: ManagedBinaryKind;
+    upstreamVersion: string;
+    revision?: number;
+    target: string;
+    filename?: string;
+    sha256: string;
+    builtFromAppVersion?: string;
+    compatibilityJson?: string;
+    notes?: string;
+    source: 'LOCAL' | 'UPLOAD' | 'REMOTE' | 'GITHUB';
+    body: Buffer;
+    operatorId?: string;
+    silentAudit?: boolean;
+  }) {
+    if (!BINARY_KINDS.includes(input.kind)) throw new BadRequestException('不支持的二进制资源类型');
+    const definition = BINARY_TARGETS.find((item) => item.target === input.target && item.kind === input.kind);
+    if (!definition) throw new BadRequestException('资源类型与目标平台不匹配');
+    const actualSha = createHash('sha256').update(input.body).digest('hex');
+    if (actualSha.toLowerCase() !== input.sha256.toLowerCase()) {
+      throw new BadRequestException(`二进制文件 SHA-256 校验不匹配（实际: ${actualSha}）`);
+    }
+    const compatibility = this.parseCompatibilityJson(input.compatibilityJson);
+    const parsedVersion = parseBinaryResourceVersion(input.upstreamVersion);
+    const revision = input.revision ?? parsedVersion.revision ?? 1;
+    const os = definition.target.split('-')[1];
+    const arch = definition.target.split('-')[2];
+    const defaultName = os === 'windows' ? 'riri-agent.exe' : 'riri-agent';
+    const filename = this.sanitizeFilename(input.filename ?? defaultName);
+
+    const hasExistingDefault = await this.prisma.binaryRelease.findFirst({
+      where: { kind: input.kind, status: 'ACTIVE', isDefault: true }
+    });
+
+    const release = await this.prisma.binaryRelease.upsert({
+      where: {
+        kind_upstreamVersion_revision: {
+          kind: input.kind,
+          upstreamVersion: parsedVersion.upstreamVersion,
+          revision
+        }
+      },
+      update: {
+        ...(input.builtFromAppVersion !== undefined ? { builtFromAppVersion: input.builtFromAppVersion || null } : {}),
+        ...(input.compatibilityJson !== undefined ? { compatibilityJson: JSON.stringify(compatibility) } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes || null } : {})
+      },
+      create: {
+        kind: input.kind,
+        upstreamVersion: parsedVersion.upstreamVersion,
+        revision,
+        source: input.source,
+        status: 'ACTIVE',
+        builtFromAppVersion: input.builtFromAppVersion || parsedVersion.upstreamVersion,
+        compatibilityJson: JSON.stringify(compatibility),
+        notes: input.notes || null,
+        isDefault: !hasExistingDefault
+      }
+    });
+
+    const relativePath = join('resources', release.id, definition.target, filename).split(sep).join('/');
+    const fullPath = this.resolveStoragePath('RUNTIME', relativePath);
+    await this.writeAtomically(fullPath, input.body);
+
+    const asset = await this.prisma.binaryAsset.upsert({
+      where: { releaseId_target: { releaseId: release.id, target: definition.target } },
+      update: {
+        os,
+        arch,
+        filename,
+        storageRoot: 'RUNTIME',
+        storagePath: relativePath,
+        sha256: actualSha,
+        size: input.body.length,
+        available: true
+      },
+      create: {
+        releaseId: release.id,
+        target: definition.target,
+        os,
+        arch,
+        filename,
+        storageRoot: 'RUNTIME',
+        storagePath: relativePath,
+        sha256: actualSha,
+        size: input.body.length,
+        available: true
+      }
+    });
     await this.prisma.binaryAssetFile.deleteMany({ where: { assetId: asset.id } });
     await this.prisma.binaryAssetFile.create({
       data: {
@@ -529,275 +1312,409 @@ export class BinaryResourcesService implements OnModuleInit {
         name: filename,
         role: 'main',
         storageRoot: 'RUNTIME',
-        storagePath: finalRelativePath,
-        sha256: actual,
-        size: body.length
+        storagePath: relativePath,
+        sha256: actualSha,
+        size: input.body.length
       }
     });
-    await this.audit('RESOURCE_IMPORTED', {
-      releaseId: release.id,
-      assetId: asset.id,
-      operatorId,
-      metadataJson: JSON.stringify({ source, target: dto.target })
-    });
-    await this.binaries.refresh();
+
+    if (!input.silentAudit) {
+      this.recordSystemLog(
+        'RESOURCE_IMPORTED',
+        `${input.source === 'UPLOAD' ? '上传' : '导入'}二进制资源 ${formatBinaryVersion(input.kind, parsedVersion.upstreamVersion, revision)} (${definition.target})`,
+        {
+          releaseId: release.id,
+          assetId: asset.id,
+          source: input.source,
+          target: definition.target,
+          sha256: actualSha,
+          version: formatBinaryVersion(input.kind, parsedVersion.upstreamVersion, revision)
+        },
+        input.operatorId
+      );
+    }
+
+    await this.binaries?.refresh();
     return this.detail(release.id);
   }
 
-  // 读取运行态与静态仓 manifest 并认领资源；返回本轮成功认领的资源键集合，
-  // 供归档逻辑判断“当前部署应存在的内置资源”。staticManifestLoaded 表示镜像/发行包自带
-  // 的主 manifest 是否解析成功——它缺失或损坏时不得触发自动归档，避免误伤全部内置资源。
-  private async syncManifests(): Promise<{ keys: Set<string>; staticManifestLoaded: boolean }> {
+  private async cleanupLegacySingboxResources(): Promise<void> {
+    try {
+      await this.prisma.binaryRelease.updateMany({
+        where: { status: { in: ['DRAFT', 'RETIRED'] } },
+        data: { status: 'DISABLED', isDefault: false }
+      });
+      const legacy = await this.prisma.binaryRelease.findMany({
+        where: { kind: { not: 'AGENT' } },
+        select: { id: true }
+      });
+      if (!legacy.length) return;
+      const ids = legacy.map((item) => item.id);
+      await this.prisma.binaryAssetFile.deleteMany({ where: { asset: { releaseId: { in: ids } } } });
+      await this.prisma.binaryAsset.deleteMany({ where: { releaseId: { in: ids } } });
+      for (const id of ids) {
+        await this.prisma.binaryRelease.delete({ where: { id } }).catch(() => undefined);
+        await rm(join(this.resourceDir, id), { recursive: true, force: true }).catch(() => undefined);
+      }
+    } catch {
+      // 忽略旧表结构迁移前的清理异常
+    }
+  }
+
+  private async syncManifests(seededKeys?: Set<string>): Promise<{ keys: Set<string>; staticManifestLoaded: boolean }> {
     const keys = new Set<string>();
     let staticManifestLoaded = false;
-    for (const root of [this.runtimeDir, this.staticDir]) {
-      const path = join(root, 'manifest.json');
+    const candidates = [
+      { path: join(this.staticDir, 'manifest.json'), isStatic: true },
+      { path: join(this.runtimeDir, 'manifest.json'), isStatic: false }
+    ];
+    for (const candidate of candidates) {
       try {
-        const parsed = JSON.parse(await readFile(path, 'utf8')) as BinaryManifest;
-        if (root === this.staticDir) staticManifestLoaded = true;
-        for (const resource of parsed.resources ?? []) {
-          await this.upsertManifestResource(root, resource);
-          keys.add(this.manifestKey(resource.kind, resource.upstreamVersion, resource.revision));
+        const raw = await readFile(candidate.path, 'utf8');
+        const manifest = JSON.parse(raw) as ManifestDocument;
+        const manifestRoot = dirname(candidate.path);
+        for (const resource of manifest.resources ?? []) {
+          if (resource.kind !== 'AGENT') continue;
+          const parsed = parseBinaryResourceVersion(resource.upstreamVersion);
+          const revision = resource.revision ?? parsed.revision ?? 1;
+          const key = `${resource.kind}:${parsed.upstreamVersion}:${revision}`;
+          keys.add(key);
+          // 若该版本之前已初始化过且已被管理员删除，则跳过不再自动恢复
+          if (seededKeys?.has(key)) {
+            const existing = await this.prisma.binaryRelease.findUnique({
+              where: {
+                kind_upstreamVersion_revision: {
+                  kind: 'AGENT',
+                  upstreamVersion: parsed.upstreamVersion,
+                  revision
+                }
+              }
+            });
+            if (!existing) continue;
+          }
+          await this.upsertManifestResource(manifestRoot, {
+            ...resource,
+            builtFromAppVersion: resource.builtFromAppVersion ?? manifest.applicationVersion
+          });
+          seededKeys?.add(key);
         }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-          this.logger.warn(`读取二进制 manifest 失败 root=${root}: ${error instanceof Error ? error.message : error}`);
-        }
+        if (candidate.isStatic) staticManifestLoaded = true;
+      } catch {
+        // manifest 是可选增强；旧目录结构通过 syncLegacyAssets 认领。
       }
     }
     return { keys, staticManifestLoaded };
   }
 
-  private manifestKey(kind: string, upstreamVersion: string, revision?: number): string {
-    return `${kind}:${upstreamVersion}:${revision ?? 1}`;
-  }
-
-  // 升级镜像/发行包后，旧内置资源指向的 STATIC 文件已被新版本替换（sha256 失配），
-  // 保留“启用”状态只会误导管理员。这里把不在当前 manifest 中的 BUILTIN 资源自动归档：
-  // 记录与审计全部保留、可手动恢复，默认标记按既有规则转移。
-  private async retireSupersededBuiltins(manifest: { keys: Set<string>; staticManifestLoaded: boolean }): Promise<void> {
-    if (!manifest.staticManifestLoaded) return;
-    const builtins = await this.prisma.binaryRelease.findMany({ where: { source: 'BUILTIN', status: { not: 'RETIRED' } } });
-    for (const release of builtins) {
-      if (manifest.keys.has(this.manifestKey(release.kind, release.upstreamVersion, release.revision))) continue;
-      const { defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
-        const updated = await tx.binaryRelease.update({ where: { id: release.id }, data: { status: 'RETIRED', isDefault: false } });
-        const transferredTo = await this.transferDefault(tx, release);
-        return { updated, defaultTransferredTo: transferredTo };
-      });
-      await this.audit('RESOURCE_RETIRED', {
-        releaseId: release.id,
-        metadataJson: JSON.stringify({ previousStatus: release.status, reason: 'builtin-superseded', defaultTransferredTo: defaultTransferredTo ?? null })
-      });
-      this.logger.log(`内置资源已被当前 manifest 取代，自动归档：${release.kind} ${release.upstreamVersion}-r${release.revision}`);
-    }
-  }
-
-  // 收敛每类型唯一默认：多条时仅保留最新的 ACTIVE 默认，零条时补设最新 ACTIVE，
-  // 修复历史版本重复登记 isDefault 造成的脏数据。
-  private async normalizeDefaults(): Promise<void> {
-    for (const kind of BINARY_KINDS) {
-      const defaults = await this.prisma.binaryRelease.findMany({ where: { kind, isDefault: true }, orderBy: { updatedAt: 'desc' } });
-      const keep = defaults.find((release) => release.status === 'ACTIVE');
-      const staleIds = defaults.filter((release) => release.id !== keep?.id).map((release) => release.id);
-      if (staleIds.length) {
-        await this.prisma.binaryRelease.updateMany({ where: { id: { in: staleIds } }, data: { isDefault: false } });
-      }
-      if (!keep) {
-        const candidate = await this.prisma.binaryRelease.findFirst({ where: { kind, status: 'ACTIVE' }, orderBy: { updatedAt: 'desc' } });
-        if (candidate) await this.prisma.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
-      }
-    }
-  }
-
-  // 启动校验资产文件：缺失或 sha256 与登记不符的资产标记不可用（文件恢复后自愈回 true），
-  // 启用中资源失去全部可用资产时降级为停用并转移默认，避免列表误导与误分发。
-  private async verifyAssetsAvailability(): Promise<void> {
-    const releases = await this.prisma.binaryRelease.findMany({
-      where: { status: { in: ['ACTIVE', 'DRAFT'] } },
-      include: { assets: { include: { files: true } } }
-    });
-    for (const release of releases) {
-      let availableAssets = 0;
-      for (const asset of release.assets) {
-        const main = asset.files.find((file) => file.role === 'main') ?? asset.files[0];
-        const path = this.resolveStoredPath(main?.storageRoot ?? asset.storageRoot, main?.storagePath ?? asset.storagePath);
-        const inspected = await this.inspectFile(path);
-        const expectedSha256 = (main?.sha256 ?? asset.sha256).toLowerCase();
-        const valid = inspected ? inspected.sha256.toLowerCase() === expectedSha256 : false;
-        if (valid !== asset.available) {
-          await this.prisma.binaryAsset.update({ where: { id: asset.id }, data: { available: valid } });
-          if (!valid) {
-            this.logger.warn(`资产文件校验失败，已标记不可用：${release.kind} ${release.upstreamVersion}-r${release.revision} target=${asset.target}`);
-          }
-        }
-        if (valid) availableAssets += 1;
-      }
-      if (release.status === 'ACTIVE' && release.assets.length > 0 && availableAssets === 0) {
-        const { defaultTransferredTo } = await this.prisma.$transaction(async (tx) => {
-          const updated = await tx.binaryRelease.update({ where: { id: release.id }, data: { status: 'DISABLED', isDefault: false } });
-          const transferredTo = await this.transferDefault(tx, release);
-          return { updated, defaultTransferredTo: transferredTo };
-        });
-        await this.audit('RESOURCE_DISABLED', {
-          releaseId: release.id,
-          metadataJson: JSON.stringify({ reason: 'asset-missing', defaultTransferredTo: defaultTransferredTo ?? null })
-        });
-        this.logger.warn(`资源已无可用资产文件，自动停用：${release.kind} ${release.upstreamVersion}-r${release.revision}`);
-      }
-    }
-  }
-
-  private async upsertManifestResource(root: string, resource: ManifestResource): Promise<void> {
-    if (!BINARY_KINDS.includes(resource.kind) || !resource.upstreamVersion || !resource.assets?.length) return;
-    const where = {
-      kind_upstreamVersion_revision: {
-        kind: resource.kind,
-        upstreamVersion: resource.upstreamVersion,
-        revision: resource.revision ?? 1
-      }
+  private async upsertManifestResource(manifestRoot: string, resource: ManifestResourceEntry) {
+    if (!BINARY_KINDS.includes(resource.kind as ManagedBinaryKind)) return;
+    const parsedVersion = parseBinaryResourceVersion(resource.upstreamVersion);
+    const revision = resource.revision ?? parsedVersion.revision ?? 1;
+    const compatibility = {
+      ...(resource.compatibility ?? {}),
+      ...(resource.cronetVersion ? { cronetVersion: resource.cronetVersion } : {})
     };
-    const existing = await this.prisma.binaryRelease.findUnique({ where });
-    const manifestCompatibility = this.manifestCompatibility(resource);
+    const identity = {
+      kind: resource.kind as ManagedBinaryKind,
+      upstreamVersion: parsedVersion.upstreamVersion,
+      revision
+    };
+    const existing = await this.prisma.binaryRelease.findUnique({
+      where: { kind_upstreamVersion_revision: identity }
+    });
     const release = existing
       ? await this.prisma.binaryRelease.update({
           where: { id: existing.id },
           data: {
-            source: resource.source ?? existing.source,
             builtFromAppVersion: resource.builtFromAppVersion ?? existing.builtFromAppVersion,
-            ...(manifestCompatibility !== undefined ? { compatibilityJson: manifestCompatibility } : {}),
-            ...(resource.notes !== undefined ? { notes: resource.notes } : {})
+            compatibilityJson: JSON.stringify(compatibility),
+            ...(resource.notes ? { notes: resource.notes } : {})
           }
         })
       : await this.prisma.binaryRelease.create({
           data: {
-            kind: resource.kind,
-            upstreamVersion: resource.upstreamVersion,
-            revision: resource.revision ?? 1,
-            source: resource.source ?? 'BUILTIN',
-            status: resource.status ?? 'ACTIVE',
+            ...identity,
+            source: resource.source ?? 'LOCAL',
+            status: resource.status && BINARY_STATUSES.includes(resource.status) ? resource.status : 'ACTIVE',
             builtFromAppVersion: resource.builtFromAppVersion ?? null,
-            compatibilityJson: manifestCompatibility ?? '{}',
+            compatibilityJson: JSON.stringify(compatibility),
             notes: resource.notes ?? null,
-            isDefault: resource.isDefault ?? false
+            isDefault: Boolean(resource.isDefault)
           }
         });
-    for (const item of resource.assets) {
-      const targetParts = item.target.split('-');
-      if (targetParts.length !== 3 || !item.files.length) continue;
-      const files = [];
-      for (const file of item.files) {
-        const path = resolve(root, file.path);
-        const inspected = await this.inspectFile(path);
-        if (!inspected || (file.sha256 && inspected.sha256.toLowerCase() !== file.sha256.toLowerCase())) continue;
-        files.push({ ...file, path, inspected });
+
+    for (const assetEntry of resource.assets ?? []) {
+      if (!assetEntry.files?.length) continue;
+      if (!(BINARY_TARGET_VALUES as readonly string[]).includes(assetEntry.target)) continue;
+      const verifiedFiles: Array<ManifestFileEntry & { sha256: string; size: number; storageRoot: 'STATIC' | 'RUNTIME'; storagePath: string }> = [];
+      for (const fileEntry of assetEntry.files) {
+        const fullPath = resolve(manifestRoot, fileEntry.path);
+        const inspected = await this.inspectFile(fullPath);
+        if (!inspected) continue;
+        if (fileEntry.sha256 && inspected.sha256.toLowerCase() !== fileEntry.sha256.toLowerCase()) {
+          this.logger.warn(`manifest 文件哈希不匹配，跳过 ${fullPath}`);
+          continue;
+        }
+        const storageRoot = fullPath.startsWith(this.staticDir) ? 'STATIC' : 'RUNTIME';
+        const storagePath = storageRoot === 'STATIC'
+          ? relative(this.staticDir, fullPath).split(sep).join('/')
+          : relative(this.runtimeDir, fullPath).startsWith('..')
+            ? relative(manifestRoot, fullPath).split(sep).join('/')
+            : relative(this.runtimeDir, fullPath).split(sep).join('/');
+        verifiedFiles.push({
+          ...fileEntry,
+          sha256: inspected.sha256,
+          size: inspected.size,
+          storageRoot,
+          storagePath
+        });
       }
-      const main = files.find((file) => file.role === 'main') ?? files[0];
-      if (!main) continue;
-      const relativePath = this.relativeStoragePath(root, main.path);
+      if (verifiedFiles.length !== assetEntry.files.length) continue;
+      const main = verifiedFiles.find((item) => item.role !== 'auxiliary') ?? verifiedFiles[0];
       const asset = await this.prisma.binaryAsset.upsert({
-        where: { releaseId_target: { releaseId: release.id, target: item.target } },
+        where: { releaseId_target: { releaseId: release.id, target: assetEntry.target } },
         update: {
-          os: item.os ?? targetParts[1],
-          arch: item.arch ?? targetParts[2],
+          os: assetEntry.os,
+          arch: assetEntry.arch,
           filename: main.name,
-          storageRoot: root === this.staticDir ? 'STATIC' : 'RUNTIME',
-          storagePath: relativePath,
-          sha256: main.inspected.sha256,
-          size: main.inspected.size,
+          storageRoot: main.storageRoot,
+          storagePath: main.storagePath,
+          sha256: main.sha256,
+          size: main.size,
           available: true
         },
         create: {
           releaseId: release.id,
-          target: item.target,
-          os: item.os ?? targetParts[1],
-          arch: item.arch ?? targetParts[2],
+          target: assetEntry.target,
+          os: assetEntry.os,
+          arch: assetEntry.arch,
           filename: main.name,
-          storageRoot: root === this.staticDir ? 'STATIC' : 'RUNTIME',
-          storagePath: relativePath,
-          sha256: main.inspected.sha256,
-          size: main.inspected.size,
+          storageRoot: main.storageRoot,
+          storagePath: main.storagePath,
+          sha256: main.sha256,
+          size: main.size,
           available: true
         }
       });
       await this.prisma.binaryAssetFile.deleteMany({ where: { assetId: asset.id } });
       await this.prisma.binaryAssetFile.createMany({
-        data: files.map((file) => ({
+        data: verifiedFiles.map((file) => ({
           assetId: asset.id,
           name: file.name,
-          role: file.role ?? 'auxiliary',
-          storageRoot: root === this.staticDir ? 'STATIC' : 'RUNTIME',
-          storagePath: this.relativeStoragePath(root, file.path),
-          sha256: file.inspected.sha256,
-          size: file.inspected.size
+          role: file.role ?? 'main',
+          storageRoot: file.storageRoot,
+          storagePath: file.storagePath,
+          sha256: file.sha256,
+          size: file.size
         }))
       });
     }
   }
 
-  private async syncLegacyAssets(): Promise<void> {
-    for (const target of BINARY_TARGET_VALUES) {
-      let asset;
+  private async syncLegacyAssets(seededKeys?: Set<string>) {
+    if (!this.binaries) return;
+    const masterVersion = this.readMasterVersion();
+    for (const { kind, target } of BINARY_TARGETS) {
+      let legacy: ReturnType<BinariesService['getAsset']>;
       try {
-        asset = this.binaries.getAsset(target);
+        legacy = this.binaries.getAsset(target);
       } catch {
         continue;
       }
-      const existing = await this.prisma.binaryAsset.findFirst({ where: { target, sha256: asset.sha256 } });
-      if (existing) continue;
-      const kind = target.startsWith('agent-') ? 'AGENT' : 'SINGBOX';
-      const version = kind === 'SINGBOX'
-        ? await this.detectBinaryVersion(asset.path) || process.env.SINGBOX_VERSION || '1.14.0'
-        : this.readAppVersion();
-      const release = await this.prisma.binaryRelease.upsert({
-        where: { kind_upstreamVersion_revision: { kind, upstreamVersion: version, revision: 1 } },
-        update: {},
-        create: { kind, upstreamVersion: version, revision: 1, source: 'BUILTIN', status: 'ACTIVE', isDefault: true, builtFromAppVersion: this.readAppVersion() }
+      const existing = await this.prisma.binaryAsset.findFirst({
+        where: { target, sha256: legacy.sha256 },
+        include: { release: true }
       });
-      const storageRoot = asset.path.includes(this.staticDir) ? 'STATIC' : 'RUNTIME';
-      const storagePath = this.relativeStoragePath(storageRoot === 'STATIC' ? this.staticDir : this.runtimeDir, asset.path);
-      const created = await this.prisma.binaryAsset.upsert({
+      if (existing) continue;
+      const upstreamVersion = normalizeBinaryVersion(legacy.version || masterVersion || '0.0.0');
+      const key = `${kind}:${upstreamVersion}:1`;
+      if (seededKeys?.has(key)) {
+        const existingRelease = await this.prisma.binaryRelease.findUnique({
+          where: { kind_upstreamVersion_revision: { kind, upstreamVersion, revision: 1 } }
+        });
+        if (!existingRelease) continue;
+      }
+      const release = await this.prisma.binaryRelease.upsert({
+        where: { kind_upstreamVersion_revision: { kind, upstreamVersion, revision: 1 } },
+        update: {},
+        create: {
+          kind,
+          upstreamVersion,
+          revision: 1,
+          source: legacy.imported ? 'REMOTE' : 'LOCAL',
+          status: 'ACTIVE',
+          builtFromAppVersion: masterVersion,
+          isDefault: !legacy.imported
+        }
+      });
+      seededKeys?.add(key);
+      const storageRoot = legacy.path.startsWith(this.staticDir) ? 'STATIC' : 'RUNTIME';
+      const baseDir = storageRoot === 'STATIC' ? this.staticDir : this.runtimeDir;
+      const storagePath = relative(baseDir, legacy.path).startsWith('..')
+        ? legacy.path
+        : relative(baseDir, legacy.path).split(sep).join('/');
+      const os = target.split('-')[1];
+      const arch = target.split('-')[2];
+      const asset = await this.prisma.binaryAsset.upsert({
         where: { releaseId_target: { releaseId: release.id, target } },
         update: {},
         create: {
           releaseId: release.id,
           target,
-          os: target.split('-')[1],
-          arch: target.split('-')[2],
-          filename: asset.filename,
+          os,
+          arch,
+          filename: legacy.filename,
           storageRoot,
           storagePath,
-          sha256: asset.sha256,
-          size: asset.size,
+          sha256: legacy.sha256,
+          size: legacy.size,
           available: true
         }
       });
-      if (created.sha256.toLowerCase() !== asset.sha256.toLowerCase()) {
-        this.logger.warn(`legacy asset skipped: target=${target} release=${release.id} existing checksum differs`);
-        continue;
-      }
+      if (asset.sha256 !== legacy.sha256) continue;
+      await this.prisma.binaryAssetFile.deleteMany({ where: { assetId: asset.id } });
       await this.prisma.binaryAssetFile.create({
-        data: { assetId: created.id, name: asset.filename, role: 'main', storageRoot, storagePath, sha256: asset.sha256, size: asset.size }
+        data: {
+          assetId: asset.id,
+          name: legacy.filename,
+          role: 'main',
+          storageRoot,
+          storagePath,
+          sha256: legacy.sha256,
+          size: legacy.size
+        }
       });
-      if (kind === 'SINGBOX' && target.startsWith('singbox-linux-')) {
-        const auxiliaryPath = join(dirname(asset.path), 'libcronet.so');
-        const auxiliary = await this.inspectFile(auxiliaryPath);
-        if (auxiliary) {
-          const auxiliaryRoot = auxiliaryPath.includes(this.staticDir) ? 'STATIC' : 'RUNTIME';
-          await this.prisma.binaryAssetFile.create({
-            data: {
-              assetId: created.id,
-              name: 'libcronet.so',
-              role: 'auxiliary',
-              storageRoot: auxiliaryRoot,
-              storagePath: this.relativeStoragePath(auxiliaryRoot === 'STATIC' ? this.staticDir : this.runtimeDir, auxiliaryPath),
-              sha256: auxiliary.sha256,
-              size: auxiliary.size
-            }
+    }
+  }
+
+  private async retireSupersededBuiltins(manifest: { keys: Set<string>; staticManifestLoaded: boolean }) {
+    if (!manifest.staticManifestLoaded || !manifest.keys.size) return;
+    const builtins = await this.prisma.binaryRelease.findMany({
+      where: { source: { in: ['BUILTIN', 'LOCAL'] }, status: { not: 'DISABLED' } }
+    });
+    for (const release of builtins) {
+      const key = `${release.kind}:${release.upstreamVersion}:${release.revision}`;
+      if (manifest.keys.has(key)) continue;
+      const nextDefaultId = await this.prisma.$transaction(async (tx) => {
+        await tx.binaryRelease.update({
+          where: { id: release.id },
+          data: { status: 'DISABLED', isDefault: false }
+        });
+        if (!release.isDefault) return null;
+        const candidate = await tx.binaryRelease.findFirst({
+          where: { kind: release.kind, status: 'ACTIVE', id: { not: release.id } },
+          orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+        });
+        if (!candidate) return null;
+        await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+        return candidate.id;
+      });
+      this.recordSystemLog(
+        'RESOURCE_DISABLED',
+        `自动停用旧版本资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)}`,
+        { releaseId: release.id, kind: release.kind, reason: 'builtin-superseded', nextDefaultId }
+      );
+    }
+  }
+
+  private async normalizeDefaults() {
+    for (const kind of BINARY_KINDS) {
+      const defaults = await this.prisma.binaryRelease.findMany({
+        where: { kind, isDefault: true },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+      });
+      const activeDefaults = defaults.filter((item) => item.status === 'ACTIVE');
+      if (activeDefaults.length === 1 && defaults.length === 1) continue;
+      if (activeDefaults.length >= 1) {
+        const keep = activeDefaults[0];
+        const staleIds = defaults.filter((item) => item.id !== keep.id).map((item) => item.id);
+        if (staleIds.length) {
+          await this.prisma.binaryRelease.updateMany({
+            where: { id: { in: staleIds } },
+            data: { isDefault: false }
           });
         }
+        continue;
+      }
+      if (defaults.length) {
+        await this.prisma.binaryRelease.updateMany({
+          where: { id: { in: defaults.map((item) => item.id) } },
+          data: { isDefault: false }
+        });
+      }
+      const fallback = await this.prisma.binaryRelease.findFirst({
+        where: { kind, status: 'ACTIVE' },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+      });
+      if (fallback) {
+        await this.prisma.binaryRelease.update({ where: { id: fallback.id }, data: { isDefault: true } });
       }
     }
+  }
+
+  private async verifyAssetsAvailability() {
+    const releases = await this.prisma.binaryRelease.findMany({
+      where: { status: { in: ['ACTIVE', 'DISABLED', 'DRAFT'] } },
+      include: { assets: { include: { files: true } } }
+    });
+    for (const release of releases) {
+      if (!release.assets.length) continue;
+      let availableCount = 0;
+      const unavailableAssetIds: string[] = [];
+      for (const asset of release.assets) {
+        const verified = await this.verifyAssetFiles(asset);
+        if (verified) {
+          availableCount += 1;
+          if (!asset.available) {
+            await this.prisma.binaryAsset.update({ where: { id: asset.id }, data: { available: true } });
+          }
+        } else {
+          unavailableAssetIds.push(asset.id);
+          if (asset.available) {
+            await this.prisma.binaryAsset.update({ where: { id: asset.id }, data: { available: false } });
+          }
+        }
+      }
+      if (release.status === 'ACTIVE' && availableCount === 0) {
+        const nextDefaultId = await this.prisma.$transaction(async (tx) => {
+          await tx.binaryRelease.update({
+            where: { id: release.id },
+            data: { status: 'DISABLED', isDefault: false }
+          });
+          if (!release.isDefault) return null;
+          const candidate = await tx.binaryRelease.findFirst({
+            where: { kind: release.kind, status: 'ACTIVE', id: { not: release.id } },
+            orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+          });
+          if (!candidate) return null;
+          await tx.binaryRelease.update({ where: { id: candidate.id }, data: { isDefault: true } });
+          return candidate.id;
+        });
+        this.logger.warn(`二进制资源 ${release.kind}:${release.upstreamVersion}-r${release.revision} 所有资产文件不可用，已自动停用`);
+        this.recordSystemLog(
+          'RESOURCE_DISABLED',
+          `二进制资源 ${formatBinaryVersion(release.kind, release.upstreamVersion, release.revision)} 因文件缺失或校验不符已自动停用`,
+          { releaseId: release.id, kind: release.kind, reason: 'all-assets-unavailable', unavailableAssetIds, nextDefaultId },
+          undefined,
+          'WARN'
+        );
+      }
+    }
+  }
+
+  private serializeRelease<T extends {
+    id: string;
+    kind: string;
+    upstreamVersion: string;
+    revision: number;
+    _count?: { deploymentTasks: number };
+  }>(release: T) {
+    const { _count, ...rest } = release;
+    return {
+      ...rest,
+      version: formatBinaryVersion(release.kind, release.upstreamVersion, release.revision),
+      ...(_count ? { deploymentCount: _count.deploymentTasks } : {})
+    };
   }
 
   private async requireRelease(id: string) {
@@ -806,145 +1723,258 @@ export class BinaryResourcesService implements OnModuleInit {
     return release;
   }
 
-  private async audit(action: string, values: { releaseId?: string; assetId?: string; taskId?: string; nodeId?: string; operatorId?: string; metadataJson?: string }) {
-    await this.prisma.binaryAuditLog.create({ data: { action, ...values } });
+  private recordSystemLog(
+    action: string,
+    message: string,
+    metadata: Record<string, unknown>,
+    operatorId?: string,
+    level: 'INFO' | 'WARN' | 'ERROR' = 'INFO'
+  ): void {
+    this.systemLogs?.enqueue({
+      source: 'SERVER',
+      level,
+      module: 'BinaryResource',
+      userId: operatorId ?? null,
+      message,
+      metadata: { action, ...metadata }
+    });
   }
 
-  private serializeRelease(release: {
-    [key: string]: unknown;
-    upstreamVersion: string;
-    revision: number;
-    _count?: { deploymentTasks?: number };
-    deploymentTasks?: unknown[];
-  }) {
-    return {
-      ...release,
-      version: this.versionOf(release),
-      deploymentCount: release._count?.deploymentTasks ?? release.deploymentTasks?.length ?? 0
-    };
-  }
-
-  private versionOf(release: { kind?: unknown; upstreamVersion: string; revision: number }) {
-    return formatBinaryVersion(typeof release.kind === 'string' ? release.kind : undefined, release.upstreamVersion, release.revision);
-  }
-
-  private parseCompatibility(value: string): Record<string, unknown> {
+  private parseGithubRepo(repoUrl: string): { owner: string; repo: string } {
     try {
-      const parsed = JSON.parse(value || '{}');
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+      const parsed = new URL(repoUrl);
+      const parts = parsed.pathname.replace(/^\/+|\/+$/g, '').split('/');
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        return { owner: parts[0], repo: parts[1].replace(/\.git$/i, '') };
+      }
     } catch {
-      return {};
+      // fallback below
     }
+    return { owner: 'Nanako660', repo: 'riricloud' };
   }
 
-  private manifestCompatibility(resource: ManifestResource): string | undefined {
-    const hasCompatibility = resource.compatibilityJson !== undefined;
-    const compatibility = typeof resource.compatibilityJson === 'string'
-      ? this.parseCompatibility(resource.compatibilityJson)
-      : { ...(resource.compatibilityJson ?? {}) };
-    if (resource.cronetVersion) compatibility.cronetVersion = resource.cronetVersion;
-    return hasCompatibility || resource.cronetVersion ? JSON.stringify(compatibility) : undefined;
-  }
-
-  private assertCompatible(compatibility: Record<string, unknown>, node?: { agentProtocolVersion?: number | null; agentVersion?: string | null }) {
-    const minProtocol = typeof compatibility.minAgentProtocolVersion === 'number' ? compatibility.minAgentProtocolVersion : undefined;
-    const maxProtocol = typeof compatibility.maxAgentProtocolVersion === 'number' ? compatibility.maxAgentProtocolVersion : undefined;
-    if (minProtocol !== undefined && (node?.agentProtocolVersion ?? 0) < minProtocol) {
-      throw new ConflictException(`节点 Agent 协议版本过低，要求 >= ${minProtocol}`);
-    }
-    if (maxProtocol !== undefined && (node?.agentProtocolVersion ?? Number.MAX_SAFE_INTEGER) > maxProtocol) {
-      throw new ConflictException(`节点 Agent 协议版本过高，要求 <= ${maxProtocol}`);
-    }
-    const minAgentVersion = typeof compatibility.minAgentVersion === 'string' ? compatibility.minAgentVersion : undefined;
-    const maxAgentVersion = typeof compatibility.maxAgentVersion === 'string' ? compatibility.maxAgentVersion : undefined;
-    if ((minAgentVersion || maxAgentVersion) && !node?.agentVersion) {
-      throw new ConflictException('节点尚未上报 Agent 版本，无法完成资源兼容性检查');
-    }
-    if (minAgentVersion && compareVersions(node?.agentVersion ?? '', minAgentVersion) < 0) {
-      throw new ConflictException(`节点 Agent 版本过低，要求 >= ${minAgentVersion}`);
-    }
-    if (maxAgentVersion && compareVersions(node?.agentVersion ?? '', maxAgentVersion) > 0) {
-      throw new ConflictException(`节点 Agent 版本过高，要求 <= ${maxAgentVersion}`);
-    }
-  }
-
-  private async writeAtomically(path: string, body: Buffer): Promise<void> {
-    await mkdir(dirname(path), { recursive: true });
-    const temp = `${path}.${randomUUID()}.tmp`;
+  private async fetchGithubJson<T>(url: string): Promise<T> {
+    let response: Response;
     try {
-      await writeFile(temp, body, { mode: 0o755 });
-      await chmod(temp, 0o755);
-      await rename(temp, path);
-    } finally {
-      await unlink(temp).catch(() => undefined);
+      response = await fetch(url, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'RiriCloud-Master'
+        },
+        signal: AbortSignal.timeout(12_000)
+      });
+    } catch (error) {
+      throw new BadRequestException(`连接 GitHub API 失败: ${(error as Error).message}`);
+    }
+    if (!response.ok) {
+      throw new BadRequestException(`GitHub API 请求失败 (HTTP ${response.status})`);
+    }
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > GITHUB_API_MAX_BYTES) {
+      throw new BadRequestException('GitHub API 响应体过大');
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new BadRequestException('解析 GitHub API 响应失败');
+    }
+  }
+
+  private normalizeMirrorPrefix(mirror: string): string {
+    const clean = mirror.trim().replace(/\/+$/, '');
+    if (!clean) return '';
+    return clean.includes('://') ? clean : `https://${clean}`;
+  }
+
+  private isMirrorHealthy(mirror: string): boolean {
+    const key = this.normalizeMirrorPrefix(mirror);
+    const failedAt = this.unhealthyMirrors.get(key);
+    if (!failedAt) return true;
+    if (Date.now() - failedAt > UNHEALTHY_MIRROR_TTL_MS) {
+      this.unhealthyMirrors.delete(key);
+      return true;
+    }
+    return false;
+  }
+
+  private markMirrorUnhealthy(mirror: string): void {
+    const key = this.normalizeMirrorPrefix(mirror);
+    if (key) {
+      this.unhealthyMirrors.set(key, Date.now());
+    }
+  }
+
+  private async fetchRemoteWithMirrorFallback(rawUrl: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
+    const isGithubReleaseUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//i.test(rawUrl);
+    if (!isGithubReleaseUrl) {
+      return fetchSafeRemoteBuffer(rawUrl, { maxBytes, signal });
+    }
+    const settings = await this.settingsService?.getSettings();
+    const mirrors = settings ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
+    const candidates: Array<{ url: string; mirrorPrefix?: string; isOfficial: boolean }> = [];
+    for (const mirror of mirrors) {
+      const prefix = this.normalizeMirrorPrefix(mirror);
+      if (!prefix || !this.isMirrorHealthy(prefix)) continue;
+      candidates.push({ url: `${prefix}/${rawUrl}`, mirrorPrefix: prefix, isOfficial: false });
+    }
+    // 始终将 GitHub 官方源作为最终回退兜底（镜像不可用或未配置镜像时自动回退官方源）
+    candidates.push({ url: rawUrl, isOfficial: true });
+
+    let lastError: Error | null = null;
+    for (const candidate of candidates) {
+      if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error('远程下载已取消');
+      }
+      try {
+        return await fetchSafeRemoteBuffer(candidate.url, {
+          maxBytes,
+          connectTimeoutMs: candidate.isOfficial ? 15_000 : 6_000,
+          idleTimeoutMs: candidate.isOfficial ? 15_000 : 6_000,
+          timeoutMs: candidate.isOfficial ? 120_000 : 60_000,
+          signal
+        });
+      } catch (error) {
+        lastError = error as Error;
+        if (signal?.aborted) {
+          throw lastError;
+        }
+        if (candidate.mirrorPrefix) {
+          this.markMirrorUnhealthy(candidate.mirrorPrefix);
+          this.logger.warn(
+            `GitHub 镜像源 ${candidate.mirrorPrefix} 下载失败 (${lastError.message})，已自动标记不可用并回退下一候选源`
+          );
+        }
+      }
+    }
+    throw new BadRequestException(`远程文件下载失败: ${lastError?.message ?? '所有镜像源与官方源均不可用'}`);
+  }
+
+  private async readSeededKeys(): Promise<Set<string>> {
+    try {
+      const raw = await readFile(this.seededMarkerPath, 'utf8');
+      const parsed = JSON.parse(raw) as { keys?: unknown };
+      if (Array.isArray(parsed.keys)) {
+        return new Set(parsed.keys.filter((k): k is string => typeof k === 'string'));
+      }
+    } catch {
+      // 首次运行尚无标记文件
+    }
+    return new Set();
+  }
+
+  private async writeSeededKeys(keys: Set<string>): Promise<void> {
+    try {
+      await mkdir(dirname(this.seededMarkerPath), { recursive: true });
+      await writeFile(this.seededMarkerPath, JSON.stringify({ keys: Array.from(keys) }, null, 2), 'utf8');
+    } catch {
+      // 忽略写入异常
+    }
+  }
+
+  private resolveStoragePath(storageRoot: string, storagePath: string): string {
+    if (storagePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(storagePath)) return resolve(storagePath);
+    const root = storageRoot === 'STATIC' ? this.staticDir : this.runtimeDir;
+    const resolved = resolve(root, storagePath);
+    const rel = relative(root, resolved);
+    if (rel.startsWith('..') || rel.includes(`..${sep}`)) {
+      throw new BadRequestException('非法的二进制存储路径');
+    }
+    return resolved;
+  }
+
+  private async writeAtomically(targetPath: string, body: Buffer) {
+    await mkdir(dirname(targetPath), { recursive: true });
+    const tempPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(tempPath, body, { mode: 0o755 });
+      await chmod(tempPath, 0o755).catch(() => undefined);
+      try {
+        await rename(tempPath, targetPath);
+      } catch {
+        await copyFile(tempPath, targetPath);
+        await chmod(targetPath, 0o755).catch(() => undefined);
+        await unlink(tempPath).catch(() => undefined);
+      }
+    } catch (err) {
+      await unlink(tempPath).catch(() => undefined);
+      throw err;
     }
   }
 
   private async inspectFile(path: string): Promise<{ sha256: string; size: number } | undefined> {
     try {
-      const metadata = await stat(path);
-      if (!metadata.isFile() || metadata.size > MAX_BINARY_SIZE) return undefined;
+      const file = await stat(path);
+      if (!file.isFile() || file.size > MAX_BINARY_SIZE) return undefined;
       const hash = createHash('sha256');
-      const body = await readFile(path);
-      hash.update(body);
-      return { sha256: hash.digest('hex'), size: metadata.size };
+      for await (const chunk of createReadStream(path)) hash.update(chunk);
+      return { sha256: hash.digest('hex'), size: file.size };
     } catch {
       return undefined;
     }
   }
 
-  private async assertFile(path: string): Promise<void> {
+  private parseCompatibilityJson(value?: string): Record<string, unknown> {
+    if (!value?.trim()) return {};
+    let parsed: unknown;
     try {
-      await access(path);
+      parsed = JSON.parse(value);
     } catch {
-      throw new NotFoundException('二进制文件已缺失');
+      throw new BadRequestException('compatibilityJson 必须是合法 JSON 对象');
     }
+    return this.normalizeCompatibility(parsed);
   }
 
-  private resolveStoredPath(root: string, path: string): string {
-    if (isAbsolute(path)) return resolve(path);
-    return resolve(root === 'STATIC' ? this.staticDir : this.runtimeDir, path);
-  }
-
-  private relativeStoragePath(root: string, path: string): string {
-    const value = relative(root, path);
-    return value && !value.startsWith('..') && !isAbsolute(value) ? value : path;
-  }
-
-  private defaultFilename(target: string): string {
-    return target.endsWith('windows-amd64') ? (target.startsWith('agent-') ? 'riri-agent.exe' : 'sing-box.exe') : target.startsWith('agent-') ? 'riri-agent' : 'sing-box';
-  }
-
-  private sanitizeFilename(filename: string): string {
-    const normalized = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    return normalized || 'binary';
-  }
-
-  private readAppVersion(): string {
-    try {
-      return JSON.parse(readFileSync(join(process.cwd(), '..', '..', 'package.json'), 'utf8')).version ?? '0.0.0';
-    } catch {
-      return process.env.npm_package_version ?? '0.0.0';
+  private normalizeCompatibility(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new BadRequestException('兼容性约束必须是 JSON 对象');
     }
-  }
-
-  private async detectBinaryVersion(path: string): Promise<string | undefined> {
-    try {
-      const result = await execFile(path, ['version'], { timeout: 2_000, windowsHide: true });
-      return result.stdout.match(/\b\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0];
-    } catch {
-      return undefined;
+    const allowedNumberKeys = new Set(['minAgentProtocolVersion', 'maxAgentProtocolVersion']);
+    const allowedStringKeys = new Set(['minAgentVersion', 'maxAgentVersion', 'cronetVersion']);
+    const normalized: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (item === undefined || item === null || item === '') continue;
+      if (allowedNumberKeys.has(key)) {
+        if (typeof item !== 'number' || !Number.isInteger(item) || item < 1 || item > 999) {
+          throw new BadRequestException(`${key} 必须是 1 到 999 的整数`);
+        }
+        normalized[key] = item;
+        continue;
+      }
+      if (allowedStringKeys.has(key)) {
+        if (typeof item !== 'string' || item.trim().length > 64) {
+          throw new BadRequestException(`${key} 必须是长度不超过 64 的字符串`);
+        }
+        normalized[key] = item.trim();
+        continue;
+      }
+      throw new BadRequestException(`不支持的兼容性约束字段: ${key}`);
     }
+    return normalized;
   }
-}
 
-function compareVersions(left: string, right: string): number {
-  const parse = (value: string) => value.replace(/^v/i, '').split(/[+-]/, 1)[0].split('.').map((part) => Number.parseInt(part, 10) || 0);
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
-    const delta = (a[index] ?? 0) - (b[index] ?? 0);
-    if (delta !== 0) return delta;
+  private sanitizeFilename(value: string): string {
+    const clean = value.trim().replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (!clean || clean === '.' || clean === '..') throw new BadRequestException('文件名无效');
+    return clean;
   }
-  return 0;
+
+  private async resolveDownloadBaseUrl(requestBaseUrl?: string): Promise<string> {
+    const settings = await this.settingsService?.getSettings();
+    return resolvePublicBaseUrl({
+      configuredBaseUrl: settings?.binaryDownloadBaseUrl || settings?.publicBaseUrl,
+      requestBaseUrl
+    });
+  }
+
+  private readMasterVersion(): string {
+    const candidates = [join(process.cwd(), '..', '..', 'package.json'), join(process.cwd(), 'package.json')];
+    for (const path of candidates) {
+      try {
+        return JSON.parse(readFileSync(path, 'utf8')).version ?? '0.0.0';
+      } catch {
+        // 尝试下一个路径
+      }
+    }
+    return process.env.npm_package_version ?? '0.0.0';
+  }
 }

@@ -1,22 +1,61 @@
-import { ConflictException, BadRequestException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { gzipSync } from 'node:zlib';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BinaryResourcesService } from './binary-resources.service';
+import { detectTargetFromBinaryHeader, inspectBinaryPayload } from './binary-inspector';
+
+function buildFakeElfBinary(arch: 'amd64' | 'arm64', embeddedVersion?: string): Buffer {
+  const header = Buffer.alloc(64, 0);
+  // 0x7F 'E' 'L' 'F'
+  header[0] = 0x7f;
+  header[1] = 0x45;
+  header[2] = 0x4c;
+  header[3] = 0x46;
+  header[4] = 2; // 64-bit
+  header[5] = 1; // little-endian
+  header.writeUInt16LE(arch === 'amd64' ? 0x3e : 0xb7, 18);
+  if (!embeddedVersion) return header;
+  const marker = Buffer.from(`RIRICLOUD_AGENT_VERSION:${embeddedVersion}\0`, 'ascii');
+  return Buffer.concat([header, marker]);
+}
+
+function buildFakePeBinary(embeddedVersion?: string): Buffer {
+  const buf = Buffer.alloc(128, 0);
+  buf[0] = 0x4d; // 'M'
+  buf[1] = 0x5a; // 'Z'
+  buf.writeUInt32LE(0x40, 0x3c);
+  buf.write('PE\0\0', 0x40, 'ascii');
+  buf.writeUInt16LE(0x8664, 0x44); // AMD64
+  if (!embeddedVersion) return buf;
+  return Buffer.concat([buf, Buffer.from(`RIRICLOUD_AGENT_VERSION:${embeddedVersion}\0`, 'ascii')]);
+}
+
+function buildSingleFileTarGz(fileName: string, content: Buffer): Buffer {
+  const header = Buffer.alloc(512, 0);
+  header.write(fileName, 0, Math.min(fileName.length, 100), 'utf8');
+  header.write('0000755\0', 100, 8, 'ascii');
+  header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 12, 'ascii');
+  header[156] = 48; // '0' regular file
+  const paddingLen = (512 - (content.length % 512)) % 512;
+  const eof = Buffer.alloc(1024, 0);
+  return gzipSync(Buffer.concat([header, content, Buffer.alloc(paddingLen, 0), eof]));
+}
 
 describe('BinaryResourcesService', () => {
   let service: BinaryResourcesService;
   let dataDir: string;
 
   const release = (overrides: Record<string, unknown> = {}) => ({
-    id: 'release-singbox-1',
-    kind: 'SINGBOX',
-    upstreamVersion: '1.14.0',
+    id: 'release-agent-1',
+    kind: 'AGENT',
+    upstreamVersion: '0.4.14',
     revision: 1,
-    source: 'BUILTIN',
+    source: 'LOCAL',
     status: 'ACTIVE',
-    builtFromAppVersion: '0.5.0',
+    builtFromAppVersion: '0.4.14',
     compatibilityJson: '{}',
     notes: null,
     isDefault: true,
@@ -35,11 +74,28 @@ describe('BinaryResourcesService', () => {
       count: jest.fn(),
       delete: jest.fn()
     },
-    binaryAsset: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
-    binaryAssetFile: { deleteMany: jest.fn(), create: jest.fn(), createMany: jest.fn() },
-    binaryDeploymentTask: { findMany: jest.fn(), count: jest.fn() },
-    binaryAuditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-    user: { findMany: jest.fn() },
+    binaryAsset: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      upsert: jest.fn(),
+      deleteMany: jest.fn()
+    },
+    binaryAssetFile: {
+      findUnique: jest.fn(),
+      deleteMany: jest.fn(),
+      create: jest.fn(),
+      createMany: jest.fn()
+    },
+    binaryDeploymentTask: {
+      findMany: jest.fn(),
+      count: jest.fn(),
+      updateMany: jest.fn()
+    },
+    node: {
+      updateMany: jest.fn()
+    },
     $transaction: jest.fn()
   };
   prisma.$transaction.mockImplementation(async (arg: unknown) => {
@@ -47,25 +103,44 @@ describe('BinaryResourcesService', () => {
     return (arg as (tx: typeof prisma) => Promise<unknown>)(prisma);
   });
   const binaries = { refresh: jest.fn(async () => undefined), getAsset: jest.fn() };
+  const settingsService = {
+    getSettings: jest.fn(async () => ({
+      githubRepoUrl: 'https://github.com/Nanako660/riricloud',
+      githubMirrorUrls: []
+    }))
+  };
+  const systemLogs = { enqueue: jest.fn() };
 
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'riricloud-binary-resources-'));
     process.env.RIRICLOUD_DATA_DIR = dataDir;
-    service = new BinaryResourcesService(prisma as never, binaries as never);
+    service = new BinaryResourcesService(
+      prisma as never,
+      binaries as never,
+      settingsService as never,
+      systemLogs as never
+    );
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await rm(join(dataDir, 'binaries', '.seeded-releases.json'), { force: true }).catch(() => undefined);
     prisma.binaryRelease.findMany.mockResolvedValue([]);
     prisma.binaryRelease.findUnique.mockResolvedValue(null);
+    prisma.binaryRelease.findFirst.mockResolvedValue(null);
     prisma.binaryRelease.create.mockResolvedValue(release());
-    prisma.binaryRelease.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...release(), ...data }));
+    prisma.binaryRelease.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...release(),
+      ...data
+    }));
     prisma.binaryRelease.upsert.mockResolvedValue(release());
     prisma.binaryAsset.findFirst.mockResolvedValue(null);
     prisma.binaryAsset.upsert.mockResolvedValue({ id: 'asset-1' });
     prisma.binaryAssetFile.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.binaryAssetFile.create.mockResolvedValue({ id: 'file-1' });
     prisma.binaryAssetFile.createMany.mockResolvedValue({ count: 0 });
-    prisma.binaryAuditLog.create.mockResolvedValue({ id: 'audit-1' });
+    prisma.binaryDeploymentTask.updateMany.mockResolvedValue({ count: 0 });
+    prisma.node.updateMany.mockResolvedValue({ count: 0 });
   });
 
   afterAll(async () => {
@@ -81,58 +156,117 @@ describe('BinaryResourcesService', () => {
     appVersion: string;
     root: string;
     main: Buffer;
-    auxiliary?: Buffer;
   }) {
-    const mainPath = join(options.root, 'sing-box');
+    const mainPath = join(options.root, 'riri-agent');
     await writeFile(mainPath, options.main);
-    const files = [{ name: 'sing-box', role: 'main', path: 'sing-box', sha256: digest(options.main) }];
-    if (options.auxiliary) {
-      const auxiliaryPath = join(options.root, 'libcronet.so');
-      await writeFile(auxiliaryPath, options.auxiliary);
-      files.push({ name: 'libcronet.so', role: 'auxiliary', path: 'libcronet.so', sha256: digest(options.auxiliary) });
-    }
+    const files = [{ name: 'riri-agent', role: 'main', path: 'riri-agent', sha256: digest(options.main) }];
     await (service as unknown as { upsertManifestResource: (root: string, resource: unknown) => Promise<void> }).upsertManifestResource(options.root, {
-      kind: 'SINGBOX',
-      upstreamVersion: '1.14.0',
+      kind: 'AGENT',
+      upstreamVersion: '0.4.14',
       revision: 1,
-      source: 'BUILTIN',
+      source: 'LOCAL',
       status: 'ACTIVE',
       builtFromAppVersion: options.appVersion,
       isDefault: true,
-      cronetVersion: 'v150.0.7871.63-2',
-      assets: [{ target: 'singbox-linux-amd64', os: 'linux', arch: 'amd64', files }]
+      assets: [{ target: 'agent-linux-amd64', os: 'linux', arch: 'amd64', files }]
     });
   }
 
-  it('应用版本变化时复用同一 Sing-box 资源身份和文件哈希', async () => {
+  describe('二进制自动解析引擎 (binary-inspector)', () => {
+    it('从 ELF/PE 魔数头与内嵌标记自动识别平台、版本与 SHA-256', () => {
+      const elfArm = buildFakeElfBinary('arm64', '0.4.14');
+      expect(detectTargetFromBinaryHeader(elfArm)).toBe('agent-linux-arm64');
+      const inspectedElf = inspectBinaryPayload({ buffer: elfArm });
+      expect(inspectedElf.target).toBe('agent-linux-arm64');
+      expect(inspectedElf.upstreamVersion).toBe('0.4.14');
+      expect(inspectedElf.sha256).toBe(digest(elfArm));
+
+      const peWin = buildFakePeBinary('0.5.0');
+      expect(detectTargetFromBinaryHeader(peWin)).toBe('agent-windows-amd64');
+      const inspectedPe = inspectBinaryPayload({ buffer: peWin });
+      expect(inspectedPe.target).toBe('agent-windows-amd64');
+      expect(inspectedPe.filename).toBe('riri-agent.exe');
+      expect(inspectedPe.upstreamVersion).toBe('0.5.0');
+    });
+
+    it('自动解压 .tar.gz 归档并从包名与二进制头提取元数据', () => {
+      const rawBin = buildFakeElfBinary('amd64');
+      const archive = buildSingleFileTarGz('riri-agent', rawBin);
+      const inspected = inspectBinaryPayload({
+        buffer: archive,
+        hintFilename: 'riri-agent_0.4.15_linux_amd64.tar.gz'
+      });
+      expect(inspected.target).toBe('agent-linux-amd64');
+      expect(inspected.upstreamVersion).toBe('0.4.15');
+      expect(inspected.sha256).toBe(digest(rawBin));
+      expect(inspected.size).toBe(rawBin.length);
+    });
+  });
+
+  it('上传文件无需手填版本、平台与哈希，自动解压计算并写入系统日志', async () => {
+    const rawBin = buildFakeElfBinary('amd64', '0.4.16');
+    const archive = buildSingleFileTarGz('riri-agent', rawBin);
+    prisma.binaryRelease.findUnique.mockResolvedValue({
+      ...release({ id: 'release-up-1', upstreamVersion: '0.4.16', source: 'UPLOAD' }),
+      assets: [],
+      deploymentTasks: [],
+      _count: { deploymentTasks: 0 }
+    });
+    prisma.binaryRelease.upsert.mockResolvedValue(release({ id: 'release-up-1', upstreamVersion: '0.4.16' }));
+
+    await service.upload({}, { buffer: archive, originalname: 'riri-agent_0.4.16_linux_amd64.tar.gz' }, 'admin-1');
+
+    expect(prisma.binaryRelease.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        kind_upstreamVersion_revision: {
+          kind: 'AGENT',
+          upstreamVersion: '0.4.16',
+          revision: 1
+        }
+      }
+    }));
+    expect(prisma.binaryAsset.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        target: 'agent-linux-amd64',
+        sha256: digest(rawBin),
+        size: rawBin.length
+      })
+    }));
+    expect(systemLogs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'SERVER',
+      module: 'BinaryResource',
+      userId: 'admin-1',
+      metadata: expect.objectContaining({ action: 'RESOURCE_IMPORTED', target: 'agent-linux-amd64' })
+    }));
+  });
+
+  it('应用版本变化时复用同一 Agent 资源身份和文件哈希', async () => {
     const root = await mkdtemp(join(dataDir, 'manifest-'));
-    const main = Buffer.from('sing-box-1.14.0');
-    const auxiliary = Buffer.from('cronet-v150');
+    const main = Buffer.from('riri-agent-0.4.14');
     const existing = release({ status: 'DISABLED', isDefault: false });
     prisma.binaryRelease.findUnique
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(existing);
-    prisma.binaryRelease.create.mockResolvedValueOnce(release({ builtFromAppVersion: '0.5.0' }));
+    prisma.binaryRelease.create.mockResolvedValueOnce(release({ builtFromAppVersion: '0.4.14' }));
     prisma.binaryRelease.update.mockResolvedValueOnce(existing);
 
-    await syncManifestResource({ appVersion: '0.5.0', root, main, auxiliary });
-    await syncManifestResource({ appVersion: '0.5.1', root, main, auxiliary });
+    await syncManifestResource({ appVersion: '0.4.14', root, main });
+    await syncManifestResource({ appVersion: '0.4.15', root, main });
 
     expect(prisma.binaryRelease.create).toHaveBeenCalledTimes(1);
     expect(prisma.binaryRelease.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: existing.id },
-      data: expect.objectContaining({ builtFromAppVersion: '0.5.1' })
+      data: expect.objectContaining({ builtFromAppVersion: '0.4.15' })
     }));
     expect(prisma.binaryAsset.upsert).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      where: { releaseId_target: { releaseId: existing.id, target: 'singbox-linux-amd64' } }
+      where: { releaseId_target: { releaseId: existing.id, target: 'agent-linux-amd64' } }
     }));
     expect(prisma.binaryRelease.update.mock.calls[0][0].data).not.toHaveProperty('status');
     expect(prisma.binaryRelease.update.mock.calls[0][0].data).not.toHaveProperty('isDefault');
 
     const createdFiles = prisma.binaryAssetFile.createMany.mock.calls[0][0].data as Array<{ name: string; sha256: string }>;
     expect(createdFiles).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'sing-box', role: 'main', storageRoot: 'RUNTIME', storagePath: 'sing-box', sha256: digest(main), size: main.length }),
-      expect.objectContaining({ name: 'libcronet.so', role: 'auxiliary', storageRoot: 'RUNTIME', storagePath: 'libcronet.so', sha256: digest(auxiliary), size: auxiliary.length })
+      expect.objectContaining({ name: 'riri-agent', role: 'main', storageRoot: 'RUNTIME', storagePath: 'riri-agent', sha256: digest(main), size: main.length })
     ]));
     await rm(root, { recursive: true, force: true });
   });
@@ -151,106 +285,37 @@ describe('BinaryResourcesService', () => {
   it('节点协议版本不满足资源约束时阻止分发', async () => {
     const asset = {
       id: 'asset-1',
-      target: 'singbox-linux-amd64',
+      target: 'agent-linux-amd64',
       os: 'linux',
       arch: 'amd64',
-      filename: 'sing-box',
+      filename: 'riri-agent',
       storageRoot: 'RUNTIME',
-      storagePath: 'resources/asset/sing-box',
+      storagePath: 'resources/asset/riri-agent',
       sha256: 'a'.repeat(64),
       size: 10,
       available: true,
-      files: [{ id: 'file-1', name: 'sing-box', role: 'main', sha256: 'a'.repeat(64), size: 10 }]
+      files: [{ id: 'file-1', name: 'riri-agent', role: 'main', sha256: 'a'.repeat(64), size: 10 }]
     };
     prisma.binaryRelease.findMany.mockResolvedValue([{ ...release({ compatibilityJson: JSON.stringify({ minAgentProtocolVersion: 2 }) }), assets: [asset] }]);
 
-    await expect(service.resolveForNode('singbox', 'linux/amd64', 'agent-token', 'https://panel.example.com', undefined, { agentProtocolVersion: 1 }))
+    await expect(service.resolveForNode('agent', 'linux/amd64', 'agent-token', 'https://panel.example.com', undefined, { agentProtocolVersion: 1 }))
       .rejects.toThrow(ConflictException);
     expect(prisma.binaryRelease.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { kind: 'SINGBOX', status: 'ACTIVE' }
+      where: { kind: 'AGENT', status: 'ACTIVE' }
     }));
   });
 
-  it('解析节点资源返回独立版本、主文件地址和辅助文件地址', async () => {
-    const asset = {
-      id: 'asset-1',
-      target: 'singbox-linux-amd64',
-      os: 'linux',
-      arch: 'amd64',
-      filename: 'sing-box',
-      storageRoot: 'RUNTIME',
-      storagePath: 'resources/asset/sing-box',
-      sha256: 'a'.repeat(64),
-      size: 10,
-      available: true,
-      files: [
-        { id: 'file-1', name: 'sing-box', role: 'main', sha256: 'a'.repeat(64), size: 10 },
-        { id: 'file-2', name: 'libcronet.so', role: 'auxiliary', sha256: 'b'.repeat(64), size: 20 }
-      ]
-    };
-    prisma.binaryRelease.findMany.mockResolvedValue([{ ...release(), assets: [asset] }]);
-
-    const result = await service.resolveForNode('singbox', 'linux/amd64', 'agent-token', 'https://panel.example.com', undefined, { agentProtocolVersion: 2 });
-
-    expect(result).toEqual(expect.objectContaining({ version: '1.14.0-r1', resourceId: release().id, assetId: asset.id, sha256: asset.sha256 }));
-    expect(result.files).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'file-1', role: 'main', url: expect.stringContaining('/api/v1/downloads/binary-files/file-1') }),
-      expect.objectContaining({ id: 'file-2', role: 'auxiliary', url: expect.stringContaining('/api/v1/downloads/binary-files/file-2') })
-    ]));
-  });
-
-  it('原子写入不会留下临时文件', async () => {
-    const root = await mkdtemp(join(dataDir, 'atomic-'));
-    const target = join(root, 'nested', 'binary');
-    await (service as unknown as { writeAtomically: (path: string, body: Buffer) => Promise<void> }).writeAtomically(target, Buffer.from('complete'));
-
-    expect(await readFile(target, 'utf8')).toBe('complete');
-    const entries = await readdir(join(root, 'nested'));
-    expect(entries).toEqual(['binary']);
-    await rm(root, { recursive: true, force: true });
-  });
-
-  it('旧目录认领遇到同版本同目标已有不同哈希资产时保持幂等', async () => {
-    const legacyPath = join(dataDir, 'legacy-agent');
-    await writeFile(legacyPath, 'legacy-agent-content');
-    const legacyAsset = {
-      target: 'agent-linux-amd64',
-      filename: 'riri-agent',
-      path: legacyPath,
-      sha256: digest(Buffer.from('legacy-agent-content')),
-      size: Buffer.byteLength('legacy-agent-content')
-    };
-    binaries.getAsset.mockImplementation((target: string) => {
-      if (target === legacyAsset.target) return legacyAsset;
-      throw new Error('asset unavailable');
-    });
-    prisma.binaryRelease.upsert.mockResolvedValue({ id: 'release-1' });
-    prisma.binaryAsset.upsert.mockResolvedValue({ id: 'existing-asset', sha256: 'different-hash' });
-    prisma.binaryAsset.create.mockRejectedValue(Object.assign(new Error('duplicate asset'), { code: 'P2002' }));
-
-    await expect(
-      (service as unknown as { syncLegacyAssets: () => Promise<void> }).syncLegacyAssets()
-    ).resolves.toBeUndefined();
-
-    expect(prisma.binaryAsset.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { releaseId_target: { releaseId: 'release-1', target: legacyAsset.target } }
-    }));
-    expect(prisma.binaryAsset.create).not.toHaveBeenCalled();
-    expect(prisma.binaryAssetFile.create).not.toHaveBeenCalled();
-    await rm(legacyPath, { force: true });
-  });
-
-  it('资源列表按条件分页并返回支持的平台列表', async () => {
-    prisma.binaryRelease.findMany.mockResolvedValue([{ ...release(), _count: { deploymentTasks: 3 } }]);
+  it('资源列表按条件分页并返回支持的 Agent 平台列表', async () => {
+    prisma.binaryRelease.findMany.mockResolvedValue([{ ...release(), assets: [], _count: { deploymentTasks: 3 } }]);
     prisma.binaryRelease.count.mockResolvedValue(11);
 
-    const result = await service.list({ page: 2, pageSize: 10, kind: 'AGENT', status: 'ACTIVE', search: '0.9', platform: 'linux-amd64' });
+    const result = await service.list({ page: 2, pageSize: 10, status: 'ACTIVE', search: '0.4', platform: 'linux-amd64' });
 
     expect(prisma.binaryRelease.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         kind: 'AGENT',
         status: 'ACTIVE',
-        OR: [{ upstreamVersion: { contains: '0.9' } }, { notes: { contains: '0.9' } }],
+        OR: [{ upstreamVersion: { contains: '0.4' } }, { notes: { contains: '0.4' } }],
         assets: { some: { target: { endsWith: '-linux-amd64' } } }
       },
       skip: 10,
@@ -260,10 +325,10 @@ describe('BinaryResourcesService', () => {
     expect(result.page).toBe(2);
     expect(result.data[0].deploymentCount).toBe(3);
     expect(result.supportedTargets).toContain('agent-linux-amd64');
-    expect(result.supportedTargets).not.toContain('agent-linux-armv7');
+    expect(result.supportedTargets).not.toContain('singbox-linux-amd64');
   });
 
-  it('停用默认资源时自动转移默认标记到最新 ACTIVE 资源', async () => {
+  it('停用默认资源时自动转移默认标记到最新 ACTIVE 资源并记入系统日志', async () => {
     const current = release({ isDefault: true });
     prisma.binaryRelease.findUnique.mockResolvedValue(current);
     prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-next' });
@@ -271,185 +336,70 @@ describe('BinaryResourcesService', () => {
     await service.disable(current.id, 'admin-1');
 
     expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-next' }, data: { isDefault: true } });
-    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
+    expect(systemLogs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'BinaryResource',
+      metadata: expect.objectContaining({
         action: 'RESOURCE_DISABLED',
-        metadataJson: expect.stringContaining('release-next')
+        nextDefaultId: 'release-next'
       })
     }));
   });
 
-  it('停用非默认资源不触发默认转移', async () => {
-    const current = release({ isDefault: false });
-    prisma.binaryRelease.findUnique.mockResolvedValue(current);
-
-    await service.disable(current.id, 'admin-1');
-
-    expect(prisma.binaryRelease.findFirst).not.toHaveBeenCalled();
-  });
-
-  it('恢复归档资源回到停用状态，非归档资源被拒绝', async () => {
-    prisma.binaryRelease.findUnique.mockResolvedValue(release({ status: 'RETIRED', isDefault: false }));
-    await service.restore('release-singbox-1', 'admin-1');
-    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-singbox-1' }, data: { status: 'DISABLED' } });
-
-    prisma.binaryRelease.findUnique.mockResolvedValue(release({ status: 'ACTIVE' }));
-    await expect(service.restore('release-singbox-1')).rejects.toThrow(ConflictException);
-  });
-
-  it('更新资源备注与兼容性约束', async () => {
-    prisma.binaryRelease.findUnique.mockResolvedValue(release({ source: 'UPLOAD' }));
-
-    await service.update('release-singbox-1', { notes: ' 新备注 ', compatibility: { minAgentProtocolVersion: 2, minAgentVersion: '0.7.0' } }, 'admin-1');
-
-    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({
-      where: { id: 'release-singbox-1' },
-      data: { notes: '新备注', compatibilityJson: JSON.stringify({ minAgentProtocolVersion: 2, minAgentVersion: '0.7.0' }) }
-    });
-  });
-
-  it('更新资源拒绝未知或类型错误的兼容性字段', async () => {
-    prisma.binaryRelease.findUnique.mockResolvedValue(release({ source: 'UPLOAD' }));
-
-    await expect(service.update('release-singbox-1', { compatibility: { unknownField: 1 } })).rejects.toThrow(BadRequestException);
-    await expect(service.update('release-singbox-1', { compatibility: { minAgentProtocolVersion: '2' } })).rejects.toThrow(BadRequestException);
-  });
-
-  it('删除资源校验内置归档状态、启用状态与分发历史', async () => {
-    prisma.binaryRelease.findUnique
-      .mockResolvedValueOnce(release({ source: 'BUILTIN', status: 'ACTIVE', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
-      .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'ACTIVE', isDefault: true, assets: [], _count: { deploymentTasks: 0 } }))
-      .mockResolvedValueOnce(release({ source: 'UPLOAD', status: 'DISABLED', isDefault: false, assets: [], _count: { deploymentTasks: 2 } }));
-
-    await expect(service.remove('release-singbox-1')).rejects.toThrow('内置资源不可直接删除');
-    await expect(service.remove('release-singbox-1')).rejects.toThrow('启用中的资源不可删除');
-    await expect(service.remove('release-singbox-1')).rejects.toThrow('分发历史');
-  });
-
-  it('已归档且无分发历史的内置资源可删除且不触碰共享静态文件', async () => {
-    prisma.binaryRelease.findUnique.mockResolvedValue({
-      ...release({ source: 'BUILTIN', status: 'RETIRED', isDefault: false }),
-      assets: [{ storageRoot: 'STATIC', size: 100 }],
-      _count: { deploymentTasks: 0 }
-    });
-
-    const result = await service.remove('release-singbox-1', 'admin-1');
-
-    expect(result).toEqual({ id: 'release-singbox-1', deleted: true });
-    expect(prisma.binaryRelease.delete).toHaveBeenCalledWith({ where: { id: 'release-singbox-1' } });
-    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        action: 'RESOURCE_DELETED',
-        metadataJson: expect.stringContaining('"freedBytes":0')
-      })
-    }));
-  });
-
-  it('删除含 RUNTIME 资源时按独占文件统计释放字节', async () => {
-    prisma.binaryRelease.findUnique.mockResolvedValue({
-      ...release({ source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
-      assets: [
-        { storageRoot: 'RUNTIME', size: 120 },
-        { storageRoot: 'STATIC', size: 80 }
-      ],
-      _count: { deploymentTasks: 0 }
-    });
-
-    await service.remove('release-singbox-1', 'admin-1');
-
-    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        action: 'RESOURCE_DELETED',
-        metadataJson: expect.stringContaining('"freedBytes":120')
-      })
-    }));
-  });
-
-  it('删除无引用资源会清理运行时目录并写审计', async () => {
-    const releaseId = 'release-delete-me';
-    const assetDir = join(dataDir, 'binaries', 'resources', releaseId, 'singbox-linux-amd64');
+  it('任意资源（含启用中、默认、有分发历史或原内置资源）均可直接删除，且重启不会复活', async () => {
+    const releaseId = 'release-delete-any';
+    const assetDir = join(dataDir, 'binaries', 'resources', releaseId, 'agent-linux-amd64');
     await mkdir(assetDir, { recursive: true });
-    await writeFile(join(assetDir, 'sing-box'), 'payload');
+    await writeFile(join(assetDir, 'riri-agent'), 'payload');
+
     prisma.binaryRelease.findUnique.mockResolvedValue({
-      ...release({ id: releaseId, source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
-      assets: [{ storageRoot: 'RUNTIME', size: 7 }],
-      _count: { deploymentTasks: 0 }
+      ...release({ id: releaseId, upstreamVersion: '0.4.14', source: 'BUILTIN', status: 'ACTIVE', isDefault: true }),
+      assets: [{ id: 'asset-del-1', storageRoot: 'RUNTIME', storagePath: 'resources/release-delete-any/agent-linux-amd64/riri-agent', size: 7 }],
+      _count: { deploymentTasks: 5 }
     });
+    prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-fallback-default' });
 
     const result = await service.remove(releaseId, 'admin-1');
 
     expect(result).toEqual({ id: releaseId, deleted: true });
+    expect(prisma.binaryDeploymentTask.updateMany).toHaveBeenCalled();
     expect(prisma.binaryAssetFile.deleteMany).toHaveBeenCalledWith({ where: { asset: { releaseId } } });
     expect(prisma.binaryAsset.deleteMany).toHaveBeenCalledWith({ where: { releaseId } });
     expect(prisma.binaryRelease.delete).toHaveBeenCalledWith({ where: { id: releaseId } });
-    await expect(stat(join(assetDir, 'sing-box'))).rejects.toThrow();
-    expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'RESOURCE_DELETED' })
+    expect(prisma.binaryRelease.update).toHaveBeenCalledWith({
+      where: { id: 'release-fallback-default' },
+      data: { isDefault: true }
+    });
+    await expect(stat(join(assetDir, 'riri-agent'))).rejects.toThrow();
+    expect(systemLogs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'BinaryResource',
+      metadata: expect.objectContaining({
+        action: 'RESOURCE_DELETED',
+        freedBytes: 7,
+        nextDefaultId: 'release-fallback-default'
+      })
     }));
+
+    // 验证已删除的版本键记录在 .seeded-releases.json 中，重启时不再重复创建
+    const seededRaw = JSON.parse(await readFile(join(dataDir, 'binaries', '.seeded-releases.json'), 'utf8')) as { keys: string[] };
+    expect(seededRaw.keys).toContain('AGENT:0.4.14:1');
   });
 
-  it('批量操作返回逐项成功与失败结果', async () => {
-    const deletable = {
-      ...release({ id: 'release-ok', source: 'UPLOAD', status: 'DISABLED', isDefault: false }),
-      assets: [{ storageRoot: 'RUNTIME', size: 1 }],
-      _count: { deploymentTasks: 0 }
-    };
-    const builtin = { ...release({ id: 'release-builtin', source: 'BUILTIN' }), assets: [], _count: { deploymentTasks: 0 } };
-    prisma.binaryRelease.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
-      where.id === 'release-ok' ? deletable : builtin);
-
-    const result = await service.batch({ action: 'delete', ids: ['release-ok', 'release-builtin'] }, 'admin-1');
-
-    expect(result.succeeded).toBe(1);
-    expect(result.failed).toBe(1);
-    expect(result.results[0]).toEqual({ id: 'release-ok', ok: true });
-    expect(result.results[1].ok).toBe(false);
-    expect(result.results[1].error).toContain('内置资源不可直接删除');
-  });
-
-  it('列表返回全部匹配行的登记体积与可释放空间汇总', async () => {
-    prisma.binaryRelease.count.mockResolvedValue(2);
-    prisma.binaryRelease.findMany
-      .mockResolvedValueOnce([
-        {
-          ...release({ isDefault: false }),
-          assets: [{ target: 'singbox-linux-amd64', size: 100, storageRoot: 'STATIC', available: true }],
-          _count: { deploymentTasks: 0 }
-        }
-      ])
-      .mockResolvedValueOnce([
-        { assets: [{ size: 100, storageRoot: 'STATIC' }, { size: 50, storageRoot: 'RUNTIME' }] },
-        { assets: [{ size: 30, storageRoot: 'RUNTIME' }] }
-      ]);
-
-    const result = await service.list({});
-
-    expect(result.summary).toEqual({ totalBytes: 180, reclaimableBytes: 80 });
-    expect(result.supportedTargets).toBeDefined();
-  });
-
-  it('审计日志分页返回并补全操作者信息', async () => {
-    prisma.binaryAuditLog.findMany.mockResolvedValue([
-      { id: 'a1', action: 'RESOURCE_IMPORTED', operatorId: 'admin-1', releaseId: 'release-1', createdAt: new Date() },
-      { id: 'a2', action: 'RESOURCE_ACTIVATED', operatorId: null, releaseId: null, createdAt: new Date() }
-    ]);
-    prisma.binaryAuditLog.count.mockResolvedValue(2);
-    prisma.user.findMany.mockResolvedValue([{ id: 'admin-1', nickname: '管理员', email: 'a@b.c' }]);
-
-    const result = await service.auditLogs({ page: 1, pageSize: 20, action: 'RESOURCE_IMPORTED' });
-
-    expect(prisma.binaryAuditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { action: 'RESOURCE_IMPORTED' },
-      skip: 0,
-      take: 20
+  it('批量删除对所有资源生效', async () => {
+    prisma.binaryRelease.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+      ...release({ id: where.id, source: 'BUILTIN', status: 'ACTIVE', isDefault: false }),
+      assets: [{ id: `asset-${where.id}`, storageRoot: 'RUNTIME', storagePath: 'x', size: 10 }],
+      _count: { deploymentTasks: 2 }
     }));
-    expect(result.data[0].operator).toEqual({ id: 'admin-1', nickname: '管理员', email: 'a@b.c' });
-    expect(result.data[1].operator).toBeNull();
+
+    const result = await service.batch({ action: 'delete', ids: ['release-1', 'release-2'] }, 'admin-1');
+
+    expect(result.succeeded).toBe(2);
+    expect(result.failed).toBe(0);
   });
 
   describe('内置资源生命周期', () => {
     type LifecycleInternals = {
-      syncManifests: () => Promise<{ keys: Set<string>; staticManifestLoaded: boolean }>;
+      syncManifests: (seededKeys?: Set<string>) => Promise<{ keys: Set<string>; staticManifestLoaded: boolean }>;
       retireSupersededBuiltins: (manifest: { keys: Set<string>; staticManifestLoaded: boolean }) => Promise<void>;
       normalizeDefaults: () => Promise<void>;
       verifyAssetsAvailability: () => Promise<void>;
@@ -467,7 +417,7 @@ describe('BinaryResourcesService', () => {
           kind: 'AGENT',
           upstreamVersion: '0.7.1',
           revision: 1,
-          source: 'BUILTIN',
+          source: 'LOCAL',
           status: 'ACTIVE',
           isDefault: true,
           assets: [{ target: 'agent-linux-amd64', os: 'linux', arch: 'amd64', files: [{ name: 'riri-agent', role: 'main', path: 'riri-agent', sha256: digest(body) }] }]
@@ -482,7 +432,7 @@ describe('BinaryResourcesService', () => {
       await rm(join(runtimeRoot, 'riri-agent'), { force: true });
     });
 
-    it('主 manifest 加载成功时归档被取代的内置资源并转移默认', async () => {
+    it('主 manifest 加载成功时自动停用被取代的旧版本资源并转移默认', async () => {
       const stale = release({ id: 'release-old-agent', kind: 'AGENT', upstreamVersion: '0.6.0', isDefault: true });
       const current = release({ id: 'release-new-agent', kind: 'AGENT', upstreamVersion: '0.7.1', isDefault: false });
       prisma.binaryRelease.findMany.mockResolvedValue([stale, current]);
@@ -490,57 +440,15 @@ describe('BinaryResourcesService', () => {
 
       await internals().retireSupersededBuiltins({ keys: new Set(['AGENT:0.7.1:1']), staticManifestLoaded: true });
 
-      expect(prisma.binaryRelease.findMany).toHaveBeenCalledWith({ where: { source: 'BUILTIN', status: { not: 'RETIRED' } } });
-      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-old-agent' }, data: { status: 'RETIRED', isDefault: false } });
+      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-old-agent' }, data: { status: 'DISABLED', isDefault: false } });
       expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-new-agent' }, data: { isDefault: true } });
-      expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
-          action: 'RESOURCE_RETIRED',
-          metadataJson: expect.stringContaining('builtin-superseded')
+      expect(systemLogs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        module: 'BinaryResource',
+        metadata: expect.objectContaining({
+          action: 'RESOURCE_DISABLED',
+          reason: 'builtin-superseded'
         })
       }));
-    });
-
-    it('主 manifest 未加载或资源仍受当前 manifest 支持时不触发归档', async () => {
-      prisma.binaryRelease.findMany.mockResolvedValue([release({ id: 'release-old', upstreamVersion: '0.6.0' })]);
-
-      await internals().retireSupersededBuiltins({ keys: new Set(), staticManifestLoaded: false });
-      expect(prisma.binaryRelease.update).not.toHaveBeenCalled();
-
-      prisma.binaryRelease.findMany.mockResolvedValue([release({ id: 'release-current', upstreamVersion: '1.14.0' })]);
-      await internals().retireSupersededBuiltins({ keys: new Set(['SINGBOX:1.14.0:1']), staticManifestLoaded: true });
-      expect(prisma.binaryRelease.update).not.toHaveBeenCalled();
-      expect(prisma.binaryAuditLog.create).not.toHaveBeenCalled();
-    });
-
-    it('多默认脏数据收敛为每类型唯一默认', async () => {
-      prisma.binaryRelease.findMany.mockImplementation(async ({ where }: { where: { kind: string } }) =>
-        where.kind === 'AGENT'
-          ? [
-              release({ id: 'release-default-new' }),
-              release({ id: 'release-default-old', upstreamVersion: '0.6.0' }),
-              release({ id: 'release-default-stale', status: 'RETIRED', upstreamVersion: '0.5.0' })
-            ]
-          : []);
-      prisma.binaryRelease.findFirst.mockResolvedValue(null);
-      prisma.binaryRelease.updateMany.mockResolvedValue({ count: 2 });
-
-      await internals().normalizeDefaults();
-
-      expect(prisma.binaryRelease.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['release-default-old', 'release-default-stale'] } },
-        data: { isDefault: false }
-      });
-      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ data: { isDefault: true } }));
-    });
-
-    it('同类型缺失默认时补设最新 ACTIVE 资源', async () => {
-      prisma.binaryRelease.findMany.mockResolvedValue([]);
-      prisma.binaryRelease.findFirst.mockResolvedValue({ id: 'release-next' });
-
-      await internals().normalizeDefaults();
-
-      expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-next' }, data: { isDefault: true } });
     });
 
     it('文件缺失或哈希不符的资产标记不可用，无可用资产的启用资源自动停用', async () => {
@@ -550,13 +458,13 @@ describe('BinaryResourcesService', () => {
       await writeFile(join(verifyDir, 'good'), good);
       await writeFile(join(verifyDir, 'tampered'), Buffer.from('tampered-bin'));
       const originalSha = digest(Buffer.from('original-bin'));
-      const validAsset = { id: 'asset-good', target: 'singbox-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good), available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good) }] };
-      const mismatchAsset = { id: 'asset-mismatch', target: 'singbox-linux-arm64', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha, available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha }] };
+      const validAsset = { id: 'asset-good', target: 'agent-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good), available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/good', sha256: digest(good) }] };
+      const mismatchAsset = { id: 'asset-mismatch', target: 'agent-linux-arm64', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha, available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/tampered', sha256: originalSha }] };
       const missingAsset = { id: 'asset-missing', target: 'agent-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'verify/missing', sha256: originalSha, available: true, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'verify/missing', sha256: originalSha }] };
       prisma.binaryRelease.findMany.mockImplementation(async ({ where }: { where: { status: { in: string[] } } }) =>
         where.status.in.includes('ACTIVE')
           ? [
-              { ...release({ id: 'release-partial', kind: 'SINGBOX', isDefault: false }), assets: [validAsset, mismatchAsset] },
+              { ...release({ id: 'release-partial', kind: 'AGENT', isDefault: false }), assets: [validAsset, mismatchAsset] },
               { ...release({ id: 'release-empty', kind: 'AGENT' }), assets: [missingAsset] }
             ]
           : []);
@@ -566,34 +474,171 @@ describe('BinaryResourcesService', () => {
 
       expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-mismatch' }, data: { available: false } });
       expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-missing' }, data: { available: false } });
-      expect(prisma.binaryAsset.update).not.toHaveBeenCalledWith({ where: { id: 'asset-good' }, data: expect.anything() });
       expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-empty' }, data: { status: 'DISABLED', isDefault: false } });
       expect(prisma.binaryRelease.update).toHaveBeenCalledWith({ where: { id: 'release-fallback' }, data: { isDefault: true } });
-      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'release-partial' } }));
-      expect(prisma.binaryAuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
+      expect(systemLogs.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        level: 'WARN',
+        module: 'BinaryResource',
+        metadata: expect.objectContaining({
           action: 'RESOURCE_DISABLED',
-          metadataJson: expect.stringContaining('asset-missing')
+          unavailableAssetIds: ['asset-missing']
         })
       }));
       await rm(verifyDir, { recursive: true, force: true });
     });
+  });
 
-    it('文件恢复后资产可用状态自愈回填', async () => {
-      const healDir = join(dataDir, 'binaries', 'heal');
-      await mkdir(healDir, { recursive: true });
-      const body = Buffer.from('restored-bin');
-      await writeFile(join(healDir, 'sing-box'), body);
-      const healedAsset = { id: 'asset-heal', target: 'singbox-linux-amd64', storageRoot: 'RUNTIME', storagePath: 'heal/sing-box', sha256: digest(body), available: false, files: [{ role: 'main', storageRoot: 'RUNTIME', storagePath: 'heal/sing-box', sha256: digest(body) }] };
+  describe('GitHub Release 远程列表与严格原子化拉取', () => {
+    it('按资产文件名提取真实 Agent 版本号并去重，同时校验本地磁盘文件真实存在才标记已入库', async () => {
+      const verifyDir = join(dataDir, 'binaries', 'gh-verify');
+      await mkdir(verifyDir, { recursive: true });
+      const existingBin = buildFakeElfBinary('amd64', '0.6.14');
+      await writeFile(join(verifyDir, 'riri-agent-ok'), existingBin);
+
+      const fetchJsonSpy = jest
+        .spyOn(service as unknown as { fetchGithubJson: (url: string) => Promise<unknown> }, 'fetchGithubJson')
+        .mockResolvedValue([
+          {
+            tag_name: 'v0.7.0',
+            name: 'Master v0.7.0',
+            assets: [
+              {
+                name: 'riri-master_0.7.0_linux_amd64.tar.gz',
+                size: 1000,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/v0.7.0/riri-master_0.7.0_linux_amd64.tar.gz'
+              },
+              {
+                name: 'riri-agent_0.6.14_linux_amd64.tar.gz',
+                size: 500,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/v0.7.0/riri-agent_0.6.14_linux_amd64.tar.gz'
+              }
+            ]
+          },
+          {
+            tag_name: 'agent-v0.6.14',
+            name: 'Agent v0.6.14',
+            assets: [
+              {
+                name: 'riri-agent_0.6.14_linux_amd64.tar.gz',
+                size: 500,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.6.14/riri-agent_0.6.14_linux_amd64.tar.gz'
+              },
+              {
+                name: 'riri-agent_0.6.14_linux_arm64.tar.gz',
+                size: 510,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.6.14/riri-agent_0.6.14_linux_arm64.tar.gz'
+              }
+            ]
+          }
+        ]);
+
       prisma.binaryRelease.findMany.mockResolvedValue([
-        { ...release({ id: 'release-heal', kind: 'SINGBOX', isDefault: false }), assets: [healedAsset] }
+        {
+          ...release({ id: 'rel-0.6.14', upstreamVersion: '0.6.14', status: 'ACTIVE' }),
+          assets: [
+            {
+              id: 'asset-ok',
+              target: 'agent-linux-amd64',
+              storageRoot: 'RUNTIME',
+              storagePath: 'gh-verify/riri-agent-ok',
+              sha256: digest(existingBin),
+              available: true,
+              files: [{ storageRoot: 'RUNTIME', storagePath: 'gh-verify/riri-agent-ok', sha256: digest(existingBin) }]
+            },
+            {
+              id: 'asset-missing-disk',
+              target: 'agent-linux-arm64',
+              storageRoot: 'RUNTIME',
+              storagePath: 'gh-verify/non-existent',
+              sha256: digest(existingBin),
+              available: true,
+              files: [{ storageRoot: 'RUNTIME', storagePath: 'gh-verify/non-existent', sha256: digest(existingBin) }]
+            }
+          ]
+        }
       ]);
 
-      await internals().verifyAssetsAvailability();
+      const res = await service.listGithubReleases();
 
-      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({ where: { id: 'asset-heal' }, data: { available: true } });
-      expect(prisma.binaryRelease.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'release-heal' } }));
-      await rm(healDir, { recursive: true, force: true });
+      expect(res.releases).toHaveLength(1);
+      expect(res.releases[0].tagName).toBe('agent-v0.6.14');
+      expect(res.releases[0].version).toBe('0.6.14');
+      expect(res.releases[0].assets.find((a) => a.target === 'agent-linux-amd64')?.imported).toBe(true);
+      // 磁盘文件缺失的资产不得标记为已获取，且会写回 available: false
+      expect(res.releases[0].assets.find((a) => a.target === 'agent-linux-arm64')?.imported).toBe(false);
+      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({
+        where: { id: 'asset-missing-disk' },
+        data: { available: false }
+      });
+
+      fetchJsonSpy.mockRestore();
+      await rm(verifyDir, { recursive: true, force: true });
+    });
+
+    it('拉取多平台时若任一平台下载失败，严格原子回滚且不写入任何半成品记录', async () => {
+      const listSpy = jest.spyOn(service, 'listGithubReleases').mockResolvedValue({
+        repoUrl: 'https://github.com/Nanako660/riricloud',
+        githubRepoUrl: 'https://github.com/Nanako660/riricloud',
+        owner: 'Nanako660',
+        repo: 'riricloud',
+        githubMirrorUrls: [],
+        releases: [
+          {
+            tagName: 'agent-v0.8.2',
+            version: '0.8.2',
+            name: 'Agent v0.8.2',
+            publishedAt: null,
+            prerelease: false,
+            htmlUrl: 'https://github.com/Nanako660/riricloud/releases/tag/agent-v0.8.2',
+            notes: null,
+            existingReleaseId: null,
+            existingStatus: null,
+            assets: [
+              {
+                target: 'agent-linux-amd64',
+                os: 'linux',
+                arch: 'amd64',
+                name: 'riri-agent_0.8.2_linux_amd64.tar.gz',
+                size: 100,
+                downloadUrl: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.8.2/riri-agent_0.8.2_linux_amd64.tar.gz',
+                imported: false
+              },
+              {
+                target: 'agent-linux-arm64',
+                os: 'linux',
+                arch: 'arm64',
+                name: 'riri-agent_0.8.2_linux_arm64.tar.gz',
+                size: 100,
+                downloadUrl: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.8.2/riri-agent_0.8.2_linux_arm64.tar.gz',
+                imported: false
+              }
+            ]
+          }
+        ]
+      });
+
+      const okArchive = buildSingleFileTarGz('riri-agent', buildFakeElfBinary('amd64', '0.8.2'));
+      const fetchFallbackSpy = jest
+        .spyOn(
+          service as unknown as { fetchRemoteWithMirrorFallback: (url: string, max: number, sig?: AbortSignal) => Promise<Buffer> },
+          'fetchRemoteWithMirrorFallback'
+        )
+        .mockImplementation(async (url: string) => {
+          if (url.includes('linux_amd64')) return okArchive;
+          throw new Error('remote download stream stalled');
+        });
+
+      await expect(service.importFromGithubRelease({ tagName: 'agent-v0.8.2' }, 'admin-1')).rejects.toThrow(
+        /remote download stream stalled/
+      );
+
+      // 验证没有任何半成品入库
+      expect(prisma.binaryRelease.upsert).not.toHaveBeenCalled();
+      expect(prisma.binaryAsset.upsert).not.toHaveBeenCalled();
+
+      fetchFallbackSpy.mockRestore();
+      listSpy.mockRestore();
     });
   });
 });
+

@@ -4,6 +4,10 @@
   "private": true,
   "description": "RiriCloud — 多节点 VPN/代理管理系统（NestJS 主控 + React 面板 + Go 边缘 Agent）",
   "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nanako660/riricloud"
+  },
   "packageManager": "pnpm@9.15.9",
   "pnpm": {
     "auditConfig": {

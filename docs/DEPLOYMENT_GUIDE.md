@@ -553,19 +553,17 @@ artifacts/binaries/
 └── manifest.json
 ```
 
-`manifest.json` 同时记录应用版本、Agent 资源、Sing-box 上游版本/修订号、平台、文件大小和 SHA-256。`build-binaries.sh` 的 `--version` 只代表 Agent/应用版本；`--singbox-version`、`--singbox-revision` 和 `--cronet-version` 独立控制 Sing-box 资源。相同版本、构建参数和哈希的资源目录可直接复用，不因应用 PATCH 发版创建新的 Sing-box 资源版本。
+`manifest.json` 记录应用版本與 Agent 跨平台资源、文件大小和 SHA-256（定制 Sing-box 内核在构建阶段编译后直接内嵌进 `riri-agent` 二进制中，不再作为独立资源写入 `manifest.json`）。
 
 ### 8.2 Master 包与 Docker
 
-`bundle-master.sh` 将目标架构的 Agent、版本化 Sing-box 目录、`libcronet.so` 和 manifest 一起放入 Master 包，只保留 manifest 引用的版本化布局（`agent/<target>/riri-agent`、`singbox/<版本>/<target>/`），不再复制旧的平铺文件路径。`release.sh` 只有在 Sing-box/Cronet 参数或真实产物变化时才应准备新的资源版本；普通 RiriCloud 应用发版可以重新装配而不改变既有 Sing-box 资源标识。
-
-Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_VERSION` build args，并把资源版本写入镜像 label、容器内 `/app/binaries/manifest.json` 或 Agent 的 `/var/lib/riri-agent/binaries/manifest.json`。`pnpm docker:export` 生成镜像归档、SHA-256 校验文件和带应用/镜像/Sing-box 元数据的 manifest。SQLite 和 `data/binaries` 必须使用持久化卷，以保留导入资源、任务历史和逻辑状态。
+`bundle-master.sh` 将目标架构的 Agent（已内嵌定制 Sing-box 内核与 `libcronet.so`）及 `manifest.json` 一起放入 Master 发行包。Docker 构建保留独立的 `SINGBOX_VERSION`、`SINGBOX_REVISION` 和 `CRONET_VERSION` build args，并将资源版本写入镜像 label 与容器内 `/app/binaries/manifest.json`。SQLite 和 `data/binaries` 必须使用持久化卷，以保留资源文件、`.seeded-releases.json` 初始化标记、任务历史和逻辑状态。
 
 ### 8.3 运行时资源管理与内核内嵌
 
-自编译 Sing-box 内核（以及 Linux 下的 `libcronet.so`）现已深度封装内嵌于各平台 `riri-agent` 二进制中。节点 VPS 执行安装命令下载 Agent 后，启动时直接在本地按 SHA-256 自愈校验并解压覆盖旧内核，不再需要向外网或 Master 请求二次下载，实现 100% 离线自闭环。节点升级流程统一收敛为「升级 Agent」单一动作，升级 Agent 落地启动后自动自愈更新内置内核。
+自编译 Sing-box 内核（以及 Linux 下的 `libcronet.so`）已深度封装内嵌于各平台 `riri-agent` 二进制中。节点 VPS 执行安装命令下载 Agent 后，启动时直接在本地按 SHA-256 自愈校验并解压覆盖旧内核，不再需要向外网或 Master 请求二次下载，实现 100% 离线自闭环。节点升级流程统一收敛为「升级 Agent」单一动作，升级 Agent 落地启动后自动自愈更新内置内核。
 
-管理员仍可从 `/admin/binaries` 维护各平台 Agent 发行包与内置资源；服务端会校验节点 OS/架构、协议兼容性和资产 SHA-256。升级镜像或发行包后首次启动时，主控自动收敛内置资源：不在当前 manifest 中的内置旧版本自动归档（可在资源中心恢复），默认版本收敛为当前镜像资源唯一一条，文件缺失或校验不符的资产在列表与详情中显示“文件失效”并停止分发。
+管理员可在 `/admin/binaries` 统一维护各平台 Agent 二进制资源：支持从项目 GitHub Release 列表一键拉取（仓库地址 `githubRepoUrl` 可在资源中心弹窗或系统设置中配置，自动复用 `githubMirrorUrls` 镜像加速）、本地多文件上传或 URL 远程导入（服务端自动解压 `.tar.gz`/`.zip`、解析 ELF/Mach-O/PE 魔数头与内嵌版本标记并计算 SHA-256，无需手填元数据）。所有资源均不区分是否内置，支持随时直接删除；操作审计统一并入系统日志（`module=BinaryResource`）。
 
 ### 8.4 多设备在线管理的内核要求
 

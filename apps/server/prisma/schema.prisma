@@ -546,11 +546,11 @@ model SystemSetting {
 // ==============================
 model BinaryRelease {
   id                  String   @id @default(uuid())
-  kind                String // AGENT | SINGBOX
+  kind                String   @default("AGENT") // AGENT
   upstreamVersion     String
   revision            Int      @default(1)
-  source              String   @default("BUILTIN") // BUILTIN | UPLOAD | REMOTE
-  status              String   @default("DRAFT") // DRAFT | ACTIVE | DISABLED | RETIRED
+  source              String   @default("UPLOAD") // LOCAL | UPLOAD | REMOTE | GITHUB
+  status              String   @default("ACTIVE") // DRAFT | ACTIVE | DISABLED | RETIRED
   builtFromAppVersion String?
   compatibilityJson   String   @default("{}")
   notes               String?
@@ -560,7 +560,6 @@ model BinaryRelease {
 
   assets          BinaryAsset[]
   deploymentTasks BinaryDeploymentTask[]
-  auditLogs       BinaryAuditLog[]
 
   @@unique([kind, upstreamVersion, revision])
   @@index([kind, status])
@@ -570,11 +569,11 @@ model BinaryRelease {
 model BinaryAsset {
   id          String   @id @default(uuid())
   releaseId   String
-  target      String // linux-amd64, windows-amd64 等
+  target      String // agent-linux-amd64, agent-windows-amd64 等
   os          String
   arch        String
   filename    String
-  storageRoot String   @default("RUNTIME") // STATIC | RUNTIME
+  storageRoot String   @default("RUNTIME")
   storagePath String
   sha256      String
   size        Int
@@ -582,11 +581,10 @@ model BinaryAsset {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  release             BinaryRelease          @relation(fields: [releaseId], references: [id], onDelete: Restrict)
+  release             BinaryRelease          @relation(fields: [releaseId], references: [id], onDelete: Cascade)
   files               BinaryAssetFile[]
   deploymentTasks     BinaryDeploymentTask[] @relation("TargetBinaryAsset")
   previousDeployments BinaryDeploymentTask[] @relation("PreviousBinaryAsset")
-  auditLogs           BinaryAuditLog[]
 
   @@unique([releaseId, target])
   @@index([target, available])
@@ -614,10 +612,10 @@ model BinaryAssetFile {
 model BinaryDeploymentTask {
   id              String    @id @default(uuid())
   nodeId          String
-  assetId         String? // 自定义 URL 升级无关联资产
+  assetId         String? // 自定义 URL 升级或原资产已删除时为空
   previousAssetId String?
-  releaseId       String? // 自定义 URL 升级无关联资源
-  kind            String // AGENT | SINGBOX
+  releaseId       String? // 自定义 URL 升级或原资源已删除时为空
+  kind            String    @default("AGENT")
   operation       String    @default("UPGRADE") // UPGRADE | ROLLBACK
   status          String    @default("QUEUED") // QUEUED | DISPATCHED | COMPLETED | FAILED
   attempts        Int       @default(0)
@@ -630,12 +628,10 @@ model BinaryDeploymentTask {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  node          Node          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  asset         BinaryAsset?  @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  previousAsset BinaryAsset?  @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
-  release       BinaryRelease? @relation(fields: [releaseId], references: [id], onDelete: Restrict)
-
-  auditLogs BinaryAuditLog[]
+  node          Node           @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  asset         BinaryAsset?   @relation("TargetBinaryAsset", fields: [assetId], references: [id], onDelete: SetNull)
+  previousAsset BinaryAsset?   @relation("PreviousBinaryAsset", fields: [previousAssetId], references: [id], onDelete: SetNull)
+  release       BinaryRelease? @relation(fields: [releaseId], references: [id], onDelete: SetNull)
 
   @@index([nodeId, status])
   @@index([assetId])
@@ -643,26 +639,6 @@ model BinaryDeploymentTask {
   @@index([requestedAt])
 }
 
-model BinaryAuditLog {
-  id           String   @id @default(uuid())
-  action       String
-  releaseId    String?
-  assetId      String?
-  taskId       String?
-  nodeId       String?
-  operatorId   String?
-  metadataJson String   @default("{}")
-  createdAt    DateTime @default(now())
-
-  release BinaryRelease?        @relation(fields: [releaseId], references: [id], onDelete: SetNull)
-  asset   BinaryAsset?          @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  task    BinaryDeploymentTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
-
-  @@index([releaseId, createdAt])
-  @@index([assetId, createdAt])
-  @@index([taskId])
-  @@index([nodeId, createdAt])
-}
 
 // ==============================
 // 5. 帮助中心与使用文档 (HelpArticle)
