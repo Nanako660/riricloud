@@ -53,7 +53,7 @@ pnpm build:agent:all                                # Linux/macOS/Windows 五个
 pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模式
 ```
 
-发布脚本也复用同一入口，发布模式会启用 `-s -w` 去除符号和调试信息；所有构建仍强制 `CGO_ENABLED=0`，并通过 `-ldflags` 注入根 `package.json` 的统一版本号。
+发布脚本也复用同一入口，发布模式会启用 `-s -w` 去除符号和调试信息；所有构建仍强制 `CGO_ENABLED=0`，并通过 `-ldflags` 注入根 `package.json` 的统一版本号。构建与打包脚本（`build-agent.sh`、`build-binaries.sh`、`bundle-master.sh`、`gate-agent.sh`、`docker-build.sh`、`release.sh`）在 Linux / WSL 环境下严格强制使用当前系统的原生 Linux `go`、`node` 与 `pnpm` 工具链，**严禁回退调用 Windows 宿主机的 `.exe` / `.cmd` 工具链**（防止 WSL 跨系统调用丢失 `GOOS`/`GOARCH` 导致编译出错误的 Windows PE 二进制）；同时在缓存复用、编译完成、内嵌归档打包与 Agent 运行时释放全链路强制校验二进制文件头（ELF / Mach-O / PE 及 CPU 架构）。
 
 ### 1.4 方式三：Docker Compose
 
@@ -65,7 +65,7 @@ pnpm build:agent -- --target linux/amd64 --release  # 指定平台，发布模�
 - **Master 容器**：专注控制平面与 Web 面板，仅暴露 3000 端口，不再以子进程托管 Agent；在构建期会将当前宿主平台的 `riri-agent`、定制 Sing-box（含 `libcronet.so`）按 manifest 登记的版本化布局打入 `/app/binaries/`（静态分发基线仓，不再复制旧的平铺路径副本），并将 `sing-box` 内核放置于 `/usr/local/bin/sing-box`、`mihomo` 内核放置于 `/usr/local/bin/mihomo`（并通过环境变量 `MIHOMO_BINARY_PATH=/usr/local/bin/mihomo` 声明路径）供服务端 `LineSpeedtestService` 与 `TemplatesService` 执行精准的端到端线路代理测速和 Sing-box / Mihomo 双内核真实验证诊断。即便宿主机挂载空白 data 目录，主控也能开箱即用对外提供 Agent 二进制与内核的下载和升级分发。
 - **Agent 容器（Master-Local）**：独立容器运行，镜像通过 `AGENT_IMAGE`（默认 `riricloud/agent:latest`）注入；采用 `network_mode: host` 与 `NET_ADMIN` 能力直接监听宿主机网络，并通过 `MASTER_LOCAL_AGENT_TOKEN` 环境变量与 Master 服务端完成 Token 预置与生命周期对接。
 
-Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL，PowerShell/Git Bash 不直接承担 Docker 操作：
+Docker 构建、镜像导出和 Compose 运行均应在 Linux shell 执行；Windows 开发环境必须使用 WSL（且 WSL 内须安装原生 Linux `node` 与 `pnpm`，严禁调用 Windows `node.exe`），PowerShell/Git Bash 不直接承担 Docker 操作：
 
 ```bash
 cp .env.example .env  # 或手动创建 .env
@@ -82,7 +82,7 @@ wsl.exe -d Ubuntu -- bash -lc "cd /path/to/riricloud && pnpm docker:build"
 
 `scripts/docker-build.sh` 会拒绝 `MSYS` / `MINGW` 等原生 Windows shell，并检查 Docker daemon 是否为 Linux containers。`pnpm docker:tags` 只输出当前版本对应的完整镜像标签，不需要连接 Docker daemon。
 
-若 WSL 仅能调用 Windows `node.exe`、尚未安装 Linux Node.js/pnpm，可直接使用同一脚本：
+也可直接通过脚本执行构建与启动：
 
 ```bash
 bash scripts/docker-build.sh build

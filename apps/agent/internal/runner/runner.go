@@ -157,7 +157,10 @@ func startKernelBootstrap(ctx context.Context, cfg *config.Config, options Optio
 		log.WithError(err).Warn("extract embedded sing-box failed, falling back to background download")
 	}
 	if _, err := os.Stat(cfg.SingboxBinPath); err == nil {
-		return
+		if embedded.ValidateExecutableFile(cfg.SingboxBinPath) == nil {
+			return
+		}
+		log.Warn("existing sing-box kernel binary has invalid executable format for current platform, starting background re-download")
 	}
 	go bootstrapKernelLoop(ctx, kernel.Options{
 		Source:        options.SingboxSource,

@@ -69,14 +69,17 @@ func Ensure(ctx context.Context, options Options) (bool, error) {
 		return updated, nil
 	}
 
-	// 3. 内嵌不可用（占位模式）：若目标文件已存在，直接复用
+	// 3. 内嵌不可用（占位模式）：若目标文件已存在且为当前平台合法可执行二进制，直接复用；
+	// 若存量文件格式损坏或架构不匹配（如残留了其他平台的二进制），不复用而继续走远端下载覆盖自愈。
 	if _, err := os.Stat(options.Destination); err == nil {
-		return false, nil
+		if embedded.ValidateExecutableFile(options.Destination) == nil {
+			return false, nil
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("stat sing-box kernel: %w", err)
 	}
 
-	// 4. 目标文件不存在，回退到远端拉取
+	// 4. 目标文件不存在或格式不匹配，回退到远端拉取覆盖
 	if err := Download(ctx, options); err != nil {
 		return false, err
 	}
@@ -254,6 +257,9 @@ func writeArchiveOrBinary(destination string, body []byte) error {
 func writeBinary(destination string, body []byte) error {
 	if len(body) == 0 || len(body) > maxDownloadSize {
 		return fmt.Errorf("invalid sing-box binary size")
+	}
+	if err := embedded.ValidateExecutableForCurrentPlatform(body); err != nil {
+		return fmt.Errorf("invalid sing-box binary format for %s/%s: %w", runtime.GOOS, runtime.GOARCH, err)
 	}
 	dir := filepath.Dir(destination)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
