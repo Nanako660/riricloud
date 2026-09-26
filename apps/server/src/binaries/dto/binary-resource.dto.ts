@@ -149,3 +149,23 @@ export class BinaryResourceGithubImportDto {
   @IsOptional()
   notes?: string;
 }
+
+export class TestGithubMirrorsDto {
+  @ApiPropertyOptional({ example: 'https://github.com/Nanako660/riricloud', description: '可选项目 GitHub 仓库地址；留空时使用当前系统设置' })
+  @IsString()
+  @MaxLength(256)
+  @IsOptional()
+  repoUrl?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['https://ghfast.top/', 'https://gh-proxy.com/'],
+    description: '待测速的 GitHub 镜像源列表；留空时使用当前配置或默认预设镜像，并始终包含 GitHub 官方源直连对比'
+  })
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @IsOptional()
+  mirrorUrls?: string[];
+}
+

@@ -107,8 +107,10 @@ export interface GithubReleaseItem {
 
 export interface GithubReleasesResponse {
   repoUrl: string;
+  githubRepoUrl?: string;
   owner: string;
   repo: string;
+  githubMirrorUrls?: string[];
   releases: GithubReleaseItem[];
 }
 
@@ -135,7 +137,7 @@ export function useAdminBinaryResources(query: BinaryResourceQuery = {}) {
       return (await api.get<BinaryResourceListResult>('/admin/binary-resources', { params })).data;
     },
     placeholderData: keepPreviousData,
-    staleTime: 15_000
+    staleTime: 5_000
   });
 }
 
@@ -167,7 +169,8 @@ export function useGithubReleases(options: { repoUrl?: string; enabled?: boolean
       return (await api.get<GithubReleasesResponse>('/admin/binary-resources/github-releases', { params, timeout: 30_000 })).data;
     },
     enabled: options.enabled ?? true,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     retry: 1
   });
 }
@@ -175,8 +178,9 @@ export function useGithubReleases(options: { repoUrl?: string; enabled?: boolean
 function useResourceAction(verb: 'activate' | 'disable' | 'retire' | 'restore' | 'default', label: string, invalidate: () => void) {
   return useMutation({
     mutationFn: async (id: string) => (await api.post(`/admin/binary-resources/${id}/${verb}`)).data,
-    onSuccess: () => { toast.success(label); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.opFailed')))
+    onSuccess: () => { toast.success(label); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.opFailed'))),
+    onSettled: () => invalidate()
   });
 }
 
@@ -195,15 +199,17 @@ export function useBinaryResourceMutations() {
 
   const removeResource = useMutation({
     mutationFn: async (id: string) => (await api.delete(`/admin/binary-resources/${id}`)).data,
-    onSuccess: () => { toast.success(i18n.t('admin:binaries.deleteSuccess')); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.deleteFailed')))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.deleteSuccess')); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.deleteFailed'))),
+    onSettled: () => invalidate()
   });
 
   const updateResource = useMutation({
     mutationFn: async ({ id, notes, compatibility }: { id: string; notes?: string | null; compatibility?: Record<string, unknown> }) =>
       (await api.patch(`/admin/binary-resources/${id}`, { notes, compatibility })).data,
-    onSuccess: () => { toast.success(i18n.t('admin:binaries.updateSuccess')); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.updateFailed')))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.updateSuccess')); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.updateFailed'))),
+    onSettled: () => invalidate()
   });
 
   const batchResources = useMutation({
@@ -220,23 +226,25 @@ export function useBinaryResourceMutations() {
       } else {
         toast.success(i18n.t('admin:binaries.batchDoneSuccess', { succeeded: result.succeeded }));
       }
-      invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.batchFailed')))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.batchFailed'))),
+    onSettled: () => invalidate()
   });
 
   const retryDeployment = useMutation({
     mutationFn: async ({ nodeId, taskId }: { nodeId: string; taskId: string }) =>
       (await api.post(`/admin/nodes/${nodeId}/tasks/${taskId}/retry`)).data,
-    onSuccess: () => { toast.success(i18n.t('admin:binaries.retrySuccess')); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.retryFailed')))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.retrySuccess')); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.retryFailed'))),
+    onSettled: () => invalidate()
   });
 
   const importResource = useMutation({
     mutationFn: async (payload: { url: string; upstreamVersion?: string; target?: string; notes?: string }) =>
       (await api.post('/admin/binary-resources/import', payload, { timeout: 300_000 })).data,
-    onSuccess: () => { toast.success(i18n.t('admin:binaries.importDraftSuccess')); invalidate(); },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.importDraftFailed')))
+    onSuccess: () => { toast.success(i18n.t('admin:binaries.importDraftSuccess')); },
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.importDraftFailed'))),
+    onSettled: () => invalidate()
   });
 
   const uploadResource = useMutation({
@@ -255,9 +263,9 @@ export function useBinaryResourceMutations() {
     },
     onSuccess: (results) => {
       toast.success(i18n.t('admin:binaries.uploadDraftSuccess', { count: results.length }));
-      invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.uploadDraftFailed')))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.uploadDraftFailed'))),
+    onSettled: () => invalidate()
   });
 
   const importGithubRelease = useMutation({
@@ -283,9 +291,9 @@ export function useBinaryResourceMutations() {
           succeeded: result.succeeded
         }));
       }
-      invalidate();
     },
-    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.githubImportFailed')))
+    onError: (error: unknown) => toast.error(extractErrorMessage(error, i18n.t('admin:binaries.githubImportFailed'))),
+    onSettled: () => invalidate()
   });
 
   return {

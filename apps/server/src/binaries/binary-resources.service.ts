@@ -13,7 +13,8 @@ import {
   BinaryResourceImportDto,
   BinaryResourceUploadDto,
   ManagedBinaryKind,
-  ManagedBinaryStatus
+  ManagedBinaryStatus,
+  TestGithubMirrorsDto
 } from './dto/binary-resource.dto';
 import { BINARY_TARGETS, BINARY_TARGET_VALUES } from './binary-targets';
 import type { BatchBinaryResourceDto, BinaryBatchAction } from './dto/batch-binary-resource.dto';
@@ -23,7 +24,7 @@ import { DEFAULT_GITHUB_MIRRORS, DEFAULT_GITHUB_REPO_URL, SettingsService } from
 import { SystemLogsService } from '../system-logs/system-logs.service';
 import { appendPublicPath, resolvePublicBaseUrl } from '../common/public-url';
 import { formatBinaryVersion, normalizeBinaryVersion } from '../common/binary-version';
-import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
+import { fetchSafeRemoteBuffer, probeSafeRemoteStream } from '../common/safe-remote-fetch';
 import {
   detectTargetFromText,
   detectVersionFromText,
@@ -142,6 +143,26 @@ export interface GithubReleaseItem {
   assets: GithubReleaseAssetItem[];
 }
 
+export interface GithubMirrorTestItem {
+  url: string;
+  label: string;
+  isOfficial: boolean;
+  available: boolean;
+  latencyMs: number | null;
+  bytesRead: number;
+  speedBps: number | null;
+  error?: string;
+}
+
+export interface GithubMirrorTestResponse {
+  targetAssetUrl: string;
+  recommendedUrl: string;
+  recommendedIsOfficial: boolean;
+  items: GithubMirrorTestItem[];
+}
+
+const UNHEALTHY_MIRROR_TTL_MS = 5 * 60_000;
+
 @Injectable()
 export class BinaryResourcesService implements OnModuleInit {
   private readonly logger = new Logger(BinaryResourcesService.name);
@@ -150,6 +171,7 @@ export class BinaryResourcesService implements OnModuleInit {
   private readonly resourceDir: string;
   private readonly staticDir: string;
   private readonly seededMarkerPath: string;
+  private readonly unhealthyMirrors = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -167,6 +189,11 @@ export class BinaryResourcesService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    this.settingsService?.onSettingsChange?.((patch) => {
+      if (patch.githubMirrorUrls !== undefined || patch.githubRepoUrl !== undefined) {
+        this.unhealthyMirrors.clear();
+      }
+    });
     await this.cleanupLegacySingboxResources();
     const seededKeys = await this.readSeededKeys();
     const manifestResult = await this.syncManifests(seededKeys);
@@ -498,8 +525,11 @@ export class BinaryResourcesService implements OnModuleInit {
     return this.detail(id);
   }
 
-  async importRemote(dto: BinaryResourceImportDto, operatorId?: string) {
-    const body = await this.fetchRemoteWithMirrorFallback(dto.url, MAX_BINARY_SIZE);
+  async importRemote(dto: BinaryResourceImportDto, operatorId?: string, abortSignal?: AbortSignal) {
+    const body = await this.fetchRemoteWithMirrorFallback(dto.url, MAX_BINARY_SIZE, abortSignal);
+    if (abortSignal?.aborted) {
+      throw new BadRequestException('请求已取消，未写入二进制资源');
+    }
     const inspected = inspectBinaryPayload({
       buffer: body,
       hintFilename: dto.filename,
@@ -576,7 +606,119 @@ export class BinaryResourcesService implements OnModuleInit {
   }
 
   /**
-   * 从系统设置配置的 githubRepoUrl 获取预设的 GitHub Release 列表及各平台资产导入状态
+   * 测速并评估 GitHub 镜像源与官方直连源的真实数据流可用性及延迟
+   */
+  async testGithubMirrors(dto: TestGithubMirrorsDto = {}): Promise<GithubMirrorTestResponse> {
+    const settings = await this.settingsService?.getSettings();
+    const githubRepoUrl = dto.repoUrl?.trim() || settings?.githubRepoUrl?.trim() || DEFAULT_GITHUB_REPO_URL;
+    const { owner, repo } = this.parseGithubRepo(githubRepoUrl);
+
+    let targetAssetUrl = `https://github.com/${owner}/${repo}/archive/refs/heads/main.zip`;
+    try {
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases?per_page=5`;
+      const releases = await this.fetchGithubJson<GithubApiRelease[]>(apiUrl);
+      for (const rel of Array.isArray(releases) ? releases : []) {
+        if (rel.draft) continue;
+        const asset = (rel.assets ?? []).find(
+          (a) =>
+            a.browser_download_url &&
+            a.name &&
+            !a.name.startsWith('riri-master') &&
+            !a.name.endsWith('.sha256') &&
+            !a.name.endsWith('.sig') &&
+            a.name !== 'checksums.txt'
+        );
+        if (asset?.browser_download_url) {
+          targetAssetUrl = asset.browser_download_url.trim();
+          break;
+        }
+      }
+    } catch {
+      // GitHub API 不可达时降级使用仓库归档地址进行流式探测
+    }
+
+    const rawInputMirrors =
+      dto.mirrorUrls !== undefined
+        ? dto.mirrorUrls
+        : (settings?.githubMirrorUrls ?? [...DEFAULT_GITHUB_MIRRORS]);
+    const cleanedInput = rawInputMirrors.map((m) => m.trim()).filter(Boolean);
+    const mirrorCandidates = Array.from(
+      new Set(
+        (cleanedInput.length > 0 ? cleanedInput : [...DEFAULT_GITHUB_MIRRORS])
+          .map((m) => this.normalizeMirrorPrefix(m))
+          .filter(Boolean)
+      )
+    ).slice(0, 8);
+
+    const entries: Array<{ url: string; label: string; isOfficial: boolean; testUrl: string }> = [
+      ...mirrorCandidates.map((mirrorUrl) => ({
+        url: `${mirrorUrl}/`,
+        label: mirrorUrl,
+        isOfficial: false,
+        testUrl: `${mirrorUrl}/${targetAssetUrl}`
+      })),
+      {
+        url: 'https://github.com',
+        label: 'GitHub 官方源 (直连)',
+        isOfficial: true,
+        testUrl: targetAssetUrl
+      }
+    ];
+
+    const items: GithubMirrorTestItem[] = await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const probe = await probeSafeRemoteStream(entry.testUrl, {
+            sampleBytes: 64 * 1024,
+            timeoutMs: 7_000,
+            connectTimeoutMs: 5_000,
+            idleTimeoutMs: 5_000
+          });
+          if (!entry.isOfficial) {
+            this.unhealthyMirrors.delete(this.normalizeMirrorPrefix(entry.url));
+          }
+          return {
+            url: entry.url,
+            label: entry.label,
+            isOfficial: entry.isOfficial,
+            available: true,
+            latencyMs: probe.latencyMs,
+            bytesRead: probe.bytesRead,
+            speedBps: probe.speedBps
+          };
+        } catch (error) {
+          if (!entry.isOfficial) {
+            this.markMirrorUnhealthy(entry.url);
+          }
+          return {
+            url: entry.url,
+            label: entry.label,
+            isOfficial: entry.isOfficial,
+            available: false,
+            latencyMs: null,
+            bytesRead: 0,
+            speedBps: null,
+            error: error instanceof Error ? error.message : '测速失败'
+          };
+        }
+      })
+    );
+
+    const availableItems = items
+      .filter((item) => item.available && item.latencyMs !== null)
+      .sort((a, b) => (a.latencyMs ?? Number.MAX_SAFE_INTEGER) - (b.latencyMs ?? Number.MAX_SAFE_INTEGER));
+    const best = availableItems[0];
+
+    return {
+      targetAssetUrl,
+      recommendedUrl: best?.url ?? 'https://github.com',
+      recommendedIsOfficial: best ? best.isOfficial : true,
+      items
+    };
+  }
+
+  /**
+   * 从系统设置配置的 githubRepoUrl 获取预设的 GitHub Release 列表及各平台资产真实导入状态
    */
   async listGithubReleases(): Promise<{
     repoUrl: string;
@@ -588,7 +730,7 @@ export class BinaryResourcesService implements OnModuleInit {
   }> {
     const settings = await this.settingsService?.getSettings();
     const githubRepoUrl = settings?.githubRepoUrl?.trim() || DEFAULT_GITHUB_REPO_URL;
-    const githubMirrorUrls = settings?.githubMirrorUrls?.length ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
+    const githubMirrorUrls = settings ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
     const { owner, repo } = this.parseGithubRepo(githubRepoUrl);
 
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases?per_page=20`;
@@ -596,13 +738,61 @@ export class BinaryResourcesService implements OnModuleInit {
 
     const localReleases = await this.prisma.binaryRelease.findMany({
       where: { kind: 'AGENT' },
-      include: { assets: { select: { target: true, available: true } } }
+      include: {
+        assets: {
+          include: { files: true }
+        }
+      }
     });
-    const localByVersion = new Map(
-      localReleases.map((rel) => [normalizeBinaryVersion(rel.upstreamVersion), rel])
-    );
+
+    const verifiedLocalByVersion = new Map<
+      string,
+      { id: string; status: string; targets: Set<string> }
+    >();
+    for (const rel of localReleases) {
+      const verifiedTargets = new Set<string>();
+      for (const asset of rel.assets ?? []) {
+        if (!asset.available) continue;
+        const files = Array.isArray((asset as { files?: unknown }).files)
+          ? (asset as { files: Array<{ storageRoot: string; storagePath: string; sha256: string }> }).files
+          : [];
+        const hasStorageMeta =
+          typeof asset.storageRoot === 'string' &&
+          typeof asset.storagePath === 'string' &&
+          typeof asset.sha256 === 'string';
+        const ok = hasStorageMeta
+          ? await this.verifyAssetFiles({
+              storageRoot: asset.storageRoot,
+              storagePath: asset.storagePath,
+              sha256: asset.sha256,
+              files
+            })
+          : true;
+        if (ok) {
+          verifiedTargets.add(asset.target);
+        } else if (asset.id) {
+          try {
+            await this.prisma.binaryAsset?.update?.({
+              where: { id: asset.id },
+              data: { available: false }
+            });
+          } catch {
+            // 忽略只读或模拟环境下的状态回写异常
+          }
+        }
+      }
+      if (verifiedTargets.size > 0) {
+        verifiedLocalByVersion.set(normalizeBinaryVersion(rel.upstreamVersion), {
+          id: rel.id,
+          status: rel.status,
+          targets: verifiedTargets
+        });
+      }
+    }
 
     const releases: GithubReleaseItem[] = [];
+    const seenVersionIndex = new Map<string, number>();
+
     for (const item of Array.isArray(rawReleases) ? rawReleases : []) {
       if (item.draft) continue;
       const tagName = (item.tag_name ?? '').trim();
@@ -637,21 +827,20 @@ export class BinaryResourcesService implements OnModuleInit {
 
       if (matchedAssets.length === 0) continue;
 
-      const version =
-        detectVersionFromText(tagName) ??
+      // 优先从 Agent 资产文件名中提取真实 Agent 版本号，避免旧版主控 Release Tag（如 v0.7.0 附带 riri-agent_0.6.14）误标版本
+      const rawVersion =
         detectVersionFromText(matchedAssets[0]?.name) ??
+        detectVersionFromText(tagName) ??
         tagName.replace(/^(?:agent-)?v/i, '');
+      const version = normalizeBinaryVersion(rawVersion);
 
-      const localMatch = localByVersion.get(normalizeBinaryVersion(version));
-      const importedTargets = new Set(
-        (localMatch?.assets ?? []).filter((a) => a.available).map((a) => a.target)
-      );
+      const localMatch = verifiedLocalByVersion.get(version);
       for (const asset of matchedAssets) {
-        asset.imported = importedTargets.has(asset.target);
+        asset.imported = Boolean(localMatch?.targets.has(asset.target));
       }
       matchedAssets.sort((a, b) => a.target.localeCompare(b.target));
 
-      releases.push({
+      const candidateRelease: GithubReleaseItem = {
         tagName,
         version,
         name: item.name?.trim() || tagName,
@@ -662,7 +851,19 @@ export class BinaryResourcesService implements OnModuleInit {
         existingReleaseId: localMatch?.id ?? null,
         existingStatus: localMatch?.status ?? null,
         assets: matchedAssets
-      });
+      };
+
+      const existingIdx = seenVersionIndex.get(version);
+      if (existingIdx !== undefined) {
+        const existingItem = releases[existingIdx];
+        if (!/^agent-v/i.test(existingItem.tagName) && /^agent-v/i.test(tagName)) {
+          releases[existingIdx] = candidateRelease;
+        }
+        continue;
+      }
+
+      seenVersionIndex.set(version, releases.length);
+      releases.push(candidateRelease);
     }
 
     return {
@@ -677,8 +878,16 @@ export class BinaryResourcesService implements OnModuleInit {
 
   /**
    * 从项目 GitHub Release 一键拉取指定版本（全平台或所选平台）的二进制资源
+   * 严格原子化：先下载并校验所选全部平台资产，任一失败或客户端取消连接时整体不入库
    */
-  async importFromGithubRelease(dto: BinaryResourceGithubImportDto, operatorId?: string) {
+  async importFromGithubRelease(
+    dto: BinaryResourceGithubImportDto,
+    operatorId?: string,
+    abortSignal?: AbortSignal
+  ) {
+    if (abortSignal?.aborted) {
+      throw new BadRequestException('请求已取消');
+    }
     const { releases } = await this.listGithubReleases();
     const targetRelease = releases.find(
       (item) => item.tagName === dto.tagName || normalizeBinaryVersion(item.version) === normalizeBinaryVersion(dto.tagName)
@@ -695,48 +904,96 @@ export class BinaryResourcesService implements OnModuleInit {
       throw new BadRequestException('该 Release 中没有匹配的平台资产可供拉取');
     }
 
+    const batchAbort = new AbortController();
+    const onExternalAbort = () => {
+      batchAbort.abort(
+        abortSignal?.reason instanceof Error ? abortSignal.reason : new Error('客户端已取消请求')
+      );
+    };
+    abortSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+    type PreparedAsset = {
+      target: BinaryTarget;
+      filename: string;
+      sha256: string;
+      binary: Buffer;
+    };
+    const preparedByIndex: Array<PreparedAsset | undefined> = new Array(assetsToFetch.length);
+
+    const downloadAndInspectOne = async (index: number) => {
+      const asset = assetsToFetch[index];
+      const buffer = await this.fetchRemoteWithMirrorFallback(
+        asset.downloadUrl,
+        MAX_BINARY_SIZE,
+        batchAbort.signal
+      );
+      if (batchAbort.signal.aborted) {
+        throw new Error('请求已取消');
+      }
+      const inspected = inspectBinaryPayload({
+        buffer,
+        hintFilename: asset.name,
+        hintUrl: asset.downloadUrl,
+        explicitTarget: asset.target,
+        explicitVersion: targetRelease.version
+      });
+      preparedByIndex[index] = {
+        target: inspected.target,
+        filename: inspected.filename,
+        sha256: inspected.sha256,
+        binary: inspected.binary
+      };
+    };
+
+    try {
+      // 先拉取首个资产以完成镜像可用性探测与快速熔断，避免多个并发请求同时阻塞在失效镜像上
+      await downloadAndInspectOne(0);
+
+      if (assetsToFetch.length > 1) {
+        let nextIndex = 1;
+        const concurrency = Math.min(3, assetsToFetch.length - 1);
+        const workers = Array.from({ length: concurrency }, async () => {
+          while (nextIndex < assetsToFetch.length) {
+            const current = nextIndex++;
+            await downloadAndInspectOne(current);
+          }
+        });
+        await Promise.all(workers);
+      }
+    } catch (err) {
+      batchAbort.abort(err);
+      const message = err instanceof Error ? err.message : '拉取失败';
+      throw new BadRequestException(message.startsWith('远程文件下载失败') ? message : `远程拉取失败: ${message}`);
+    } finally {
+      abortSignal?.removeEventListener('abort', onExternalAbort);
+    }
+
+    if (abortSignal?.aborted || batchAbort.signal.aborted) {
+      throw new BadRequestException('客户端连接已断开，已取消本次资源入库');
+    }
+
     let lastReleaseDetail: Awaited<ReturnType<typeof this.detail>> | null = null;
     const importedTargets: string[] = [];
     const results: Array<{ target: string; ok: boolean; error?: string }> = [];
 
-    for (const asset of assetsToFetch) {
-      try {
-        const buffer = await this.fetchRemoteWithMirrorFallback(asset.downloadUrl, MAX_BINARY_SIZE);
-        const inspected = inspectBinaryPayload({
-          buffer,
-          hintFilename: asset.name,
-          hintUrl: asset.downloadUrl,
-          explicitTarget: asset.target,
-          explicitVersion: targetRelease.version
-        });
-        lastReleaseDetail = await this.storeSingleBinary({
-          kind: 'AGENT',
-          upstreamVersion: targetRelease.version,
-          revision: 1,
-          target: inspected.target,
-          filename: inspected.filename,
-          sha256: inspected.sha256,
-          builtFromAppVersion: targetRelease.version,
-          notes: dto.notes ?? (targetRelease.notes ? `GitHub Release ${targetRelease.tagName}` : undefined),
-          source: 'GITHUB',
-          body: inspected.binary,
-          operatorId,
-          silentAudit: true
-        });
-        importedTargets.push(inspected.target);
-        results.push({ target: inspected.target, ok: true });
-      } catch (err) {
-        results.push({
-          target: asset.target,
-          ok: false,
-          error: err instanceof Error ? err.message : '拉取失败'
-        });
-      }
-    }
-
-    if (importedTargets.length === 0) {
-      const firstErr = results.find((r) => !r.ok)?.error;
-      throw new BadRequestException(firstErr || '所有平台资产拉取均失败');
+    for (const prepared of preparedByIndex) {
+      if (!prepared) continue;
+      lastReleaseDetail = await this.storeSingleBinary({
+        kind: 'AGENT',
+        upstreamVersion: targetRelease.version,
+        revision: 1,
+        target: prepared.target,
+        filename: prepared.filename,
+        sha256: prepared.sha256,
+        builtFromAppVersion: targetRelease.version,
+        notes: dto.notes ?? (targetRelease.notes ? `GitHub Release ${targetRelease.tagName}` : undefined),
+        source: 'GITHUB',
+        body: prepared.binary,
+        operatorId,
+        silentAudit: true
+      });
+      importedTargets.push(prepared.target);
+      results.push({ target: prepared.target, ok: true });
     }
 
     this.recordSystemLog(
@@ -751,14 +1008,11 @@ export class BinaryResourcesService implements OnModuleInit {
       operatorId
     );
 
-    const succeeded = results.filter((r) => r.ok).length;
-    const failed = results.length - succeeded;
-
     return {
       tagName: targetRelease.tagName,
       version: targetRelease.version,
-      succeeded,
-      failed,
+      succeeded: importedTargets.length,
+      failed: 0,
       results,
       release: lastReleaseDetail,
       importedTargets
@@ -1526,35 +1780,73 @@ export class BinaryResourcesService implements OnModuleInit {
     }
   }
 
-  private async fetchRemoteWithMirrorFallback(rawUrl: string, maxBytes: number): Promise<Buffer> {
+  private normalizeMirrorPrefix(mirror: string): string {
+    const clean = mirror.trim().replace(/\/+$/, '');
+    if (!clean) return '';
+    return clean.includes('://') ? clean : `https://${clean}`;
+  }
+
+  private isMirrorHealthy(mirror: string): boolean {
+    const key = this.normalizeMirrorPrefix(mirror);
+    const failedAt = this.unhealthyMirrors.get(key);
+    if (!failedAt) return true;
+    if (Date.now() - failedAt > UNHEALTHY_MIRROR_TTL_MS) {
+      this.unhealthyMirrors.delete(key);
+      return true;
+    }
+    return false;
+  }
+
+  private markMirrorUnhealthy(mirror: string): void {
+    const key = this.normalizeMirrorPrefix(mirror);
+    if (key) {
+      this.unhealthyMirrors.set(key, Date.now());
+    }
+  }
+
+  private async fetchRemoteWithMirrorFallback(rawUrl: string, maxBytes: number, signal?: AbortSignal): Promise<Buffer> {
     const isGithubReleaseUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//i.test(rawUrl);
     if (!isGithubReleaseUrl) {
-      return fetchSafeRemoteBuffer(rawUrl, { maxBytes });
+      return fetchSafeRemoteBuffer(rawUrl, { maxBytes, signal });
     }
     const settings = await this.settingsService?.getSettings();
-    const mirrors = settings?.githubMirrorUrls?.length ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
-    const candidates: string[] = [];
+    const mirrors = settings ? settings.githubMirrorUrls : [...DEFAULT_GITHUB_MIRRORS];
+    const candidates: Array<{ url: string; mirrorPrefix?: string; isOfficial: boolean }> = [];
     for (const mirror of mirrors) {
-      const clean = mirror.trim().replace(/\/+$/, '');
-      if (!clean) continue;
-      const prefix = clean.includes('://') ? clean : `https://${clean}`;
-      candidates.push(`${prefix}/${rawUrl}`);
+      const prefix = this.normalizeMirrorPrefix(mirror);
+      if (!prefix || !this.isMirrorHealthy(prefix)) continue;
+      candidates.push({ url: `${prefix}/${rawUrl}`, mirrorPrefix: prefix, isOfficial: false });
     }
-    candidates.push(rawUrl);
+    // 始终将 GitHub 官方源作为最终回退兜底（镜像不可用或未配置镜像时自动回退官方源）
+    candidates.push({ url: rawUrl, isOfficial: true });
 
     let lastError: Error | null = null;
     for (const candidate of candidates) {
+      if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error('远程下载已取消');
+      }
       try {
-        return await fetchSafeRemoteBuffer(candidate, {
+        return await fetchSafeRemoteBuffer(candidate.url, {
           maxBytes,
-          connectTimeoutMs: 15_000,
-          timeoutMs: 120_000
+          connectTimeoutMs: candidate.isOfficial ? 15_000 : 6_000,
+          idleTimeoutMs: candidate.isOfficial ? 15_000 : 6_000,
+          timeoutMs: candidate.isOfficial ? 120_000 : 60_000,
+          signal
         });
       } catch (error) {
         lastError = error as Error;
+        if (signal?.aborted) {
+          throw lastError;
+        }
+        if (candidate.mirrorPrefix) {
+          this.markMirrorUnhealthy(candidate.mirrorPrefix);
+          this.logger.warn(
+            `GitHub 镜像源 ${candidate.mirrorPrefix} 下载失败 (${lastError.message})，已自动标记不可用并回退下一候选源`
+          );
+        }
       }
     }
-    throw new BadRequestException(`远程文件下载失败: ${lastError?.message ?? '所有镜像源均不可用'}`);
+    throw new BadRequestException(`远程文件下载失败: ${lastError?.message ?? '所有镜像源与官方源均不可用'}`);
   }
 
   private async readSeededKeys(): Promise<Set<string>> {

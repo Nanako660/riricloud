@@ -487,4 +487,158 @@ describe('BinaryResourcesService', () => {
       await rm(verifyDir, { recursive: true, force: true });
     });
   });
+
+  describe('GitHub Release 远程列表与严格原子化拉取', () => {
+    it('按资产文件名提取真实 Agent 版本号并去重，同时校验本地磁盘文件真实存在才标记已入库', async () => {
+      const verifyDir = join(dataDir, 'binaries', 'gh-verify');
+      await mkdir(verifyDir, { recursive: true });
+      const existingBin = buildFakeElfBinary('amd64', '0.6.14');
+      await writeFile(join(verifyDir, 'riri-agent-ok'), existingBin);
+
+      const fetchJsonSpy = jest
+        .spyOn(service as unknown as { fetchGithubJson: (url: string) => Promise<unknown> }, 'fetchGithubJson')
+        .mockResolvedValue([
+          {
+            tag_name: 'v0.7.0',
+            name: 'Master v0.7.0',
+            assets: [
+              {
+                name: 'riri-master_0.7.0_linux_amd64.tar.gz',
+                size: 1000,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/v0.7.0/riri-master_0.7.0_linux_amd64.tar.gz'
+              },
+              {
+                name: 'riri-agent_0.6.14_linux_amd64.tar.gz',
+                size: 500,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/v0.7.0/riri-agent_0.6.14_linux_amd64.tar.gz'
+              }
+            ]
+          },
+          {
+            tag_name: 'agent-v0.6.14',
+            name: 'Agent v0.6.14',
+            assets: [
+              {
+                name: 'riri-agent_0.6.14_linux_amd64.tar.gz',
+                size: 500,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.6.14/riri-agent_0.6.14_linux_amd64.tar.gz'
+              },
+              {
+                name: 'riri-agent_0.6.14_linux_arm64.tar.gz',
+                size: 510,
+                browser_download_url: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.6.14/riri-agent_0.6.14_linux_arm64.tar.gz'
+              }
+            ]
+          }
+        ]);
+
+      prisma.binaryRelease.findMany.mockResolvedValue([
+        {
+          ...release({ id: 'rel-0.6.14', upstreamVersion: '0.6.14', status: 'ACTIVE' }),
+          assets: [
+            {
+              id: 'asset-ok',
+              target: 'agent-linux-amd64',
+              storageRoot: 'RUNTIME',
+              storagePath: 'gh-verify/riri-agent-ok',
+              sha256: digest(existingBin),
+              available: true,
+              files: [{ storageRoot: 'RUNTIME', storagePath: 'gh-verify/riri-agent-ok', sha256: digest(existingBin) }]
+            },
+            {
+              id: 'asset-missing-disk',
+              target: 'agent-linux-arm64',
+              storageRoot: 'RUNTIME',
+              storagePath: 'gh-verify/non-existent',
+              sha256: digest(existingBin),
+              available: true,
+              files: [{ storageRoot: 'RUNTIME', storagePath: 'gh-verify/non-existent', sha256: digest(existingBin) }]
+            }
+          ]
+        }
+      ]);
+
+      const res = await service.listGithubReleases();
+
+      expect(res.releases).toHaveLength(1);
+      expect(res.releases[0].tagName).toBe('agent-v0.6.14');
+      expect(res.releases[0].version).toBe('0.6.14');
+      expect(res.releases[0].assets.find((a) => a.target === 'agent-linux-amd64')?.imported).toBe(true);
+      // 磁盘文件缺失的资产不得标记为已获取，且会写回 available: false
+      expect(res.releases[0].assets.find((a) => a.target === 'agent-linux-arm64')?.imported).toBe(false);
+      expect(prisma.binaryAsset.update).toHaveBeenCalledWith({
+        where: { id: 'asset-missing-disk' },
+        data: { available: false }
+      });
+
+      fetchJsonSpy.mockRestore();
+      await rm(verifyDir, { recursive: true, force: true });
+    });
+
+    it('拉取多平台时若任一平台下载失败，严格原子回滚且不写入任何半成品记录', async () => {
+      const listSpy = jest.spyOn(service, 'listGithubReleases').mockResolvedValue({
+        repoUrl: 'https://github.com/Nanako660/riricloud',
+        githubRepoUrl: 'https://github.com/Nanako660/riricloud',
+        owner: 'Nanako660',
+        repo: 'riricloud',
+        githubMirrorUrls: [],
+        releases: [
+          {
+            tagName: 'agent-v0.8.2',
+            version: '0.8.2',
+            name: 'Agent v0.8.2',
+            publishedAt: null,
+            prerelease: false,
+            htmlUrl: 'https://github.com/Nanako660/riricloud/releases/tag/agent-v0.8.2',
+            notes: null,
+            existingReleaseId: null,
+            existingStatus: null,
+            assets: [
+              {
+                target: 'agent-linux-amd64',
+                os: 'linux',
+                arch: 'amd64',
+                name: 'riri-agent_0.8.2_linux_amd64.tar.gz',
+                size: 100,
+                downloadUrl: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.8.2/riri-agent_0.8.2_linux_amd64.tar.gz',
+                imported: false
+              },
+              {
+                target: 'agent-linux-arm64',
+                os: 'linux',
+                arch: 'arm64',
+                name: 'riri-agent_0.8.2_linux_arm64.tar.gz',
+                size: 100,
+                downloadUrl: 'https://github.com/Nanako660/riricloud/releases/download/agent-v0.8.2/riri-agent_0.8.2_linux_arm64.tar.gz',
+                imported: false
+              }
+            ]
+          }
+        ]
+      });
+
+      const okArchive = buildSingleFileTarGz('riri-agent', buildFakeElfBinary('amd64', '0.8.2'));
+      const fetchFallbackSpy = jest
+        .spyOn(
+          service as unknown as { fetchRemoteWithMirrorFallback: (url: string, max: number, sig?: AbortSignal) => Promise<Buffer> },
+          'fetchRemoteWithMirrorFallback'
+        )
+        .mockImplementation(async (url: string) => {
+          if (url.includes('linux_amd64')) return okArchive;
+          throw new Error('remote download stream stalled');
+        });
+
+      await expect(service.importFromGithubRelease({ tagName: 'agent-v0.8.2' }, 'admin-1')).rejects.toThrow(
+        /remote download stream stalled/
+      );
+
+      // 验证没有任何半成品入库
+      expect(prisma.binaryRelease.upsert).not.toHaveBeenCalled();
+      expect(prisma.binaryAsset.upsert).not.toHaveBeenCalled();
+
+      fetchFallbackSpy.mockRestore();
+      listSpy.mockRestore();
+    });
+  });
 });
+

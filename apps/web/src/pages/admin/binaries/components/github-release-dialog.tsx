@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { Check, CloudDownload, ExternalLink, Link2, Loader2, RefreshCw, Settings2 } from 'lucide-react';
@@ -58,11 +59,32 @@ export function GithubReleaseDialog({
   supportedTargets?: string[];
 }) {
   const { t } = useTranslation(['admin', 'common']);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<'github' | 'url'>('github');
   const releasesQuery = useGithubReleases({ enabled: open && activeTab === 'github' });
   const { importGithubRelease, importResource } = useBinaryResourceMutations();
   const [activePullKey, setActivePullKey] = React.useState<string | null>(null);
   const targets = resolveSupportedTargets(supportedTargets);
+
+  const syncMainTable = React.useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ['admin', 'binary-resources'],
+      predicate: (query) => query.queryKey[2] !== 'github-releases'
+    });
+  }, [queryClient]);
+
+  React.useEffect(() => {
+    if (open && releasesQuery.dataUpdatedAt) {
+      syncMainTable();
+    }
+  }, [open, releasesQuery.dataUpdatedAt, syncMainTable]);
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      syncMainTable();
+    }
+    onOpenChange(nextOpen);
+  };
 
   const urlSchema = React.useMemo(
     () =>
@@ -116,16 +138,17 @@ export function GithubReleaseDialog({
         ...(values.notes.trim() ? { notes: values.notes.trim() } : {})
       },
       {
-        onSuccess: () => onOpenChange(false)
+        onSuccess: () => handleDialogOpenChange(false)
       }
     );
   });
 
   const releases = releasesQuery.data?.releases ?? [];
   const currentRepoUrl = releasesQuery.data?.repoUrl || __DEFAULT_GITHUB_REPO_URL__;
+  const primaryMirror = releasesQuery.data?.githubMirrorUrls?.[0]?.trim() || '';
 
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialog open={open} onOpenChange={handleDialogOpenChange}>
       <ResponsiveDialogContent size="wide">
         <DialogHeader>
           <DialogTitle>{t('admin:binaries.githubDialogTitle')}</DialogTitle>
@@ -146,22 +169,30 @@ export function GithubReleaseDialog({
 
           <TabsContent value="github" className="min-w-0 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-muted-foreground">{t('admin:binaries.githubCurrentRepo')}</span>
-                <a
-                  href={currentRepoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-w-0 items-center gap-1 truncate font-mono font-medium text-foreground hover:underline"
-                >
-                  <span className="truncate">{currentRepoUrl}</span>
-                  <ExternalLink className="size-3 shrink-0" />
-                </a>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="text-muted-foreground">{t('admin:binaries.githubCurrentRepo')}</span>
+                  <a
+                    href={currentRepoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-w-0 items-center gap-1 truncate font-mono font-medium text-foreground hover:underline"
+                  >
+                    <span className="truncate">{currentRepoUrl}</span>
+                    <ExternalLink className="size-3 shrink-0" />
+                  </a>
+                </div>
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className="text-muted-foreground">{t('admin:binaries.githubCurrentSource')}</span>
+                  <span className="truncate font-mono text-foreground">
+                    {primaryMirror || t('admin:binaries.githubOfficialSource')}
+                  </span>
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Link
                   to="/admin/settings"
-                  onClick={() => onOpenChange(false)}
+                  onClick={() => handleDialogOpenChange(false)}
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   <Settings2 className="size-3.5" />
@@ -173,7 +204,10 @@ export function GithubReleaseDialog({
                   size="sm"
                   className="h-7 text-xs"
                   disabled={releasesQuery.isFetching}
-                  onClick={() => void releasesQuery.refetch()}
+                  onClick={() => {
+                    void releasesQuery.refetch();
+                    syncMainTable();
+                  }}
                 >
                   <RefreshCw className={`mr-1.5 size-3.5 ${releasesQuery.isFetching ? 'animate-spin' : ''}`} />
                   {t('admin:binaries.githubRefresh')}

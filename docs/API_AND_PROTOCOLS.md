@@ -533,8 +533,9 @@ Master 对 Agent 上行 JSON 做运行时结构校验：只接受 `heartbeat`、
 | 方法 | 路径 | 用途 |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/admin/binary-resources` | 服务端分页查询 Agent 资源列表；支持 `page`、`pageSize`（≤100）、`search`（匹配版本号或备注）、`status`、`platform`（如 `linux-amd64`）参数；响应为 `{ data, total, page, pageSize, supportedTargets, summary }`，`supportedTargets` 固定为 5 个 Agent 架构目标（`agent-linux-amd64`、`agent-linux-arm64`、`agent-macos-amd64`、`agent-macos-arm64`、`agent-windows-amd64`）。`summary` 聚合全部匹配行的 `totalBytes` 与 `reclaimableBytes`。 |
-| `GET` | `/api/v1/admin/binary-resources/github-releases` | 读取系统设置 `githubRepoUrl`（支持 `?repoUrl=` 临时覆盖）对应的 GitHub Releases 列表（自动使用 `githubMirrorUrls` 镜像加速），自动解析匹配的跨平台 Agent 资产并标记本地是否已入库（`imported`）。 |
-| `POST` | `/api/v1/admin/binary-resources/github-import` | 从项目 GitHub Release 一键拉取指定 `tagName` 的全部或指定 `targets` 架构资产，自动解压、校验二进制头与版本并入库启用。 |
+| `GET` | `/api/v1/admin/binary-resources/github-releases` | 读取系统设置 `githubRepoUrl`（支持 `?repoUrl=` 临时覆盖）对应的 GitHub Releases 列表（支持 `githubMirrorUrls` 镜像与官方源自动回退），优先从匹配的 Agent 资产文件名中提取真实 Agent 版本号并按版本去重（优先保留 `agent-v*` 独立发布条目），同时校验本地磁盘物理文件完整性后标记是否已入库（`imported`），并返回当前默认下载源 `defaultSource`。 |
+| `POST` | `/api/v1/admin/binary-resources/github-import` | 从项目 GitHub Release 一键拉取指定 `tagName` 的全部或指定 `targets` 架构资产；具备全有或全无（All-or-Nothing）强原子性（先全量流式下载并解压校验全部目标平台资产，任一平台超时/断流/失败或客户端断开请求时整体中止且不写入半成品记录），支持镜像流空闲超时（6s）熔断与自动回退至下一镜像及 GitHub 官方源。 |
+| `POST` | `/api/v1/admin/binary-resources/github-mirrors/test` | 对配置的 `githubMirrorUrls`（或请求体传入的 `mirrorUrls`）与 GitHub 官方源（`https://github.com`）并发执行真实 Release 资产或仓库字节流采样测速（检测仅返回响应头但卡死 0 B/s 的假活镜像），返回各候选源的可用性、首字节延迟、流式耗时、估算速率与推荐最快源 `recommendedMirrorUrl`。 |
 | `GET` | `/api/v1/admin/binary-resources/:id` | 查看资源详情、平台文件与最近分发任务。 |
 | `PATCH` | `/api/v1/admin/binary-resources/:id` | 编辑资源 `notes` 与 `compatibility`（兼容性约束对象，字段白名单：`minAgentProtocolVersion`/`maxAgentProtocolVersion` 数字，`minAgentVersion`/`maxAgentVersion`/`cronetVersion` 字符串）。 |
 | `DELETE` | `/api/v1/admin/binary-resources/:id` | 物理删除任意资源（不区分来源或状态，包含默认资源或有历史分发任务的资源均可直接删除）。删除时自动解除节点与部署任务外键引用、清理磁盘资产文件、在 `.seeded-releases.json` 标记防止重启复活，并在删除默认版本时自动将默认标记转移至最新 `ACTIVE` 资源。 |
