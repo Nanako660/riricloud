@@ -61,6 +61,12 @@ export class SpeedTierDto {
   color!: string;
 }
 
+const HTTP_URL_OPTIONS = {
+  require_protocol: true,
+  protocols: ['http', 'https'],
+  require_tld: false
+};
+
 export class UpdateSettingsDto {
   @ApiPropertyOptional({ example: '我的面板' })
   @IsString()
@@ -77,19 +83,19 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://panel.example.com', nullable: true, description: '用于生成 Agent 安装、升级和二进制下载地址；留空时自动匹配当前访问域名' })
   @ValidateIf((o) => o.publicBaseUrl !== undefined && o.publicBaseUrl !== null && o.publicBaseUrl !== '')
-  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   publicBaseUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'https://cdn.example.com/logo.svg', nullable: true })
   @ValidateIf((o) => o.logoUrl !== undefined && o.logoUrl !== null && o.logoUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   logoUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'https://cdn.example.com/favicon.ico', nullable: true })
   @ValidateIf((o) => o.faviconUrl !== undefined && o.faviconUrl !== null && o.faviconUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   faviconUrl?: string | null;
 
@@ -107,13 +113,13 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://t.me/riricloud', nullable: true })
   @ValidateIf((o) => o.supportTelegramUrl !== undefined && o.supportTelegramUrl !== null && o.supportTelegramUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   supportTelegramUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'https://discord.gg/example', nullable: true })
   @ValidateIf((o) => o.supportDiscordUrl !== undefined && o.supportDiscordUrl !== null && o.supportDiscordUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   supportDiscordUrl?: string | null;
 
@@ -125,7 +131,7 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://example.com/support', nullable: true })
   @ValidateIf((o) => o.supportCustomUrl !== undefined && o.supportCustomUrl !== null && o.supportCustomUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   supportCustomUrl?: string | null;
 
@@ -190,7 +196,7 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://panel.example.com', nullable: true })
   @ValidateIf((o) => o.subscriptionBaseUrl !== undefined && o.subscriptionBaseUrl !== null && o.subscriptionBaseUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   subscriptionBaseUrl?: string | null;
 
@@ -285,20 +291,20 @@ export class UpdateSettingsDto {
 
   @ApiPropertyOptional({ example: 'https://downloads.example.com/riricloud', nullable: true })
   @ValidateIf((o) => o.binaryDownloadBaseUrl !== undefined && o.binaryDownloadBaseUrl !== null && o.binaryDownloadBaseUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   binaryDownloadBaseUrl?: string | null;
 
   @ApiPropertyOptional({ example: 'https://github.com/Nanako660/riricloud', nullable: true })
   @ValidateIf((o) => o.githubRepoUrl !== undefined && o.githubRepoUrl !== null && o.githubRepoUrl !== '')
-  @IsUrl({ require_protocol: true })
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
   githubRepoUrl?: string | null;
 
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @ArrayMaxSize(32)
-  @IsUrl({ require_protocol: true }, { each: true })
+  @IsUrl(HTTP_URL_OPTIONS, { each: true })
   @IsOptional()
   githubMirrorUrls?: string[] | null;
 
@@ -343,10 +349,11 @@ export class UpdateSettingsDto {
   @IsOptional()
   lineSpeedtestIntervalMins?: number;
 
-  @ApiPropertyOptional({ example: 'http://cp.cloudflare.com/generate_204' })
-  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
+  @ApiPropertyOptional({ example: 'http://cp.cloudflare.com/generate_204', nullable: true })
+  @ValidateIf((o) => o.lineSpeedtestTargetUrl !== undefined && o.lineSpeedtestTargetUrl !== null && o.lineSpeedtestTargetUrl !== '')
+  @IsUrl(HTTP_URL_OPTIONS)
   @IsOptional()
-  lineSpeedtestTargetUrl?: string;
+  lineSpeedtestTargetUrl?: string | null;
 
   @ApiPropertyOptional({ example: 3000, minimum: 500, maximum: 30000 })
   @Type(() => Number)

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { AgentService } from '../agent-gateway/agent.service';
@@ -110,10 +110,14 @@ export class AuthService {
             await this.walletService.applyBalanceChange(tx, created.id, settings.defaultBalance, 'SYSTEM_GIFT', '新用户注册赠金');
           }
           if (settings.defaultPlanId && this.subscriptionService) {
-            await this.subscriptionService.subscribe(created.id, settings.defaultPlanId, tx, {
-              source: 'REGISTRATION',
-              skipIfClaimUnavailable: true
-            });
+            try {
+              await this.subscriptionService.subscribe(created.id, settings.defaultPlanId, tx, {
+                source: 'REGISTRATION',
+                skipIfClaimUnavailable: true
+              });
+            } catch (error) {
+              if (!(error instanceof NotFoundException)) throw error;
+            }
           }
           return created;
         });

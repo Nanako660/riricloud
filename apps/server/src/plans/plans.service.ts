@@ -98,6 +98,11 @@ export class PlansService {
     await this.get(id);
     await this.ensureTemplate(dto.templateId);
     const plan = await this.prisma.plan.update({ where: { id }, data: this.toUpdateData(dto) });
+    if (!plan.isPublic) {
+      await (this.prisma as unknown as {
+        systemSetting?: { deleteMany?: (args: Record<string, unknown>) => Promise<unknown> };
+      }).systemSetting?.deleteMany?.({ where: { key: 'defaultPlanId', value: id } });
+    }
     return this.toView(plan);
   }
 
@@ -117,6 +122,9 @@ export class PlansService {
       }
       // 分类不物理删除；套餐被移除后归档并清除配置引用，已发出的卡仍按奖励快照履约。
       await tx.redeemCodeCategory.updateMany({ where: { planId: id }, data: { isActive: false, planId: null } });
+      await (tx as unknown as {
+        systemSetting?: { deleteMany?: (args: Record<string, unknown>) => Promise<unknown> };
+      }).systemSetting?.deleteMany?.({ where: { key: 'defaultPlanId', value: id } });
       await tx.plan.delete({ where: { id } });
       return { deleted: true };
     });

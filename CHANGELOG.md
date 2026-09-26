@@ -15,8 +15,15 @@
 ### Added
 
 ### Changed
+- **系统设置跨标签页校验反馈、URL 校验统一与 `defaultPlanId` 生命周期联动**：
+  - 将系统设置（`/admin/settings`）7 个分类 Tab 升级为受控状态，当未激活的隐藏 Tab 存在表单校验错误时，点击保存自动切换至首个报错字段所属 Tab 并弹出明确错误 Toast 提示；从保存载荷中移除已独立至模板管理页的只读 `defaultTemplateId`；
+  - 统一前后端 URL 校验契约（后端 `@IsUrl` 支持 `http`/`https` 协议及 `localhost`/内网主机名，允许清空 `lineSpeedtestTargetUrl` 自动回退内置 `http://cp.cloudflare.com/generate_204`；前端采用 `new URL()` 严格校验并新增 `githubMirrorUrlsText` 逐行 URL 校验）；
+  - 当套餐被删除或设为非公开（`isPublic: false`）时自动清理引用该套餐的 `SystemSetting.defaultPlanId`；前端默认赠送套餐下拉列表仅展示公开套餐并在失效时回退为「不自动开通套餐」；新用户注册自动赠送套餐在遇到失效或非公开套餐时静默跳过，不再阻断注册流程。
 
 ### Fixed
+- **修复系统设置局部更新（`PUT /admin/settings`）将未传字段覆写为字符串 `"undefined"` 导致保存静默失败的问题**：
+  - 修复 `UpdateSettingsDto` 经 `class-transformer` + ES2022 `useDefineForClassFields` 实例化后所有未传属性被定义为 `value: undefined`，而 `SettingsService.updateSettings` 未过滤 `value !== undefined` 且 `normalizeForStorage` 执行 `String(undefined)`，导致在「GitHub 下载源与加速镜像」点击「设为默认」等局部更新后将全表其余 60+ 项设置（含 `binaryDownloadBaseUrl`、`lineSpeedtestTargetUrl`、`supportEmail` 及加密密钥等）覆写为 `"undefined"`，进而触发隐藏 Tab 校验失败使保存按钮完全无响应的问题；
+  - 在 `SettingsService` 启动初始化（`OnModuleInit`）与读取路径（`getSettings`）中增加脏 `"undefined"` 记录（含解密后为 `"undefined"` 的加密密钥 `smtpPass`/`turnstileSecretKey`）自动过滤回退与数据库自愈清理；修复前端 `GithubMirrorSettingsField` 局部保存后使用 `resetField` 同步表单基准值，防止后台查询刷新冲掉用户在其他字段的未保存修改。
 
 
 ## [0.9.2] - 2026-09-26

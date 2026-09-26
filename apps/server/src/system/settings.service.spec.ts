@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { encryptSecret } from '../common/secret-crypto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DEFAULTS, SETTING_KEYS, SettingsService } from './settings.service';
 
 describe('SettingsService', () => {
@@ -7,11 +11,13 @@ describe('SettingsService', () => {
   type PrismaMock = {
     systemSetting: Record<string, jest.Mock>;
     subscriptionTemplate: Record<string, jest.Mock>;
+    plan: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
   const prisma: PrismaMock = {
     systemSetting: { findMany: jest.fn(), findUnique: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
     subscriptionTemplate: { updateMany: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
+    plan: { findUnique: jest.fn() },
     $transaction: jest.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma))
   };
 
@@ -83,6 +89,80 @@ describe('SettingsService', () => {
       create: { key: SETTING_KEYS.SITE_NAME, value: '新站名', description: '站点名称' }
     });
     expect(result.systemTimezone).toBe('UTC');
+  });
+
+  it('通过 plainToInstance 转换的 UpdateSettingsDto 局部更新不会把未传字段覆写为 "undefined"', async () => {
+    prisma.systemSetting.upsert.mockResolvedValue({});
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.GITHUB_MIRROR_URLS, value: JSON.stringify(['https://ghfast.top/']) }
+    ]);
+
+    const dto = plainToInstance(UpdateSettingsDto, {
+      githubMirrorUrls: ['https://ghfast.top/']
+    });
+    const result = await service.updateSettings(dto);
+
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.systemSetting.upsert).toHaveBeenCalledWith({
+      where: { key: SETTING_KEYS.GITHUB_MIRROR_URLS },
+      update: { value: JSON.stringify(['https://ghfast.top/']) },
+      create: {
+        key: SETTING_KEYS.GITHUB_MIRROR_URLS,
+        value: JSON.stringify(['https://ghfast.top/']),
+        description: 'GitHub 加速镜像列表（前缀代理，节点安装时自动测速择优）'
+      }
+    });
+    expect(result.binaryDownloadBaseUrl).toBe('');
+    expect(result.lineSpeedtestTargetUrl).toBe('http://cp.cloudflare.com/generate_204');
+  });
+
+  it('自动忽略并清理库中脏写入的 "undefined" 记录（含加密密钥）', async () => {
+    prisma.systemSetting.deleteMany.mockResolvedValue({ count: 3 });
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.BINARY_DOWNLOAD_BASE_URL, value: 'undefined' },
+      { key: SETTING_KEYS.LINE_SPEEDTEST_TARGET_URL, value: 'undefined' },
+      { key: SETTING_KEYS.SMTP_PASS, value: encryptSecret('undefined') }
+    ]);
+
+    const settings = await service.getSettings();
+    expect(settings.binaryDownloadBaseUrl).toBe('');
+    expect(settings.lineSpeedtestTargetUrl).toBe('http://cp.cloudflare.com/generate_204');
+    expect(settings.smtpPass).toBe('');
+    expect(prisma.systemSetting.deleteMany).toHaveBeenCalledWith({
+      where: {
+        key: {
+          in: [
+            SETTING_KEYS.BINARY_DOWNLOAD_BASE_URL,
+            SETTING_KEYS.LINE_SPEEDTEST_TARGET_URL,
+            SETTING_KEYS.SMTP_PASS
+          ]
+        }
+      }
+    });
+  });
+
+  it('defaultPlanId 指向已删除或非公开套餐时自动回退为 null 并清理失效记录', async () => {
+    prisma.systemSetting.deleteMany.mockResolvedValue({ count: 1 });
+    prisma.systemSetting.findMany.mockResolvedValue([
+      { key: SETTING_KEYS.DEFAULT_PLAN_ID, value: 'hidden-plan-id' }
+    ]);
+    prisma.plan.findUnique.mockResolvedValue({ id: 'hidden-plan-id', isPublic: false });
+
+    const settings = await service.getSettings();
+    expect(settings.defaultPlanId).toBeNull();
+    expect(prisma.systemSetting.deleteMany).toHaveBeenCalledWith({
+      where: { key: SETTING_KEYS.DEFAULT_PLAN_ID, value: 'hidden-plan-id' }
+    });
+  });
+
+  it('UpdateSettingsDto 支持清空 lineSpeedtestTargetUrl 以及 localhost / 内网 URL', async () => {
+    const dto = plainToInstance(UpdateSettingsDto, {
+      publicBaseUrl: 'http://localhost:3000',
+      binaryDownloadBaseUrl: 'http://192.168.1.10:8080/releases',
+      lineSpeedtestTargetUrl: ''
+    });
+    const errors = await validate(dto, { whitelist: true });
+    expect(errors).toHaveLength(0);
   });
 
   it('更新非法时区抛出 BadRequestException', async () => {
@@ -238,4 +318,5 @@ describe('SettingsService', () => {
     }));
   });
 });
+
 

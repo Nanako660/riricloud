@@ -1353,7 +1353,9 @@ const admin = {
     valSubBaseUrl: '请输入有效的订阅基准 URL',
     valBinaryDownloadUrl: '请输入有效的二进制分发 URL',
     valGithubRepoUrl: '请输入有效的 GitHub 仓库 URL',
+    valGithubMirrorUrls: '每行须为有效的 HTTP/HTTPS 镜像 URL（最多 32 条）',
     valSpeedtestTargetUrl: '请输入有效的测速目标 URL',
+    valFormInvalidToast: '部分设置项格式有误：{{message}}',
 
     // 提示与操作回执
     vacuumSuccessReclaimed: '整理完成，已成功释放 {{bytes}} 磁盘空间',
