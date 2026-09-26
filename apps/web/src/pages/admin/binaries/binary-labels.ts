@@ -13,22 +13,6 @@ export const BINARY_STATUS_LABELS = new Proxy({} as Record<BinaryStatus, string>
   }
 });
 
-export const BINARY_AUDIT_ACTION_LABELS = new Proxy({} as Record<string, string>, {
-  get(_, prop: string) {
-    const map: Record<string, string> = {
-      RESOURCE_IMPORTED: i18n.t('admin:binaries.auditImported'),
-      RESOURCE_UPDATED: i18n.t('admin:binaries.auditUpdated'),
-      RESOURCE_ACTIVATED: i18n.t('admin:binaries.auditActivated'),
-      RESOURCE_DISABLED: i18n.t('admin:binaries.auditDisabled'),
-      RESOURCE_RETIRED: i18n.t('admin:binaries.auditRetired'),
-      RESOURCE_RESTORED: i18n.t('admin:binaries.auditRestored'),
-      RESOURCE_DEFAULT_CHANGED: i18n.t('admin:binaries.auditDefaultChanged'),
-      RESOURCE_DELETED: i18n.t('admin:binaries.auditDeleted')
-    };
-    return map[prop] ?? prop;
-  }
-});
-
 export const BINARY_DEPLOYMENT_STATUS_LABELS = new Proxy({} as Record<string, string>, {
   get(_, prop: string) {
     const map: Record<string, string> = {
@@ -56,9 +40,11 @@ export const BINARY_COMPATIBILITY_LABELS = new Proxy({} as Record<string, string
 
 export function sourceLabel(source: string) {
   const map: Record<string, string> = {
-    BUILTIN: i18n.t('admin:binaries.sourceBuiltin'),
+    BUILTIN: i18n.t('admin:binaries.sourceLocal'),
+    LOCAL: i18n.t('admin:binaries.sourceLocal'),
     UPLOAD: i18n.t('admin:binaries.sourceUpload'),
-    REMOTE: i18n.t('admin:binaries.sourceRemote')
+    REMOTE: i18n.t('admin:binaries.sourceRemote'),
+    GITHUB: i18n.t('admin:binaries.sourceGithub')
   };
   return map[source] ?? source;
 }
@@ -72,7 +58,7 @@ export function operationLabel(operation: string) {
 }
 
 export function formatTargetBadge(target: string) {
-  return target.replace(/^(agent|singbox)-/, '').replace('-', '/');
+  return target.replace(/^agent-/, '').replace('-', '/');
 }
 
 export function compatibilityEntries(compatibilityJson: string): Array<[string, unknown]> {
@@ -126,9 +112,9 @@ export function totalAssetBytes(assets: Array<{ size: number; available?: boolea
   return bytes(assets.reduce((sum, asset) => sum + (asset.available === false ? 0 : asset.size || 0), 0));
 }
 
-// RUNTIME 为资源独占文件（删除真实释放）；STATIC 与发行包静态目录共享，删除不动磁盘，不计入可释放。
-export function reclaimableAssetBytes(assets: Array<{ size: number; storageRoot: string; available?: boolean }>) {
-  return bytes(assets.reduce((sum, asset) => (asset.storageRoot === 'RUNTIME' && asset.available !== false ? sum + (asset.size || 0) : sum), 0));
+// 所有资源均可直接删除，删除可释放空间与可用资产总大小一致。
+export function reclaimableAssetBytes(assets: Array<{ size: number; storageRoot?: string; available?: boolean }>) {
+  return totalAssetBytes(assets);
 }
 
 export function deploymentBadgeVariant(status: BinaryDeployment['status']) {

@@ -121,7 +121,7 @@ RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked
 RUN --mount=type=cache,id=riricloud-corepack,target=/tmp/corepack,sharing=locked \
     --mount=type=cache,id=riricloud-pnpm,target=/workspace/.cache/pnpm,sharing=locked \
     pnpm --filter @riricloud/server deploy --prod /out/server \
-    && node -e "const r = require('./package.json'); const s = require('/out/server/package.json'); s.version = r.version; require('fs').writeFileSync('/out/server/package.json', JSON.stringify(s, null, 2) + '\n');" \
+    && node -e "const r = require('./package.json'); const s = require('/out/server/package.json'); s.version = r.version; s.repository = r.repository; require('fs').writeFileSync('/out/server/package.json', JSON.stringify(s, null, 2) + '\n');" \
     && mkdir -p /out/server/dist \
     && cp -a /tmp/server-dist/. /out/server/dist/ \
     && if [ ! -f /out/server/dist/main.js ] && [ ! -f /out/server/dist/src/main.js ]; then \
@@ -162,19 +162,17 @@ RUN mkdir -p \
     && cp /tmp/libcronet.so /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/libcronet.so \
     && chmod +x /out/binaries/agent-linux-${TARGETARCH}/riri-agent /out/binaries/singbox/${SINGBOX_VERSION}-r${SINGBOX_REVISION}/linux-${TARGETARCH}/sing-box
 # 使用 Dockerfile heredoc 保持 manifest 生成脚本为单条 RUN 指令。
-RUN node - /out/binaries "$RIRICLOUD_VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$TARGETARCH" "$CRONET_VERSION" <<'NODE'
+RUN node - /out/binaries "$RIRICLOUD_VERSION" "$TARGETARCH" <<'NODE'
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
-  const [root, appVersion, singboxVersion, revision, arch, cronetVersion] = process.argv.slice(2);
+  const [root, appVersion, arch] = process.argv.slice(2);
   const info = (name, role, file) => { const body = fs.readFileSync(file); return { name, role, path: path.relative(root, file).split(path.sep).join("/"), sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length }; };
   const platform = `linux-${arch}`;
-  const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${revision}`, platform);
   const agentVerFile = path.join("/workspace/apps/agent/VERSION");
   const agentVersion = fs.existsSync(agentVerFile) ? fs.readFileSync(agentVerFile, "utf8").trim() : appVersion;
   const resources = [
-    { kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${platform}`, os: "linux", arch, files: [info("riri-agent", "main", path.join(root, `agent-${platform}`, "riri-agent"))] }] },
-    { kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(revision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${platform}`, os: "linux", arch, files: [info("sing-box", "main", path.join(singboxDir, "sing-box")), info("libcronet.so", "auxiliary", path.join(singboxDir, "libcronet.so"))] }] }
+    { kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "LOCAL", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${platform}`, os: "linux", arch, files: [info("riri-agent", "main", path.join(root, `agent-${platform}`, "riri-agent"))] }] }
   ];
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
 NODE

@@ -13,12 +13,12 @@ import { fetchSafeRemoteBuffer } from '../common/safe-remote-fetch';
 import { BINARY_TARGETS } from './binary-targets';
 
 const MAX_BINARY_SIZE = 100 * 1024 * 1024;
-const TARGETS = BINARY_TARGETS.map(({ kind, target }) => ({
+const TARGETS = BINARY_TARGETS.map(({ target }) => ({
   target,
-  kind: kind.toLowerCase() as 'agent' | 'singbox',
+  kind: 'agent' as const,
   os: target.split('-')[1] as 'linux' | 'macos' | 'windows',
   arch: target.split('-')[2] as 'amd64' | 'arm64',
-  filename: `${kind === 'AGENT' ? 'riri-agent' : 'sing-box'}${target.endsWith('windows-amd64') ? '.exe' : ''}`
+  filename: `riri-agent${target.endsWith('windows-amd64') ? '.exe' : ''}`
 }));
 
 export type BinaryTarget = (typeof TARGETS)[number]['target'];
@@ -102,7 +102,7 @@ export class BinariesService implements OnModuleInit {
         const asset = this.assets.get(definition.target);
         return asset
           ? this.toInfo(asset)
-          : { ...definition, version: definition.kind === 'singbox' ? '' : this.readMasterVersion(), sha256: '', size: 0, imported: false, available: false };
+          : { ...definition, version: this.readMasterVersion(), sha256: '', size: 0, imported: false, available: false };
       })
     };
   }
@@ -168,12 +168,12 @@ export class BinariesService implements OnModuleInit {
     return appendPublicPath(base, `api/v1/downloads/binaries/${target}`);
   }
 
-  findForNode(kind: BinaryKind, osArch: string | null | undefined): BinaryAsset | undefined {
+  findForNode(kind: BinaryKind | 'singbox', osArch: string | null | undefined): BinaryAsset | undefined {
     const normalized = normalizeOsArch(osArch) ?? 'linux-amd64';
     return this.assets.get(`${kind}-${normalized}` as BinaryTarget);
   }
 
-  async resolveForNode(kind: BinaryKind, osArch: string | null | undefined, token: string, requestBaseUrl?: string) {
+  async resolveForNode(kind: BinaryKind | 'singbox', osArch: string | null | undefined, token: string, requestBaseUrl?: string) {
     await this.refresh();
     const asset = this.findForNode(kind, osArch);
     if (!asset) throw new Error(`主控未内置 ${kind} 的 ${normalizeOsArch(osArch) ?? 'linux-amd64'} 版本`);

@@ -2,85 +2,101 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { FileArchive, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ResponsiveDialog, ResponsiveDialogContent } from '@/components/shared/responsive-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFormResetOnKey } from '@/hooks/use-form-reset';
-import { resolveSupportedTargets, type BinaryKind } from '../use-binaries';
+import { bytes } from '../binary-labels';
+import { resolveSupportedTargets } from '../use-binaries';
 
 const OS_LABELS: Record<string, string> = { linux: 'Linux', macos: 'macOS', windows: 'Windows' };
 
 function targetLabel(target: string) {
-  const [kind, os, arch] = target.split('-');
-  return `${kind === 'agent' ? 'Agent' : 'Sing-box'} · ${OS_LABELS[os] ?? os} ${arch.toUpperCase()}`;
+  const [, os, arch] = target.split('-');
+  return `Agent · ${OS_LABELS[os] ?? os} ${(arch ?? '').toUpperCase()}`;
+}
+
+export interface ResourceFormSubmitValue {
+  files?: File[];
+  url?: string;
+  upstreamVersion?: string;
+  target?: string;
+  notes?: string;
 }
 
 interface ResourceFormValues {
-  kind: 'AGENT' | 'SINGBOX';
   upstreamVersion: string;
-  revision: number;
   target: string;
-  filename?: string;
-  sha256: string;
-  file?: File;
-  url?: string;
+  notes: string;
+  url: string;
 }
 
 const EMPTY_VALUES: ResourceFormValues = {
-  kind: 'SINGBOX',
   upstreamVersion: '',
-  revision: 1,
-  target: 'singbox-linux-amd64',
-  filename: '',
-  url: '',
-  sha256: '',
-  file: undefined
+  target: 'AUTO',
+  notes: '',
+  url: ''
 };
 
-export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending, supportedTargets }: {
+export function ResourceFormDialog({
+  mode,
+  open,
+  onOpenChange,
+  onSubmit,
+  pending,
+  supportedTargets
+}: {
   mode: 'upload' | 'import';
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (value: { file?: File; kind: BinaryKind; upstreamVersion: string; revision: number; target: string; filename?: string; url?: string; sha256: string }) => void;
+  onSubmit: (value: ResourceFormSubmitValue) => void;
   pending: boolean;
   supportedTargets?: string[];
 }) {
   const { t } = useTranslation(['admin', 'common']);
   const targets = resolveSupportedTargets(supportedTargets);
-  const [hashState, setHashState] = React.useState<'idle' | 'computing' | 'done'>('idle');
+  const [files, setFiles] = React.useState<File[]>([]);
+  const [fileError, setFileError] = React.useState<string | null>(null);
 
-  const baseSchema = React.useMemo(() => z.object({
-    kind: z.enum(['AGENT', 'SINGBOX']),
-    upstreamVersion: z.string().trim().min(1, t('admin:binaries.valUpstreamRequired')).max(64, t('admin:binaries.valUpstreamMax')),
-    revision: z.coerce
-      .number({ invalid_type_error: t('admin:binaries.valRevisionNumber') })
-      .int(t('admin:binaries.valRevisionInt'))
-      .min(1, t('admin:binaries.valRevisionMin'))
-      .max(9999, t('admin:binaries.valRevisionMax')),
-    target: z.string().min(1, t('admin:binaries.valTargetRequired')),
-    filename: z.string().trim().max(128, t('admin:binaries.valFilenameMax')).optional(),
-    sha256: z.string().trim().regex(/^[a-f0-9]{64}$/i, t('admin:binaries.valSha256Invalid')),
-    file: z.instanceof(File, { message: t('admin:binaries.valFileRequired') }).optional(),
-    url: z.string().trim().url(t('admin:binaries.valUrlInvalid')).optional()
-  }), [t]);
+  const schema = React.useMemo(
+    () =>
+      z
+        .object({
+          upstreamVersion: z.string().trim().max(64, t('admin:binaries.valUpstreamMax')),
+          target: z.string(),
+          notes: z.string().trim().max(2000, t('admin:binaries.notesMax')),
+          url: z.string().trim()
+        })
+        .superRefine((value, ctx) => {
+          if (mode === 'import') {
+            if (!value.url) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['url'],
+                message: t('admin:binaries.valUrlRequired')
+              });
+              return;
+            }
+            if (!/^https?:\/\//i.test(value.url)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['url'],
+                message: t('admin:binaries.valUrlInvalid')
+              });
+            }
+          }
+        }),
+    [mode, t]
+  );
 
   const form = useForm<ResourceFormValues>({
-    resolver: zodResolver(
-      baseSchema.superRefine((value, ctx) => {
-        if (mode === 'upload' && !value.file) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['file'], message: t('admin:binaries.valFileRequired') });
-        }
-        if (mode === 'import' && !value.url) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: t('admin:binaries.valUrlRequired') });
-        }
-      })
-    ),
+    resolver: zodResolver(schema),
     defaultValues: EMPTY_VALUES
   });
 
@@ -89,138 +105,70 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
     resetKey: mode,
     reset: () => {
       form.reset(EMPTY_VALUES);
-      setHashState('idle');
+      setFiles([]);
+      setFileError(null);
     }
   });
 
-  const kind = form.watch('kind');
-  const kindTargets = targets.filter((target) => target.startsWith(`${kind.toLowerCase()}-`));
-
-  const handleKindChange = (nextKind: BinaryKind) => {
-    form.setValue('kind', nextKind, { shouldValidate: false });
-    const nextTarget = targets.find((target) => target.startsWith(`${nextKind.toLowerCase()}-`));
-    if (nextTarget) form.setValue('target', nextTarget, { shouldValidate: false });
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    setFiles(selected);
+    if (selected.length > 0) setFileError(null);
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    form.setValue('file', file, { shouldValidate: false });
-    if (!file) return;
-    setHashState('computing');
-    try {
-      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-      const hex = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-      form.setValue('sha256', hex, { shouldValidate: true });
-      setHashState('done');
-    } catch {
-      setHashState('idle');
-      toast.error(t('admin:binaries.autoHashFailed'));
+  const handleSubmit = form.handleSubmit((values) => {
+    if (mode === 'upload' && files.length === 0) {
+      setFileError(t('admin:binaries.valFileRequired'));
+      return;
     }
-  };
+    onSubmit({
+      ...(mode === 'upload' ? { files } : { url: values.url.trim() }),
+      ...(values.upstreamVersion.trim() ? { upstreamVersion: values.upstreamVersion.trim() } : {}),
+      ...(values.target && values.target !== 'AUTO' ? { target: values.target } : {}),
+      ...(values.notes.trim() ? { notes: values.notes.trim() } : {})
+    });
+  });
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent size="compact">
         <DialogHeader>
-          <DialogTitle>{mode === 'upload' ? t('admin:binaries.formUploadTitle') : t('admin:binaries.formImportTitle')}</DialogTitle>
+          <DialogTitle>
+            {mode === 'upload' ? t('admin:binaries.formUploadTitle') : t('admin:binaries.formImportTitle')}
+          </DialogTitle>
           <DialogDescription>{t('admin:binaries.formDesc')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form className="space-y-4" onSubmit={form.handleSubmit((values) => onSubmit(values))}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="kind"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('admin:binaries.kindLabel')}</FormLabel>
-                    <Select value={field.value} onValueChange={(value) => handleKindChange(value as BinaryKind)}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="AGENT">{t('admin:binaries.kindAgent')}</SelectItem>
-                        <SelectItem value="SINGBOX">{t('admin:binaries.kindSingbox')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="upstreamVersion"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('admin:binaries.upstreamVersionLabel')}</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder={kind === 'SINGBOX' ? '1.14.0' : '0.8.7'} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="target"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('admin:binaries.targetLabel')}</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {kindTargets.map((target) => (
-                          <SelectItem key={target} value={target}>{targetLabel(target)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="revision"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('admin:binaries.revisionLabel')}</FormLabel>
-                    <FormControl>
-                      <Input inputMode="numeric" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             {mode === 'upload' ? (
-              <FormField
-                control={form.control}
-                name="file"
-                render={({ field: { value: _value, ...fieldProps } }) => (
-                  <FormItem>
-                    <FormLabel>{t('admin:binaries.fileLabel')}</FormLabel>
-                    <FormControl>
-                      <Input type="file" {...fieldProps} onChange={handleFileChange} />
-                    </FormControl>
-                    <FormDescription>
-                      {hashState === 'computing' ? (
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <Loader2 className="size-3 animate-spin" /> {t('admin:binaries.computingHash')}
-                        </span>
-                      ) : hashState === 'done' ? (
-                        <span className="text-emerald-600">{t('admin:binaries.computedHash')}</span>
-                      ) : (
-                        t('admin:binaries.fileSelectDesc')
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2">
+                <FormLabel>{t('admin:binaries.fileLabel')}</FormLabel>
+                <Input type="file" multiple onChange={handleFileChange} />
+                <p className="text-xs text-muted-foreground">{t('admin:binaries.fileSelectDesc')}</p>
+                {fileError ? <p className="text-xs font-medium text-destructive">{fileError}</p> : null}
+                {files.length > 0 ? (
+                  <div className="space-y-1.5 rounded-md border bg-muted/30 p-2.5">
+                    <div className="flex items-center justify-between text-xs font-medium">
+                      <span>{t('admin:binaries.selectedFilesCount', { count: files.length })}</span>
+                      <Badge variant="secondary" className="gap-1 text-[10px]">
+                        <Sparkles className="size-3" />
+                        {t('admin:binaries.autoDetectHint')}
+                      </Badge>
+                    </div>
+                    <div className="max-h-36 space-y-1 overflow-y-auto text-xs">
+                      {files.map((file, idx) => (
+                        <div key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2 text-muted-foreground">
+                          <span className="flex min-w-0 items-center gap-1.5 truncate font-mono">
+                            <FileArchive className="size-3.5 shrink-0" />
+                            <span className="truncate">{file.name}</span>
+                          </span>
+                          <span className="shrink-0 tabular-nums">{bytes(file.size)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : (
               <FormField
                 control={form.control}
@@ -229,44 +177,83 @@ export function ResourceFormDialog({ mode, open, onOpenChange, onSubmit, pending
                   <FormItem>
                     <FormLabel>{t('admin:binaries.urlLabel')}</FormLabel>
                     <FormControl>
-                      <Input type="url" {...field} placeholder="https://downloads.example.com/sing-box" />
+                      <Input type="url" {...field} placeholder={t('admin:binaries.urlPlaceholder')} />
                     </FormControl>
+                    <FormDescription>{t('admin:binaries.urlDesc')}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="upstreamVersion"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('admin:binaries.upstreamVersionLabel')}</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder={t('admin:binaries.upstreamVersionPlaceholder')} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {mode === 'import' || files.length <= 1 ? (
+                <FormField
+                  control={form.control}
+                  name="target"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('admin:binaries.targetLabel')}</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="AUTO">{t('admin:binaries.targetAutoDetect')}</SelectItem>
+                          {targets.map((target) => (
+                            <SelectItem key={target} value={target}>
+                              {targetLabel(target)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+            </div>
+
             <FormField
               control={form.control}
-              name="sha256"
+              name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('admin:binaries.sha256Label')}</FormLabel>
+                  <FormLabel>{t('admin:binaries.notesLabel')}</FormLabel>
                   <FormControl>
-                    <Input className="font-mono text-xs" {...field} placeholder={t('admin:binaries.sha256Placeholder')} />
+                    <Input {...field} placeholder={t('admin:binaries.notesPlaceholder')} />
                   </FormControl>
-                  <FormDescription>{mode === 'upload' ? t('admin:binaries.sha256DescUpload') : t('admin:binaries.sha256DescImport')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="filename"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('admin:binaries.filenameLabel')}</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder={kind === 'AGENT' ? 'riri-agent' : 'sing-box'} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common:actions.cancel')}</Button>
-              <Button type="submit" disabled={pending || hashState === 'computing'}>
-                {pending ? t('admin:binaries.processing') : mode === 'upload' ? t('admin:binaries.formUploadTitle') : t('admin:binaries.formImportTitle')}
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common:actions.cancel')}
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending
+                  ? t('admin:binaries.processing')
+                  : mode === 'upload'
+                    ? t('admin:binaries.formUploadTitle')
+                    : t('admin:binaries.formImportTitle')}
               </Button>
             </DialogFooter>
           </form>

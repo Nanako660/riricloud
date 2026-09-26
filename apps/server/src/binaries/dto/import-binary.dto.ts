@@ -1,25 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsString, IsUrl, Matches, MinLength } from 'class-validator';
-
-const binaryTargets = [
-  'singbox-linux-amd64',
-  'singbox-linux-arm64',
-  'singbox-macos-amd64',
-  'singbox-macos-arm64',
-  'singbox-windows-amd64'
-] as const;
+import { BINARY_TARGET_VALUES, type BinaryTarget } from '../binary-targets';
 
 export class ImportBinaryDto {
-  @ApiProperty({ enum: binaryTargets, example: 'singbox-linux-amd64' })
-  @IsIn(binaryTargets)
-  target!: (typeof binaryTargets)[number];
+  @ApiProperty({ enum: BINARY_TARGET_VALUES, example: 'agent-linux-amd64' })
+  @IsIn(BINARY_TARGET_VALUES)
+  target!: BinaryTarget;
 
-  @ApiProperty({ example: '1.11.0' })
+  @ApiProperty({ example: '0.4.14' })
   @IsString()
   @MinLength(1)
   version!: string;
 
-  @ApiProperty({ example: 'https://downloads.example.com/sing-box' })
+  @ApiProperty({ example: 'https://downloads.example.com/riri-agent' })
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   url!: string;
 
@@ -27,3 +20,4 @@ export class ImportBinaryDto {
   @Matches(/^[a-f0-9]{64}$/i)
   sha256!: string;
 }
+

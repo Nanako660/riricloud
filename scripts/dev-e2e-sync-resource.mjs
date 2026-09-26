@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const usage = () => {
   throw new Error([
     '用法：RIRICLOUD_ADMIN_COOKIE_FILE=<cookie-jar> node scripts/dev-e2e-sync-resource.mjs',
-    '  --server-url <url> --kind <AGENT|SINGBOX> --target <target>',
+    '  --server-url <url> [--kind AGENT] --target <target>',
     '  --version <version> --file <path> [--filename <name>] [--app-version <version>]'
   ].join('\n'));
 };
@@ -39,12 +39,12 @@ function validateTarget(kind, target) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const serverUrl = required(args, 'server-url').replace(/\/$/, '');
-  const kind = required(args, 'kind').toUpperCase();
+  const kind = String(args.kind ?? 'AGENT').trim().toUpperCase();
   const target = required(args, 'target');
   const version = required(args, 'version');
   const filePath = resolve(required(args, 'file'));
   const cookieHeader = await readAdminCookie();
-  if (kind !== 'AGENT' && kind !== 'SINGBOX') throw new Error(`不支持的资源类型：${kind}`);
+  if (kind !== 'AGENT') throw new Error(`不支持的资源类型：${kind}`);
   validateTarget(kind, target);
 
   const body = await readFile(filePath);

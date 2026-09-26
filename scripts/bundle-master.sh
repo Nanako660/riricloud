@@ -268,7 +268,7 @@ echo "  -> 生成内置二进制资源 manifest..."
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
-  const [root, appVersion, singboxVersion, singboxRevision, cronetVersion, target, agentVersionArg] = process.argv.slice(1);
+  const [root, appVersion, target, agentVersionArg] = process.argv.slice(1);
   const agentVersion = agentVersionArg || appVersion;
   const fileInfo = (name, role, absolute) => {
     const body = fs.readFileSync(absolute);
@@ -276,18 +276,14 @@ echo "  -> 生成内置二进制资源 manifest..."
   };
   const agentName = "riri-agent";
   const agentPath = path.join(root, "agent", target, agentName);
-  const singboxDir = path.join(root, "singbox", `${singboxVersion}-r${singboxRevision}`, target);
-  const singboxPath = path.join(singboxDir, "sing-box");
-  const cronetPath = path.join(singboxDir, "libcronet.so");
   const resources = [];
-  if (fs.existsSync(agentPath)) resources.push({ kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "BUILTIN", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo(agentName, "main", agentPath)] }] });
-  if (fs.existsSync(singboxPath) && fs.existsSync(cronetPath)) resources.push({ kind: "SINGBOX", upstreamVersion: singboxVersion, revision: Number(singboxRevision), source: "BUILTIN", status: "ACTIVE", isDefault: true, cronetVersion, assets: [{ target: `singbox-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo("sing-box", "main", singboxPath), fileInfo("libcronet.so", "auxiliary", cronetPath)] }] });
+  if (fs.existsSync(agentPath)) resources.push({ kind: "AGENT", upstreamVersion: agentVersion, revision: 1, source: "LOCAL", status: "ACTIVE", builtFromAppVersion: agentVersion, isDefault: true, assets: [{ target: `agent-${target}`, os: target.split("-")[0], arch: target.split("-")[1], files: [fileInfo(agentName, "main", agentPath)] }] });
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
-' "$MASTER_DIR/binaries" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION" "$TARGET_NORM" "$AGENT_VERSION"
+' "$MASTER_DIR/binaries" "$VERSION" "$TARGET_NORM" "$AGENT_VERSION"
 
 # 6. 固化 package.json 并生成 Prisma 引擎
 echo "  -> 固化 package.json 并生成 Prisma Client..."
-"$NODE_BIN" -e "const fs = require('fs'); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$(to_node_path "$MASTER_DIR/package.json")" "$VERSION"
+"$NODE_BIN" -e "const fs = require('fs'); const rootPkg = JSON.parse(fs.readFileSync(process.argv[3], 'utf8')); fs.writeFileSync(process.argv[1], JSON.stringify({ name: 'riricloud-master', version: process.argv[2], private: true, repository: rootPkg.repository || { type: 'git', url: 'https://github.com/Nanako660/riricloud' }, prisma: { seed: 'node prisma/seed.js' } }, null, 2))" "$(to_node_path "$MASTER_DIR/package.json")" "$VERSION" "$(to_node_path "$WORKTREE_DIR/package.json")"
 (cd "$MASTER_DIR" && "$NODE_BIN" node_modules/prisma/build/index.js generate >/dev/null && "$NODE_BIN" node_modules/prisma/build/index.js generate --schema=prisma/telemetry/schema.prisma >/dev/null)
 
 # 7. 打包为 tar.gz

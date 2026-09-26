@@ -85,7 +85,11 @@ class FrontendLogger {
 
   log(level: FrontendLogLevel, message: string, module = 'App', metadata?: Record<string, unknown>, traceId?: string): void {
     const sanitizedMetadata = metadata ? (maskValue(metadata) as Record<string, unknown>) : {};
-    sanitizedMetadata.url = window.location.href;
+    if (typeof sanitizedMetadata.url === 'string' && sanitizedMetadata.url && sanitizedMetadata.url !== window.location.href) {
+      sanitizedMetadata.pageUrl = window.location.href;
+    } else {
+      sanitizedMetadata.url = window.location.href;
+    }
 
     this.buffer.push({
       level,

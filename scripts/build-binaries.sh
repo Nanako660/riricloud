@@ -318,47 +318,45 @@ if [ "$BUILD_AGENT" = "1" ]; then
 fi
 
 # ---------- 生成资源 manifest ----------
-SINGBOX_VERSION="${SINGBOX_VERSION_ARG:-${SINGBOX_VERSION:-}}"
-SINGBOX_REVISION="${SINGBOX_REVISION_ARG:-${SINGBOX_REVISION:-2}}"
-CRONET_VERSION="${CRONET_VERSION_ARG:-${CRONET_VERSION:-}}"
 MANIFEST_PATH="$OUTPUT_DIR/manifest.json"
 "$NODE_BIN" -e '
   const fs = require("fs");
   const path = require("path");
-  const [root, appVersion, singboxVersion, singboxRevision, cronetVersion] = process.argv.slice(1);
+  const [root, appVersion] = process.argv.slice(1);
   const resources = [];
   const stat = (file) => {
     const body = fs.readFileSync(file);
     const crypto = require("crypto");
     return { sha256: crypto.createHash("sha256").update(body).digest("hex"), size: body.length };
   };
-  const addResource = (kind, upstreamVersion, revision, target, files, extra = {}) => {
-    if (!files.every((file) => fs.existsSync(file.path))) return;
-    resources.push({
-      kind, upstreamVersion, revision, source: "BUILTIN", status: "ACTIVE",
-      builtFromAppVersion: appVersion, isDefault: true, ...extra,
-      assets: [{ target, os: target.split("-")[1], arch: target.split("-")[2], files: files.map((file) => {
-        const info = stat(file.path);
-        return { name: file.name, role: file.role, path: path.relative(root, file.path).split(path.sep).join("/"), ...info };
-      }) }]
-    });
-  };
+  const assets = [];
   for (const platform of ["linux-amd64", "linux-arm64", "windows-amd64", "darwin-amd64", "darwin-arm64"]) {
     const agentName = platform.startsWith("windows") ? "riri-agent.exe" : "riri-agent";
+    const filePath = path.join(root, "agent", platform, agentName);
+    if (!fs.existsSync(filePath)) continue;
     const targetPlatform = platform.replace(/^darwin-/, "macos-");
-    addResource("AGENT", appVersion, 1, `agent-${targetPlatform}`, [{ name: agentName, role: "main", path: path.join(root, "agent", platform, agentName) }]);
+    const target = `agent-${targetPlatform}`;
+    const info = stat(filePath);
+    assets.push({
+      target,
+      os: target.split("-")[1],
+      arch: target.split("-")[2],
+      files: [{ name: agentName, role: "main", path: path.relative(root, filePath).split(path.sep).join("/"), ...info }]
+    });
   }
-  if (singboxVersion) {
-    const resourceVersion = `${singboxVersion}-r${singboxRevision}`;
-    for (const platform of ["linux-amd64", "linux-arm64"]) {
-      const dir = path.join(root, "singbox", resourceVersion, platform);
-      addResource("SINGBOX", singboxVersion, Number(singboxRevision), `singbox-${platform}`, [
-        { name: "sing-box", role: "main", path: path.join(dir, "sing-box") },
-        { name: "libcronet.so", role: "auxiliary", path: path.join(dir, "libcronet.so") }
-      ], { cronetVersion });
-    }
+  if (assets.length > 0) {
+    resources.push({
+      kind: "AGENT",
+      upstreamVersion: appVersion,
+      revision: 1,
+      source: "LOCAL",
+      status: "ACTIVE",
+      builtFromAppVersion: appVersion,
+      isDefault: true,
+      assets
+    });
   }
   fs.writeFileSync(path.join(root, "manifest.json"), `${JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), applicationVersion: appVersion, resources }, null, 2)}\n`);
-' "$OUTPUT_DIR" "$VERSION" "$SINGBOX_VERSION" "$SINGBOX_REVISION" "$CRONET_VERSION"
+' "$OUTPUT_DIR" "$VERSION"
 
 echo "==> 二进制产物准备完成：$OUTPUT_DIR"

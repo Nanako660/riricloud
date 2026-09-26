@@ -11,12 +11,12 @@ import { BinariesService } from './binaries.service';
 import { BinariesInstallerService } from './installer.service';
 import { BinaryResourcesService } from './binary-resources.service';
 import { OfflinePackageService } from './offline-package.service';
-import { BinaryResourceImportDto, BinaryResourceUploadDto } from './dto/binary-resource.dto';
+import { BinaryResourceGithubImportDto, BinaryResourceImportDto, BinaryResourceUploadDto } from './dto/binary-resource.dto';
 import { BatchBinaryResourceDto } from './dto/batch-binary-resource.dto';
 import { appendPublicPath, getRequestBaseUrl, resolvePublicBaseUrl, toWebSocketBaseUrl } from '../common/public-url';
 import { decryptSecret } from '../common/secret-crypto';
 import { SettingsService } from '../system/settings.service';
-import { QueryBinaryAuditLogDto, QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
+import { QueryBinaryDeploymentDto, QueryBinaryResourceDto } from './dto/query-binary-resource.dto';
 import { UpdateBinaryResourceDto } from './dto/update-binary-resource.dto';
 
 @ApiTags('binaries')
@@ -225,12 +225,19 @@ export class BinariesController {
     return this.resources!.list(query);
   }
 
-  // 注意：audit-logs 是固定路径，必须在 :id 动态路由之前注册
+  // 注意：github-releases 与 github-import 是固定路径，必须在 :id 动态路由之前注册
   @ApiBearerAuth()
   @Roles('ADMIN')
-  @Get('admin/binary-resources/audit-logs')
-  auditLogs(@Query() query: QueryBinaryAuditLogDto) {
-    return this.resources!.auditLogs(query);
+  @Get('admin/binary-resources/github-releases')
+  listGithubReleases() {
+    return this.resources!.listGithubReleases();
+  }
+
+  @ApiBearerAuth()
+  @Roles('ADMIN')
+  @Post('admin/binary-resources/github-import')
+  importGithubRelease(@Body() dto: BinaryResourceGithubImportDto, @CurrentUser() user: { id: string }) {
+    return this.resources!.importFromGithubRelease(dto, user.id);
   }
 
   @ApiBearerAuth()
@@ -280,12 +287,12 @@ export class BinariesController {
   @Post('admin/binary-resources/upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
   uploadResource(
-    @UploadedFile() file: { buffer?: Buffer } | undefined,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string } | undefined,
     @Body() dto: BinaryResourceUploadDto,
     @CurrentUser() user: { id: string }
   ) {
     if (!file?.buffer) throw new Error('binary file is required');
-    return this.resources!.upload(dto, file.buffer, user.id);
+    return this.resources!.upload(dto, file, user.id);
   }
 
   @ApiBearerAuth()

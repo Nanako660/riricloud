@@ -30,11 +30,13 @@ export default function AdminLogsPage() {
   const { t } = useTranslation(['admin', 'common']);
   const [searchParams] = useSearchParams();
   const initialNodeId = searchParams.get('nodeId') || 'ALL';
+  const initialModule = searchParams.get('module') || '';
   const initialLive = searchParams.get('live') === 'true';
 
   const [filter, setFilter] = React.useState<LogsFilter>(() => ({
     ...DEFAULT_FILTER,
-    nodeId: initialNodeId
+    nodeId: initialNodeId,
+    module: initialModule
   }));
   const [selectedLog, setSelectedLog] = React.useState<SystemLogItem | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
@@ -48,9 +50,15 @@ export default function AdminLogsPage() {
 
   React.useEffect(() => {
     const qNodeId = searchParams.get('nodeId');
+    const qModule = searchParams.get('module');
     const qLive = searchParams.get('live');
-    if (qNodeId) {
-      setFilter((prev) => ({ ...prev, nodeId: qNodeId, page: 1 }));
+    if (qNodeId || qModule) {
+      setFilter((prev) => ({
+        ...prev,
+        ...(qNodeId ? { nodeId: qNodeId } : {}),
+        ...(qModule ? { module: qModule } : {}),
+        page: 1
+      }));
     }
     if (qLive === 'true') {
       setIsLiveTail(true);

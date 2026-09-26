@@ -123,9 +123,9 @@ build_target() {
   esac
 
   if [ "$BUILD_MODE" = "release" ]; then
-    ldflags="-s -w -X main.Version=$VERSION"
+    ldflags="-s -w -X main.Version=$VERSION -X main.BuildMarker=RIRICLOUD_AGENT_VERSION:$VERSION"
   else
-    ldflags="-X main.Version=$VERSION"
+    ldflags="-X main.Version=$VERSION -X main.BuildMarker=RIRICLOUD_AGENT_VERSION:$VERSION"
   fi
 
   echo "构建 Agent：$TARGET_OS/$TARGET_ARCH（$BUILD_MODE）"

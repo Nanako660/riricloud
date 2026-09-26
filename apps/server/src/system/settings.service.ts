@@ -1,5 +1,7 @@
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptSecret, encryptSecret } from '../common/secret-crypto';
 import { DEFAULT_SPEED_TIERS, type SpeedTier } from '../common/speed-format';
@@ -13,6 +15,41 @@ export interface ProbePresetTarget {
   port?: number;
   timeoutMs?: number;
 }
+
+function resolveDefaultGithubRepoUrl(): string {
+  const fromEnv = process.env.RIRICLOUD_DEFAULT_GITHUB_REPO_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/^git\+/, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  }
+  const candidates = [
+    resolve(process.cwd(), 'package.json'),
+    resolve(process.cwd(), '../../package.json'),
+    resolve(__dirname, '../../../../package.json'),
+    resolve(__dirname, '../../../package.json')
+  ];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as {
+        repository?: string | { url?: string };
+      };
+      const rawUrl =
+        typeof parsed.repository === 'string'
+          ? parsed.repository
+          : typeof parsed.repository?.url === 'string'
+            ? parsed.repository.url
+            : '';
+      if (rawUrl.trim()) {
+        return rawUrl.trim().replace(/^git\+/, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+      }
+    } catch {
+      // ignore missing package.json
+    }
+  }
+  return 'https://github.com/Nanako660/riricloud';
+}
+
+// 构建/打包时内嵌的默认项目公开 GitHub 仓库地址（可在系统设置中覆盖）
+export const DEFAULT_GITHUB_REPO_URL = resolveDefaultGithubRepoUrl();
 
 // SystemSetting 键定义（键名与取值格式见 docs/DATA_MODELS.md §SystemSetting）
 // 内置默认 GitHub 加速镜像（前缀代理，可被系统设置覆盖；公共镜像可用性不保证，安装脚本测速后择优）。
@@ -262,7 +299,7 @@ export const DEFAULTS: SystemSettings = {
   configSyncDebounceMs: 250,
   defaultPollIntervalSecs: 15,
   binaryDownloadBaseUrl: '',
-  githubRepoUrl: 'https://github.com/Nanako660/riricloud',
+  githubRepoUrl: DEFAULT_GITHUB_REPO_URL,
   githubMirrorUrls: [...DEFAULT_GITHUB_MIRRORS],
   probePresetTargets: [
     { type: 'tcp', target: 'www.apple.com', port: 443, timeoutMs: 5000 },

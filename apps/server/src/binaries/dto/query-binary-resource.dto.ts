@@ -63,29 +63,3 @@ export class QueryBinaryDeploymentDto {
   status?: 'QUEUED' | 'DISPATCHED' | 'COMPLETED' | 'FAILED';
 }
 
-export class QueryBinaryAuditLogDto {
-  @ApiPropertyOptional({ default: 1 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  page?: number = 1;
-
-  @ApiPropertyOptional({ default: 20, maximum: 100 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  @IsOptional()
-  pageSize?: number = 20;
-
-  @ApiPropertyOptional({ description: '按资源 ID 过滤' })
-  @IsString()
-  @IsOptional()
-  releaseId?: string;
-
-  @ApiPropertyOptional({ description: '按审计动作过滤' })
-  @IsString()
-  @IsOptional()
-  action?: string;
-}

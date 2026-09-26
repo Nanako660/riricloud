@@ -1,53 +1,75 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-const MAX_REDIRECTS = 3;
+const MAX_REDIRECTS = 5;
 
 export type SafeRemoteFetchOptions = {
   maxBytes: number;
   timeoutMs?: number;
+  connectTimeoutMs?: number;
   requireHttpsInProduction?: boolean;
 };
 
 export async function fetchSafeRemoteBuffer(rawUrl: string, options: SafeRemoteFetchOptions): Promise<Buffer> {
   let currentUrl = rawUrl.trim();
+  const totalTimeoutMs = options.timeoutMs ?? 120_000;
+  const connectTimeoutMs = options.connectTimeoutMs ?? Math.min(totalTimeoutMs, 15_000);
+
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
     const url = await assertSafeRemoteUrl(currentUrl, options.requireHttpsInProduction ?? true);
-    const response = await fetch(url, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(options.timeoutMs ?? 120_000)
-    });
+    const controller = new AbortController();
+    const totalTimer = setTimeout(() => controller.abort(new Error('remote download timed out')), totalTimeoutMs);
+    const connectTimer = setTimeout(() => controller.abort(new Error('remote connection timed out')), connectTimeoutMs);
 
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) throw new Error('remote download redirect is missing Location');
-      if (redirect === MAX_REDIRECTS) throw new Error('remote download exceeded redirect limit');
-      currentUrl = new URL(location, url).toString();
-      continue;
-    }
-    if (!response.ok) throw new Error(`remote download failed: HTTP ${response.status}`);
-
-    const contentLength = Number(response.headers.get('content-length') ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
-      throw new Error('remote file exceeds size limit');
-    }
-    if (!response.body) throw new Error('remote download returned an empty body');
-    const reader = response.body.getReader();
-    const chunks: Buffer[] = [];
-    let total = 0;
+    let response: Response;
     try {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        const buffer = Buffer.from(chunk.value);
-        total += buffer.length;
-        if (total > options.maxBytes) throw new Error('remote file exceeds size limit');
-        chunks.push(buffer);
-      }
-    } finally {
-      reader.releaseLock();
+      response = await fetch(url, {
+        redirect: 'manual',
+        headers: { 'User-Agent': 'RiriCloud-Master' },
+        signal: controller.signal
+      });
+    } catch (err) {
+      clearTimeout(connectTimer);
+      clearTimeout(totalTimer);
+      throw err;
     }
-    return Buffer.concat(chunks, total);
+    clearTimeout(connectTimer);
+
+    try {
+      if (response.status >= 300 && response.status < 400) {
+        clearTimeout(totalTimer);
+        const location = response.headers.get('location');
+        if (!location) throw new Error('remote download redirect is missing Location');
+        if (redirect === MAX_REDIRECTS) throw new Error('remote download exceeded redirect limit');
+        currentUrl = new URL(location, url).toString();
+        continue;
+      }
+      if (!response.ok) throw new Error(`remote download failed: HTTP ${response.status}`);
+
+      const contentLength = Number(response.headers.get('content-length') ?? 0);
+      if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
+        throw new Error('remote file exceeds size limit');
+      }
+      if (!response.body) throw new Error('remote download returned an empty body');
+      const reader = response.body.getReader();
+      const chunks: Buffer[] = [];
+      let total = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          const buffer = Buffer.from(chunk.value);
+          total += buffer.length;
+          if (total > options.maxBytes) throw new Error('remote file exceeds size limit');
+          chunks.push(buffer);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return Buffer.concat(chunks, total);
+    } finally {
+      clearTimeout(totalTimer);
+    }
   }
   throw new Error('remote download failed');
 }

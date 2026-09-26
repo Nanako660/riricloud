@@ -282,7 +282,7 @@ export default function AdminSettingsPage() {
       emailDomainList: [], passwordMinLength: 8, passwordRequireLowercase: true, passwordRequireUppercase: false, passwordRequireDigit: true, passwordRequireSpecial: false, subscriptionBaseUrl: '', subscriptionShortLinksEnabled: false, subscriptionEffectsSyncEnabled: true, subscriptionUpdateIntervalHours: 24, appendSubscriptionSpeedBadge: true,
       speedLimitUnitConversionEnabled: true, speedLimitColorTiers: DEFAULT_SPEED_TIERS,
       defaultTemplateId: null, publicLinesEnabled: true, includeUsageHeaders: true, deviceLimitEnabled: true, deviceOnlineWindowSecs: 60, heartbeatTimeoutSecs: 15,
-      configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: 'https://github.com/Nanako660/riricloud', githubMirrorUrls: [], probePresetTargets: [],
+      configSyncDebounceMs: 250, defaultPollIntervalSecs: 15, binaryDownloadBaseUrl: '', githubRepoUrl: __DEFAULT_GITHUB_REPO_URL__, githubMirrorUrls: [], probePresetTargets: [],
       jwtSessionDays: 1, customCss: '', customHeadHtml: '',
       lineSpeedtestEnabled: true, lineSpeedtestIntervalMins: 30,
       lineSpeedtestTargetUrl: 'http://cp.cloudflare.com/generate_204', lineSpeedtestTimeoutMs: 3000,
@@ -449,7 +449,7 @@ export default function AdminSettingsPage() {
               <SettingsInput name="configSyncDebounceMs" label={t('admin:settings.fieldConfigSyncDebounceMs')} type="number" min={0} max={10000} />
               <SettingsInput name="defaultPollIntervalSecs" label={t('admin:settings.fieldDefaultPollIntervalSecs')} type="number" min={5} max={300} />
               <SettingsInput name="binaryDownloadBaseUrl" label={t('admin:settings.fieldBinaryDownloadBaseUrl')} placeholder="https://downloads.example.com/riricloud" description={t('admin:settings.descBinaryDownloadBaseUrl')} />
-              <SettingsInput name="githubRepoUrl" label={t('admin:settings.fieldGithubRepoUrl')} placeholder="https://github.com/Nanako660/riricloud" description={t('admin:settings.descGithubRepoUrl')} />
+              <SettingsInput name="githubRepoUrl" label={t('admin:settings.fieldGithubRepoUrl')} placeholder={__DEFAULT_GITHUB_REPO_URL__} description={t('admin:settings.descGithubRepoUrl')} />
               <div className="md:col-span-2 min-w-0">
                 <SettingsTextarea name="githubMirrorUrlsText" label={t('admin:settings.fieldGithubMirrorUrlsText')} rows={4} className="md:col-span-2" description={t('admin:settings.descGithubMirrorUrlsText')} />
               </div>

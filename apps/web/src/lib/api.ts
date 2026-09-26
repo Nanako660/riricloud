@@ -24,7 +24,7 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
     const status = error.response?.status;
-    const message = error.response?.data?.message ?? i18n.t('errors:network.serverError');
+    const message = getLocalizedErrorMessage(error, i18n.t('errors:network.serverError'));
     const config = error.config as (Record<string, unknown> & { url?: string; method?: string }) | undefined;
     const traceId = typeof config?.__traceId === 'string' ? config.__traceId : undefined;
     const startTime = typeof config?.__startTime === 'number' ? config.__startTime : undefined;
