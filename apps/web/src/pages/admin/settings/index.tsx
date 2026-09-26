@@ -195,7 +195,19 @@ function createSettingsSchema() {
     defaultPollIntervalSecs: z.coerce.number().int().min(5).max(300),
     binaryDownloadBaseUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valBinaryDownloadUrl')),
     githubRepoUrl: z.string().refine(isBlankOrUrl, i18n.t('admin:settings.valGithubRepoUrl')),
-    githubMirrorUrlsText: z.string().max(16000),
+    githubMirrorUrlsText: z
+      .string()
+      .max(16000)
+      .refine(
+        (val) => {
+          const lines = val
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          return lines.length <= 32 && lines.every(isValidHttpUrl);
+        },
+        i18n.t('admin:settings.valGithubMirrorUrls')
+      ),
     probePresetTargets: probePresetTargetsSchema,
     jwtSessionDays: z.coerce.number().int().min(1).max(30),
     customCss: z.string().max(50000),
@@ -237,15 +249,128 @@ function createSettingsSchema() {
 
 export type SettingsForm = z.infer<ReturnType<typeof createSettingsSchema>>;
 
+type SettingsTabKey = 'branding' | 'landing' | 'users' | 'subscription' | 'agent' | 'storage' | 'advanced';
+
+const FIELD_TAB_MAP: Record<keyof SettingsForm, SettingsTabKey> = {
+  siteName: 'branding',
+  siteDescription: 'branding',
+  publicBaseUrl: 'branding',
+  systemTimezone: 'branding',
+  logoUrl: 'branding',
+  faviconUrl: 'branding',
+  siteAnnouncement: 'branding',
+  footerCopyright: 'branding',
+  supportEmail: 'branding',
+  supportTelegramUrl: 'branding',
+  supportDiscordUrl: 'branding',
+  supportCustomUrl: 'branding',
+  landingEnabled: 'landing',
+  landingHeroBadge: 'landing',
+  landingHeroTitle: 'landing',
+  landingHeroSubtitle: 'landing',
+  landingShowFeatures: 'landing',
+  landingShowPlans: 'landing',
+  landingShowFaq: 'landing',
+  landingCustomFeaturesJson: 'landing',
+  landingCustomFaqJson: 'landing',
+  registrationEnabled: 'users',
+  defaultPlanId: 'users',
+  defaultBalanceYuan: 'users',
+  passwordMinLength: 'users',
+  passwordRequireLowercase: 'users',
+  passwordRequireUppercase: 'users',
+  passwordRequireDigit: 'users',
+  passwordRequireSpecial: 'users',
+  emailDomainMode: 'users',
+  emailDomainListText: 'users',
+  smtpEnabled: 'users',
+  smtpHost: 'users',
+  smtpPort: 'users',
+  smtpSecure: 'users',
+  smtpUser: 'users',
+  smtpPass: 'users',
+  smtpFrom: 'users',
+  emailVerificationEnabled: 'users',
+  enforceEmailVerification: 'users',
+  captchaMode: 'users',
+  turnstileSiteKey: 'users',
+  turnstileSecretKey: 'users',
+  subscriptionBaseUrl: 'subscription',
+  subscriptionShortLinksEnabled: 'subscription',
+  subscriptionEffectsSyncEnabled: 'subscription',
+  subscriptionUpdateIntervalHours: 'subscription',
+  appendSubscriptionSpeedBadge: 'subscription',
+  speedLimitUnitConversionEnabled: 'subscription',
+  speedLimitColorTiers: 'subscription',
+  defaultTemplateId: 'subscription',
+  publicLinesEnabled: 'subscription',
+  includeUsageHeaders: 'subscription',
+  deviceLimitEnabled: 'agent',
+  deviceOnlineWindowSecs: 'agent',
+  heartbeatTimeoutSecs: 'agent',
+  configSyncDebounceMs: 'agent',
+  defaultPollIntervalSecs: 'agent',
+  binaryDownloadBaseUrl: 'agent',
+  githubRepoUrl: 'agent',
+  githubMirrorUrlsText: 'agent',
+  probePresetTargets: 'agent',
+  lineSpeedtestEnabled: 'agent',
+  lineSpeedtestIntervalMins: 'agent',
+  lineSpeedtestTargetUrl: 'agent',
+  lineSpeedtestTimeoutMs: 'agent',
+  trafficHourlyRetentionDays: 'storage',
+  nodeRateRetentionDays: 'storage',
+  logsRetentionDays: 'storage',
+  logsMaxCount: 'storage',
+  logsMinIngestLevel: 'storage',
+  agentLogMaxSizeMb: 'storage',
+  agentLogMaxFiles: 'storage',
+  jwtSessionDays: 'advanced',
+  customCss: 'advanced',
+  customHeadHtml: 'advanced'
+};
+
+function findFirstErrorMessage(errObj: unknown): string | null {
+  if (!errObj || typeof errObj !== 'object') return null;
+  if (
+    'message' in errObj &&
+    typeof (errObj as { message?: unknown }).message === 'string' &&
+    (errObj as { message: string }).message.trim()
+  ) {
+    return (errObj as { message: string }).message;
+  }
+  if (Array.isArray(errObj)) {
+    for (const item of errObj) {
+      const found = findFirstErrorMessage(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const val of Object.values(errObj as Record<string, unknown>)) {
+    const found = findFirstErrorMessage(val);
+    if (found) return found;
+  }
+  return null;
+}
+
 export default function AdminSettingsPage() {
   const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
   const publicSettings = usePublicSettings();
   const plans = useAdminPlans();
   const templates = useAdminTemplates();
+  const [activeTab, setActiveTab] = useState<SettingsTabKey>('branding');
   const [smtpTestOpen, setSmtpTestOpen] = useState(false);
   const [smtpTestEmail, setSmtpTestEmail] = useState('');
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const publicPlans = useMemo(
+    () => (plans.data ?? []).filter((plan) => plan.isPublic !== false),
+    [plans.data]
+  );
+  const availablePublicPlanIds = useMemo(
+    () => (plans.data ? new Set(publicPlans.map((plan) => plan.id)) : undefined),
+    [plans.data, publicPlans]
+  );
   const settingsQuery = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: async () => (await api.get<SystemSettings>('/admin/settings')).data
@@ -303,13 +428,21 @@ export default function AdminSettingsPage() {
     resetKey: settingsQuery.data ? 'settings' : null,
     dataRevision: settingsQuery.dataUpdatedAt,
     isDirty: form.formState.isDirty,
-    reset: () => { if (settingsQuery.data) form.reset(toForm(settingsQuery.data)); }
+    reset: () => { if (settingsQuery.data) form.reset(toForm(settingsQuery.data, availablePublicPlanIds)); }
   });
+
+  useEffect(() => {
+    if (!availablePublicPlanIds) return;
+    const currentPlanId = form.getValues('defaultPlanId');
+    if (currentPlanId && currentPlanId !== 'none' && !availablePublicPlanIds.has(currentPlanId)) {
+      form.resetField('defaultPlanId', { defaultValue: 'none' });
+    }
+  }, [availablePublicPlanIds, form]);
 
   const saveMutation = useMutation({
     mutationFn: async (values: SettingsForm) => (await api.put<SystemSettings>('/admin/settings', toPayload(values))).data,
     onSuccess: (settings) => {
-      form.reset(toForm(settings));
+      form.reset(toForm(settings, availablePublicPlanIds));
       toast.success(t('admin:settings.saveSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['system', 'public-info'] });
@@ -319,7 +452,7 @@ export default function AdminSettingsPage() {
   const resetMutation = useMutation({
     mutationFn: async () => (await api.post<SystemSettings>('/admin/settings/reset', {})).data,
     onSuccess: (settings) => {
-      form.reset(toForm(settings));
+      form.reset(toForm(settings, availablePublicPlanIds));
       toast.success(t('admin:settings.resetSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['system', 'public-info'] });
@@ -331,6 +464,22 @@ export default function AdminSettingsPage() {
     onSuccess: (result) => { setSmtpTestOpen(false); toast.success(t('admin:settings.smtpTestSuccess', { duration: result.durationMs ? `（${result.durationMs}ms）` : '' })); },
     onError: (error) => toast.error(extractErrorMessage(error, t('admin:settings.smtpTestFailed')))
   });
+
+  const submitSettings = form.handleSubmit(
+    (values) => saveMutation.mutate(values),
+    (errors) => {
+      const firstErrorField = Object.keys(errors)[0] as keyof SettingsForm | undefined;
+      if (firstErrorField && FIELD_TAB_MAP[firstErrorField]) {
+        setActiveTab(FIELD_TAB_MAP[firstErrorField]);
+      }
+      const firstMsg = findFirstErrorMessage(errors);
+      toast.error(
+        firstMsg
+          ? t('admin:settings.valFormInvalidToast', { message: firstMsg })
+          : t('admin:settings.saveFailed')
+      );
+    }
+  );
 
   if (settingsQuery.isPending) {
     return <PageContainer><PageHeader title={t('admin:settings.title')} /><Skeleton className="h-[520px] w-full" /></PageContainer>;
@@ -348,13 +497,13 @@ export default function AdminSettingsPage() {
               <AlertDialogFooter><AlertDialogCancel>{t('common:actions.cancel')}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetMutation.mutate()}>{t('admin:settings.resetConfirm')}</AlertDialogAction></AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button type="button" className="w-full sm:w-auto" disabled={saveMutation.isPending} onClick={() => form.handleSubmit((values) => saveMutation.mutate(values))()}><Save />{saveMutation.isPending ? t('admin:settings.saving') : t('admin:settings.saveSettingsButton')}</Button>
+          <Button type="button" className="w-full sm:w-auto" disabled={saveMutation.isPending} onClick={() => void submitSettings()}><Save />{saveMutation.isPending ? t('admin:settings.saving') : t('admin:settings.saveSettingsButton')}</Button>
         </div>
       </div>
 
       <Form {...form}>
-        <form className="min-w-0" onSubmit={form.handleSubmit((values) => saveMutation.mutate(values))}>
-          <Tabs defaultValue="branding" className="min-w-0 max-w-full w-full space-y-4">
+        <form className="min-w-0" onSubmit={(e) => void submitSettings(e)}>
+          <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as SettingsTabKey)} className="min-w-0 max-w-full w-full space-y-4">
             <TabsList className="h-auto w-full max-w-full justify-start gap-1 overflow-x-auto p-1">
               <TabsTrigger className="shrink-0" value="branding"><Palette className="h-4 w-4 shrink-0" />{t('admin:settings.generalTab')}</TabsTrigger>
               <TabsTrigger className="shrink-0" value="landing"><Layout className="h-4 w-4 shrink-0" />{t('admin:settings.landingTab', { defaultValue: '首页设置' })}</TabsTrigger>
@@ -386,7 +535,7 @@ export default function AdminSettingsPage() {
 
             <TabsContent value="users"><Card className="min-w-0 overflow-hidden"><CardHeader><SectionTitle icon={UsersRound} title={t('admin:settings.sectionUsers')} description={t('admin:settings.sectionUsersDesc')} /></CardHeader><CardContent className="grid min-w-0 gap-5 md:grid-cols-2">
               <SettingsSwitch name="registrationEnabled" label={t('admin:settings.fieldRegistrationEnabled')} description={t('admin:settings.descRegistrationEnabled')} className="md:col-span-2" />
-              <SettingsSelect name="defaultPlanId" label={t('admin:settings.fieldDefaultPlanId')} options={[{ value: 'none', label: t('admin:settings.optNoAutoPlan') }, ...(plans.data ?? []).map((plan) => ({ value: plan.id, label: plan.name }))]} description={t('admin:settings.descDefaultPlanId')} />
+              <SettingsSelect name="defaultPlanId" label={t('admin:settings.fieldDefaultPlanId')} options={[{ value: 'none', label: t('admin:settings.optNoAutoPlan') }, ...publicPlans.map((plan) => ({ value: plan.id, label: plan.name }))]} description={t('admin:settings.descDefaultPlanId')} />
               <SettingsInput name="defaultBalanceYuan" label={t('admin:settings.fieldDefaultBalanceYuan')} type="number" min={0} description={t('admin:settings.descDefaultBalanceYuan')} />
               <div className="rounded-lg border border-dashed bg-muted/30 p-3.5 text-xs text-muted-foreground md:col-span-2 space-y-1 min-w-0">
                 <p className="font-medium text-foreground">{t('admin:settings.noticeNewUserTrafficTitle')}</p>
@@ -609,7 +758,7 @@ function normalizeMirrorKey(url: string): string {
 function GithubMirrorSettingsField() {
   const { t } = useTranslation(['admin', 'common']);
   const queryClient = useQueryClient();
-  const { control, watch, setValue } = useFormContext<SettingsForm>();
+  const { control, watch, setValue, resetField } = useFormContext<SettingsForm>();
   const mirrorText = watch('githubMirrorUrlsText') ?? '';
   const repoUrl = watch('githubRepoUrl') ?? '';
 
@@ -651,16 +800,20 @@ function GithubMirrorSettingsField() {
 
   const applyDefaultSourceMutation = useMutation({
     mutationFn: async ({ nextMirrors, sourceLabel }: { nextMirrors: string[]; sourceLabel: string }) => {
+      const trimmedRepoUrl = repoUrl.trim();
       const updated = (
         await api.put<SystemSettings>('/admin/settings', {
-          ...(repoUrl.trim() ? { githubRepoUrl: repoUrl.trim() } : {}),
+          ...(trimmedRepoUrl && isValidHttpUrl(trimmedRepoUrl) ? { githubRepoUrl: trimmedRepoUrl } : {}),
           githubMirrorUrls: nextMirrors
         })
       ).data;
-      return { updated, sourceLabel, nextMirrors };
+      return { updated, sourceLabel, nextMirrors, trimmedRepoUrl };
     },
-    onSuccess: ({ nextMirrors, sourceLabel }) => {
-      setValue('githubMirrorUrlsText', nextMirrors.join('\n'), { shouldDirty: false, shouldValidate: true });
+    onSuccess: ({ nextMirrors, sourceLabel, trimmedRepoUrl }) => {
+      resetField('githubMirrorUrlsText', { defaultValue: nextMirrors.join('\n') });
+      if (trimmedRepoUrl && isValidHttpUrl(trimmedRepoUrl)) {
+        resetField('githubRepoUrl', { defaultValue: trimmedRepoUrl });
+      }
       toast.success(t('admin:settings.toastDefaultMirrorSaved', { source: sourceLabel }));
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'binary-resources'] });
@@ -954,22 +1107,33 @@ function TimezoneSettingField() {
   );
 }
 
-function toForm(settings: SystemSettings): SettingsForm {
+function cleanStr(value: string | null | undefined, fallback = ''): string {
+  if (value == null || value === 'undefined') return fallback;
+  return value;
+}
+
+function toForm(settings: SystemSettings, availablePublicPlanIds?: Set<string>): SettingsForm {
+  const rawPlanId = cleanStr(settings.defaultPlanId, '');
+  const resolvedPlanId =
+    !rawPlanId || (availablePublicPlanIds && !availablePublicPlanIds.has(rawPlanId))
+      ? 'none'
+      : rawPlanId;
+
   return {
-    siteName: settings.siteName,
-    siteDescription: settings.siteDescription,
-    publicBaseUrl: settings.publicBaseUrl,
-    logoUrl: settings.logoUrl,
-    faviconUrl: settings.faviconUrl,
-    siteAnnouncement: settings.siteAnnouncement,
-    footerCopyright: settings.footerCopyright,
-    supportTelegramUrl: settings.supportTelegramUrl,
-    supportDiscordUrl: settings.supportDiscordUrl,
-    supportEmail: settings.supportEmail,
-    supportCustomUrl: settings.supportCustomUrl,
+    siteName: cleanStr(settings.siteName),
+    siteDescription: cleanStr(settings.siteDescription),
+    publicBaseUrl: cleanStr(settings.publicBaseUrl),
+    logoUrl: cleanStr(settings.logoUrl),
+    faviconUrl: cleanStr(settings.faviconUrl),
+    siteAnnouncement: cleanStr(settings.siteAnnouncement),
+    footerCopyright: cleanStr(settings.footerCopyright),
+    supportTelegramUrl: cleanStr(settings.supportTelegramUrl),
+    supportDiscordUrl: cleanStr(settings.supportDiscordUrl),
+    supportEmail: cleanStr(settings.supportEmail),
+    supportCustomUrl: cleanStr(settings.supportCustomUrl),
     registrationEnabled: settings.registrationEnabled,
-    systemTimezone: settings.systemTimezone || 'Asia/Shanghai',
-    defaultPlanId: settings.defaultPlanId ?? 'none',
+    systemTimezone: cleanStr(settings.systemTimezone, 'Asia/Shanghai') || 'Asia/Shanghai',
+    defaultPlanId: resolvedPlanId,
     defaultBalanceYuan: settings.defaultBalance / 100,
     emailDomainMode: settings.emailDomainMode,
     emailDomainListText: settings.emailDomainList.join('\n'),
@@ -978,14 +1142,14 @@ function toForm(settings: SystemSettings): SettingsForm {
     passwordRequireUppercase: settings.passwordRequireUppercase ?? false,
     passwordRequireDigit: settings.passwordRequireDigit ?? true,
     passwordRequireSpecial: settings.passwordRequireSpecial ?? false,
-    subscriptionBaseUrl: settings.subscriptionBaseUrl,
+    subscriptionBaseUrl: cleanStr(settings.subscriptionBaseUrl),
     subscriptionShortLinksEnabled: settings.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: settings.subscriptionEffectsSyncEnabled ?? true,
     subscriptionUpdateIntervalHours: settings.subscriptionUpdateIntervalHours,
     appendSubscriptionSpeedBadge: settings.appendSubscriptionSpeedBadge ?? true,
     speedLimitUnitConversionEnabled: settings.speedLimitUnitConversionEnabled ?? true,
     speedLimitColorTiers: settings.speedLimitColorTiers?.length ? settings.speedLimitColorTiers : DEFAULT_SPEED_TIERS,
-    defaultTemplateId: settings.defaultTemplateId ?? 'none',
+    defaultTemplateId: cleanStr(settings.defaultTemplateId, 'none') || 'none',
     publicLinesEnabled: settings.publicLinesEnabled,
     includeUsageHeaders: settings.includeUsageHeaders,
     deviceLimitEnabled: settings.deviceLimitEnabled ?? true,
@@ -993,29 +1157,29 @@ function toForm(settings: SystemSettings): SettingsForm {
     heartbeatTimeoutSecs: settings.heartbeatTimeoutSecs,
     configSyncDebounceMs: settings.configSyncDebounceMs,
     defaultPollIntervalSecs: settings.defaultPollIntervalSecs,
-    binaryDownloadBaseUrl: settings.binaryDownloadBaseUrl,
-    githubRepoUrl: settings.githubRepoUrl,
-    githubMirrorUrlsText: settings.githubMirrorUrls.join('\n'),
+    binaryDownloadBaseUrl: cleanStr(settings.binaryDownloadBaseUrl),
+    githubRepoUrl: cleanStr(settings.githubRepoUrl),
+    githubMirrorUrlsText: settings.githubMirrorUrls.filter((item) => item !== 'undefined').join('\n'),
     probePresetTargets: settings.probePresetTargets.map(toProbePresetFormValue),
     jwtSessionDays: settings.jwtSessionDays,
-    customCss: settings.customCss,
-    customHeadHtml: settings.customHeadHtml,
+    customCss: cleanStr(settings.customCss),
+    customHeadHtml: cleanStr(settings.customHeadHtml),
     lineSpeedtestEnabled: settings.lineSpeedtestEnabled,
     lineSpeedtestIntervalMins: settings.lineSpeedtestIntervalMins,
-    lineSpeedtestTargetUrl: settings.lineSpeedtestTargetUrl,
+    lineSpeedtestTargetUrl: cleanStr(settings.lineSpeedtestTargetUrl, 'http://cp.cloudflare.com/generate_204'),
     lineSpeedtestTimeoutMs: settings.lineSpeedtestTimeoutMs,
     smtpEnabled: settings.smtpEnabled,
-    smtpHost: settings.smtpHost,
+    smtpHost: cleanStr(settings.smtpHost),
     smtpPort: settings.smtpPort,
     smtpSecure: settings.smtpSecure,
-    smtpUser: settings.smtpUser,
-    smtpPass: settings.smtpPass,
-    smtpFrom: settings.smtpFrom,
+    smtpUser: cleanStr(settings.smtpUser),
+    smtpPass: cleanStr(settings.smtpPass),
+    smtpFrom: cleanStr(settings.smtpFrom),
     emailVerificationEnabled: settings.emailVerificationEnabled,
     enforceEmailVerification: settings.enforceEmailVerification ?? false,
     captchaMode: settings.captchaMode,
-    turnstileSiteKey: settings.turnstileSiteKey,
-    turnstileSecretKey: settings.turnstileSecretKey,
+    turnstileSiteKey: cleanStr(settings.turnstileSiteKey),
+    turnstileSecretKey: cleanStr(settings.turnstileSecretKey),
     logsRetentionDays: settings.logsRetentionDays,
     logsMaxCount: settings.logsMaxCount,
     logsMinIngestLevel: settings.logsMinIngestLevel,
@@ -1024,14 +1188,14 @@ function toForm(settings: SystemSettings): SettingsForm {
     agentLogMaxSizeMb: settings.agentLogMaxSizeMb,
     agentLogMaxFiles: settings.agentLogMaxFiles,
     landingEnabled: settings.landingEnabled ?? true,
-    landingHeroBadge: settings.landingHeroBadge || '',
-    landingHeroTitle: settings.landingHeroTitle || '',
-    landingHeroSubtitle: settings.landingHeroSubtitle || '',
+    landingHeroBadge: cleanStr(settings.landingHeroBadge),
+    landingHeroTitle: cleanStr(settings.landingHeroTitle),
+    landingHeroSubtitle: cleanStr(settings.landingHeroSubtitle),
     landingShowFeatures: settings.landingShowFeatures ?? true,
     landingShowPlans: settings.landingShowPlans ?? true,
     landingShowFaq: settings.landingShowFaq ?? true,
-    landingCustomFeaturesJson: settings.landingCustomFeaturesJson || '[]',
-    landingCustomFaqJson: settings.landingCustomFaqJson || '[]'
+    landingCustomFeaturesJson: cleanStr(settings.landingCustomFeaturesJson, '[]') || '[]',
+    landingCustomFaqJson: cleanStr(settings.landingCustomFaqJson, '[]') || '[]'
   };
 }
 
@@ -1039,15 +1203,15 @@ function toPayload(values: SettingsForm) {
   return {
     siteName: values.siteName,
     siteDescription: values.siteDescription,
-    publicBaseUrl: values.publicBaseUrl,
-    logoUrl: values.logoUrl,
-    faviconUrl: values.faviconUrl,
+    publicBaseUrl: values.publicBaseUrl.trim(),
+    logoUrl: values.logoUrl.trim(),
+    faviconUrl: values.faviconUrl.trim(),
     siteAnnouncement: values.siteAnnouncement,
     footerCopyright: values.footerCopyright,
-    supportTelegramUrl: values.supportTelegramUrl,
-    supportDiscordUrl: values.supportDiscordUrl,
-    supportEmail: values.supportEmail,
-    supportCustomUrl: values.supportCustomUrl,
+    supportTelegramUrl: values.supportTelegramUrl.trim(),
+    supportDiscordUrl: values.supportDiscordUrl.trim(),
+    supportEmail: values.supportEmail.trim(),
+    supportCustomUrl: values.supportCustomUrl.trim(),
     registrationEnabled: values.registrationEnabled,
     systemTimezone: values.systemTimezone,
     defaultPlanId: values.defaultPlanId === 'none' ? null : values.defaultPlanId,
@@ -1059,14 +1223,13 @@ function toPayload(values: SettingsForm) {
     passwordRequireUppercase: values.passwordRequireUppercase,
     passwordRequireDigit: values.passwordRequireDigit,
     passwordRequireSpecial: values.passwordRequireSpecial,
-    subscriptionBaseUrl: values.subscriptionBaseUrl,
+    subscriptionBaseUrl: values.subscriptionBaseUrl.trim(),
     subscriptionShortLinksEnabled: values.subscriptionShortLinksEnabled,
     subscriptionEffectsSyncEnabled: values.subscriptionEffectsSyncEnabled,
     subscriptionUpdateIntervalHours: values.subscriptionUpdateIntervalHours,
     appendSubscriptionSpeedBadge: values.appendSubscriptionSpeedBadge,
     speedLimitUnitConversionEnabled: values.speedLimitUnitConversionEnabled,
     speedLimitColorTiers: values.speedLimitColorTiers,
-    defaultTemplateId: values.defaultTemplateId === 'none' ? null : values.defaultTemplateId,
     publicLinesEnabled: values.publicLinesEnabled,
     includeUsageHeaders: values.includeUsageHeaders,
     deviceLimitEnabled: values.deviceLimitEnabled,
@@ -1074,8 +1237,8 @@ function toPayload(values: SettingsForm) {
     heartbeatTimeoutSecs: values.heartbeatTimeoutSecs,
     configSyncDebounceMs: values.configSyncDebounceMs,
     defaultPollIntervalSecs: values.defaultPollIntervalSecs,
-    binaryDownloadBaseUrl: values.binaryDownloadBaseUrl,
-    githubRepoUrl: values.githubRepoUrl,
+    binaryDownloadBaseUrl: values.binaryDownloadBaseUrl.trim(),
+    githubRepoUrl: values.githubRepoUrl.trim(),
     githubMirrorUrls: values.githubMirrorUrlsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     probePresetTargets: values.probePresetTargets.map(toProbePresetTarget),
     jwtSessionDays: values.jwtSessionDays,
@@ -1083,7 +1246,7 @@ function toPayload(values: SettingsForm) {
     customHeadHtml: values.customHeadHtml,
     lineSpeedtestEnabled: values.lineSpeedtestEnabled,
     lineSpeedtestIntervalMins: values.lineSpeedtestIntervalMins,
-    lineSpeedtestTargetUrl: values.lineSpeedtestTargetUrl,
+    lineSpeedtestTargetUrl: values.lineSpeedtestTargetUrl.trim(),
     lineSpeedtestTimeoutMs: values.lineSpeedtestTimeoutMs,
     smtpEnabled: values.smtpEnabled,
     smtpHost: values.smtpHost,
@@ -1116,6 +1279,18 @@ function toPayload(values: SettingsForm) {
   };
 }
 
-function isBlankOrUrl(value: string) {
-  return !value || /^https?:\/\//i.test(value);
+function isValidHttpUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isBlankOrUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return !trimmed || isValidHttpUrl(trimmed);
 }

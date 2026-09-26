@@ -1343,7 +1343,9 @@ const admin = {
     valSubBaseUrl: 'Please enter a valid subscription base URL',
     valBinaryDownloadUrl: 'Please enter a valid binary download URL',
     valGithubRepoUrl: 'Please enter a valid GitHub repository URL',
+    valGithubMirrorUrls: 'Each line must be a valid HTTP/HTTPS mirror URL (up to 32 entries)',
     valSpeedtestTargetUrl: 'Please enter a valid speedtest target URL',
+    valFormInvalidToast: 'Invalid setting value: {{message}}',
 
     // Toast and feedback
     vacuumSuccessReclaimed: 'Cleanup complete, reclaimed {{bytes}} of disk space',

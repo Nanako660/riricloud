@@ -1,5 +1,5 @@
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
@@ -425,10 +425,43 @@ const DESCRIPTIONS: Record<keyof SystemSettings, string> = {
 const SETTING_VALUES = Object.values(SETTING_KEYS);
 
 @Injectable()
-export class SettingsService {
+export class SettingsService implements OnModuleInit {
   private readonly changeListeners: Array<(patch: SystemSettingsPatch) => void> = [];
 
   constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit() {
+    await this.cleanupDirtyUndefinedSettings();
+  }
+
+  async cleanupDirtyUndefinedSettings(): Promise<number> {
+    try {
+      const findMany = this.prisma.systemSetting?.findMany;
+      const deleteMany = this.prisma.systemSetting?.deleteMany;
+      if (!findMany || !deleteMany) return 0;
+      const rows = await this.prisma.systemSetting.findMany({ where: { key: { in: SETTING_VALUES } } });
+      if (!Array.isArray(rows) || !rows.length) return 0;
+      const dirtyKeys: string[] = [];
+      for (const row of rows) {
+        if (typeof row.value !== 'string') continue;
+        if (row.value.trim() === 'undefined') {
+          dirtyKeys.push(row.key);
+          continue;
+        }
+        if (row.key === SETTING_KEYS.SMTP_PASS || row.key === SETTING_KEYS.TURNSTILE_SECRET_KEY) {
+          const decrypted = decryptSecret(row.value);
+          if (decrypted.trim() === 'undefined') {
+            dirtyKeys.push(row.key);
+          }
+        }
+      }
+      if (!dirtyKeys.length) return 0;
+      const result = await this.prisma.systemSetting.deleteMany({ where: { key: { in: dirtyKeys } } });
+      return result?.count ?? dirtyKeys.length;
+    } catch {
+      return 0;
+    }
+  }
 
   onSettingsChange(listener: (patch: SystemSettingsPatch) => void) {
     this.changeListeners.push(listener);
@@ -446,11 +479,48 @@ export class SettingsService {
 
   async getSettings(): Promise<SystemSettings> {
     const rows = await this.prisma.systemSetting.findMany({ where: { key: { in: SETTING_VALUES } } });
-    const map = new Map(rows.map((row) => [row.key, row.value]));
+    const map = new Map<string, string>();
+    const dirtyKeys: string[] = [];
+    for (const row of rows) {
+      if (typeof row.value === 'string' && row.value.trim() === 'undefined') {
+        dirtyKeys.push(row.key);
+        continue;
+      }
+      map.set(row.key, row.value);
+    }
     for (const key of [SETTING_KEYS.SMTP_PASS, SETTING_KEYS.TURNSTILE_SECRET_KEY]) {
       const stored = map.get(key);
-      if (stored) map.set(key, decryptSecret(stored));
+      if (stored) {
+        const decrypted = decryptSecret(stored);
+        if (decrypted.trim() === 'undefined') {
+          map.delete(key);
+          dirtyKeys.push(key);
+        } else {
+          map.set(key, decrypted);
+        }
+      }
     }
+    if (dirtyKeys.length > 0) {
+      void Promise.resolve(this.prisma.systemSetting.deleteMany?.({ where: { key: { in: dirtyKeys } } })).catch(() => undefined);
+    }
+
+    let defaultPlanId = this.readNullableString(map, 'defaultPlanId');
+    if (defaultPlanId) {
+      const planDelegate = (this.prisma as unknown as {
+        plan?: { findUnique?: (args: Record<string, unknown>) => Promise<{ isPublic: boolean } | null> };
+      }).plan;
+      if (planDelegate?.findUnique) {
+        const plan = await planDelegate.findUnique({ where: { id: defaultPlanId }, select: { isPublic: true } });
+        if (!plan || !plan.isPublic) {
+          const stalePlanId = defaultPlanId;
+          defaultPlanId = null;
+          void Promise.resolve(
+            this.prisma.systemSetting.deleteMany?.({ where: { key: SETTING_KEYS.DEFAULT_PLAN_ID, value: stalePlanId } })
+          ).catch(() => undefined);
+        }
+      }
+    }
+
     return {
       siteName: this.readString(map, 'siteName'),
       siteDescription: this.readString(map, 'siteDescription'),
@@ -464,7 +534,7 @@ export class SettingsService {
       supportEmail: this.readString(map, 'supportEmail'),
       supportCustomUrl: this.readString(map, 'supportCustomUrl'),
       registrationEnabled: this.readBoolean(map, 'registrationEnabled'),
-      defaultPlanId: this.readNullableString(map, 'defaultPlanId'),
+      defaultPlanId,
       defaultBalance: this.readInteger(map, 'defaultBalance', 0, Number.MAX_SAFE_INTEGER),
       emailDomainMode: this.readEnum(map, 'emailDomainMode', ['none', 'whitelist', 'blacklist']),
       emailDomainList: this.readStringArray(map, 'emailDomainList').map(normalizeDomain).filter(Boolean),
@@ -587,12 +657,12 @@ export class SettingsService {
   }
 
   async updateSettings(patch: SystemSettingsPatch): Promise<SystemSettings> {
-    await this.validateReferences(patch);
-    const entries = Object.entries(patch).filter(([key]) => key in DEFAULTS) as Array<[
-      keyof SystemSettings,
-      SystemSettings[keyof SystemSettings]
-    ]>;
+    const entries = Object.entries(patch).filter(
+      ([key, value]) => key in DEFAULTS && value !== undefined
+    ) as Array<[keyof SystemSettings, SystemSettings[keyof SystemSettings]]>;
     if (!entries.length) throw new BadRequestException('未提供任何有效设置字段');
+    const cleanPatch = Object.fromEntries(entries) as SystemSettingsPatch;
+    await this.validateReferences(cleanPatch);
 
     await this.prisma.$transaction(async (tx) => {
       for (const [key, value] of entries) {
@@ -615,7 +685,7 @@ export class SettingsService {
         });
       }
     });
-    this.notifyChange(patch);
+    this.notifyChange(cleanPatch);
     return this.getAdminSettings();
   }
 
@@ -650,11 +720,13 @@ export class SettingsService {
     }
   }
 
-  private normalizeForStorage<K extends keyof SystemSettings>(key: K, value: SystemSettings[K] | null): string {
+  private normalizeForStorage<K extends keyof SystemSettings>(key: K, value: SystemSettings[K] | null | undefined): string {
     if (Array.isArray(value)) return JSON.stringify(value);
-    if (value === null) return '';
+    if (value === null || value === undefined) return '';
     if (typeof value === 'string') {
-      return key === 'customCss' || key === 'customHeadHtml' || key === 'landingCustomFeaturesJson' || key === 'landingCustomFaqJson' ? value : value.trim();
+      const trimmed = value.trim();
+      if (trimmed === 'undefined') return '';
+      return key === 'customCss' || key === 'customHeadHtml' || key === 'landingCustomFeaturesJson' || key === 'landingCustomFaqJson' ? value : trimmed;
     }
     return String(value);
   }
@@ -662,9 +734,10 @@ export class SettingsService {
   private readString(map: Map<string, string>, key: keyof SystemSettings): string {
     const value = map.get(key);
     const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (trimmed === 'undefined') return (DEFAULTS[key] as string | null) ?? '';
     // 清理旧版本内置副标题，避免已有数据库继续展示开发默认文案。
     if (key === 'siteDescription' && trimmed === '多节点代理管理面板') return '';
-    return trimmed || DEFAULTS[key] as string;
+    return trimmed || ((DEFAULTS[key] as string | null) ?? '');
   }
 
   private readNullableString(map: Map<string, string>, key: keyof SystemSettings): string | null {

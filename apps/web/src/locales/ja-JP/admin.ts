@@ -1343,7 +1343,9 @@ const admin = {
     valSubBaseUrl: '有効なサブスクリプションベース URL を入力してください',
     valBinaryDownloadUrl: '有効なバイナリ配信 URL を入力してください',
     valGithubRepoUrl: '有効な GitHub リポジトリ URL を入力してください',
+    valGithubMirrorUrls: '各行は有効な HTTP/HTTPS ミラー URL である必要があります（最大 32 件）',
     valSpeedtestTargetUrl: '有効な速度テストターゲット URL を入力してください',
+    valFormInvalidToast: '一部の設定項目に誤りがあります：{{message}}',
 
     // 提示与操作回执
     vacuumSuccessReclaimed: '最適化が完了し、{{bytes}} のディスク容量を解放しました',

@@ -243,7 +243,10 @@ export class SubscriptionService implements OnModuleInit, OnModuleDestroy {
     this.requireSubscriptionDelegate();
     const client = transactionClient ?? this.prisma;
     const plan = await client.plan.findUnique({ where: { id: planId }, include: { template: true } });
-    if (!plan || !plan.isPublic) throw new NotFoundException('套餐不存在或未开放');
+    if (!plan || !plan.isPublic) {
+      if (options.skipIfClaimUnavailable) return null;
+      throw new NotFoundException('套餐不存在或未开放');
+    }
     const now = new Date();
     const createSubscription = async (tx: Prisma.TransactionClient) => {
       const current = await tx.subscription.findUnique({ where: { userId } });

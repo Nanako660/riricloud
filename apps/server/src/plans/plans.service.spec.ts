@@ -236,4 +236,43 @@ describe('PlansService', () => {
     expect(prisma.plan.update).toHaveBeenCalledWith({ where: { id: 'p-device' }, data: { deviceLimit: 5 } });
   });
 
+  it('套餐设为非公开或删除时自动清理引用该套餐的 defaultPlanId 设置', async () => {
+    const deleteManyMock = jest.fn().mockResolvedValue({ count: 1 });
+    (prisma as unknown as { systemSetting: { deleteMany: jest.Mock } }).systemSetting = {
+      deleteMany: deleteManyMock
+    };
+    prisma.plan.findUnique.mockResolvedValue({
+      id: 'p-default', name: '默认套餐', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: true, sortOrder: 0, deviceLimit: null
+    });
+    prisma.plan.update.mockResolvedValue({
+      id: 'p-default', name: '默认套餐', description: null, price: 0, durationDays: 30,
+      trafficLimitBytes: BigInt(1024), trafficResetMode: 'NONE', lineMatchMode: 'ALL', lineTagsJson: '[]', lineIdsJson: '[]',
+      templateId: null, isPublic: false, sortOrder: 0, deviceLimit: null
+    });
+
+    await service.update('p-default', { isPublic: false });
+    expect(deleteManyMock).toHaveBeenCalledWith({
+      where: { key: 'defaultPlanId', value: 'p-default' }
+    });
+
+    const txDeleteMany = jest.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      plan: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'p-default', _count: { subscriptions: 0, purchases: 0 } }),
+        delete: jest.fn().mockResolvedValue({ id: 'p-default' })
+      },
+      redeemCode: { count: jest.fn().mockResolvedValue(0) },
+      redeemCodeCategory: { updateMany: jest.fn() },
+      systemSetting: { deleteMany: txDeleteMany }
+    };
+    prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+
+    await service.remove('p-default');
+    expect(txDeleteMany).toHaveBeenCalledWith({
+      where: { key: 'defaultPlanId', value: 'p-default' }
+    });
+  });
+
 });
