@@ -17,10 +17,16 @@
 ### Changed
 
 ### Fixed
+
+
+## [0.9.4] - 2026-09-27
+
+### Fixed
 - **修复 WSL 跨平台构建工具链污染导致 Agent 内嵌 Windows PE 格式 `sing-box`（触发 Linux `exec format error`）及全链路二进制格式自愈校验**：
   - **Linux/WSL 构建工具链严格隔离**：移除 `scripts/build-binaries.sh`、`scripts/build-agent.sh`、`scripts/gate-agent.sh`、`scripts/bundle-master.sh`、`scripts/docker-build.sh`、`scripts/release.sh` 与 `scripts/dev-e2e.sh` 在 Linux/WSL（`uname -s = Linux`）环境下回退调用 Windows 宿主工具链（`go.exe`、`gofmt.exe`、`node.exe`、`cmd.exe /c pnpm` 及 `.tools/go`）与 `wslpath` 路径转换的逻辑，并校验 `go env GOHOSTOS` / `node process.platform` 严禁指向 `windows`/`win32`，根绝因 WSL 环境变量未向 `.exe` 传递 `GOOS`/`GOARCH` 导致将 5 大平台产物全部编译为 Windows PE 的问题；
   - **构建与打包期可执行文件头（Magic + CPU 架构）强校验与污染缓存自动清理**：在 `scripts/build-binaries.sh`、`scripts/build-agent.sh` 与 `scripts/bundle-master.sh` 中对 `sing-box`、`libcronet.so` 与 `riri-agent` 执行 `ELF`（`e_machine`）、`Mach-O`（`cputype`）及 `PE`（`Machine`）二进制头校验；检测到 `.cache/sing-box-v2ray-api/` 中存在平台不匹配的污染缓存时自动清除并重编，在打包写入 `apps/agent/internal/embedded/assets/singbox.tar.gz` 前二次拦截校验，并修正 `bundle-master.sh` 构建顺序确保先完成定制 `sing-box` 编译校验再内嵌编译 `riri-agent`；
   - **Agent 运行时内嵌与本地内核二进制头校验及自动回退自愈**：在 `apps/agent/internal/embedded`、`apps/agent/internal/kernel` 与 `apps/agent/internal/runner` 中新增基于 `runtime.GOOS`/`runtime.GOARCH` 的可执行文件头校验（`ValidateExecutableHeader` / `ValidateExecutableForCurrentPlatform` / `ValidateExecutableFile`）；当内嵌归档或磁盘残留的 `/var/lib/riri-agent/sing-box` 格式与当前运行平台不匹配时，拒绝释放或直接跳过失效文件，自动回退至远程下载拉取对应架构合法内核并完成原子替换自愈。
+
 
 
 ## [0.9.3] - 2026-09-27
