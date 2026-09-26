@@ -13,6 +13,15 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.9.2] - 2026-09-26
+
+### Added
 - **远程导入弹窗（GitHub Release 预设列表 + 自定义 URL 导入）**：新增 `GET /api/v1/admin/binary-resources/github-releases` 与 `POST /api/v1/admin/binary-resources/github-import` 接口，并将管理端「从 GitHub Release 获取」与「URL 导入」合并为单一「远程导入」双标签页弹窗（默认展示 GitHub Release 列表，自动匹配 5 大平台 Agent 资产并支持一键全量或单架构同步入库）；项目 GitHub 仓库地址 `githubRepoUrl` 统一在系统设置「Agent 运维」Tab 中配置，并在构建与打包阶段默认内嵌当前项目公开仓库地址（`package.json` `repository.url`）。
 - **GitHub 下载源一键测速、默认源切换与假活镜像自动熔断回退**：新增 `POST /api/v1/admin/binary-resources/github-mirrors/test` 接口与系统设置「Agent 运维」Tab 测速面板，对配置的加速镜像与 GitHub 官方源（`https://github.com`）执行真实 Release 资产字节流采样测速（识别仅返回 HTTP 200 响应头但实际卡死 0 B/s 的假活镜像），支持一键将任意镜像或官方源直连设为默认下载源并立即持久化生效；服务端对流空闲超时的镜像自动实施 5 分钟熔断并回退至下一候选镜像及官方源。
 - **二进制上传与导入全自动元数据识别引擎 (`binary-inspector`)**：Agent 编译时注入 `RIRICLOUD_AGENT_VERSION:<ver>` 标记；上传或 URL 导入支持直接传入裸二进制或 `.tar.gz`/`.tgz`/`.zip` 归档包，服务端自动流式解压、解析 ELF/Mach-O/PE 魔数头识别目标 OS/架构、提取内嵌或文件名版本号并计算 SHA-256，前端支持多文件批量上传且无需手填版本、平台或哈希。
